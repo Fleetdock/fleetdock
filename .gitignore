@@ -1,0 +1,14 @@
+# backend
+/backend/bin
+*.test
+
+# frontend
+/frontend/node_modules
+/frontend/.next
+/frontend/out
+/frontend/next-env.d.ts
+/frontend/*.tsbuildinfo
+
+# env
+**/.env
+**/.env.local
