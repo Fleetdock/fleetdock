@@ -3,20 +3,26 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Activity, Archive, Box, Cloud, Database, Key, Server, type LucideIcon } from "lucide-react";
+import { Activity, Archive, Box, Cloud, Database, Key, Server, ShieldCheck, Users, type LucideIcon } from "lucide-react";
 
-const NAV: { href: string; label: string; Icon: LucideIcon }[] = [
-  { href: "/servers", label: "Servers", Icon: Server },
-  { href: "/instances", label: "Instances", Icon: Box },
-  { href: "/databases", label: "Databases", Icon: Database },
-  { href: "/backups", label: "Backups", Icon: Archive },
-  { href: "/destinations", label: "Destinations", Icon: Cloud },
-  { href: "/operations", label: "Operations", Icon: Activity },
-  { href: "/tokens", label: "API Tokens", Icon: Key },
+import { useCan } from "@/lib/hooks";
+
+// perm: the read permission required to see the section (empty = always).
+const NAV: { href: string; label: string; Icon: LucideIcon; perm: string }[] = [
+  { href: "/servers", label: "Servers", Icon: Server, perm: "server:read" },
+  { href: "/instances", label: "Instances", Icon: Box, perm: "instance:read" },
+  { href: "/databases", label: "Databases", Icon: Database, perm: "database:read" },
+  { href: "/backups", label: "Backups", Icon: Archive, perm: "backup:read" },
+  { href: "/destinations", label: "Destinations", Icon: Cloud, perm: "destination:read" },
+  { href: "/operations", label: "Operations", Icon: Activity, perm: "operation:read" },
+  { href: "/users", label: "Users", Icon: Users, perm: "user:read" },
+  { href: "/roles", label: "Roles", Icon: ShieldCheck, perm: "user:read" },
+  { href: "/tokens", label: "API Tokens", Icon: Key, perm: "token:read" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const can = useCan();
   return (
     <aside
       className="flex flex-col"
@@ -38,7 +44,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="flex flex-col gap-1" style={{ padding: ".6rem" }}>
-        {NAV.map(({ href, label, Icon }) => {
+        {NAV.filter(({ perm }) => !perm || can(perm)).map(({ href, label, Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link key={href} href={href} className={`sidebar-link${active ? " active" : ""}`}>

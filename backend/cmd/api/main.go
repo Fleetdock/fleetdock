@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"fmt"
+
 	agentapp "github.com/mariadb-cp/db-manager/backend/internal/app/agent"
 	authapp "github.com/mariadb-cp/db-manager/backend/internal/app/auth"
 	backupapp "github.com/mariadb-cp/db-manager/backend/internal/app/backup"
@@ -25,6 +27,7 @@ import (
 	secretsapp "github.com/mariadb-cp/db-manager/backend/internal/app/secrets"
 	serverapp "github.com/mariadb-cp/db-manager/backend/internal/app/server"
 	tokenapp "github.com/mariadb-cp/db-manager/backend/internal/app/token"
+	userapp "github.com/mariadb-cp/db-manager/backend/internal/app/user"
 	"github.com/mariadb-cp/db-manager/backend/internal/config"
 	"github.com/mariadb-cp/db-manager/backend/internal/infra/postgres"
 	"github.com/mariadb-cp/db-manager/backend/internal/interfaces/httpapi"
@@ -42,20 +45,38 @@ func main() {
 	}
 }
 
+// checkSecrets warns about (dev) or refuses (production) insecure defaults.
+func checkSecrets(cfg config.Config) error {
+	insecure := map[string]bool{
+		"MDCP_JWT_SECRET":     cfg.JWTSecret == "dev-insecure-change-me" || cfg.JWTSecret == "change-me-in-production",
+		"MDCP_ENCRYPTION_KEY": cfg.EncryptionKey == "dev-insecure-encryption-key" || cfg.EncryptionKey == "change-me-in-production",
+		"MDCP_ADMIN_PASSWORD": cfg.AdminPassword == "admin12345",
+	}
+	for name, bad := range insecure {
+		if !bad {
+			continue
+		}
+		if cfg.IsProduction() {
+			return fmt.Errorf("refusing to start: %s uses an insecure default (MDCP_ENV=production)", name)
+		}
+		slog.Warn("insecure default in use; set a strong value before production", "var", name)
+	}
+	return nil
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	if cfg.JWTSecret == "dev-insecure-change-me" {
-		slog.Warn("using insecure default MDCP_JWT_SECRET; set a strong secret in production")
-	}
-	if cfg.EncryptionKey == "dev-insecure-encryption-key" {
-		slog.Warn("using insecure default MDCP_ENCRYPTION_KEY; set a strong key in production")
+	if err := checkSecrets(cfg); err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	slog.Info("starting", "env", cfg.Env)
 
 	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -94,6 +115,7 @@ func run() error {
 	agentSvc := agentapp.NewService(serverRepo, regTokenRepo)
 	destSvc := destinationapp.NewService(destRepo, secretsSvc)
 	backupSvc := backupapp.NewService(backupRepo, databaseRepo, instanceRepo, destRepo, opsSvc)
+	userSvc := userapp.NewService(userRepo)
 
 	// One-time admin bootstrap.
 	if created, err := authSvc.EnsureAdmin(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
@@ -114,6 +136,7 @@ func run() error {
 		Instances:    httpapi.NewInstanceHandler(instanceSvc),
 		Databases:    httpapi.NewDatabaseHandler(databaseSvc),
 		Tokens:       httpapi.NewTokenHandler(tokenSvc),
+		Users:        httpapi.NewUserHandler(userSvc),
 		Operations:   httpapi.NewOperationHandler(opsSvc),
 		Backups:      httpapi.NewBackupHandler(backupSvc),
 		Destinations: httpapi.NewDestinationHandler(destSvc),
@@ -122,6 +145,7 @@ func run() error {
 		Install:      httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),
 		Authn:        httpapi.NewAuthenticator(authSvc),
 		CORSOrigin:   cfg.CORSOrigin,
+		Ready:        pool.Ping,
 	})
 
 	srv := &http.Server{

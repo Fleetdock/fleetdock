@@ -42,7 +42,14 @@ type Config struct {
 	// HeartbeatTimeout is how long without a heartbeat before a server is
 	// marked offline.
 	HeartbeatTimeout time.Duration
+
+	// Env is the deployment environment ("development" or "production").
+	// In production the server refuses to start with insecure defaults.
+	Env string
 }
+
+// IsProduction reports whether the server runs in production mode.
+func (c Config) IsProduction() bool { return c.Env == "production" }
 
 // Load reads configuration from the environment and validates it.
 func Load() (Config, error) {
@@ -66,6 +73,8 @@ func Load() (Config, error) {
 		AgentBinDir:      getenv("MDCP_AGENT_BIN_DIR", "/opt/db-manager/agents"),
 		WorkerEnabled:    getenvBool("MDCP_WORKER_ENABLED", true),
 		HeartbeatTimeout: getenvDuration("MDCP_HEARTBEAT_TIMEOUT", 2*time.Minute),
+
+		Env: getenv("MDCP_ENV", "development"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: MDCP_DATABASE_URL is required")

@@ -103,10 +103,28 @@ Backend (Go):
   a "test bucket" action; manual backups (`mariadb-dump`, gzip, sha256,
   size); restore to any instance/name (= move).
 
+- **Users & roles** — full account administration API: list/create/edit/
+  suspend/delete users, assign global roles, admin password reset. Custom
+  roles: create/edit/delete roles with any subset of the permission catalog
+  (`GET /v1/permissions`); system roles (`owner`/`admin`/`operator`/`viewer`)
+  are immutable, and roles still assigned to users cannot be deleted. Guards
+  prevent lockout: the last active owner cannot be demoted, suspended or
+  deleted, and you cannot suspend or delete yourself.
+- **Profile** — self-service name/email update and password change (requires
+  the current password). Suspended accounts cannot log in and existing
+  sessions/tokens stop working immediately.
+- **Hardening** — login rate limiting (per client IP), security headers,
+  `/healthz` + `/readyz` (DB ping) probes, and `MDCP_ENV=production` mode
+  that refuses to boot with insecure default secrets.
+
 Frontend (Next.js): login, dashboard shell, servers (connect flow with
 install command), instances (external DBs, test connection, import),
 databases (create, lock/unlock, delete, backup), backups (trigger, restore /
-move), destinations (S3/R2 CRUD + test), operations log with live refresh.
+move), destinations (S3/R2 CRUD + test), operations log with live refresh,
+users administration (create/edit/suspend/delete, roles, password reset),
+a roles page (view every role's permissions, create/edit/delete custom roles
+with a grouped permission picker), and a profile page (edit name/email,
+change password) linked from the topbar.
 
 ## Local development (without Docker)
 
@@ -140,6 +158,7 @@ npm run dev
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `MDCP_DATABASE_URL` | — | required |
+| `MDCP_ENV` | `development` | `production` refuses to start with default secrets |
 | `MDCP_HTTP_ADDR` | `:8080` | |
 | `MDCP_JWT_SECRET` | dev default | set a strong secret in production |
 | `MDCP_ENCRYPTION_KEY` | dev default | encrypts credentials/S3 keys at rest; set a strong value and never rotate casually |

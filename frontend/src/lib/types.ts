@@ -213,3 +213,55 @@ export interface CreateTokenInput {
   name: string;
   scopes?: string[];
 }
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  status: "active" | "suspended" | "invited";
+  roles: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Profile extends User {
+  permissions: string[];
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  description: string;
+  is_system: boolean;
+  permissions: string[];
+}
+
+export interface CreateUserInput {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+}
+
+export interface UpdateUserInput {
+  name?: string;
+  email?: string;
+  status?: string;
+  role?: string;
+}
+
+export interface UpdateProfileInput {
+  name?: string;
+  email?: string;
+}
+
+export interface ChangePasswordInput {
+  current_password: string;
+  new_password: string;
+}
+
+export interface RoleInput {
+  name?: string;
+  description?: string;
+  permissions?: string[];
+}

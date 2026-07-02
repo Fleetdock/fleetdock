@@ -7,7 +7,7 @@ import { useState, type FormEvent } from "react";
 import { Plus } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCreateInstance, useInstances, useServer } from "@/lib/hooks";
+import { useCan, useCreateInstance, useInstances, useServer } from "@/lib/hooks";
 
 export default function ServerDetailPage() {
   const params = useParams();
@@ -15,6 +15,7 @@ export default function ServerDetailPage() {
   const { data: server, isLoading } = useServer(id);
   const { data: instances } = useInstances(id);
   const [open, setOpen] = useState(false);
+  const can = useCan();
 
   if (isLoading) {
     return <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>;
@@ -31,9 +32,11 @@ export default function ServerDetailPage() {
           <h1 className="text-xl font-semibold">{server.name}</h1>
           <StatusBadge status={server.status} />
         </div>
-        <button className="btn btn-primary" onClick={() => setOpen(true)}>
-          <Plus size={16} /> Add instance
-        </button>
+        {can("instance:write") ? (
+          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+            <Plus size={16} /> Add instance
+          </button>
+        ) : null}
       </div>
 
       <div className="card" style={{ padding: "1.1rem", marginBottom: "1.25rem" }}>

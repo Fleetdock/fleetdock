@@ -6,6 +6,7 @@ import { Download, Plug, Plus, Trash2 } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  useCan,
   useCreateInstance,
   useDeleteInstance,
   useImportDatabases,
@@ -20,6 +21,8 @@ export default function InstancesPage() {
   const { data: servers } = useServers();
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const can = useCan();
+  const canWrite = can("instance:write");
 
   const del = useDeleteInstance();
   const test = useTestConnection();
@@ -70,9 +73,11 @@ export default function InstancesPage() {
             Database instances — managed on your servers, or external (e.g. running under Dokploy).
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setOpen(true)}>
-          <Plus size={16} /> Add instance
-        </button>
+        {canWrite ? (
+          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+            <Plus size={16} /> Add instance
+          </button>
+        ) : null}
       </div>
 
       {notice ? (
@@ -128,23 +133,27 @@ export default function InstancesPage() {
                           <button className="btn btn-sm" onClick={() => onTest(i)} disabled={test.isPending} title="Test connection">
                             <Plug size={15} /> Test
                           </button>
-                          <button className="btn btn-sm" onClick={() => onImport(i)} disabled={importDbs.isPending} title="Import existing databases">
-                            <Download size={15} /> Import DBs
-                          </button>
+                          {canWrite ? (
+                            <button className="btn btn-sm" onClick={() => onImport(i)} disabled={importDbs.isPending} title="Import existing databases">
+                              <Download size={15} /> Import DBs
+                            </button>
+                          ) : null}
                         </>
                       ) : null}
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={() => {
-                          if (confirm(`Remove instance "${i.name}" from the control plane? The actual database server is not touched.`)) {
-                            del.mutate(i.id);
-                          }
-                        }}
-                        disabled={del.isPending}
-                        aria-label="Delete"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      {canWrite ? (
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => {
+                            if (confirm(`Remove instance "${i.name}" from the control plane? The actual database server is not touched.`)) {
+                              del.mutate(i.id);
+                            }
+                          }}
+                          disabled={del.isPending}
+                          aria-label="Delete"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

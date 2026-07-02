@@ -6,6 +6,7 @@ import { Pencil, Plug, Plus, Trash2 } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  useCan,
   useCreateDestination,
   useDeleteDestination,
   useDestinations,
@@ -28,6 +29,8 @@ export default function DestinationsPage() {
 
   const del = useDeleteDestination();
   const test = useTestDestination();
+  const can = useCan();
+  const canWrite = can("destination:write");
 
   async function onTest(id: string, name: string) {
     setNotice(null);
@@ -46,9 +49,11 @@ export default function DestinationsPage() {
           <h1 className="text-xl font-semibold">Backup destinations</h1>
           <p className="muted text-sm">S3 / Cloudflare R2 buckets your backups upload to.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
-          <Plus size={16} /> Add destination
-        </button>
+        {canWrite ? (
+          <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+            <Plus size={16} /> Add destination
+          </button>
+        ) : null}
       </div>
 
       {notice ? (
@@ -72,7 +77,7 @@ export default function DestinationsPage() {
                 <th>Provider</th>
                 <th>Bucket</th>
                 <th>Endpoint</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
+                {canWrite ? <th style={{ textAlign: "right" }}>Actions</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -82,32 +87,34 @@ export default function DestinationsPage() {
                   <td className="muted">{PROVIDER_LABEL[d.provider] ?? d.provider}</td>
                   <td className="muted">{d.bucket}{d.prefix ? `/${d.prefix}` : ""}</td>
                   <td className="muted">{d.endpoint || "AWS default"}</td>
-                  <td style={{ textAlign: "right" }}>
-                    <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-                      <button className="btn btn-sm" onClick={() => onTest(d.id, d.name)} disabled={test.isPending}>
-                        <Plug size={15} /> Test
-                      </button>
-                      <button
-                        className="btn btn-sm"
-                        onClick={() => setEditTarget(d)}
-                        aria-label={`Edit ${d.name}`}
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={() => {
-                          if (confirm(`Delete destination "${d.name}"? Existing backups keep their records.`)) {
-                            del.mutate(d.id);
-                          }
-                        }}
-                        disabled={del.isPending}
-                        aria-label="Delete"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
+                  {canWrite ? (
+                    <td style={{ textAlign: "right" }}>
+                      <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
+                        <button className="btn btn-sm" onClick={() => onTest(d.id, d.name)} disabled={test.isPending}>
+                          <Plug size={15} /> Test
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => setEditTarget(d)}
+                          aria-label={`Edit ${d.name}`}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => {
+                            if (confirm(`Delete destination "${d.name}"? Existing backups keep their records.`)) {
+                              del.mutate(d.id);
+                            }
+                          }}
+                          disabled={del.isPending}
+                          aria-label="Delete"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

@@ -5,13 +5,15 @@ import { useState, type FormEvent } from "react";
 import { Key, Plus, Trash2 } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCreateToken, useRevokeToken, useTokens } from "@/lib/hooks";
+import { useCan, useCreateToken, useRevokeToken, useTokens } from "@/lib/hooks";
 
 export default function TokensPage() {
   const { data, isLoading, error } = useTokens();
   const revoke = useRevokeToken();
   const [open, setOpen] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
+  const can = useCan();
+  const canWrite = can("token:write");
 
   return (
     <div>
@@ -20,9 +22,11 @@ export default function TokensPage() {
           <h1 className="text-xl font-semibold">API Tokens</h1>
           <p className="muted text-sm">Programmatic access scoped to your permissions.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setOpen(true)}>
-          <Plus size={16} /> New token
-        </button>
+        {canWrite ? (
+          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+            <Plus size={16} /> New token
+          </button>
+        ) : null}
       </div>
 
       {isLoading ? (
@@ -55,7 +59,7 @@ export default function TokensPage() {
                   <td style={{ textAlign: "right" }}>
                     {t.revoked_at ? (
                       <span className="badge badge-red"><span className="dot" /> revoked</span>
-                    ) : (
+                    ) : canWrite ? (
                       <button
                         className="btn btn-sm btn-danger"
                         onClick={() => {
@@ -65,7 +69,7 @@ export default function TokensPage() {
                       >
                         <Trash2 size={15} />
                       </button>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
               ))}

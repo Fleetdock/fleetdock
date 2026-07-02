@@ -6,13 +6,14 @@ import { useState, type FormEvent } from "react";
 import { ChevronRight, Copy, Plus, Search, Server } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCreateAgentToken, useCreateServer, useServers } from "@/lib/hooks";
+import { useCan, useCreateAgentToken, useCreateServer, useServers } from "@/lib/hooks";
 
 export default function ServersPage() {
   const [search, setSearch] = useState("");
   const { data, isLoading, error } = useServers(search);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  const can = useCan();
 
   return (
     <div>
@@ -21,14 +22,16 @@ export default function ServersPage() {
           <h1 className="text-xl font-semibold">Servers</h1>
           <p className="muted text-sm">Hosts running the db-manager agent.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="btn" onClick={() => setRegisterOpen(true)}>
-            <Plus size={16} /> Register manually
-          </button>
-          <button className="btn btn-primary" onClick={() => setConnectOpen(true)}>
-            <Server size={16} /> Connect server
-          </button>
-        </div>
+        {can("server:write") ? (
+          <div className="flex items-center gap-2">
+            <button className="btn" onClick={() => setRegisterOpen(true)}>
+              <Plus size={16} /> Register manually
+            </button>
+            <button className="btn btn-primary" onClick={() => setConnectOpen(true)}>
+              <Server size={16} /> Connect server
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", maxWidth: "22rem" }}>

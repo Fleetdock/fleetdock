@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { clearToken } from "@/lib/auth";
 import { useMe } from "@/lib/hooks";
 
-import { LogOut } from "lucide-react";
+import { CircleUser, LogOut } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
 export function Topbar() {
@@ -25,9 +26,10 @@ export function Topbar() {
       <div style={{ paddingLeft: "1.5rem" }} />
       <div className="flex items-center gap-2" style={{ paddingRight: "1rem" }}>
         {me ? (
-          <span className="muted text-sm" style={{ marginRight: ".25rem" }}>
-            {me.email}
-          </span>
+          <Link href="/profile" className="btn btn-ghost btn-sm" style={{ marginRight: ".25rem" }} title="Your profile">
+            <CircleUser size={16} />
+            <span className="muted text-sm">{me.email}</span>
+          </Link>
         ) : null}
         <ThemeToggle />
         <button className="btn btn-ghost btn-sm" onClick={logout} aria-label="Log out">

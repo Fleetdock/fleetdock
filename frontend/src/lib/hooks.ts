@@ -25,6 +25,14 @@ import type {
   TestConnectionResult,
   TriggerBackupInput,
   UpdateDestinationInput,
+  ChangePasswordInput,
+  CreateUserInput,
+  Profile,
+  Role,
+  RoleInput,
+  UpdateProfileInput,
+  UpdateUserInput,
+  User,
 } from "./types";
 
 export function useMe() {
@@ -275,4 +283,120 @@ export function useRevokeToken() {
     mutationFn: (id: string) => api.del<void>(`/v1/tokens/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tokens"] }),
   });
+}
+
+// ---- Users & roles (administration) ----
+export function useUsers() {
+  return useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<{ items: User[] }>("/v1/users"),
+  });
+}
+
+export function useRoles() {
+  return useQuery({
+    queryKey: ["roles"],
+    queryFn: () => api.get<{ items: Role[] }>("/v1/roles"),
+  });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateUserInput) => api.post<User>("/v1/users", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: UpdateUserInput & { id: string }) =>
+      api.patch<User>(`/v1/users/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/v1/users/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+
+export function useResetUserPassword() {
+  return useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.post<{ status: string }>(`/v1/users/${id}/password`, { password }),
+  });
+}
+
+// ---- Profile (self-service) ----
+export function useProfile() {
+  return useQuery({
+    queryKey: ["profile"],
+    queryFn: () => api.get<Profile>("/v1/profile"),
+  });
+}
+
+export function useUpdateProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateProfileInput) => api.patch<Profile>("/v1/profile", input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (input: ChangePasswordInput) =>
+      api.post<{ status: string }>("/v1/profile/password", input),
+  });
+}
+
+// ---- Role management ----
+export function usePermissions() {
+  return useQuery({
+    queryKey: ["permissions"],
+    queryFn: () => api.get<{ items: string[] }>("/v1/permissions"),
+  });
+}
+
+export function useCreateRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RoleInput) => api.post<Role>("/v1/roles", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
+  });
+}
+
+export function useUpdateRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: RoleInput & { id: string }) =>
+      api.patch<Role>(`/v1/roles/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
+  });
+}
+
+export function useDeleteRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/v1/roles/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
+  });
+}
+
+// ---- Permission helper ----
+// Returns a checker for the current user's permissions. While /auth/me is
+// still loading, every check returns false (UI renders read-only until the
+// permissions arrive).
+export function useCan() {
+  const { data: me } = useMe();
+  const perms = me?.permissions;
+  return (perm: string) => (perms ? perms.includes(perm) : false);
 }

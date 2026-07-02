@@ -1,6 +1,10 @@
 package httpapi
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+	"time"
+)
 
 // RouterDeps are the handlers and middleware the router wires together.
 type RouterDeps struct {
@@ -9,6 +13,7 @@ type RouterDeps struct {
 	Instances    *InstanceHandler
 	Databases    *DatabaseHandler
 	Tokens       *TokenHandler
+	Users        *UserHandler
 	Operations   *OperationHandler
 	Backups      *BackupHandler
 	Destinations *DestinationHandler
@@ -17,6 +22,8 @@ type RouterDeps struct {
 	Install      *InstallHandler
 	Authn        *Authenticator
 	CORSOrigin   string
+	// Ready reports whether dependencies (the metadata database) are healthy.
+	Ready func(ctx context.Context) error
 }
 
 // NewRouter builds the HTTP handler tree with authentication, RBAC, CORS,
@@ -27,6 +34,17 @@ func NewRouter(d RouterDeps) http.Handler {
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if d.Ready != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+			defer cancel()
+			if err := d.Ready(ctx); err != nil {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 
 	// Public: agent install script + binaries.
@@ -39,9 +57,27 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /agent/v1/jobs/claim", d.Agents.Auth(d.Agents.Claim))
 	mux.HandleFunc("POST /agent/v1/jobs/{id}/status", d.Agents.Auth(d.Agents.UpdateJob))
 
-	// Auth
-	mux.HandleFunc("POST /v1/auth/login", d.Auth.Login)
+	// Auth (login is rate limited per client IP)
+	limiter := newLoginLimiter(10, time.Minute)
+	mux.HandleFunc("POST /v1/auth/login", limiter.Middleware(d.Auth.Login))
 	mux.HandleFunc("GET /v1/auth/me", requirePerm("", d.Auth.Me))
+
+	// Self-service profile
+	mux.HandleFunc("GET /v1/profile", requirePerm("", d.Users.Profile))
+	mux.HandleFunc("PATCH /v1/profile", requirePerm("", d.Users.UpdateProfile))
+	mux.HandleFunc("POST /v1/profile/password", requirePerm("", d.Users.ChangePassword))
+
+	// User administration + role catalog
+	mux.HandleFunc("GET /v1/users", requirePerm("user:read", d.Users.List))
+	mux.HandleFunc("POST /v1/users", requirePerm("user:write", d.Users.Create))
+	mux.HandleFunc("PATCH /v1/users/{id}", requirePerm("user:write", d.Users.Update))
+	mux.HandleFunc("POST /v1/users/{id}/password", requirePerm("user:write", d.Users.ResetPassword))
+	mux.HandleFunc("DELETE /v1/users/{id}", requirePerm("user:write", d.Users.Delete))
+	mux.HandleFunc("GET /v1/roles", requirePerm("user:read", d.Users.ListRoles))
+	mux.HandleFunc("POST /v1/roles", requirePerm("user:write", d.Users.CreateRole))
+	mux.HandleFunc("PATCH /v1/roles/{id}", requirePerm("user:write", d.Users.UpdateRole))
+	mux.HandleFunc("DELETE /v1/roles/{id}", requirePerm("user:write", d.Users.DeleteRole))
+	mux.HandleFunc("GET /v1/permissions", requirePerm("user:read", d.Users.ListPermissions))
 
 	// Servers
 	mux.HandleFunc("POST /v1/servers", requirePerm("server:write", d.Servers.Register))
@@ -91,6 +127,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/tokens", requirePerm("token:read", d.Tokens.List))
 	mux.HandleFunc("DELETE /v1/tokens/{id}", requirePerm("token:write", d.Tokens.Revoke))
 
-	// Middleware order (outermost first): logging -> recover -> CORS -> auth -> mux.
-	return requestLogger(recoverer(cors(d.CORSOrigin, d.Authn.Middleware(mux))))
+	// Middleware order (outermost first):
+	// logging -> recover -> security headers -> CORS -> auth -> mux.
+	return requestLogger(recoverer(securityHeaders(cors(d.CORSOrigin, d.Authn.Middleware(mux)))))
 }

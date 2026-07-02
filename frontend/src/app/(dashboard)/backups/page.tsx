@@ -7,6 +7,7 @@ import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/com
 import { ApiError } from "@/lib/api";
 import {
   useBackups,
+  useCan,
   useDatabases,
   useDestinations,
   useInstances,
@@ -33,6 +34,8 @@ export default function BackupsPage() {
   const { data: destinations } = useDestinations();
   const [createOpen, setCreateOpen] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
+  const can = useCan();
+  const canWrite = can("backup:write");
 
   const dbName = useMemo(() => {
     const m = new Map<string, string>();
@@ -53,9 +56,11 @@ export default function BackupsPage() {
           <h1 className="text-xl font-semibold">Backups</h1>
           <p className="muted text-sm">Database dumps stored in S3 / Cloudflare R2.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-          <Plus size={16} /> New backup
-        </button>
+        {canWrite ? (
+          <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+            <Plus size={16} /> New backup
+          </button>
+        ) : null}
       </div>
 
       {isLoading ? (
@@ -77,7 +82,7 @@ export default function BackupsPage() {
                 <th>Status</th>
                 <th>Size</th>
                 <th>Created</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
+                {canWrite ? <th style={{ textAlign: "right" }}>Actions</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -95,13 +100,15 @@ export default function BackupsPage() {
                   </td>
                   <td className="muted">{formatBytes(b.size_bytes)}</td>
                   <td className="muted">{new Date(b.created_at).toLocaleString()}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {b.status === "completed" ? (
-                      <button className="btn btn-sm" onClick={() => setRestoreTarget(b)}>
-                        <Upload size={15} /> Restore / Move
-                      </button>
-                    ) : null}
-                  </td>
+                  {canWrite ? (
+                    <td style={{ textAlign: "right" }}>
+                      {b.status === "completed" ? (
+                        <button className="btn btn-sm" onClick={() => setRestoreTarget(b)}>
+                          <Upload size={15} /> Restore / Move
+                        </button>
+                      ) : null}
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

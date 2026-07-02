@@ -6,6 +6,7 @@ import { Archive, Lock, Plus, Search, Trash2, Unlock } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  useCan,
   useCreateDatabase,
   useDatabases,
   useDeleteDatabase,
@@ -23,6 +24,10 @@ export default function DatabasesPage() {
   const { data: instances } = useInstances();
   const [open, setOpen] = useState(false);
   const [backupTarget, setBackupTarget] = useState<Database | null>(null);
+  const can = useCan();
+  const canWrite = can("database:write");
+  const canBackup = can("backup:write");
+  const showActions = canWrite || canBackup;
 
   const lock = useLockDatabase();
   const unlock = useUnlockDatabase();
@@ -41,9 +46,11 @@ export default function DatabasesPage() {
           <h1 className="text-xl font-semibold">Databases</h1>
           <p className="muted text-sm">Logical databases across your instances.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setOpen(true)}>
-          <Plus size={16} /> Create database
-        </button>
+        {canWrite ? (
+          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+            <Plus size={16} /> Create database
+          </button>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", maxWidth: "22rem" }}>
@@ -76,7 +83,7 @@ export default function DatabasesPage() {
                 <th>Instance</th>
                 <th>Charset</th>
                 <th>Status</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
+                {showActions ? <th style={{ textAlign: "right" }}>Actions</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -86,34 +93,42 @@ export default function DatabasesPage() {
                   <td className="muted">{instanceName.get(d.instance_id) ?? d.instance_id.slice(0, 8)}</td>
                   <td className="muted">{d.charset}</td>
                   <td><StatusBadge status={d.status} /></td>
-                  <td style={{ textAlign: "right" }}>
-                    <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-                      <button className="btn btn-sm" onClick={() => setBackupTarget(d)} title="Back up to S3/R2">
-                        <Archive size={15} /> Backup
-                      </button>
-                      {d.status === "locked" ? (
-                        <button className="btn btn-sm" onClick={() => unlock.mutate(d.id)} disabled={unlock.isPending}>
-                          <Unlock size={15} /> Unlock
-                        </button>
-                      ) : (
-                        <button className="btn btn-sm" onClick={() => lock.mutate(d.id)} disabled={lock.isPending}>
-                          <Lock size={15} /> Lock
-                        </button>
-                      )}
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={() => {
-                          if (confirm(`Delete database "${d.name}"? It enters a 7-day recovery window.`)) {
-                            del.mutate(d.id);
-                          }
-                        }}
-                        disabled={del.isPending}
-                        aria-label="Delete"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
+                  {showActions ? (
+                    <td style={{ textAlign: "right" }}>
+                      <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
+                        {canBackup ? (
+                          <button className="btn btn-sm" onClick={() => setBackupTarget(d)} title="Back up to S3/R2">
+                            <Archive size={15} /> Backup
+                          </button>
+                        ) : null}
+                        {canWrite ? (
+                          <>
+                            {d.status === "locked" ? (
+                              <button className="btn btn-sm" onClick={() => unlock.mutate(d.id)} disabled={unlock.isPending}>
+                                <Unlock size={15} /> Unlock
+                              </button>
+                            ) : (
+                              <button className="btn btn-sm" onClick={() => lock.mutate(d.id)} disabled={lock.isPending}>
+                                <Lock size={15} /> Lock
+                              </button>
+                            )}
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => {
+                                if (confirm(`Delete database "${d.name}"? It enters a 7-day recovery window.`)) {
+                                  del.mutate(d.id);
+                                }
+                              }}
+                              disabled={del.isPending}
+                              aria-label="Delete"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

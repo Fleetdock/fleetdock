@@ -77,6 +77,9 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (Log
 	if !auth.CheckPassword(creds.Hash, password) {
 		return LoginResult{}, apperr.Unauthorized("invalid email or password")
 	}
+	if creds.User.Status != "active" {
+		return LoginResult{}, apperr.Unauthorized("account is suspended")
+	}
 	tok, err := s.jwt.Issue(creds.User.ID.String())
 	if err != nil {
 		return LoginResult{}, apperr.Internal(err)
@@ -115,6 +118,9 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 	u, err := s.users.GetByID(ctx, userID)
 	if err != nil {
 		return nil, apperr.Unauthorized("account no longer exists")
+	}
+	if u.Status != "active" {
+		return nil, apperr.Unauthorized("account is suspended")
 	}
 	granted, err := s.users.PermissionsFor(ctx, userID)
 	if err != nil {
