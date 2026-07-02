@@ -17,6 +17,8 @@ services:
       MDCP_ADMIN_EMAIL: ${MDCP_ADMIN_EMAIL:-admin@example.com}
       MDCP_ADMIN_PASSWORD: ${MDCP_ADMIN_PASSWORD:-admin12345}
       MDCP_CORS_ORIGIN: ${MDCP_CORS_ORIGIN:-http://localhost:3000}
+      MDCP_ENCRYPTION_KEY: ${MDCP_ENCRYPTION_KEY:-change-me-in-production}
+      MDCP_PUBLIC_URL: ${MDCP_PUBLIC_URL:-http://localhost:8080}
     ports:
       - "8080:8080"
 

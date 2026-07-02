@@ -29,7 +29,9 @@ func NewAuthenticator(svc *authapp.Service) *Authenticator {
 // Middleware authenticates the request and injects the principal into context.
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if a.public[r.URL.Path] {
+		// /agent/ and /install.sh are excluded: the agent protocol carries
+		// its own bearer-token authentication.
+		if a.public[r.URL.Path] || r.URL.Path == "/install.sh" || strings.HasPrefix(r.URL.Path, "/agent/") {
 			next.ServeHTTP(w, r)
 			return
 		}

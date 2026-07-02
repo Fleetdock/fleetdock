@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { PlusIcon } from "@/components/icons";
+import { Plus } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useCreateInstance, useInstances, useServer } from "@/lib/hooks";
@@ -32,7 +32,7 @@ export default function ServerDetailPage() {
           <StatusBadge status={server.status} />
         </div>
         <button className="btn btn-primary" onClick={() => setOpen(true)}>
-          <PlusIcon size={16} /> Add instance
+          <Plus size={16} /> Add instance
         </button>
       </div>
 
@@ -94,6 +94,8 @@ function AddInstanceModal({ open, onClose, serverId }: { open: boolean; onClose:
   const [name, setName] = useState("");
   const [version, setVersion] = useState("11.4");
   const [port, setPort] = useState("3306");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
@@ -101,12 +103,18 @@ function AddInstanceModal({ open, onClose, serverId }: { open: boolean; onClose:
     setError(null);
     try {
       await create.mutateAsync({
+        kind: "managed",
         server_id: serverId,
         name,
-        mariadb_version: version,
+        engine: "mariadb",
+        engine_version: version,
         port: Number(port),
+        username: username || undefined,
+        password: password || undefined,
       });
       setName("");
+      setUsername("");
+      setPassword("");
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to add instance");
@@ -125,6 +133,17 @@ function AddInstanceModal({ open, onClose, serverId }: { open: boolean; onClose:
         <Field label="Port">
           <input className="input" type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
         </Field>
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+          <Field label="Admin username (optional)">
+            <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="root" autoComplete="off" />
+          </Field>
+          <Field label="Admin password">
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          </Field>
+        </div>
+        <p className="muted text-sm">
+          Credentials enable provisioning, imports, backups and restores via the agent.
+        </p>
         <ErrorText message={error ?? undefined} />
         <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
           <button type="button" className="btn" onClick={onClose}>Cancel</button>

@@ -30,7 +30,8 @@ func NewInstanceRepository(pool *pgxpool.Pool) *InstanceRepository {
 var _ instancedom.Repository = (*InstanceRepository)(nil)
 
 const instanceColumns = `
-	id, server_id, name, container_id, mariadb_version, port, status,
+	id, server_id, name, engine, kind, host, username, root_secret_ref,
+	container_id, mariadb_version, port, status,
 	labels, tags, created_at, updated_at, version, deleted_at`
 
 func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instance) error {
@@ -39,11 +40,12 @@ func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instanc
 		return apperr.Internal(fmt.Errorf("marshal labels: %w", err))
 	}
 	const q = `
-		INSERT INTO instances (id, server_id, name, mariadb_version, port, status, labels, tags)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+		INSERT INTO instances (id, server_id, name, engine, kind, host, username, mariadb_version, port, status, labels, tags)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
 		RETURNING created_at, updated_at, version`
 	err = r.pool.QueryRow(ctx, q,
-		in.ID, in.ServerID, in.Name, in.MariaDBVersion, in.Port, string(in.Status), string(labels), in.Tags,
+		in.ID, in.ServerID, in.Name, string(in.Engine), string(in.Kind), in.Host, in.Username,
+		in.EngineVersion, in.Port, string(in.Status), string(labels), in.Tags,
 	).Scan(&in.CreatedAt, &in.UpdatedAt, &in.Version)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -74,10 +76,14 @@ func (r *InstanceRepository) GetByID(ctx context.Context, id uuid.UUID) (*instan
 
 func (r *InstanceRepository) List(ctx context.Context, f instancedom.ListFilter) (instancedom.Page, error) {
 	conds := []string{"deleted_at IS NULL"}
-	args := make([]any, 0, 3)
+	args := make([]any, 0, 4)
 	if f.ServerID != nil {
 		args = append(args, *f.ServerID)
 		conds = append(conds, fmt.Sprintf("server_id = $%d", len(args)))
+	}
+	if f.Kind != nil {
+		args = append(args, string(*f.Kind))
+		conds = append(conds, fmt.Sprintf("kind = $%d", len(args)))
 	}
 	args = append(args, f.Limit)
 	limitPos := len(args)
@@ -114,43 +120,74 @@ func (r *InstanceRepository) List(ctx context.Context, f instancedom.ListFilter)
 	return instancedom.Page{Items: items, Total: total}, nil
 }
 
+func (r *InstanceRepository) SetRootSecretRef(ctx context.Context, id uuid.UUID, ref string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE instances SET root_secret_ref = $2, version = version + 1 WHERE id = $1 AND deleted_at IS NULL`, id, ref)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("set root secret ref: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("instance not found")
+	}
+	return nil
+}
+
+func (r *InstanceRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE instances SET deleted_at = now(), status = 'deleting', version = version + 1
+		 WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("soft delete instance: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("instance not found")
+	}
+	return nil
+}
+
 func scanInstance(row rowScanner) (*instancedom.Instance, error) {
 	var (
-		in        instancedom.Instance
-		labelsRaw []byte
-		status    string
+		in           instancedom.Instance
+		labelsRaw    []byte
+		status       string
+		engine, kind string
 	)
 	if err := row.Scan(
-		&in.ID, &in.ServerID, &in.Name, &in.ContainerID, &in.MariaDBVersion, &in.Port, &status,
+		&in.ID, &in.ServerID, &in.Name, &engine, &kind, &in.Host, &in.Username, &in.RootSecretRef,
+		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
 		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt,
 	); err != nil {
 		return nil, err
 	}
-	return finishInstance(&in, labelsRaw, status)
+	return finishInstance(&in, labelsRaw, status, engine, kind)
 }
 
 func scanInstanceWithTotal(row rowScanner) (*instancedom.Instance, int, error) {
 	var (
-		in        instancedom.Instance
-		labelsRaw []byte
-		status    string
-		total     int
+		in           instancedom.Instance
+		labelsRaw    []byte
+		status       string
+		engine, kind string
+		total        int
 	)
 	if err := row.Scan(
-		&in.ID, &in.ServerID, &in.Name, &in.ContainerID, &in.MariaDBVersion, &in.Port, &status,
+		&in.ID, &in.ServerID, &in.Name, &engine, &kind, &in.Host, &in.Username, &in.RootSecretRef,
+		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
 		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &total,
 	); err != nil {
 		return nil, 0, err
 	}
-	out, err := finishInstance(&in, labelsRaw, status)
+	out, err := finishInstance(&in, labelsRaw, status, engine, kind)
 	if err != nil {
 		return nil, 0, err
 	}
 	return out, total, nil
 }
 
-func finishInstance(in *instancedom.Instance, labelsRaw []byte, status string) (*instancedom.Instance, error) {
+func finishInstance(in *instancedom.Instance, labelsRaw []byte, status, engine, kind string) (*instancedom.Instance, error) {
 	in.Status = instancedom.Status(status)
+	in.Engine = instancedom.Engine(engine)
+	in.Kind = instancedom.Kind(kind)
 	if len(labelsRaw) > 0 {
 		if err := json.Unmarshal(labelsRaw, &in.Labels); err != nil {
 			return nil, err

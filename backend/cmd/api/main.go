@@ -15,15 +15,22 @@ import (
 	"syscall"
 	"time"
 
+	agentapp "github.com/mariadb-cp/db-manager/backend/internal/app/agent"
 	authapp "github.com/mariadb-cp/db-manager/backend/internal/app/auth"
+	backupapp "github.com/mariadb-cp/db-manager/backend/internal/app/backup"
 	databaseapp "github.com/mariadb-cp/db-manager/backend/internal/app/database"
+	destinationapp "github.com/mariadb-cp/db-manager/backend/internal/app/destination"
 	instanceapp "github.com/mariadb-cp/db-manager/backend/internal/app/instance"
+	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
+	secretsapp "github.com/mariadb-cp/db-manager/backend/internal/app/secrets"
 	serverapp "github.com/mariadb-cp/db-manager/backend/internal/app/server"
 	tokenapp "github.com/mariadb-cp/db-manager/backend/internal/app/token"
 	"github.com/mariadb-cp/db-manager/backend/internal/config"
 	"github.com/mariadb-cp/db-manager/backend/internal/infra/postgres"
 	"github.com/mariadb-cp/db-manager/backend/internal/interfaces/httpapi"
 	"github.com/mariadb-cp/db-manager/backend/internal/platform/auth"
+	"github.com/mariadb-cp/db-manager/backend/internal/platform/crypto"
+	"github.com/mariadb-cp/db-manager/backend/internal/worker"
 )
 
 func main() {
@@ -42,6 +49,9 @@ func run() error {
 	}
 	if cfg.JWTSecret == "dev-insecure-change-me" {
 		slog.Warn("using insecure default MDCP_JWT_SECRET; set a strong secret in production")
+	}
+	if cfg.EncryptionKey == "dev-insecure-encryption-key" {
+		slog.Warn("using insecure default MDCP_ENCRYPTION_KEY; set a strong key in production")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -66,14 +76,24 @@ func run() error {
 	serverRepo := postgres.NewServerRepository(pool)
 	instanceRepo := postgres.NewInstanceRepository(pool)
 	databaseRepo := postgres.NewDatabaseRepository(pool)
+	secretRepo := postgres.NewSecretRepository(pool)
+	jobRepo := postgres.NewJobRepository(pool)
+	regTokenRepo := postgres.NewRegTokenRepository(pool)
+	backupRepo := postgres.NewBackupRepository(pool)
+	destRepo := postgres.NewBackupDestRepository(pool)
 
 	// Use cases (application services).
 	jwt := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
 	authSvc := authapp.NewService(userRepo, tokenRepo, jwt)
 	tokenSvc := tokenapp.NewService(tokenRepo)
 	serverSvc := serverapp.NewService(serverRepo)
-	instanceSvc := instanceapp.NewService(instanceRepo)
-	databaseSvc := databaseapp.NewService(databaseRepo)
+	secretsSvc := secretsapp.NewService(secretRepo, crypto.NewEncryptor(cfg.EncryptionKey, "master-1"))
+	opsSvc := operationapp.NewService(jobRepo, instanceRepo, databaseRepo, backupRepo, destRepo, secretsSvc)
+	instanceSvc := instanceapp.NewService(instanceRepo, databaseRepo, secretsSvc, opsSvc)
+	databaseSvc := databaseapp.NewService(databaseRepo, instanceRepo, opsSvc)
+	agentSvc := agentapp.NewService(serverRepo, regTokenRepo)
+	destSvc := destinationapp.NewService(destRepo, secretsSvc)
+	backupSvc := backupapp.NewService(backupRepo, databaseRepo, instanceRepo, destRepo, opsSvc)
 
 	// One-time admin bootstrap.
 	if created, err := authSvc.EnsureAdmin(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
@@ -82,15 +102,26 @@ func run() error {
 		slog.Info("bootstrapped admin account", "email", cfg.AdminEmail)
 	}
 
+	// Background worker: control-plane operations + offline detection.
+	if cfg.WorkerEnabled {
+		go worker.New(opsSvc, agentSvc, cfg.HeartbeatTimeout).Run(ctx)
+	}
+
 	// HTTP layer.
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Auth:       httpapi.NewAuthHandler(authSvc),
-		Servers:    httpapi.NewServerHandler(serverSvc),
-		Instances:  httpapi.NewInstanceHandler(instanceSvc),
-		Databases:  httpapi.NewDatabaseHandler(databaseSvc),
-		Tokens:     httpapi.NewTokenHandler(tokenSvc),
-		Authn:      httpapi.NewAuthenticator(authSvc),
-		CORSOrigin: cfg.CORSOrigin,
+		Auth:         httpapi.NewAuthHandler(authSvc),
+		Servers:      httpapi.NewServerHandler(serverSvc),
+		Instances:    httpapi.NewInstanceHandler(instanceSvc),
+		Databases:    httpapi.NewDatabaseHandler(databaseSvc),
+		Tokens:       httpapi.NewTokenHandler(tokenSvc),
+		Operations:   httpapi.NewOperationHandler(opsSvc),
+		Backups:      httpapi.NewBackupHandler(backupSvc),
+		Destinations: httpapi.NewDestinationHandler(destSvc),
+		Agents:       httpapi.NewAgentHandler(agentSvc, opsSvc),
+		RegTokens:    httpapi.NewRegTokenHandler(agentSvc, cfg.PublicURL),
+		Install:      httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),
+		Authn:        httpapi.NewAuthenticator(authSvc),
+		CORSOrigin:   cfg.CORSOrigin,
 	})
 
 	srv := &http.Server{

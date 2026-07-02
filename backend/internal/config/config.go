@@ -28,6 +28,20 @@ type Config struct {
 
 	// CORS origin for the web frontend
 	CORSOrigin string
+
+	// EncryptionKey protects secrets at rest (instance credentials, S3 keys).
+	EncryptionKey string
+	// PublicURL is the externally reachable base URL of this API (used in
+	// the agent install command).
+	PublicURL string
+	// AgentBinDir holds cross-compiled agent binaries served to installers.
+	AgentBinDir string
+	// WorkerEnabled runs the in-process operations worker (external
+	// instances, offline detection).
+	WorkerEnabled bool
+	// HeartbeatTimeout is how long without a heartbeat before a server is
+	// marked offline.
+	HeartbeatTimeout time.Duration
 }
 
 // Load reads configuration from the environment and validates it.
@@ -46,6 +60,12 @@ func Load() (Config, error) {
 		AdminPassword: getenv("MDCP_ADMIN_PASSWORD", "admin12345"),
 
 		CORSOrigin: getenv("MDCP_CORS_ORIGIN", "http://localhost:3000"),
+
+		EncryptionKey:    getenv("MDCP_ENCRYPTION_KEY", "dev-insecure-encryption-key"),
+		PublicURL:        getenv("MDCP_PUBLIC_URL", "http://localhost:8080"),
+		AgentBinDir:      getenv("MDCP_AGENT_BIN_DIR", "/opt/db-manager/agents"),
+		WorkerEnabled:    getenvBool("MDCP_WORKER_ENABLED", true),
+		HeartbeatTimeout: getenvDuration("MDCP_HEARTBEAT_TIMEOUT", 2*time.Minute),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: MDCP_DATABASE_URL is required")

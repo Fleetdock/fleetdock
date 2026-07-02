@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	databaseapp "github.com/mariadb-cp/db-manager/backend/internal/app/database"
 	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
 )
@@ -75,6 +77,10 @@ func (h *DatabaseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	var createdBy *uuid.UUID
+	if p := principalFrom(r.Context()); p != nil {
+		createdBy = &p.UserID
+	}
 	d, err := h.svc.Create(r.Context(), databaseapp.CreateInput{
 		InstanceID: req.InstanceID,
 		Name:       req.Name,
@@ -82,7 +88,7 @@ func (h *DatabaseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Collation:  req.Collation,
 		Labels:     req.Labels,
 		Tags:       req.Tags,
-	})
+	}, createdBy)
 	if err != nil {
 		writeError(w, err)
 		return

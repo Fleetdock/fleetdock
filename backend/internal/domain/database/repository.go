@@ -31,4 +31,6 @@ type Repository interface {
 	Unlock(ctx context.Context, id uuid.UUID) (*Database, error)
 	// SoftDelete marks the database deleted and opens the recovery window.
 	SoftDelete(ctx context.Context, id uuid.UUID) error
+	// SetStatus transitions the lifecycle status (operations engine).
+	SetStatus(ctx context.Context, id uuid.UUID, status Status) error
 }

@@ -2,23 +2,27 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 
-import { LockIcon, PlusIcon, SearchIcon, TrashIcon, UnlockIcon } from "@/components/icons";
+import { Archive, Lock, Plus, Search, Trash2, Unlock } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   useCreateDatabase,
   useDatabases,
   useDeleteDatabase,
+  useDestinations,
   useInstances,
   useLockDatabase,
+  useTriggerBackup,
   useUnlockDatabase,
 } from "@/lib/hooks";
+import type { Database } from "@/lib/types";
 
 export default function DatabasesPage() {
   const [search, setSearch] = useState("");
   const { data, isLoading, error } = useDatabases({ search });
   const { data: instances } = useInstances();
   const [open, setOpen] = useState(false);
+  const [backupTarget, setBackupTarget] = useState<Database | null>(null);
 
   const lock = useLockDatabase();
   const unlock = useUnlockDatabase();
@@ -38,14 +42,14 @@ export default function DatabasesPage() {
           <p className="muted text-sm">Logical databases across your instances.</p>
         </div>
         <button className="btn btn-primary" onClick={() => setOpen(true)}>
-          <PlusIcon size={16} /> Create database
+          <Plus size={16} /> Create database
         </button>
       </div>
 
       <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", maxWidth: "22rem" }}>
         <div style={{ position: "relative", width: "100%" }}>
           <span style={{ position: "absolute", left: 10, top: 9, color: "var(--muted)" }}>
-            <SearchIcon size={16} />
+            <Search size={16} />
           </span>
           <input
             className="input"
@@ -84,13 +88,16 @@ export default function DatabasesPage() {
                   <td><StatusBadge status={d.status} /></td>
                   <td style={{ textAlign: "right" }}>
                     <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
+                      <button className="btn btn-sm" onClick={() => setBackupTarget(d)} title="Back up to S3/R2">
+                        <Archive size={15} /> Backup
+                      </button>
                       {d.status === "locked" ? (
                         <button className="btn btn-sm" onClick={() => unlock.mutate(d.id)} disabled={unlock.isPending}>
-                          <UnlockIcon size={15} /> Unlock
+                          <Unlock size={15} /> Unlock
                         </button>
                       ) : (
                         <button className="btn btn-sm" onClick={() => lock.mutate(d.id)} disabled={lock.isPending}>
-                          <LockIcon size={15} /> Lock
+                          <Lock size={15} /> Lock
                         </button>
                       )}
                       <button
@@ -103,7 +110,7 @@ export default function DatabasesPage() {
                         disabled={del.isPending}
                         aria-label="Delete"
                       >
-                        <TrashIcon size={15} />
+                        <Trash2 size={15} />
                       </button>
                     </div>
                   </td>
@@ -115,7 +122,73 @@ export default function DatabasesPage() {
       )}
 
       <CreateDatabaseModal open={open} onClose={() => setOpen(false)} instances={instances?.items ?? []} />
+      <BackupDatabaseModal database={backupTarget} onClose={() => setBackupTarget(null)} />
     </div>
+  );
+}
+
+function BackupDatabaseModal({ database, onClose }: { database: Database | null; onClose: () => void }) {
+  const trigger = useTriggerBackup();
+  const { data: destinations } = useDestinations();
+  const [destinationId, setDestinationId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await trigger.mutateAsync({ database_id: database!.id, destination_id: destinationId });
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to start backup");
+    }
+  }
+
+  function close() {
+    setDestinationId("");
+    setDone(false);
+    setError(null);
+    onClose();
+  }
+
+  if (!database) return null;
+  return (
+    <Modal open onClose={close} title={`Back up "${database.name}"`}>
+      {done ? (
+        <div>
+          <p className="text-sm">Backup started — track it on the Backups page.</p>
+          <div className="flex items-center justify-end" style={{ marginTop: ".8rem" }}>
+            <button className="btn btn-primary" onClick={close}>Done</button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={onSubmit}>
+          <Field label="Destination">
+            <select className="input" value={destinationId} onChange={(e) => setDestinationId(e.target.value)} required>
+              <option value="" disabled>Select an S3/R2 destination…</option>
+              {destinations?.items.map((d) => (
+                <option key={d.id} value={d.id}>{d.name} ({d.bucket})</option>
+              ))}
+            </select>
+          </Field>
+          {!destinations || destinations.items.length === 0 ? (
+            <p className="muted text-sm">No destinations yet — add one on the Destinations page.</p>
+          ) : null}
+          <ErrorText message={error ?? undefined} />
+          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
+            <button type="button" className="btn" onClick={close}>Cancel</button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={trigger.isPending || !destinations || destinations.items.length === 0}
+            >
+              {trigger.isPending ? "Starting…" : "Start backup"}
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 }
 

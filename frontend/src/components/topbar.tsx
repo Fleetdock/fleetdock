@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { clearToken } from "@/lib/auth";
 import { useMe } from "@/lib/hooks";
 
-import { LogOutIcon } from "./icons";
+import { LogOut } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
 export function Topbar() {
@@ -31,7 +31,7 @@ export function Topbar() {
         ) : null}
         <ThemeToggle />
         <button className="btn btn-ghost btn-sm" onClick={logout} aria-label="Log out">
-          <LogOutIcon size={16} />
+          <LogOut size={16} />
         </button>
       </div>
     </header>

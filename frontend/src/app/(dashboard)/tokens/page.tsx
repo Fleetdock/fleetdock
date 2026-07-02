@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
-import { KeyIcon, PlusIcon, TrashIcon } from "@/components/icons";
+import { Key, Plus, Trash2 } from "lucide-react";
 import { EmptyState, ErrorText, Field, Modal, Spinner } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useCreateToken, useRevokeToken, useTokens } from "@/lib/hooks";
@@ -21,7 +21,7 @@ export default function TokensPage() {
           <p className="muted text-sm">Programmatic access scoped to your permissions.</p>
         </div>
         <button className="btn btn-primary" onClick={() => setOpen(true)}>
-          <PlusIcon size={16} /> New token
+          <Plus size={16} /> New token
         </button>
       </div>
 
@@ -47,7 +47,7 @@ export default function TokensPage() {
               {data.items.map((t) => (
                 <tr key={t.id}>
                   <td className="font-medium flex items-center gap-2">
-                    <KeyIcon size={15} /> {t.name}
+                    <Key size={15} /> {t.name}
                   </td>
                   <td className="muted"><code>{t.prefix}…</code></td>
                   <td className="muted">{new Date(t.created_at).toLocaleDateString()}</td>
@@ -63,7 +63,7 @@ export default function TokensPage() {
                         }}
                         aria-label="Revoke"
                       >
-                        <TrashIcon size={15} />
+                        <Trash2 size={15} />
                       </button>
                     )}
                   </td>

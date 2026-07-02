@@ -3,12 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { DatabaseIcon, KeyIcon, ServerIcon } from "./icons";
+import { Activity, Archive, Box, Cloud, Database, Key, Server, type LucideIcon } from "lucide-react";
 
-const NAV = [
-  { href: "/servers", label: "Servers", Icon: ServerIcon },
-  { href: "/databases", label: "Databases", Icon: DatabaseIcon },
-  { href: "/tokens", label: "API Tokens", Icon: KeyIcon },
+const NAV: { href: string; label: string; Icon: LucideIcon }[] = [
+  { href: "/servers", label: "Servers", Icon: Server },
+  { href: "/instances", label: "Instances", Icon: Box },
+  { href: "/databases", label: "Databases", Icon: Database },
+  { href: "/backups", label: "Backups", Icon: Archive },
+  { href: "/destinations", label: "Destinations", Icon: Cloud },
+  { href: "/operations", label: "Operations", Icon: Activity },
+  { href: "/tokens", label: "API Tokens", Icon: Key },
 ];
 
 export function Sidebar() {

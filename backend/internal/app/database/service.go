@@ -6,7 +6,10 @@ import (
 
 	"github.com/google/uuid"
 
+	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
 	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
+	instancedom "github.com/mariadb-cp/db-manager/backend/internal/domain/instance"
+	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
 	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
 )
 
@@ -44,24 +47,55 @@ const (
 
 // Service implements database use cases.
 type Service struct {
-	repo databasedom.Repository
+	repo      databasedom.Repository
+	instances instancedom.Repository
+	ops       *operationapp.Service
 }
 
 // NewService wires the service.
-func NewService(repo databasedom.Repository) *Service { return &Service{repo: repo} }
+func NewService(repo databasedom.Repository, instances instancedom.Repository, ops *operationapp.Service) *Service {
+	return &Service{repo: repo, instances: instances, ops: ops}
+}
 
-// Create validates input and persists a new database record.
-func (s *Service) Create(ctx context.Context, in CreateInput) (*databasedom.Database, error) {
+// Create validates input and persists a new database record. When the
+// instance has admin credentials, the database is physically created through
+// an operation (agent for managed instances, control plane for external
+// ones); otherwise it is a metadata-only registration.
+func (s *Service) Create(ctx context.Context, in CreateInput, createdBy *uuid.UUID) (*databasedom.Database, error) {
 	instanceID, err := uuid.Parse(in.InstanceID)
 	if err != nil {
 		return nil, apperr.Invalid("instance_id", "instance_id must be a valid UUID")
+	}
+	inst, err := s.instances.GetByID(ctx, instanceID)
+	if err != nil {
+		return nil, err
 	}
 	db, err := databasedom.NewDatabase(instanceID, in.Name, in.Charset, in.Collation, in.Labels, in.Tags)
 	if err != nil {
 		return nil, err
 	}
+	provision := inst.HasCredentials()
+	if provision {
+		db.Status = databasedom.StatusCreating
+	}
 	if err := s.repo.Create(ctx, db); err != nil {
 		return nil, err
+	}
+	if provision {
+		serverID := inst.ServerID
+		if inst.Kind == instancedom.KindExternal {
+			serverID = nil
+		}
+		if _, err := s.ops.Create(ctx, jobdom.TypeCreateDatabase, "database", &db.ID, serverID,
+			operationapp.Params{
+				InstanceID: inst.ID.String(),
+				DatabaseID: db.ID.String(),
+				Database:   db.Name,
+				Charset:    db.Charset,
+				Collation:  db.Collation,
+			}, createdBy); err != nil {
+			return nil, err
+		}
 	}
 	return db, nil
 }
