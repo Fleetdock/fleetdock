@@ -3,9 +3,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  useClientPage,
   useCreateUser,
   useDeleteUser,
   useMe,
@@ -27,6 +28,7 @@ export default function UsersPage() {
 
   const del = useDeleteUser();
   const canWrite = me?.permissions.includes("user:write") ?? false;
+  const paged = useClientPage(data?.items);
 
   async function onDelete(u: User) {
     if (!confirm(`Delete user "${u.email}" permanently?`)) return;
@@ -78,7 +80,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((u) => (
+              {paged.items.map((u) => (
                 <tr key={u.id}>
                   <td className="font-medium">
                     {u.name}
@@ -111,6 +113,10 @@ export default function UsersPage() {
           </table>
         </div>
       )}
+
+      <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+        <Pagination page={paged.page} pageCount={paged.pageCount} onPage={paged.setPage} />
+      </div>
 
       <CreateUserModal open={createOpen} onClose={() => setCreateOpen(false)} roles={roles?.items ?? []} />
       <EditUserModal user={editTarget} onClose={() => setEditTarget(null)} roles={roles?.items ?? []} isSelf={editTarget?.id === me?.id} />

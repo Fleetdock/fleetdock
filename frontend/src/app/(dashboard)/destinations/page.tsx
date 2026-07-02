@@ -3,10 +3,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import { Pencil, Plug, Plus, Trash2 } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Spinner } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   useCan,
+  useClientPage,
   useCreateDestination,
   useDeleteDestination,
   useDestinations,
@@ -31,6 +32,7 @@ export default function DestinationsPage() {
   const test = useTestDestination();
   const can = useCan();
   const canWrite = can("destination:write");
+  const paged = useClientPage(data?.items);
 
   async function onTest(id: string, name: string) {
     setNotice(null);
@@ -81,7 +83,7 @@ export default function DestinationsPage() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((d) => (
+              {paged.items.map((d) => (
                 <tr key={d.id}>
                   <td className="font-medium">{d.name}</td>
                   <td className="muted">{PROVIDER_LABEL[d.provider] ?? d.provider}</td>
@@ -121,6 +123,10 @@ export default function DestinationsPage() {
           </table>
         </div>
       )}
+
+      <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+        <Pagination page={paged.page} pageCount={paged.pageCount} onPage={paged.setPage} />
+      </div>
 
       <DestinationModal mode="create" open={addOpen} onClose={() => setAddOpen(false)} />
       <DestinationModal

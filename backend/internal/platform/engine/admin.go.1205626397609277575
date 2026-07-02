@@ -1,0 +1,78 @@
+package engine
+
+import "context"
+
+// DBUser is a database-level account (not a control-plane user).
+type DBUser struct {
+	User string `json:"user"`
+	Host string `json:"host"`
+}
+
+// SchemaGrant is one account's privileges on one schema.
+type SchemaGrant struct {
+	User       string   `json:"user"`
+	Host       string   `json:"host"`
+	Privileges []string `json:"privileges"`
+}
+
+// TableInfo describes a table within a database.
+type TableInfo struct {
+	Name       string `json:"name"`
+	Engine     string `json:"engine"`
+	RowCount   int64  `json:"row_count"` // estimate for InnoDB
+	DataBytes  int64  `json:"data_bytes"`
+	IndexBytes int64  `json:"index_bytes"`
+	Comment    string `json:"comment"`
+}
+
+// RowsPage is a page of table data. Values are stringified; nil = SQL NULL.
+type RowsPage struct {
+	Columns []string   `json:"columns"`
+	Rows    [][]*string `json:"rows"`
+	Total   int64      `json:"total"` // estimated total rows in the table
+}
+
+// Admin is the set of live administration operations the dashboard uses
+// (database users, grants, table browsing). Implemented per engine.
+type Admin interface {
+	ListDBUsers(ctx context.Context, p ConnParams) ([]DBUser, error)
+	CreateDBUser(ctx context.Context, p ConnParams, user, host, password string) error
+	DropDBUser(ctx context.Context, p ConnParams, user, host string) error
+	// UserGrants returns the raw SHOW GRANTS statements for an account.
+	UserGrants(ctx context.Context, p ConnParams, user, host string) ([]string, error)
+	// SchemaGrants returns per-account privileges on one schema.
+	SchemaGrants(ctx context.Context, p ConnParams, database string) ([]SchemaGrant, error)
+	Grant(ctx context.Context, p ConnParams, user, host, database string, privileges []string) error
+	Revoke(ctx context.Context, p ConnParams, user, host, database string) error
+
+	ListTables(ctx context.Context, p ConnParams, database string) ([]TableInfo, error)
+	TableRows(ctx context.Context, p ConnParams, database, table string, limit, offset int) (*RowsPage, error)
+}
+
+// AdminFor returns the admin surface for the engine name.
+func AdminFor(name string) (Admin, error) {
+	c, err := For(name)
+	if err != nil {
+		return nil, err
+	}
+	a, ok := c.(Admin)
+	if !ok {
+		return nil, errNoAdmin(name)
+	}
+	return a, nil
+}
+
+type errNoAdmin string
+
+func (e errNoAdmin) Error() string {
+	return "engine: " + string(e) + " does not support live administration"
+}
+
+// GrantablePrivileges is the allowlist for schema-level grants.
+var GrantablePrivileges = []string{
+	"ALL PRIVILEGES", "SELECT", "INSERT", "UPDATE", "DELETE",
+	"CREATE", "DROP", "ALTER", "INDEX", "REFERENCES",
+	"CREATE VIEW", "SHOW VIEW", "TRIGGER", "EXECUTE",
+	"CREATE ROUTINE", "ALTER ROUTINE", "EVENT", "LOCK TABLES",
+	"CREATE TEMPORARY TABLES",
+}

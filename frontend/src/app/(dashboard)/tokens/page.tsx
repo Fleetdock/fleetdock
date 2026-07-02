@@ -3,9 +3,9 @@
 import { useState, type FormEvent } from "react";
 
 import { Key, Plus, Trash2 } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Spinner } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCan, useCreateToken, useRevokeToken, useTokens } from "@/lib/hooks";
+import { useCan, useClientPage, useCreateToken, useRevokeToken, useTokens } from "@/lib/hooks";
 
 export default function TokensPage() {
   const { data, isLoading, error } = useTokens();
@@ -14,6 +14,7 @@ export default function TokensPage() {
   const [secret, setSecret] = useState<string | null>(null);
   const can = useCan();
   const canWrite = can("token:write");
+  const paged = useClientPage(data?.items);
 
   return (
     <div>
@@ -48,7 +49,7 @@ export default function TokensPage() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((t) => (
+              {paged.items.map((t) => (
                 <tr key={t.id}>
                   <td className="font-medium flex items-center gap-2">
                     <Key size={15} /> {t.name}
@@ -77,6 +78,10 @@ export default function TokensPage() {
           </table>
         </div>
       )}
+
+      <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+        <Pagination page={paged.page} pageCount={paged.pageCount} onPage={paged.setPage} />
+      </div>
 
       <CreateTokenModal open={open} onClose={() => setOpen(false)} onCreated={setSecret} />
 

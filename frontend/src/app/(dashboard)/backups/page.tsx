@@ -3,9 +3,10 @@
 import { useMemo, useState, type FormEvent } from "react";
 
 import { Plus, Upload } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  LIST_PAGE_SIZE,
   useBackups,
   useCan,
   useDatabases,
@@ -29,7 +30,8 @@ function formatBytes(n?: number | null) {
 }
 
 export default function BackupsPage() {
-  const { data, isLoading, error } = useBackups();
+  const [page, setPage] = useState(1);
+  const { data, isLoading, error } = useBackups(undefined, page);
   const { data: databases } = useDatabases();
   const { data: destinations } = useDestinations();
   const [createOpen, setCreateOpen] = useState(false);
@@ -115,6 +117,16 @@ export default function BackupsPage() {
           </table>
         </div>
       )}
+
+      {data ? (
+        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+          <Pagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
+            onPage={setPage}
+          />
+        </div>
+      ) : null}
 
       <NewBackupModal
         open={createOpen}

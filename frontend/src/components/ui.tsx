@@ -81,6 +81,70 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
+// pageNumbers returns page buttons with ellipsis gaps: 1 … p-1 p p+1 … N.
+function pageNumbers(page: number, pageCount: number): (number | "…")[] {
+  const wanted = new Set<number>([1, 2, page - 1, page, page + 1, pageCount - 1, pageCount]);
+  const pages = [...wanted].filter((p) => p >= 1 && p <= pageCount).sort((a, b) => a - b);
+  const out: (number | "…")[] = [];
+  let prev = 0;
+  for (const p of pages) {
+    if (prev && p - prev > 1) out.push("…");
+    out.push(p);
+    prev = p;
+  }
+  return out;
+}
+
+export function Pagination({
+  page,
+  pageCount,
+  hasMore = false,
+  onPage,
+}: {
+  page: number;
+  pageCount: number;
+  // hasMore keeps "next" enabled past an estimated pageCount.
+  hasMore?: boolean;
+  onPage: (page: number) => void;
+}) {
+  if (pageCount <= 1 && !hasMore) return null;
+  return (
+    <div className="flex items-center gap-1">
+      <button className="btn btn-sm" disabled={page === 1} onClick={() => onPage(1)} aria-label="First page">
+        «
+      </button>
+      <button className="btn btn-sm" disabled={page === 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
+        ‹
+      </button>
+      {pageNumbers(page, pageCount).map((p, i) =>
+        p === "…" ? (
+          <span key={`gap-${i}`} className="muted text-sm" style={{ padding: "0 .3rem" }}>…</span>
+        ) : (
+          <button
+            key={p}
+            className={`btn btn-sm${p === page ? " btn-primary" : ""}`}
+            onClick={() => onPage(p)}
+            disabled={p === page}
+          >
+            {p}
+          </button>
+        ),
+      )}
+      <button
+        className="btn btn-sm"
+        disabled={page >= pageCount && !hasMore}
+        onClick={() => onPage(page + 1)}
+        aria-label="Next page"
+      >
+        ›
+      </button>
+      <button className="btn btn-sm" disabled={page >= pageCount} onClick={() => onPage(pageCount)} aria-label="Last page">
+        »
+      </button>
+    </div>
+  );
+}
+
 export function ErrorText({ message }: { message?: string }) {
   if (!message) return null;
   return (

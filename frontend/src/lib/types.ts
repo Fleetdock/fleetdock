@@ -265,3 +265,44 @@ export interface RoleInput {
   description?: string;
   permissions?: string[];
 }
+
+// ---- Live DB administration ----
+export interface DBUser {
+  user: string;
+  host: string;
+}
+
+export interface SchemaGrant {
+  user: string;
+  host: string;
+  privileges: string[];
+}
+
+export interface TableInfo {
+  name: string;
+  engine: string;
+  row_count: number;
+  data_bytes: number;
+  index_bytes: number;
+  comment: string;
+}
+
+export interface RowsPage {
+  columns: string[];
+  rows: (string | null)[][];
+  total: number;
+}
+
+export interface CreateDBUserInput {
+  instance_id: string;
+  username: string;
+  host: string;
+  password: string;
+}
+
+export interface GrantInput {
+  username: string;
+  host: string;
+  database?: string;
+  privileges?: string[];
+}

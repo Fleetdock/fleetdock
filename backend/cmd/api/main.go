@@ -21,6 +21,7 @@ import (
 	authapp "github.com/mariadb-cp/db-manager/backend/internal/app/auth"
 	backupapp "github.com/mariadb-cp/db-manager/backend/internal/app/backup"
 	databaseapp "github.com/mariadb-cp/db-manager/backend/internal/app/database"
+	dbadminapp "github.com/mariadb-cp/db-manager/backend/internal/app/dbadmin"
 	destinationapp "github.com/mariadb-cp/db-manager/backend/internal/app/destination"
 	instanceapp "github.com/mariadb-cp/db-manager/backend/internal/app/instance"
 	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
@@ -116,6 +117,7 @@ func run() error {
 	destSvc := destinationapp.NewService(destRepo, secretsSvc)
 	backupSvc := backupapp.NewService(backupRepo, databaseRepo, instanceRepo, destRepo, opsSvc)
 	userSvc := userapp.NewService(userRepo)
+	dbadminSvc := dbadminapp.NewService(instanceRepo, databaseRepo, serverRepo, secretsSvc)
 
 	// One-time admin bootstrap.
 	if created, err := authSvc.EnsureAdmin(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
@@ -140,6 +142,7 @@ func run() error {
 		Operations:   httpapi.NewOperationHandler(opsSvc),
 		Backups:      httpapi.NewBackupHandler(backupSvc),
 		Destinations: httpapi.NewDestinationHandler(destSvc),
+		DBAdmin:      httpapi.NewDBAdminHandler(dbadminSvc),
 		Agents:       httpapi.NewAgentHandler(agentSvc, opsSvc),
 		RegTokens:    httpapi.NewRegTokenHandler(agentSvc, cfg.PublicURL),
 		Install:      httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),

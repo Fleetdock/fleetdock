@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
 import { ChevronRight, Copy, Plus, Search, Server } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCan, useCreateAgentToken, useCreateServer, useServers } from "@/lib/hooks";
+import { LIST_PAGE_SIZE, useCan, useCreateAgentToken, useCreateServer, useServers } from "@/lib/hooks";
 
 export default function ServersPage() {
   const [search, setSearch] = useState("");
-  const { data, isLoading, error } = useServers(search);
+  const [page, setPage] = useState(1);
+  const { data, isLoading, error } = useServers(search, page);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const can = useCan();
@@ -44,7 +45,10 @@ export default function ServersPage() {
             style={{ paddingLeft: "2rem" }}
             placeholder="Search name or hostname…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
       </div>
@@ -92,6 +96,15 @@ export default function ServersPage() {
           </table>
         </div>
       )}
+      {data ? (
+        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+          <Pagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
+            onPage={setPage}
+          />
+        </div>
+      ) : null}
 
       <RegisterServerModal open={registerOpen} onClose={() => setRegisterOpen(false)} />
       <ConnectServerModal open={connectOpen} onClose={() => setConnectOpen(false)} />

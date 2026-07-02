@@ -17,6 +17,7 @@ type RouterDeps struct {
 	Operations   *OperationHandler
 	Backups      *BackupHandler
 	Destinations *DestinationHandler
+	DBAdmin      *DBAdminHandler
 	Agents       *AgentHandler
 	RegTokens    *RegTokenHandler
 	Install      *InstallHandler
@@ -104,6 +105,23 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/databases/{id}/lock", requirePerm("database:write", d.Databases.Lock))
 	mux.HandleFunc("POST /v1/databases/{id}/unlock", requirePerm("database:write", d.Databases.Unlock))
 	mux.HandleFunc("DELETE /v1/databases/{id}", requirePerm("database:write", d.Databases.Delete))
+
+	// Live DB administration: accounts + grants (instance scope)
+	mux.HandleFunc("GET /v1/instances/{id}/db-users", requirePerm("instance:read", d.DBAdmin.ListDBUsers))
+	mux.HandleFunc("POST /v1/instances/{id}/db-users", requirePerm("instance:write", d.DBAdmin.CreateDBUser))
+	mux.HandleFunc("POST /v1/instances/{id}/db-users/drop", requirePerm("instance:write", d.DBAdmin.DropDBUser))
+	mux.HandleFunc("GET /v1/instances/{id}/db-users/grants", requirePerm("instance:read", d.DBAdmin.UserGrants))
+	mux.HandleFunc("POST /v1/instances/{id}/grants", requirePerm("instance:write", d.DBAdmin.Grant))
+	mux.HandleFunc("POST /v1/instances/{id}/grants/revoke", requirePerm("instance:write", d.DBAdmin.Revoke))
+
+	// Live DB administration: database scope (grants, tables, data)
+	mux.HandleFunc("GET /v1/databases/{id}/grants", requirePerm("database:read", d.DBAdmin.SchemaGrants))
+	mux.HandleFunc("POST /v1/databases/{id}/grants", requirePerm("database:write", d.DBAdmin.GrantOnDatabase))
+	mux.HandleFunc("POST /v1/databases/{id}/grants/revoke", requirePerm("database:write", d.DBAdmin.RevokeOnDatabase))
+	mux.HandleFunc("GET /v1/databases/{id}/db-users", requirePerm("database:read", d.DBAdmin.ListDBUsersForDatabase))
+	mux.HandleFunc("GET /v1/databases/{id}/tables", requirePerm("database:read", d.DBAdmin.ListTables))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/rows", requirePerm("database:read", d.DBAdmin.TableRows))
+	mux.HandleFunc("GET /v1/db-privileges", requirePerm("instance:read", d.DBAdmin.ListPrivileges))
 
 	// Operations (jobs)
 	mux.HandleFunc("GET /v1/operations", requirePerm("operation:read", d.Operations.List))

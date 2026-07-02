@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 
-import { EmptyState, Spinner, StatusBadge } from "@/components/ui";
+import { EmptyState, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useOperations } from "@/lib/hooks";
+import { LIST_PAGE_SIZE, useOperations } from "@/lib/hooks";
 
 const TYPE_LABEL: Record<string, string> = {
   create_database: "Create database",
@@ -17,7 +17,8 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default function OperationsPage() {
   const [status, setStatus] = useState("");
-  const { data, isLoading, error } = useOperations(status ? { status } : undefined);
+  const [page, setPage] = useState(1);
+  const { data, isLoading, error } = useOperations({ status: status || undefined, page });
 
   return (
     <div>
@@ -26,7 +27,15 @@ export default function OperationsPage() {
           <h1 className="text-xl font-semibold">Operations</h1>
           <p className="muted text-sm">Async actions executed by agents and the control plane.</p>
         </div>
-        <select className="input" style={{ width: "11rem" }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select
+          className="input"
+          style={{ width: "11rem" }}
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(1);
+          }}
+        >
           <option value="">All statuses</option>
           <option value="pending">Pending</option>
           <option value="running">Running</option>
@@ -71,6 +80,16 @@ export default function OperationsPage() {
           </table>
         </div>
       )}
+
+      {data ? (
+        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+          <Pagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
+            onPage={setPage}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

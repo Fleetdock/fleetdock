@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./api";
@@ -33,6 +35,12 @@ import type {
   UpdateProfileInput,
   UpdateUserInput,
   User,
+  CreateDBUserInput,
+  DBUser,
+  GrantInput,
+  RowsPage,
+  SchemaGrant,
+  TableInfo,
 } from "./types";
 
 export function useMe() {
@@ -40,12 +48,23 @@ export function useMe() {
 }
 
 // ---- Servers ----
-export function useServers(search?: string) {
-  const qs = search ? `?search=${encodeURIComponent(search)}` : "";
+export const LIST_PAGE_SIZE = 20;
+
+function pageQS(page?: number) {
+  const p = Math.max(1, page ?? 1);
+  return `limit=${LIST_PAGE_SIZE}&offset=${(p - 1) * LIST_PAGE_SIZE}`;
+}
+
+export function useServers(search?: string, page?: number) {
+  const q = new URLSearchParams();
+  if (search) q.set("search", search);
+  // page undefined = fetch a large first page (dropdown consumers)
+  const paging = page === undefined ? "limit=100" : pageQS(page);
   return useQuery({
-    queryKey: ["servers", search ?? ""],
-    queryFn: () => api.get<Paginated<Server>>(`/v1/servers${qs}`),
+    queryKey: ["servers", search ?? "", page ?? "all"],
+    queryFn: () => api.get<Paginated<Server>>(`/v1/servers?${q.toString()}&${paging}`),
     refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -83,14 +102,17 @@ export function useCreateAgentToken() {
 }
 
 // ---- Instances ----
-export function useInstances(serverId?: string, kind?: string) {
+export function useInstances(serverId?: string, kind?: string, page?: number) {
   const q = new URLSearchParams();
   if (serverId) q.set("server_id", serverId);
   if (kind) q.set("kind", kind);
+  // page undefined = fetch a large first page (dropdown consumers)
+  const paging = page === undefined ? "limit=100" : pageQS(page);
   const qs = q.toString();
   return useQuery({
-    queryKey: ["instances", serverId ?? "all", kind ?? "all"],
-    queryFn: () => api.get<Paginated<Instance>>(`/v1/instances${qs ? `?${qs}` : ""}`),
+    queryKey: ["instances", serverId ?? "all", kind ?? "all", page ?? "all"],
+    queryFn: () => api.get<Paginated<Instance>>(`/v1/instances?${qs ? `${qs}&` : ""}${paging}`),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -130,15 +152,17 @@ export function useImportDatabases() {
 }
 
 // ---- Databases ----
-export function useDatabases(params?: { instance_id?: string; search?: string }) {
+export function useDatabases(params?: { instance_id?: string; search?: string; page?: number }) {
   const q = new URLSearchParams();
   if (params?.instance_id) q.set("instance_id", params.instance_id);
   if (params?.search) q.set("search", params.search);
+  const paging = params?.page === undefined ? "limit=100" : pageQS(params.page);
   const qs = q.toString();
   return useQuery({
-    queryKey: ["databases", qs],
-    queryFn: () => api.get<Paginated<Database>>(`/v1/databases${qs ? `?${qs}` : ""}`),
+    queryKey: ["databases", qs, params?.page ?? "all"],
+    queryFn: () => api.get<Paginated<Database>>(`/v1/databases?${qs ? `${qs}&` : ""}${paging}`),
     refetchInterval: 10_000,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -178,25 +202,26 @@ export function useDeleteDatabase() {
 }
 
 // ---- Operations ----
-export function useOperations(params?: { status?: string; resource_id?: string }) {
+export function useOperations(params?: { status?: string; resource_id?: string; page?: number }) {
   const q = new URLSearchParams();
   if (params?.status) q.set("status", params.status);
   if (params?.resource_id) q.set("resource_id", params.resource_id);
-  q.set("limit", "50");
   return useQuery({
-    queryKey: ["operations", q.toString()],
-    queryFn: () => api.get<Paginated<Operation>>(`/v1/operations?${q.toString()}`),
+    queryKey: ["operations", q.toString(), params?.page ?? 1],
+    queryFn: () => api.get<Paginated<Operation>>(`/v1/operations?${q.toString()}&${pageQS(params?.page)}`),
     refetchInterval: 4_000,
+    placeholderData: (prev) => prev,
   });
 }
 
 // ---- Backups ----
-export function useBackups(databaseId?: string) {
+export function useBackups(databaseId?: string, page?: number) {
   const qs = databaseId ? `&database_id=${databaseId}` : "";
   return useQuery({
-    queryKey: ["backups", databaseId ?? "all"],
-    queryFn: () => api.get<Paginated<Backup>>(`/v1/backups?limit=50${qs}`),
+    queryKey: ["backups", databaseId ?? "all", page ?? 1],
+    queryFn: () => api.get<Paginated<Backup>>(`/v1/backups?${pageQS(page)}${qs}`),
     refetchInterval: 5_000,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -399,4 +424,156 @@ export function useCan() {
   const { data: me } = useMe();
   const perms = me?.permissions;
   return (perm: string) => (perms ? perms.includes(perm) : false);
+}
+
+// ---- Live DB administration ----
+export function useDBUsers(instanceId: string) {
+  return useQuery({
+    queryKey: ["db-users", instanceId],
+    queryFn: () => api.get<{ items: DBUser[] }>(`/v1/instances/${instanceId}/db-users`),
+    enabled: Boolean(instanceId),
+    retry: false,
+  });
+}
+
+export function useCreateDBUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ instance_id, ...input }: CreateDBUserInput) =>
+      api.post<{ status: string }>(`/v1/instances/${instance_id}/db-users`, input),
+    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["db-users", v.instance_id] }),
+  });
+}
+
+export function useDropDBUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ instanceId, ...input }: { instanceId: string } & GrantInput) =>
+      api.post<{ status: string }>(`/v1/instances/${instanceId}/db-users/drop`, {
+        username: input.username,
+        host: input.host,
+      }),
+    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["db-users", v.instanceId] }),
+  });
+}
+
+export function useUserGrants(instanceId: string, username: string, host: string) {
+  const q = new URLSearchParams({ username, host });
+  return useQuery({
+    queryKey: ["user-grants", instanceId, username, host],
+    queryFn: () =>
+      api.get<{ items: string[] }>(`/v1/instances/${instanceId}/db-users/grants?${q.toString()}`),
+    enabled: Boolean(instanceId && username),
+    retry: false,
+  });
+}
+
+export function useGrantOnInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ instanceId, ...input }: { instanceId: string } & GrantInput) =>
+      api.post<{ status: string }>(`/v1/instances/${instanceId}/grants`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user-grants"] });
+      qc.invalidateQueries({ queryKey: ["schema-grants"] });
+    },
+  });
+}
+
+export function useDBPrivileges() {
+  return useQuery({
+    queryKey: ["db-privileges"],
+    queryFn: () => api.get<{ items: string[] }>("/v1/db-privileges"),
+    staleTime: Infinity,
+  });
+}
+
+export function useSchemaGrants(databaseId: string) {
+  return useQuery({
+    queryKey: ["schema-grants", databaseId],
+    queryFn: () => api.get<{ items: SchemaGrant[] }>(`/v1/databases/${databaseId}/grants`),
+    enabled: Boolean(databaseId),
+    retry: false,
+  });
+}
+
+export function useGrantOnDatabase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ databaseId, ...input }: { databaseId: string } & GrantInput) =>
+      api.post<{ status: string }>(`/v1/databases/${databaseId}/grants`, input),
+    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["schema-grants", v.databaseId] }),
+  });
+}
+
+export function useRevokeOnDatabase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ databaseId, ...input }: { databaseId: string } & GrantInput) =>
+      api.post<{ status: string }>(`/v1/databases/${databaseId}/grants/revoke`, {
+        username: input.username,
+        host: input.host,
+      }),
+    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["schema-grants", v.databaseId] }),
+  });
+}
+
+export function useDatabaseDBUsers(databaseId: string) {
+  return useQuery({
+    queryKey: ["database-db-users", databaseId],
+    queryFn: () => api.get<{ items: DBUser[] }>(`/v1/databases/${databaseId}/db-users`),
+    enabled: Boolean(databaseId),
+    retry: false,
+  });
+}
+
+export function useTables(databaseId: string) {
+  return useQuery({
+    queryKey: ["tables", databaseId],
+    queryFn: () => api.get<{ items: TableInfo[] }>(`/v1/databases/${databaseId}/tables`),
+    enabled: Boolean(databaseId),
+    retry: false,
+  });
+}
+
+export function useTableRows(databaseId: string, table: string, limit: number, offset: number) {
+  return useQuery({
+    queryKey: ["table-rows", databaseId, table, limit, offset],
+    queryFn: () =>
+      api.get<RowsPage>(`/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/rows?limit=${limit}&offset=${offset}`),
+    enabled: Boolean(databaseId && table),
+    retry: false,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useDatabase(id: string) {
+  return useQuery({
+    queryKey: ["database", id],
+    queryFn: () => api.get<Database>(`/v1/databases/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useInstance(id: string) {
+  return useQuery({
+    queryKey: ["instance", id],
+    queryFn: () => api.get<Instance>(`/v1/instances/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+// ---- Client-side pagination helper (for endpoints returning full lists) ----
+export function useClientPage<T>(items: T[] | undefined, pageSize = LIST_PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const all = items ?? [];
+  const pageCount = Math.max(1, Math.ceil(all.length / pageSize));
+  const current = Math.min(page, pageCount);
+  return {
+    page: current,
+    setPage,
+    pageCount,
+    items: all.slice((current - 1) * pageSize, current * pageSize),
+    total: all.length,
+  };
 }

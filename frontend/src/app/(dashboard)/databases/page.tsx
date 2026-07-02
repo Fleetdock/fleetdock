@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 
 import { Archive, Lock, Plus, Search, Trash2, Unlock } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  LIST_PAGE_SIZE,
   useCan,
   useCreateDatabase,
   useDatabases,
@@ -20,7 +22,8 @@ import type { Database } from "@/lib/types";
 
 export default function DatabasesPage() {
   const [search, setSearch] = useState("");
-  const { data, isLoading, error } = useDatabases({ search });
+  const [page, setPage] = useState(1);
+  const { data, isLoading, error } = useDatabases({ search, page });
   const { data: instances } = useInstances();
   const [open, setOpen] = useState(false);
   const [backupTarget, setBackupTarget] = useState<Database | null>(null);
@@ -63,7 +66,10 @@ export default function DatabasesPage() {
             style={{ paddingLeft: "2rem" }}
             placeholder="Search databases…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
       </div>
@@ -89,7 +95,9 @@ export default function DatabasesPage() {
             <tbody>
               {data.items.map((d) => (
                 <tr key={d.id}>
-                  <td className="font-medium">{d.name}</td>
+                  <td className="font-medium">
+                    <Link href={`/databases/${d.id}`} style={{ textDecoration: "underline" }}>{d.name}</Link>
+                  </td>
                   <td className="muted">{instanceName.get(d.instance_id) ?? d.instance_id.slice(0, 8)}</td>
                   <td className="muted">{d.charset}</td>
                   <td><StatusBadge status={d.status} /></td>
@@ -135,6 +143,16 @@ export default function DatabasesPage() {
           </table>
         </div>
       )}
+
+      {data ? (
+        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+          <Pagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
+            onPage={setPage}
+          />
+        </div>
+      ) : null}
 
       <CreateDatabaseModal open={open} onClose={() => setOpen(false)} instances={instances?.items ?? []} />
       <BackupDatabaseModal database={backupTarget} onClose={() => setBackupTarget(null)} />

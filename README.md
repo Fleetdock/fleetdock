@@ -113,6 +113,13 @@ Backend (Go):
 - **Profile** — self-service name/email update and password change (requires
   the current password). Suspended accounts cannot log in and existing
   sessions/tokens stop working immediately.
+- **Live DB administration** — database accounts and grants managed straight
+  from the dashboard: list/create/drop MariaDB users, view SHOW GRANTS,
+  grant/revoke schema privileges (allowlisted catalog at
+  `GET /v1/db-privileges`); plus table listing and a paginated data browser
+  per database. Executed synchronously by the control plane: external
+  instances are reached at their host, managed instances at their server's
+  address — the DB port must be reachable from the control plane.
 - **Hardening** — login rate limiting (per client IP), security headers,
   `/healthz` + `/readyz` (DB ping) probes, and `MDCP_ENV=production` mode
   that refuses to boot with insecure default secrets.
@@ -124,7 +131,10 @@ move), destinations (S3/R2 CRUD + test), operations log with live refresh,
 users administration (create/edit/suspend/delete, roles, password reset),
 a roles page (view every role's permissions, create/edit/delete custom roles
 with a grouped permission picker), and a profile page (edit name/email,
-change password) linked from the topbar.
+change password) linked from the topbar. Detail pages: instances (info,
+databases, live DB users with expandable grants, create/drop/grant) and
+databases (info, tables with a paginated row browser, per-database users &
+grants with grant/revoke).
 
 ## Local development (without Docker)
 

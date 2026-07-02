@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 
 import { Download, Plug, Plus, Trash2 } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  LIST_PAGE_SIZE,
   useCan,
   useCreateInstance,
   useDeleteInstance,
@@ -17,7 +19,8 @@ import {
 import type { Instance } from "@/lib/types";
 
 export default function InstancesPage() {
-  const { data, isLoading, error } = useInstances();
+  const [page, setPage] = useState(1);
+  const { data, isLoading, error } = useInstances(undefined, undefined, page);
   const { data: servers } = useServers();
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -112,7 +115,9 @@ export default function InstancesPage() {
             <tbody>
               {data.items.map((i) => (
                 <tr key={i.id}>
-                  <td className="font-medium">{i.name}</td>
+                  <td className="font-medium">
+                    <Link href={`/instances/${i.id}`} style={{ textDecoration: "underline" }}>{i.name}</Link>
+                  </td>
                   <td>
                     <span className={`badge ${i.kind === "external" ? "badge-amber" : "badge-gray"}`}>
                       {i.kind}
@@ -162,6 +167,16 @@ export default function InstancesPage() {
           </table>
         </div>
       )}
+
+      {data ? (
+        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+          <Pagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
+            onPage={setPage}
+          />
+        </div>
+      ) : null}
 
       <AddInstanceModal open={open} onClose={() => setOpen(false)} servers={servers?.items ?? []} />
     </div>
