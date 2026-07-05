@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { Pencil, Plug, Plus, Trash2 } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner } from "@/components/ui";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { ErrorText, Field, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   useCan,
-  useClientPage,
   useCreateDestination,
   useDeleteDestination,
   useDestinations,
   useTestDestination,
   useUpdateDestination,
 } from "@/lib/hooks";
+import { useDataTable } from "@/lib/use-data-table";
 import type { Destination } from "@/lib/types";
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -32,7 +33,61 @@ export default function DestinationsPage() {
   const test = useTestDestination();
   const can = useCan();
   const canWrite = can("destination:write");
-  const paged = useClientPage(data?.items);
+  const [search, setSearch] = useState("");
+  const table = useDataTable({
+    items: data?.items,
+    search: {
+      query: search,
+      match: (d, q) =>
+        d.name.toLowerCase().includes(q) ||
+        d.bucket.toLowerCase().includes(q) ||
+        (d.endpoint ?? "").toLowerCase().includes(q),
+    },
+    sort: {
+      key: "name",
+      dir: "asc",
+      compare: (a, b, key) => String(a[key as keyof Destination] ?? "").localeCompare(String(b[key as keyof Destination] ?? "")),
+    },
+  });
+
+  const columns = useMemo(() => {
+    const cols: DataTableColumn<Destination>[] = [
+      { id: "name", header: "Name", sortable: true, sortKey: "name", className: "font-medium", render: (d) => d.name },
+      { id: "provider", header: "Provider", className: "muted", render: (d) => PROVIDER_LABEL[d.provider] ?? d.provider },
+      { id: "bucket", header: "Bucket", className: "muted", render: (d) => `${d.bucket}${d.prefix ? `/${d.prefix}` : ""}` },
+      { id: "endpoint", header: "Endpoint", className: "muted", render: (d) => d.endpoint || "AWS default" },
+    ];
+    if (canWrite) {
+      cols.push({
+        id: "actions",
+        header: "Actions",
+        align: "right",
+        render: (d) => (
+          <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
+            <button className="btn btn-sm" onClick={() => onTest(d.id, d.name)} disabled={test.isPending}>
+              <Plug size={15} /> Test
+            </button>
+            <button className="btn btn-sm" onClick={() => setEditTarget(d)} aria-label={`Edit ${d.name}`}>
+              <Pencil size={15} />
+            </button>
+            <button
+              className="btn btn-sm btn-danger"
+              onClick={() => {
+                if (confirm(`Delete destination "${d.name}"? Existing backups keep their records.`)) {
+                  del.mutate(d.id);
+                }
+              }}
+              disabled={del.isPending}
+              aria-label="Delete"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ),
+      });
+    }
+    return cols;
+  }, [canWrite, del.isPending, test.isPending]);
 
   async function onTest(id: string, name: string) {
     setNotice(null);
@@ -64,69 +119,27 @@ export default function DestinationsPage() {
         </div>
       ) : null}
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>
-      ) : error ? (
-        <EmptyState title="Could not load destinations" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState title="No destinations yet" hint="Add an S3 or Cloudflare R2 bucket to enable backups." />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Provider</th>
-                <th>Bucket</th>
-                <th>Endpoint</th>
-                {canWrite ? <th style={{ textAlign: "right" }}>Actions</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {paged.items.map((d) => (
-                <tr key={d.id}>
-                  <td className="font-medium">{d.name}</td>
-                  <td className="muted">{PROVIDER_LABEL[d.provider] ?? d.provider}</td>
-                  <td className="muted">{d.bucket}{d.prefix ? `/${d.prefix}` : ""}</td>
-                  <td className="muted">{d.endpoint || "AWS default"}</td>
-                  {canWrite ? (
-                    <td style={{ textAlign: "right" }}>
-                      <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-                        <button className="btn btn-sm" onClick={() => onTest(d.id, d.name)} disabled={test.isPending}>
-                          <Plug size={15} /> Test
-                        </button>
-                        <button
-                          className="btn btn-sm"
-                          onClick={() => setEditTarget(d)}
-                          aria-label={`Edit ${d.name}`}
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          className="btn btn-sm btn-danger"
-                          onClick={() => {
-                            if (confirm(`Delete destination "${d.name}"? Existing backups keep their records.`)) {
-                              del.mutate(d.id);
-                            }
-                          }}
-                          disabled={del.isPending}
-                          aria-label="Delete"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-        <Pagination page={paged.page} pageCount={paged.pageCount} onPage={paged.setPage} />
-      </div>
+      <DataTable<Destination>
+        columns={columns}
+        rows={table.rows}
+        rowKey={(d) => d.id}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        errorTitle="Could not load destinations"
+        emptyTitle="No destinations yet"
+        emptyHint="Add an S3 or Cloudflare R2 bucket to enable backups."
+        emptySearchTitle="No destinations match your search"
+        search={{
+          value: search,
+          onChange: (v) => {
+            setSearch(v);
+            table.setPage(1);
+          },
+          placeholder: "Search destinations…",
+        }}
+        sort={{ key: table.sortKey, dir: table.sortDir, onSort: table.setSort }}
+        pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
+      />
 
       <DestinationModal mode="create" open={addOpen} onClose={() => setAddOpen(false)} />
       <DestinationModal

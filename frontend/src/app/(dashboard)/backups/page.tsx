@@ -3,7 +3,8 @@
 import { useMemo, useState, type FormEvent } from "react";
 
 import { Plus, Upload } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   LIST_PAGE_SIZE,
@@ -51,6 +52,53 @@ export default function BackupsPage() {
     return m;
   }, [destinations]);
 
+  const columns = useMemo((): DataTableColumn<Backup>[] => {
+    const cols: DataTableColumn<Backup>[] = [
+      {
+        id: "database",
+        header: "Database",
+        className: "font-medium",
+        render: (b) => dbName.get(b.database_id) ?? b.database_id.slice(0, 8),
+      },
+      {
+        id: "destination",
+        header: "Destination",
+        className: "muted",
+        render: (b) => (b.destination_id ? destName.get(b.destination_id) ?? "—" : "—"),
+      },
+      {
+        id: "status",
+        header: "Status",
+        render: (b) => (
+          <>
+            <StatusBadge status={b.status} />
+            {b.error ? (
+              <div className="muted text-sm" style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={b.error}>
+                {b.error}
+              </div>
+            ) : null}
+          </>
+        ),
+      },
+      { id: "size", header: "Size", className: "muted", render: (b) => formatBytes(b.size_bytes) },
+      { id: "created", header: "Created", className: "muted", render: (b) => new Date(b.created_at).toLocaleString() },
+    ];
+    if (canWrite) {
+      cols.push({
+        id: "actions",
+        header: "Actions",
+        align: "right",
+        render: (b) =>
+          b.status === "completed" ? (
+            <button className="btn btn-sm" onClick={() => setRestoreTarget(b)}>
+              <Upload size={15} /> Restore / Move
+            </button>
+          ) : null,
+      });
+    }
+    return cols;
+  }, [canWrite, dbName, destName]);
+
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: "1.1rem" }}>
@@ -65,68 +113,21 @@ export default function BackupsPage() {
         ) : null}
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>
-      ) : error ? (
-        <EmptyState title="Could not load backups" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState
-          title="No backups yet"
-          hint="Add a backup destination, then trigger your first backup."
-        />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Database</th>
-                <th>Destination</th>
-                <th>Status</th>
-                <th>Size</th>
-                <th>Created</th>
-                {canWrite ? <th style={{ textAlign: "right" }}>Actions</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((b) => (
-                <tr key={b.id}>
-                  <td className="font-medium">{dbName.get(b.database_id) ?? b.database_id.slice(0, 8)}</td>
-                  <td className="muted">{b.destination_id ? destName.get(b.destination_id) ?? "—" : "—"}</td>
-                  <td>
-                    <StatusBadge status={b.status} />
-                    {b.error ? (
-                      <div className="muted text-sm" style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={b.error}>
-                        {b.error}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="muted">{formatBytes(b.size_bytes)}</td>
-                  <td className="muted">{new Date(b.created_at).toLocaleString()}</td>
-                  {canWrite ? (
-                    <td style={{ textAlign: "right" }}>
-                      {b.status === "completed" ? (
-                        <button className="btn btn-sm" onClick={() => setRestoreTarget(b)}>
-                          <Upload size={15} /> Restore / Move
-                        </button>
-                      ) : null}
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {data ? (
-        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-          <Pagination
-            page={page}
-            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
-            onPage={setPage}
-          />
-        </div>
-      ) : null}
+      <DataTable<Backup>
+        columns={columns}
+        rows={data?.items ?? []}
+        rowKey={(b) => b.id}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        errorTitle="Could not load backups"
+        emptyTitle="No backups yet"
+        emptyHint="Add a backup destination, then trigger your first backup."
+        pagination={{
+          page,
+          pageCount: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / LIST_PAGE_SIZE)),
+          onPage: setPage,
+        }}
+      />
 
       <NewBackupModal
         open={createOpen}

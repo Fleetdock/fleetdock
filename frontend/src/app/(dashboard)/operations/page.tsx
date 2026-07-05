@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 
-import { EmptyState, Pagination, Spinner, StatusBadge } from "@/components/ui";
+import { DataTable } from "@/components/data-table";
+import { StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { LIST_PAGE_SIZE, useOperations } from "@/lib/hooks";
+import type { Operation } from "@/lib/types";
 
 const TYPE_LABEL: Record<string, string> = {
   create_database: "Create database",
@@ -27,69 +29,61 @@ export default function OperationsPage() {
           <h1 className="text-xl font-semibold">Operations</h1>
           <p className="muted text-sm">Async actions executed by agents and the control plane.</p>
         </div>
-        <select
-          className="input"
-          style={{ width: "11rem" }}
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="running">Running</option>
-          <option value="succeeded">Succeeded</option>
-          <option value="failed">Failed</option>
-        </select>
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>
-      ) : error ? (
-        <EmptyState title="Could not load operations" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState title="No operations yet" hint="Actions like backups and database creation appear here." />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Operation</th>
-                <th>Executor</th>
-                <th>Status</th>
-                <th>Error</th>
-                <th>Created</th>
-                <th>Finished</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((op) => (
-                <tr key={op.id}>
-                  <td className="font-medium">{TYPE_LABEL[op.type] ?? op.type}</td>
-                  <td className="muted">{op.server_id ? "agent" : "control plane"}</td>
-                  <td><StatusBadge status={op.status} /></td>
-                  <td className="muted" style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={op.error ?? undefined}>
-                    {op.error ?? "—"}
-                  </td>
-                  <td className="muted">{new Date(op.created_at).toLocaleString()}</td>
-                  <td className="muted">{op.completed_at ? new Date(op.completed_at).toLocaleString() : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {data ? (
-        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-          <Pagination
-            page={page}
-            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
-            onPage={setPage}
-          />
-        </div>
-      ) : null}
+      <DataTable<Operation>
+        columns={[
+          { id: "type", header: "Operation", className: "font-medium", render: (op) => TYPE_LABEL[op.type] ?? op.type },
+          { id: "executor", header: "Executor", className: "muted", render: (op) => (op.server_id ? "agent" : "control plane") },
+          { id: "status", header: "Status", render: (op) => <StatusBadge status={op.status} /> },
+          {
+            id: "error",
+            header: "Error",
+            className: "muted",
+            render: (op) => (
+              <span style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={op.error ?? undefined}>
+                {op.error ?? "—"}
+              </span>
+            ),
+          },
+          { id: "created", header: "Created", className: "muted", render: (op) => new Date(op.created_at).toLocaleString() },
+          {
+            id: "finished",
+            header: "Finished",
+            className: "muted",
+            render: (op) => (op.completed_at ? new Date(op.completed_at).toLocaleString() : "—"),
+          },
+        ]}
+        rows={data?.items ?? []}
+        rowKey={(op) => op.id}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        errorTitle="Could not load operations"
+        emptyTitle="No operations yet"
+        emptyHint="Actions like backups and database creation appear here."
+        toolbar={
+          <select
+            className="input"
+            style={{ width: "11rem" }}
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="running">Running</option>
+            <option value="succeeded">Succeeded</option>
+            <option value="failed">Failed</option>
+          </select>
+        }
+        pagination={{
+          page,
+          pageCount: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / LIST_PAGE_SIZE)),
+          onPage: setPage,
+        }}
+      />
     </div>
   );
 }

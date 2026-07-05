@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
-  useClientPage,
   useCreateUser,
   useDeleteUser,
   useMe,
@@ -15,7 +15,15 @@ import {
   useUpdateUser,
   useUsers,
 } from "@/lib/hooks";
+import { useDataTable } from "@/lib/use-data-table";
 import type { Role, User } from "@/lib/types";
+
+function compareUsers(a: User, b: User, key: string) {
+  if (key === "created_at") {
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  }
+  return String(a[key as keyof User] ?? "").localeCompare(String(b[key as keyof User] ?? ""));
+}
 
 export default function UsersPage() {
   const { data: me } = useMe();
@@ -25,10 +33,18 @@ export default function UsersPage() {
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const del = useDeleteUser();
   const canWrite = me?.permissions.includes("user:write") ?? false;
-  const paged = useClientPage(data?.items);
+  const table = useDataTable({
+    items: data?.items,
+    search: {
+      query: search,
+      match: (u, q) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q),
+    },
+    sort: { key: "name", dir: "asc", compare: compareUsers },
+  });
 
   async function onDelete(u: User) {
     if (!confirm(`Delete user "${u.email}" permanently?`)) return;
@@ -39,6 +55,58 @@ export default function UsersPage() {
       setNotice(err instanceof ApiError ? err.message : "Failed to delete user");
     }
   }
+
+  const columns = useMemo(() => {
+    const cols: DataTableColumn<User>[] = [
+      {
+        id: "name",
+        header: "Name",
+        sortable: true,
+        sortKey: "name",
+        className: "font-medium",
+        render: (u) => (
+          <>
+            {u.name}
+            {me?.id === u.id ? <span className="muted"> (you)</span> : null}
+          </>
+        ),
+      },
+      { id: "email", header: "Email", sortable: true, sortKey: "email", className: "muted", render: (u) => u.email },
+      { id: "role", header: "Role", className: "muted", render: (u) => u.roles.join(", ") || "—" },
+      { id: "status", header: "Status", render: (u) => <StatusBadge status={u.status} /> },
+      {
+        id: "created",
+        header: "Created",
+        sortable: true,
+        sortKey: "created_at",
+        className: "muted",
+        render: (u) => new Date(u.created_at).toLocaleDateString(),
+      },
+    ];
+    if (canWrite) {
+      cols.push({
+        id: "actions",
+        header: "Actions",
+        align: "right",
+        render: (u) => (
+          <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
+            <button className="btn btn-sm" onClick={() => setEditTarget(u)} aria-label={`Edit ${u.email}`}>
+              <Pencil size={15} />
+            </button>
+            <button className="btn btn-sm" onClick={() => setResetTarget(u)} title="Reset password" aria-label={`Reset password for ${u.email}`}>
+              <KeyRound size={15} />
+            </button>
+            {me?.id !== u.id ? (
+              <button className="btn btn-sm btn-danger" onClick={() => onDelete(u)} disabled={del.isPending} aria-label={`Delete ${u.email}`}>
+                <Trash2 size={15} />
+              </button>
+            ) : null}
+          </div>
+        ),
+      });
+    }
+    return cols;
+  }, [canWrite, del.isPending, me?.id]);
 
   return (
     <div>
@@ -60,63 +128,26 @@ export default function UsersPage() {
         </div>
       ) : null}
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>
-      ) : error ? (
-        <EmptyState title="Could not load users" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState title="No users" />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Created</th>
-                {canWrite ? <th style={{ textAlign: "right" }}>Actions</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {paged.items.map((u) => (
-                <tr key={u.id}>
-                  <td className="font-medium">
-                    {u.name}
-                    {me?.id === u.id ? <span className="muted"> (you)</span> : null}
-                  </td>
-                  <td className="muted">{u.email}</td>
-                  <td className="muted">{u.roles.join(", ") || "—"}</td>
-                  <td><StatusBadge status={u.status} /></td>
-                  <td className="muted">{new Date(u.created_at).toLocaleDateString()}</td>
-                  {canWrite ? (
-                    <td style={{ textAlign: "right" }}>
-                      <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-                        <button className="btn btn-sm" onClick={() => setEditTarget(u)} aria-label={`Edit ${u.email}`}>
-                          <Pencil size={15} />
-                        </button>
-                        <button className="btn btn-sm" onClick={() => setResetTarget(u)} title="Reset password" aria-label={`Reset password for ${u.email}`}>
-                          <KeyRound size={15} />
-                        </button>
-                        {me?.id !== u.id ? (
-                          <button className="btn btn-sm btn-danger" onClick={() => onDelete(u)} disabled={del.isPending} aria-label={`Delete ${u.email}`}>
-                            <Trash2 size={15} />
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-        <Pagination page={paged.page} pageCount={paged.pageCount} onPage={paged.setPage} />
-      </div>
+      <DataTable<User>
+        columns={columns}
+        rows={table.rows}
+        rowKey={(u) => u.id}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        errorTitle="Could not load users"
+        emptyTitle="No users"
+        emptySearchTitle="No users match your search"
+        search={{
+          value: search,
+          onChange: (v) => {
+            setSearch(v);
+            table.setPage(1);
+          },
+          placeholder: "Search name or email…",
+        }}
+        sort={{ key: table.sortKey, dir: table.sortDir, onSort: table.setSort }}
+        pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
+      />
 
       <CreateUserModal open={createOpen} onClose={() => setCreateOpen(false)} roles={roles?.items ?? []} />
       <EditUserModal user={editTarget} onClose={() => setEditTarget(null)} roles={roles?.items ?? []} isSelf={editTarget?.id === me?.id} />

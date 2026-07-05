@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 
-import { Archive, Lock, Plus, Search, Trash2, Unlock } from "lucide-react";
+import { Archive, Lock, Plus, Trash2, Unlock } from "lucide-react";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
-import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
+import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   LIST_PAGE_SIZE,
@@ -48,6 +49,58 @@ export default function DatabasesPage() {
     return m;
   }, [instances]);
 
+  const columns = useMemo(() => {
+    const cols: DataTableColumn<Database>[] = [
+      {
+        id: "name",
+        header: "Name",
+        className: "font-medium",
+        render: (d) => <Link href={`/databases/${d.id}`} style={{ textDecoration: "underline" }}>{d.name}</Link>,
+      },
+      {
+        id: "instance",
+        header: "Instance",
+        className: "muted",
+        render: (d) => instanceName.get(d.instance_id) ?? d.instance_id.slice(0, 8),
+      },
+      { id: "charset", header: "Charset", className: "muted", render: (d) => d.charset },
+      { id: "status", header: "Status", render: (d) => <StatusBadge status={d.status} /> },
+    ];
+    if (showActions) {
+      cols.push({
+        id: "actions",
+        header: "Actions",
+        align: "right",
+        render: (d) => (
+          <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
+            {canBackup ? (
+              <button className="btn btn-sm" onClick={() => setBackupTarget(d)} title="Back up to S3/R2">
+                <Archive size={15} /> Backup
+              </button>
+            ) : null}
+            {canWrite ? (
+              <>
+                {d.status === "locked" ? (
+                  <button className="btn btn-sm" onClick={() => unlock.mutate(d.id)} disabled={unlock.isPending}>
+                    <Unlock size={15} /> Unlock
+                  </button>
+                ) : (
+                  <button className="btn btn-sm" onClick={() => lock.mutate(d.id)} disabled={lock.isPending}>
+                    <Lock size={15} /> Lock
+                  </button>
+                )}
+                <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(d)} aria-label="Delete">
+                  <Trash2 size={15} />
+                </button>
+              </>
+            ) : null}
+          </div>
+        ),
+      });
+    }
+    return cols;
+  }, [canBackup, canWrite, instanceName, lock.isPending, showActions, unlock.isPending]);
+
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: "1.1rem" }}>
@@ -62,98 +115,30 @@ export default function DatabasesPage() {
         ) : null}
       </div>
 
-      <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", maxWidth: "22rem" }}>
-        <div style={{ position: "relative", width: "100%" }}>
-          <span style={{ position: "absolute", left: 10, top: 9, color: "var(--muted)" }}>
-            <Search size={16} />
-          </span>
-          <input
-            className="input"
-            style={{ paddingLeft: "2rem" }}
-            placeholder="Search databases…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-          />
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>
-      ) : error ? (
-        <EmptyState title="Could not load databases" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState title="No databases yet" hint="Create your first database to get started." />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Instance</th>
-                <th>Charset</th>
-                <th>Status</th>
-                {showActions ? <th style={{ textAlign: "right" }}>Actions</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((d) => (
-                <tr key={d.id}>
-                  <td className="font-medium">
-                    <Link href={`/databases/${d.id}`} style={{ textDecoration: "underline" }}>{d.name}</Link>
-                  </td>
-                  <td className="muted">{instanceName.get(d.instance_id) ?? d.instance_id.slice(0, 8)}</td>
-                  <td className="muted">{d.charset}</td>
-                  <td><StatusBadge status={d.status} /></td>
-                  {showActions ? (
-                    <td style={{ textAlign: "right" }}>
-                      <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-                        {canBackup ? (
-                          <button className="btn btn-sm" onClick={() => setBackupTarget(d)} title="Back up to S3/R2">
-                            <Archive size={15} /> Backup
-                          </button>
-                        ) : null}
-                        {canWrite ? (
-                          <>
-                            {d.status === "locked" ? (
-                              <button className="btn btn-sm" onClick={() => unlock.mutate(d.id)} disabled={unlock.isPending}>
-                                <Unlock size={15} /> Unlock
-                              </button>
-                            ) : (
-                              <button className="btn btn-sm" onClick={() => lock.mutate(d.id)} disabled={lock.isPending}>
-                                <Lock size={15} /> Lock
-                              </button>
-                            )}
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={() => setDeleteTarget(d)}
-                              aria-label="Delete"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {data ? (
-        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-          <Pagination
-            page={page}
-            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
-            onPage={setPage}
-          />
-        </div>
-      ) : null}
+      <DataTable<Database>
+        columns={columns}
+        rows={data?.items ?? []}
+        rowKey={(d) => d.id}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        errorTitle="Could not load databases"
+        emptyTitle="No databases yet"
+        emptyHint="Create your first database to get started."
+        emptySearchTitle="No databases match your search"
+        search={{
+          value: search,
+          onChange: (v) => {
+            setSearch(v);
+            setPage(1);
+          },
+          placeholder: "Search databases…",
+        }}
+        pagination={{
+          page,
+          pageCount: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / LIST_PAGE_SIZE)),
+          onPage: setPage,
+        }}
+      />
 
       <CreateDatabaseModal open={open} onClose={() => setOpen(false)} instances={instances?.items ?? []} />
       <BackupDatabaseModal database={backupTarget} onClose={() => setBackupTarget(null)} />

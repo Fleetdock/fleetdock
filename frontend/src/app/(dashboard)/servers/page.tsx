@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
-import { ChevronRight, Copy, Plus, Search, Server } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
+import { ChevronRight, Copy, Plus, Server } from "lucide-react";
+import { DataTable } from "@/components/data-table";
+import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { LIST_PAGE_SIZE, useCan, useCreateAgentToken, useCreateServer, useServers } from "@/lib/hooks";
+import type { Server as ServerType } from "@/lib/types";
 
 export default function ServersPage() {
   const [search, setSearch] = useState("");
@@ -35,76 +37,51 @@ export default function ServersPage() {
         ) : null}
       </div>
 
-      <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", maxWidth: "22rem" }}>
-        <div style={{ position: "relative", width: "100%" }}>
-          <span style={{ position: "absolute", left: 10, top: 9, color: "var(--muted)" }}>
-            <Search size={16} />
-          </span>
-          <input
-            className="input"
-            style={{ paddingLeft: "2rem" }}
-            placeholder="Search name or hostname…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-          />
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>
-      ) : error ? (
-        <EmptyState title="Could not load servers" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState
-          title="No servers yet"
-          hint="Use “Connect server” to get a one-command installer for your host."
-        />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Hostname</th>
-                <th>Status</th>
-                <th>Agent</th>
-                <th>Last heartbeat</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((s) => (
-                <tr key={s.id}>
-                  <td className="font-medium">{s.name}</td>
-                  <td className="muted">{s.hostname}</td>
-                  <td><StatusBadge status={s.status} /></td>
-                  <td className="muted">{s.agent_version ?? "—"}</td>
-                  <td className="muted">
-                    {s.last_heartbeat_at ? new Date(s.last_heartbeat_at).toLocaleString() : "never"}
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <Link href={`/servers/${s.id}`} className="btn btn-ghost btn-sm">
-                      Open <ChevronRight size={15} />
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {data ? (
-        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-          <Pagination
-            page={page}
-            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
-            onPage={setPage}
-          />
-        </div>
-      ) : null}
+      <DataTable<ServerType>
+        columns={[
+          { id: "name", header: "Name", className: "font-medium", render: (s) => s.name },
+          { id: "hostname", header: "Hostname", className: "muted", render: (s) => s.hostname },
+          { id: "status", header: "Status", render: (s) => <StatusBadge status={s.status} /> },
+          { id: "agent", header: "Agent", className: "muted", render: (s) => s.agent_version ?? "—" },
+          {
+            id: "heartbeat",
+            header: "Last heartbeat",
+            className: "muted",
+            render: (s) => (s.last_heartbeat_at ? new Date(s.last_heartbeat_at).toLocaleString() : "never"),
+          },
+          {
+            id: "actions",
+            header: "",
+            align: "right",
+            render: (s) => (
+              <Link href={`/servers/${s.id}`} className="btn btn-ghost btn-sm">
+                Open <ChevronRight size={15} />
+              </Link>
+            ),
+          },
+        ]}
+        rows={data?.items ?? []}
+        rowKey={(s) => s.id}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        errorTitle="Could not load servers"
+        emptyTitle="No servers yet"
+        emptyHint='Use "Connect server" to get a one-command installer for your host.'
+        emptySearchTitle="No servers match your search"
+        search={{
+          value: search,
+          onChange: (v) => {
+            setSearch(v);
+            setPage(1);
+          },
+          placeholder: "Search name or hostname…",
+        }}
+        pagination={{
+          page,
+          pageCount: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / LIST_PAGE_SIZE)),
+          onPage: setPage,
+        }}
+      />
 
       <RegisterServerModal open={registerOpen} onClose={() => setRegisterOpen(false)} />
       <ConnectServerModal open={connectOpen} onClose={() => setConnectOpen(false)} />
@@ -119,21 +96,22 @@ function ConnectServerModal({ open, onClose }: { open: boolean; onClose: () => v
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function generate(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      const res = await create.mutateAsync({ name: name || undefined, ttl_hours: 24 });
+      const res = await create.mutateAsync({ name: name || "install" });
       setCommand(res.install_command);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create registration token");
+      setError(err instanceof ApiError ? err.message : "Failed to generate install command");
     }
   }
 
   function close() {
-    setCommand(null);
     setName("");
+    setCommand(null);
     setCopied(false);
+    setError(null);
     onClose();
   }
 
@@ -142,42 +120,38 @@ function ConnectServerModal({ open, onClose }: { open: boolean; onClose: () => v
       {command ? (
         <div>
           <p className="text-sm" style={{ marginBottom: ".6rem" }}>
-            Run this on your server as root. The agent installs itself, enrolls with the control
-            plane and appears here within ~30 seconds. The token is single-use and valid for 24h.
+            Run this on the host you want to connect (requires curl and bash):
           </p>
-          <pre
+          <div
             className="card"
-            style={{ padding: ".8rem", fontSize: 12, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}
+            style={{ padding: ".7rem", fontFamily: "ui-monospace, monospace", fontSize: ".75rem", wordBreak: "break-all", background: "var(--panel-2)" }}
           >
             {command}
-          </pre>
-          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".6rem" }}>
+          </div>
+          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".9rem" }}>
             <button
               className="btn"
               onClick={() => {
-                navigator.clipboard.writeText(command);
+                navigator.clipboard?.writeText(command);
                 setCopied(true);
               }}
             >
-              <Copy size={15} /> {copied ? "Copied!" : "Copy command"}
+              <Copy size={15} /> {copied ? "Copied" : "Copy"}
             </button>
             <button className="btn btn-primary" onClick={close}>Done</button>
           </div>
         </div>
       ) : (
-        <form onSubmit={generate}>
-          <p className="muted text-sm" style={{ marginBottom: ".8rem" }}>
-            Generates a single-use registration token and the one-command installer
-            (like Dokploy). No manual server registration needed.
-          </p>
+        <form onSubmit={onSubmit}>
           <Field label="Label (optional)">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="db-eu-1" />
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="prod-01" />
           </Field>
+          <p className="muted text-sm">Generates a single-use registration token and install script.</p>
           <ErrorText message={error ?? undefined} />
-          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
+          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".7rem" }}>
             <button type="button" className="btn" onClick={close}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={create.isPending}>
-              {create.isPending ? "Generating…" : "Generate install command"}
+              {create.isPending ? "Generating…" : "Generate command"}
             </button>
           </div>
         </form>
@@ -190,17 +164,8 @@ function RegisterServerModal({ open, onClose }: { open: boolean; onClose: () => 
   const create = useCreateServer();
   const [name, setName] = useState("");
   const [hostname, setHostname] = useState("");
-  const [address, setAddress] = useState("");
   const [tags, setTags] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  function reset() {
-    setName("");
-    setHostname("");
-    setAddress("");
-    setTags("");
-    setError(null);
-  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -209,10 +174,11 @@ function RegisterServerModal({ open, onClose }: { open: boolean; onClose: () => 
       await create.mutateAsync({
         name,
         hostname,
-        address: address || undefined,
         tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
       });
-      reset();
+      setName("");
+      setHostname("");
+      setTags("");
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to register server");
@@ -222,24 +188,17 @@ function RegisterServerModal({ open, onClose }: { open: boolean; onClose: () => 
   return (
     <Modal open={open} onClose={onClose} title="Register server manually">
       <form onSubmit={onSubmit}>
-        <p className="muted text-sm" style={{ marginBottom: ".8rem" }}>
-          Registers a server record without installing an agent. Prefer “Connect server”
-          for full functionality (heartbeats, backups, database provisioning).
-        </p>
         <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="db-eu-1" required />
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="prod-01" required />
         </Field>
         <Field label="Hostname">
-          <input className="input" value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="db1.internal" required />
+          <input className="input" value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="db1.example.com" required />
         </Field>
-        <Field label="Address (optional)">
-          <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="10.0.0.10" />
-        </Field>
-        <Field label="Tags (comma separated)">
-          <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="prod, eu" />
+        <Field label="Tags (comma-separated)">
+          <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="production,eu" />
         </Field>
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
+        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".7rem" }}>
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={create.isPending}>
             {create.isPending ? "Registering…" : "Register"}

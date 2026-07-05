@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { Plus } from "lucide-react";
+import { DataTable } from "@/components/data-table";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useCan, useCreateInstance, useInstances, useServer } from "@/lib/hooks";
@@ -51,32 +52,18 @@ export default function ServerDetailPage() {
       </div>
 
       <h2 className="font-semibold" style={{ marginBottom: ".6rem" }}>Instances</h2>
-      {!instances || instances.items.length === 0 ? (
-        <EmptyState title="No instances" hint="Add a MariaDB instance running on this server." />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Version</th>
-                <th>Port</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {instances.items.map((i) => (
-                <tr key={i.id}>
-                  <td className="font-medium">{i.name}</td>
-                  <td className="muted">{i.mariadb_version}</td>
-                  <td className="muted">{i.port}</td>
-                  <td><StatusBadge status={i.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={[
+          { id: "name", header: "Name", className: "font-medium", render: (i) => i.name },
+          { id: "version", header: "Version", className: "muted", render: (i) => i.mariadb_version },
+          { id: "port", header: "Port", className: "muted", render: (i) => i.port },
+          { id: "status", header: "Status", render: (i) => <StatusBadge status={i.status} /> },
+        ]}
+        rows={instances?.items ?? []}
+        rowKey={(i) => i.id}
+        emptyTitle="No instances"
+        emptyHint="Add a MariaDB instance running on this server."
+      />
 
       <AddInstanceModal open={open} onClose={() => setOpen(false)} serverId={id} />
     </div>

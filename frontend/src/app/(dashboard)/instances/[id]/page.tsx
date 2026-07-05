@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { DataTable } from "@/components/data-table";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
@@ -59,31 +60,28 @@ export default function InstanceDetailPage() {
       </div>
 
       <h2 className="font-semibold" style={{ marginBottom: ".6rem" }}>Databases</h2>
-      {!databases || databases.items.length === 0 ? (
-        <EmptyState title="No databases on this instance" />
-      ) : (
-        <div className="card" style={{ overflow: "hidden", marginBottom: "1.25rem" }}>
-          <table className="table">
-            <thead>
-              <tr><th>Name</th><th>Charset</th><th>Status</th><th /></tr>
-            </thead>
-            <tbody>
-              {databases.items.map((d) => (
-                <tr key={d.id}>
-                  <td className="font-medium">{d.name}</td>
-                  <td className="muted">{d.charset}</td>
-                  <td><StatusBadge status={d.status} /></td>
-                  <td style={{ textAlign: "right" }}>
-                    <Link href={`/databases/${d.id}`} className="btn btn-ghost btn-sm">
-                      Open <ChevronRight size={15} />
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div style={{ marginBottom: "1.25rem" }}>
+        <DataTable
+          columns={[
+            { id: "name", header: "Name", className: "font-medium", render: (d) => d.name },
+            { id: "charset", header: "Charset", className: "muted", render: (d) => d.charset },
+            { id: "status", header: "Status", render: (d) => <StatusBadge status={d.status} /> },
+            {
+              id: "actions",
+              header: "",
+              align: "right",
+              render: (d) => (
+                <Link href={`/databases/${d.id}`} className="btn btn-ghost btn-sm">
+                  Open <ChevronRight size={15} />
+                </Link>
+              ),
+            },
+          ]}
+          rows={databases?.items ?? []}
+          rowKey={(d) => d.id}
+          emptyTitle="No databases on this instance"
+        />
+      </div>
 
       {instance.has_credentials ? (
         <DBUsersSection instanceId={id} canWrite={can("instance:write")} databases={databases?.items ?? []} />

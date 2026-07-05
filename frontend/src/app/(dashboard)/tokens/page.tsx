@@ -3,9 +3,12 @@
 import { useState, type FormEvent } from "react";
 
 import { Key, Plus, Trash2 } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner } from "@/components/ui";
+import { DataTable } from "@/components/data-table";
+import { ErrorText, Field, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCan, useClientPage, useCreateToken, useRevokeToken, useTokens } from "@/lib/hooks";
+import { useCan, useCreateToken, useRevokeToken, useTokens } from "@/lib/hooks";
+import { useDataTable } from "@/lib/use-data-table";
+import type { ApiToken } from "@/lib/types";
 
 export default function TokensPage() {
   const { data, isLoading, error } = useTokens();
@@ -14,7 +17,7 @@ export default function TokensPage() {
   const [secret, setSecret] = useState<string | null>(null);
   const can = useCan();
   const canWrite = can("token:write");
-  const paged = useClientPage(data?.items);
+  const table = useDataTable({ items: data?.items });
 
   return (
     <div>
@@ -30,58 +33,64 @@ export default function TokensPage() {
         ) : null}
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>
-      ) : error ? (
-        <EmptyState title="Could not load tokens" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState title="No tokens" hint="Create a token to call the API from scripts or CI." />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Prefix</th>
-                <th>Created</th>
-                <th>Last used</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {paged.items.map((t) => (
-                <tr key={t.id}>
-                  <td className="font-medium flex items-center gap-2">
-                    <Key size={15} /> {t.name}
-                  </td>
-                  <td className="muted"><code>{t.prefix}…</code></td>
-                  <td className="muted">{new Date(t.created_at).toLocaleDateString()}</td>
-                  <td className="muted">{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "never"}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {t.revoked_at ? (
-                      <span className="badge badge-red"><span className="dot" /> revoked</span>
-                    ) : canWrite ? (
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={() => {
-                          if (confirm(`Revoke token "${t.name}"?`)) revoke.mutate(t.id);
-                        }}
-                        aria-label="Revoke"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-        <Pagination page={paged.page} pageCount={paged.pageCount} onPage={paged.setPage} />
-      </div>
+      <DataTable<ApiToken>
+        columns={[
+          {
+            id: "name",
+            header: "Name",
+            className: "font-medium flex items-center gap-2",
+            render: (t) => (
+              <>
+                <Key size={15} /> {t.name}
+              </>
+            ),
+          },
+          {
+            id: "prefix",
+            header: "Prefix",
+            className: "muted",
+            render: (t) => <code>{t.prefix}…</code>,
+          },
+          {
+            id: "created",
+            header: "Created",
+            className: "muted",
+            render: (t) => new Date(t.created_at).toLocaleDateString(),
+          },
+          {
+            id: "last_used",
+            header: "Last used",
+            className: "muted",
+            render: (t) => (t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "never"),
+          },
+          {
+            id: "actions",
+            header: "",
+            align: "right",
+            render: (t) =>
+              t.revoked_at ? (
+                <span className="badge badge-red"><span className="dot" /> revoked</span>
+              ) : canWrite ? (
+                <button
+                  className="btn btn-sm btn-danger"
+                  onClick={() => {
+                    if (confirm(`Revoke token "${t.name}"?`)) revoke.mutate(t.id);
+                  }}
+                  aria-label="Revoke"
+                >
+                  <Trash2 size={15} />
+                </button>
+              ) : null,
+          },
+        ]}
+        rows={table.rows}
+        rowKey={(t) => t.id}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        emptyTitle="No tokens"
+        emptyHint="Create a token to call the API from scripts or CI."
+        pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
+      />
 
       <CreateTokenModal open={open} onClose={() => setOpen(false)} onCreated={setSecret} />
 

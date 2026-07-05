@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 
 import { Download, Plug, Plus, Trash2 } from "lucide-react";
-import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   LIST_PAGE_SIZE,
@@ -67,6 +68,69 @@ export default function InstancesPage() {
     }
   }
 
+  const columns = useMemo((): DataTableColumn<Instance>[] => [
+    {
+      id: "name",
+      header: "Name",
+      className: "font-medium",
+      render: (i) => <Link href={`/instances/${i.id}`} style={{ textDecoration: "underline" }}>{i.name}</Link>,
+    },
+    {
+      id: "kind",
+      header: "Kind",
+      render: (i) => (
+        <span className={`badge ${i.kind === "external" ? "badge-amber" : "badge-gray"}`}>{i.kind}</span>
+      ),
+    },
+    { id: "engine", header: "Engine", className: "muted", render: (i) => `${i.engine} ${i.engine_version}` },
+    {
+      id: "location",
+      header: "Location",
+      className: "muted",
+      render: (i) =>
+        i.kind === "external"
+          ? `${i.host}:${i.port}`
+          : `${serverName.get(i.server_id ?? "") ?? "server"}:${i.port}`,
+    },
+    { id: "credentials", header: "Credentials", className: "muted", render: (i) => (i.has_credentials ? "configured" : "—") },
+    { id: "status", header: "Status", render: (i) => <StatusBadge status={i.status} /> },
+    {
+      id: "actions",
+      header: "Actions",
+      align: "right",
+      render: (i) => (
+        <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
+          {i.has_credentials ? (
+            <>
+              <button className="btn btn-sm" onClick={() => onTest(i)} disabled={test.isPending} title="Test connection">
+                <Plug size={15} /> Test
+              </button>
+              {canWrite ? (
+                <button className="btn btn-sm" onClick={() => onImport(i)} disabled={importDbs.isPending} title="Import existing databases">
+                  <Download size={15} /> Import DBs
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {canWrite ? (
+            <button
+              className="btn btn-sm btn-danger"
+              onClick={() => {
+                if (confirm(`Remove instance "${i.name}" from the control plane? The actual database server is not touched.`)) {
+                  del.mutate(i.id);
+                }
+              }}
+              disabled={del.isPending}
+              aria-label="Delete"
+            >
+              <Trash2 size={15} />
+            </button>
+          ) : null}
+        </div>
+      ),
+    },
+  ], [canWrite, del.isPending, importDbs.isPending, serverName, test.isPending]);
+
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: "1.1rem" }}>
@@ -89,94 +153,21 @@ export default function InstancesPage() {
         </div>
       ) : null}
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>
-      ) : error ? (
-        <EmptyState title="Could not load instances" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState
-          title="No instances yet"
-          hint="Add an instance on a connected server, or register an external database."
-        />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Kind</th>
-                <th>Engine</th>
-                <th>Location</th>
-                <th>Credentials</th>
-                <th>Status</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((i) => (
-                <tr key={i.id}>
-                  <td className="font-medium">
-                    <Link href={`/instances/${i.id}`} style={{ textDecoration: "underline" }}>{i.name}</Link>
-                  </td>
-                  <td>
-                    <span className={`badge ${i.kind === "external" ? "badge-amber" : "badge-gray"}`}>
-                      {i.kind}
-                    </span>
-                  </td>
-                  <td className="muted">{i.engine} {i.engine_version}</td>
-                  <td className="muted">
-                    {i.kind === "external"
-                      ? `${i.host}:${i.port}`
-                      : `${serverName.get(i.server_id ?? "") ?? "server"}:${i.port}`}
-                  </td>
-                  <td className="muted">{i.has_credentials ? "configured" : "—"}</td>
-                  <td><StatusBadge status={i.status} /></td>
-                  <td style={{ textAlign: "right" }}>
-                    <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-                      {i.has_credentials ? (
-                        <>
-                          <button className="btn btn-sm" onClick={() => onTest(i)} disabled={test.isPending} title="Test connection">
-                            <Plug size={15} /> Test
-                          </button>
-                          {canWrite ? (
-                            <button className="btn btn-sm" onClick={() => onImport(i)} disabled={importDbs.isPending} title="Import existing databases">
-                              <Download size={15} /> Import DBs
-                            </button>
-                          ) : null}
-                        </>
-                      ) : null}
-                      {canWrite ? (
-                        <button
-                          className="btn btn-sm btn-danger"
-                          onClick={() => {
-                            if (confirm(`Remove instance "${i.name}" from the control plane? The actual database server is not touched.`)) {
-                              del.mutate(i.id);
-                            }
-                          }}
-                          disabled={del.isPending}
-                          aria-label="Delete"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {data ? (
-        <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-          <Pagination
-            page={page}
-            pageCount={Math.max(1, Math.ceil(data.pagination.total / LIST_PAGE_SIZE))}
-            onPage={setPage}
-          />
-        </div>
-      ) : null}
+      <DataTable<Instance>
+        columns={columns}
+        rows={data?.items ?? []}
+        rowKey={(i) => i.id}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        errorTitle="Could not load instances"
+        emptyTitle="No instances yet"
+        emptyHint="Add an instance on a connected server, or register an external database."
+        pagination={{
+          page,
+          pageCount: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / LIST_PAGE_SIZE)),
+          onPage: setPage,
+        }}
+      />
 
       <AddInstanceModal open={open} onClose={() => setOpen(false)} servers={servers?.items ?? []} />
     </div>

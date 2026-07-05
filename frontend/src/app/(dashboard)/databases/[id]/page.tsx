@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 
-import { ArrowDown, ArrowUp, ChevronRight, Plus, Search, Table2, Trash2, X } from "lucide-react";
+import { ChevronRight, Plus, Table2, Trash2, X } from "lucide-react";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   useCan,
-  useClientPage,
   useDatabase,
   useDatabaseDBUsers,
   useDBPrivileges,
@@ -21,7 +21,8 @@ import {
   useTableRows,
   useTables,
 } from "@/lib/hooks";
-import type { TableInfo } from "@/lib/types";
+import { useDataTable } from "@/lib/use-data-table";
+import type { SchemaGrant, TableInfo } from "@/lib/types";
 
 const PAGE_SIZE = 50;
 
@@ -167,158 +168,100 @@ function Detail({ label, value, link }: { label: string; value: string; link?: s
 
 // ---- Tables list ----
 
-type TableSortKey = "name" | "engine" | "row_count" | "data_bytes" | "index_bytes";
-type SortDir = "asc" | "desc";
-
-function compareTables(a: TableInfo, b: TableInfo, key: TableSortKey, dir: SortDir) {
-  let cmp = 0;
+function compareTables(a: TableInfo, b: TableInfo, key: string) {
   if (key === "name" || key === "engine") {
-    cmp = a[key].localeCompare(b[key]);
-  } else {
-    cmp = a[key] - b[key];
+    return a[key].localeCompare(b[key]);
   }
-  return dir === "asc" ? cmp : -cmp;
-}
-
-function SortableHeader({
-  label,
-  sortKey,
-  activeKey,
-  dir,
-  onSort,
-}: {
-  label: string;
-  sortKey: TableSortKey;
-  activeKey: TableSortKey;
-  dir: SortDir;
-  onSort: (key: TableSortKey) => void;
-}) {
-  const active = sortKey === activeKey;
-  return (
-    <th>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        style={{
-          padding: 0,
-          font: "inherit",
-          color: "inherit",
-          textTransform: "inherit",
-          letterSpacing: "inherit",
-          fontWeight: 500,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: ".25rem",
-        }}
-        onClick={() => onSort(sortKey)}
-      >
-        {label}
-        {active ? (dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : null}
-      </button>
-    </th>
-  );
+  return (a[key as "row_count" | "data_bytes" | "index_bytes"] as number)
+    - (b[key as "row_count" | "data_bytes" | "index_bytes"] as number);
 }
 
 function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (table: string) => void }) {
   const { data, isLoading, error } = useTables(databaseId);
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<TableSortKey>("name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
-
-  const filtered = useMemo(() => {
-    const items = data?.items ?? [];
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((t) => t.name.toLowerCase().includes(q));
-  }, [data?.items, search]);
-
-  const sorted = useMemo(() => {
-    const items = [...filtered];
-    items.sort((a, b) => compareTables(a, b, sortKey, sortDir));
-    return items;
-  }, [filtered, sortKey, sortDir]);
-
-  const paged = useClientPage(sorted);
-
-  function onSort(key: TableSortKey) {
-    if (key === sortKey) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir(key === "name" || key === "engine" ? "asc" : "desc");
-    }
-    paged.setPage(1);
-  }
-
-  if (isLoading) {
-    return <div className="flex items-center gap-2 muted text-sm"><Spinner /> Connecting to instance…</div>;
-  }
-  if (error) {
-    return <EmptyState title="Could not reach the instance" hint={(error as ApiError).message} />;
-  }
-  if (!data || data.items.length === 0) {
-    return <EmptyState title="No tables" hint="This database has no base tables yet." />;
-  }
+  const table = useDataTable({
+    items: data?.items,
+    search: { query: search, match: (t, q) => t.name.toLowerCase().includes(q) },
+    sort: {
+      key: "name",
+      dir: "asc",
+      compare: compareTables,
+      defaultDir: (key) => (key === "name" || key === "engine" ? "asc" : "desc"),
+    },
+  });
 
   return (
-    <div>
-      <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", maxWidth: "22rem" }}>
-        <div style={{ position: "relative", width: "100%" }}>
-          <span style={{ position: "absolute", left: 10, top: 9, color: "var(--muted)" }}>
-            <Search size={16} />
-          </span>
-          <input
-            className="input"
-            style={{ paddingLeft: "2rem" }}
-            placeholder="Search tables…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              paged.setPage(1);
-            }}
-          />
-        </div>
-      </div>
-      {filtered.length === 0 ? (
-        <EmptyState title="No tables match your search" hint="Try a different name or clear the search." />
-      ) : (
-      <>
-      <div className="card" style={{ overflow: "hidden" }}>
-      <table className="table">
-        <thead>
-          <tr>
-            <SortableHeader label="Table" sortKey="name" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortableHeader label="Engine" sortKey="engine" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortableHeader label="Rows (est.)" sortKey="row_count" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortableHeader label="Data" sortKey="data_bytes" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortableHeader label="Indexes" sortKey="index_bytes" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {paged.items.map((t) => (
-            <tr key={t.name}>
-              <td className="font-medium flex items-center gap-2"><Table2 size={15} /> {t.name}</td>
-              <td className="muted">{t.engine}</td>
-              <td className="muted">{t.row_count.toLocaleString()}</td>
-              <td className="muted">{formatBytes(t.data_bytes)}</td>
-              <td className="muted">{formatBytes(t.index_bytes)}</td>
-              <td style={{ textAlign: "right" }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => onOpen(t.name)}>
-                  Browse <ChevronRight size={15} />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
-      <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
-        <Pagination page={paged.page} pageCount={paged.pageCount} onPage={paged.setPage} />
-      </div>
-      </>
-      )}
-    </div>
+    <DataTable<TableInfo>
+      columns={[
+        {
+          id: "name",
+          header: "Table",
+          sortable: true,
+          sortKey: "name",
+          className: "font-medium flex items-center gap-2",
+          render: (t) => (
+            <>
+              <Table2 size={15} /> {t.name}
+            </>
+          ),
+        },
+        { id: "engine", header: "Engine", sortable: true, sortKey: "engine", className: "muted", render: (t) => t.engine },
+        {
+          id: "row_count",
+          header: "Rows (est.)",
+          sortable: true,
+          sortKey: "row_count",
+          className: "muted",
+          render: (t) => t.row_count.toLocaleString(),
+        },
+        {
+          id: "data_bytes",
+          header: "Data",
+          sortable: true,
+          sortKey: "data_bytes",
+          className: "muted",
+          render: (t) => formatBytes(t.data_bytes),
+        },
+        {
+          id: "index_bytes",
+          header: "Indexes",
+          sortable: true,
+          sortKey: "index_bytes",
+          className: "muted",
+          render: (t) => formatBytes(t.index_bytes),
+        },
+        {
+          id: "actions",
+          header: "",
+          align: "right",
+          render: (t) => (
+            <button className="btn btn-ghost btn-sm" onClick={() => onOpen(t.name)}>
+              Browse <ChevronRight size={15} />
+            </button>
+          ),
+        },
+      ]}
+      rows={table.rows}
+      rowKey={(t) => t.name}
+      isLoading={isLoading}
+      loadingLabel="Connecting to instance…"
+      error={error ? (error as ApiError).message : undefined}
+      errorTitle="Could not reach the instance"
+      emptyTitle="No tables"
+      emptyHint="This database has no base tables yet."
+      emptySearchTitle="No tables match your search"
+      emptySearchHint="Try a different name or clear the search."
+      search={{
+        value: search,
+        onChange: (v) => {
+          setSearch(v);
+          table.setPage(1);
+        },
+        placeholder: "Search tables…",
+      }}
+      sort={{ key: table.sortKey, dir: table.sortDir, onSort: table.setSort }}
+      pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
+    />
   );
 }
 
@@ -428,6 +371,34 @@ function GrantsSection({ databaseId, canWrite }: { databaseId: string; canWrite:
     }
   }
 
+  const columns: DataTableColumn<SchemaGrant>[] = [
+    { id: "user", header: "User", className: "font-medium", render: (g) => g.user },
+    { id: "host", header: "Host", className: "muted", render: (g) => <code>{g.host}</code> },
+    {
+      id: "privileges",
+      header: "Privileges",
+      render: (g) => (
+        <div className="flex" style={{ flexWrap: "wrap", gap: ".25rem" }}>
+          {g.privileges.map((p) => (
+            <span key={p} className="badge badge-gray" style={{ fontSize: 11 }}>{p}</span>
+          ))}
+        </div>
+      ),
+    },
+  ];
+  if (canWrite) {
+    columns.push({
+      id: "actions",
+      header: "Actions",
+      align: "right",
+      render: (g) => (
+        <button className="btn btn-sm btn-danger" onClick={() => onRevoke(g.user, g.host)} disabled={revoke.isPending}>
+          Revoke all
+        </button>
+      ),
+    });
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: ".6rem" }}>
@@ -445,48 +416,17 @@ function GrantsSection({ databaseId, canWrite }: { databaseId: string; canWrite:
         </div>
       ) : null}
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Connecting to instance…</div>
-      ) : error ? (
-        <EmptyState title="Could not reach the instance" hint={(error as ApiError).message} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState title="No accounts have privileges on this database" hint="Use “Grant access” to give a database user access." />
-      ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Host</th>
-                <th>Privileges</th>
-                {canWrite ? <th style={{ textAlign: "right" }}>Actions</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((g) => (
-                <tr key={`${g.user}@${g.host}`}>
-                  <td className="font-medium">{g.user}</td>
-                  <td className="muted"><code>{g.host}</code></td>
-                  <td>
-                    <div className="flex" style={{ flexWrap: "wrap", gap: ".25rem" }}>
-                      {g.privileges.map((p) => (
-                        <span key={p} className="badge badge-gray" style={{ fontSize: 11 }}>{p}</span>
-                      ))}
-                    </div>
-                  </td>
-                  {canWrite ? (
-                    <td style={{ textAlign: "right" }}>
-                      <button className="btn btn-sm btn-danger" onClick={() => onRevoke(g.user, g.host)} disabled={revoke.isPending}>
-                        Revoke all
-                      </button>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<SchemaGrant>
+        columns={columns}
+        rows={data?.items ?? []}
+        rowKey={(g) => `${g.user}@${g.host}`}
+        isLoading={isLoading}
+        loadingLabel="Connecting to instance…"
+        error={error ? (error as ApiError).message : undefined}
+        errorTitle="Could not reach the instance"
+        emptyTitle="No accounts have privileges on this database"
+        emptyHint='Use "Grant access" to give a database user access.'
+      />
 
       <GrantAccessModal open={grantOpen} onClose={() => setGrantOpen(false)} databaseId={databaseId} />
     </div>
