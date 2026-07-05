@@ -1,3 +1,8 @@
+# macOS / editor cruft
+.DS_Store
+# editor swap/conflict artifacts (e.g. service.go.1234567890)
+*.go.[0-9]*
+
 # backend
 /backend/bin
 *.test
