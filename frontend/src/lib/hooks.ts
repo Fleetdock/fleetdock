@@ -41,6 +41,16 @@ import type {
   RowsPage,
   SchemaGrant,
   TableInfo,
+  Overview,
+  Schedule,
+  CreateScheduleInput,
+  UpdateScheduleInput,
+  AuditEntry,
+  NotificationChannel,
+  ChannelInput,
+  AlertRule,
+  RuleInput,
+  MetricSample,
 } from "./types";
 
 export function useMe() {
@@ -561,6 +571,143 @@ export function useInstance(id: string) {
     queryKey: ["instance", id],
     queryFn: () => api.get<Instance>(`/v1/instances/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+// ---- Overview dashboard ----
+export function useOverview() {
+  return useQuery({
+    queryKey: ["overview"],
+    queryFn: () => api.get<Overview>("/v1/overview"),
+    refetchInterval: 15_000,
+  });
+}
+
+// ---- Server metrics history ----
+export function useServerMetrics(serverId: string, hours = 6) {
+  return useQuery({
+    queryKey: ["server-metrics", serverId, hours],
+    queryFn: () => api.get<{ items: MetricSample[] }>(`/v1/servers/${serverId}/metrics?hours=${hours}`),
+    enabled: Boolean(serverId),
+    refetchInterval: 30_000,
+  });
+}
+
+// ---- Backup schedules ----
+export function useSchedules(databaseId?: string) {
+  const qs = databaseId ? `?database_id=${databaseId}` : "";
+  return useQuery({
+    queryKey: ["schedules", databaseId ?? "all"],
+    queryFn: () => api.get<{ items: Schedule[] }>(`/v1/backup-schedules${qs}`),
+  });
+}
+
+export function useCreateSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateScheduleInput) => api.post<Schedule>("/v1/backup-schedules", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useUpdateSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: UpdateScheduleInput & { id: string }) =>
+      api.patch<Schedule>(`/v1/backup-schedules/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useDeleteSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/v1/backup-schedules/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+// ---- Audit log ----
+export function useAudit(params?: { resource_type?: string; page?: number }) {
+  const q = new URLSearchParams();
+  if (params?.resource_type) q.set("resource_type", params.resource_type);
+  return useQuery({
+    queryKey: ["audit", q.toString(), params?.page ?? 1],
+    queryFn: () => api.get<Paginated<AuditEntry>>(`/v1/audit?${q.toString()}&${pageQS(params?.page)}`),
+    refetchInterval: 10_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+// ---- Notification channels ----
+export function useChannels() {
+  return useQuery({
+    queryKey: ["channels"],
+    queryFn: () => api.get<{ items: NotificationChannel[] }>("/v1/notification-channels"),
+  });
+}
+
+export function useCreateChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ChannelInput) => api.post<NotificationChannel>("/v1/notification-channels", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["channels"] }),
+  });
+}
+
+export function useUpdateChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: ChannelInput & { id: string }) =>
+      api.patch<NotificationChannel>(`/v1/notification-channels/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["channels"] }),
+  });
+}
+
+export function useDeleteChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/v1/notification-channels/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["channels"] }),
+  });
+}
+
+export function useTestChannel() {
+  return useMutation({
+    mutationFn: (id: string) => api.post<{ ok: boolean }>(`/v1/notification-channels/${id}/test`, {}),
+  });
+}
+
+// ---- Alert rules ----
+export function useAlertRules() {
+  return useQuery({
+    queryKey: ["alert-rules"],
+    queryFn: () => api.get<{ items: AlertRule[] }>("/v1/alert-rules"),
+  });
+}
+
+export function useCreateAlertRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RuleInput) => api.post<AlertRule>("/v1/alert-rules", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alert-rules"] }),
+  });
+}
+
+export function useUpdateAlertRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: RuleInput & { id: string }) =>
+      api.patch<AlertRule>(`/v1/alert-rules/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alert-rules"] }),
+  });
+}
+
+export function useDeleteAlertRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/v1/alert-rules/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alert-rules"] }),
   });
 }
 

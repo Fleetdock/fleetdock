@@ -21,7 +21,7 @@ export default function LoginPage() {
     try {
       const res = await api.post<{ token: string }>("/v1/auth/login", { email, password });
       setToken(res.token);
-      router.replace("/servers");
+      router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Login failed");
     } finally {

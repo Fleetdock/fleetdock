@@ -87,15 +87,16 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 // ---- Heartbeat ----
 
 type heartbeatRequest struct {
-	AgentVersion   string   `json:"agent_version"`
-	MariaDBVersion *string  `json:"mariadb_version"`
-	OS             *string  `json:"os"`
-	CPUPct         *float64 `json:"cpu_pct"`
-	MemUsedBytes   *int64   `json:"mem_used_bytes"`
-	MemTotalBytes  *int64   `json:"mem_total_bytes"`
-	DiskUsedBytes  *int64   `json:"disk_used_bytes"`
-	DiskTotalBytes *int64   `json:"disk_total_bytes"`
-	DockerOK       *bool    `json:"docker_ok"`
+	AgentVersion      string   `json:"agent_version"`
+	MariaDBVersion    *string  `json:"mariadb_version"`
+	OS                *string  `json:"os"`
+	CPUPct            *float64 `json:"cpu_pct"`
+	MemUsedBytes      *int64   `json:"mem_used_bytes"`
+	MemTotalBytes     *int64   `json:"mem_total_bytes"`
+	DiskUsedBytes     *int64   `json:"disk_used_bytes"`
+	DiskTotalBytes    *int64   `json:"disk_total_bytes"`
+	ActiveConnections *int     `json:"active_connections"`
+	DockerOK          *bool    `json:"docker_ok"`
 }
 
 // Heartbeat handles POST /agent/v1/heartbeat.
@@ -107,15 +108,16 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := h.agents.Heartbeat(r.Context(), srv.ID, serverdom.HeartbeatInfo{
-		AgentVersion:   req.AgentVersion,
-		MariaDBVersion: req.MariaDBVersion,
-		OS:             req.OS,
-		CPUPct:         req.CPUPct,
-		MemUsedBytes:   req.MemUsedBytes,
-		MemTotalBytes:  req.MemTotalBytes,
-		DiskUsedBytes:  req.DiskUsedBytes,
-		DiskTotalBytes: req.DiskTotalBytes,
-		DockerOK:       req.DockerOK,
+		AgentVersion:      req.AgentVersion,
+		MariaDBVersion:    req.MariaDBVersion,
+		OS:                req.OS,
+		CPUPct:            req.CPUPct,
+		MemUsedBytes:      req.MemUsedBytes,
+		MemTotalBytes:     req.MemTotalBytes,
+		DiskUsedBytes:     req.DiskUsedBytes,
+		DiskTotalBytes:    req.DiskTotalBytes,
+		ActiveConnections: req.ActiveConnections,
+		DockerOK:          req.DockerOK,
 	})
 	if err != nil {
 		writeError(w, err)

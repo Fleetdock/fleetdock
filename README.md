@@ -174,17 +174,39 @@ npm run dev
 | `MDCP_ENCRYPTION_KEY` | dev default | encrypts credentials/S3 keys at rest; set a strong value and never rotate casually |
 | `MDCP_PUBLIC_URL` | `http://localhost:8080` | URL agents/installers use to reach the API |
 | `MDCP_AGENT_BIN_DIR` | `/opt/db-manager/agents` | where cross-compiled agent binaries live |
-| `MDCP_WORKER_ENABLED` | `true` | in-process worker (external-instance ops, offline detection) |
+| `MDCP_WORKER_ENABLED` | `true` | in-process worker (external-instance ops, offline detection, scheduled backups, retention, alerts, notifications) |
 | `MDCP_HEARTBEAT_TIMEOUT` | `2m` | no heartbeat for this long ⇒ server `offline` |
+| `MDCP_METRICS_RETENTION` | `168h` | how long per-heartbeat server metrics history is kept |
+| `MDCP_SMTP_HOST` | — | SMTP host for email notification channels (empty ⇒ email delivery disabled) |
+| `MDCP_SMTP_PORT` | `587` | SMTP port |
+| `MDCP_SMTP_USERNAME` / `MDCP_SMTP_PASSWORD` | — | SMTP auth (optional) |
+| `MDCP_SMTP_FROM` | `db-manager@localhost` | envelope/from address for emails |
 | `MDCP_ADMIN_EMAIL` / `MDCP_ADMIN_PASSWORD` | `admin@example.com` / `admin12345` | first-run bootstrap only |
 | `MDCP_CORS_ORIGIN` | `http://localhost:3000` | frontend origin |
 
+## Automation & observability
+
+- **Overview dashboard** — fleet health, instance/database counts, backup and
+  operation status, and automation summary at a glance (`GET /v1/overview`).
+- **Scheduled backups** — cron-scheduled recurring backups per database with a
+  retention window; the worker enqueues them and prunes expired backups (object
+  + metadata). Managed from the **Schedules** page.
+- **Audit log** — append-only, hash-chained record of every mutating request
+  (actor, action, resource, IP), readable on the **Audit log** page
+  (`GET /v1/audit`).
+- **Notifications & alerts** — email / Slack / webhook channels and alert rules
+  on server metrics (CPU, memory %, disk %, connections). Backup failures and
+  offline servers notify automatically; the worker evaluates rules and delivers
+  events via a transactional outbox. Managed on the **Notifications** page.
+- **Metrics history** — every heartbeat is stored as a time-series sample and
+  charted (CPU/memory/disk/connections) on each server's detail page
+  (`GET /v1/servers/{id}/metrics`).
+
 ## Roadmap (post-MVP)
 
-- Scheduled backups (`backup_schedules` table already exists) + retention.
 - One-click "move database" composite operation (backup → restore → verify →
   cutover), building on the existing restore-to-other-instance flow.
 - More engines: PostgreSQL, MySQL (implement `engine.Client`, extend the
   `instances.engine` CHECK).
 - Instance provisioning (agent launches MariaDB containers via Docker).
-- Audit log write path, notification channels, metrics history.
+- SQL query console, per-token scopes, SSO/OIDC, encryption-key rotation.

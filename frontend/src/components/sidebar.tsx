@@ -3,18 +3,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Activity, Archive, Box, Cloud, Database, Key, Server, ShieldCheck, Users, type LucideIcon } from "lucide-react";
+import { Activity, Archive, Bell, Box, CalendarClock, Cloud, Database, Key, LayoutDashboard, ScrollText, Server, ShieldCheck, Users, type LucideIcon } from "lucide-react";
 
 import { useCan } from "@/lib/hooks";
 
 // perm: the read permission required to see the section (empty = always).
 const NAV: { href: string; label: string; Icon: LucideIcon; perm: string }[] = [
+  { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard, perm: "" },
   { href: "/servers", label: "Servers", Icon: Server, perm: "server:read" },
   { href: "/instances", label: "Instances", Icon: Box, perm: "instance:read" },
   { href: "/databases", label: "Databases", Icon: Database, perm: "database:read" },
   { href: "/backups", label: "Backups", Icon: Archive, perm: "backup:read" },
+  { href: "/schedules", label: "Schedules", Icon: CalendarClock, perm: "schedule:read" },
   { href: "/destinations", label: "Destinations", Icon: Cloud, perm: "destination:read" },
   { href: "/operations", label: "Operations", Icon: Activity, perm: "operation:read" },
+  { href: "/notifications", label: "Notifications", Icon: Bell, perm: "notification:read" },
+  { href: "/audit", label: "Audit log", Icon: ScrollText, perm: "audit:read" },
   { href: "/users", label: "Users", Icon: Users, perm: "user:read" },
   { href: "/roles", label: "Roles", Icon: ShieldCheck, perm: "user:read" },
   { href: "/tokens", label: "API Tokens", Icon: Key, perm: "token:read" },

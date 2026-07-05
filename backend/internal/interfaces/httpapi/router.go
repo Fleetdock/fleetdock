@@ -4,25 +4,33 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	auditapp "github.com/mariadb-cp/db-manager/backend/internal/app/audit"
 )
 
 // RouterDeps are the handlers and middleware the router wires together.
 type RouterDeps struct {
-	Auth         *AuthHandler
-	Servers      *ServerHandler
-	Instances    *InstanceHandler
-	Databases    *DatabaseHandler
-	Tokens       *TokenHandler
-	Users        *UserHandler
-	Operations   *OperationHandler
-	Backups      *BackupHandler
-	Destinations *DestinationHandler
-	DBAdmin      *DBAdminHandler
-	Agents       *AgentHandler
-	RegTokens    *RegTokenHandler
-	Install      *InstallHandler
-	Authn        *Authenticator
-	CORSOrigin   string
+	Auth          *AuthHandler
+	Servers       *ServerHandler
+	Instances     *InstanceHandler
+	Databases     *DatabaseHandler
+	Tokens        *TokenHandler
+	Users         *UserHandler
+	Operations    *OperationHandler
+	Backups       *BackupHandler
+	Schedules     *ScheduleHandler
+	Destinations  *DestinationHandler
+	DBAdmin       *DBAdminHandler
+	Agents        *AgentHandler
+	RegTokens     *RegTokenHandler
+	Install       *InstallHandler
+	Audit         *AuditHandler
+	Notifications *NotificationHandler
+	Overview      *OverviewHandler
+	Authn         *Authenticator
+	// AuditRecorder records mutating requests (optional).
+	AuditRecorder *auditapp.Service
+	CORSOrigin    string
 	// Ready reports whether dependencies (the metadata database) are healthy.
 	Ready func(ctx context.Context) error
 }
@@ -80,10 +88,14 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("DELETE /v1/roles/{id}", requirePerm("user:write", d.Users.DeleteRole))
 	mux.HandleFunc("GET /v1/permissions", requirePerm("user:read", d.Users.ListPermissions))
 
+	// Overview dashboard (any authenticated user)
+	mux.HandleFunc("GET /v1/overview", requirePerm("", d.Overview.Overview))
+
 	// Servers
 	mux.HandleFunc("POST /v1/servers", requirePerm("server:write", d.Servers.Register))
 	mux.HandleFunc("GET /v1/servers", requirePerm("server:read", d.Servers.List))
 	mux.HandleFunc("GET /v1/servers/{id}", requirePerm("server:read", d.Servers.Get))
+	mux.HandleFunc("GET /v1/servers/{id}/metrics", requirePerm("server:read", d.Overview.ServerMetrics))
 
 	// Agent registration tokens (server connect flow)
 	mux.HandleFunc("POST /v1/agent-tokens", requirePerm("server:write", d.RegTokens.Create))
@@ -140,12 +152,36 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("DELETE /v1/backup-destinations/{id}", requirePerm("destination:write", d.Destinations.Delete))
 	mux.HandleFunc("POST /v1/backup-destinations/{id}/test", requirePerm("destination:write", d.Destinations.Test))
 
+	// Backup schedules
+	mux.HandleFunc("POST /v1/backup-schedules", requirePerm("schedule:write", d.Schedules.Create))
+	mux.HandleFunc("GET /v1/backup-schedules", requirePerm("schedule:read", d.Schedules.List))
+	mux.HandleFunc("PATCH /v1/backup-schedules/{id}", requirePerm("schedule:write", d.Schedules.Update))
+	mux.HandleFunc("DELETE /v1/backup-schedules/{id}", requirePerm("schedule:write", d.Schedules.Delete))
+
+	// Audit log
+	mux.HandleFunc("GET /v1/audit", requirePerm("audit:read", d.Audit.List))
+
+	// Notification channels
+	mux.HandleFunc("POST /v1/notification-channels", requirePerm("notification:write", d.Notifications.CreateChannel))
+	mux.HandleFunc("GET /v1/notification-channels", requirePerm("notification:read", d.Notifications.ListChannels))
+	mux.HandleFunc("PATCH /v1/notification-channels/{id}", requirePerm("notification:write", d.Notifications.UpdateChannel))
+	mux.HandleFunc("DELETE /v1/notification-channels/{id}", requirePerm("notification:write", d.Notifications.DeleteChannel))
+	mux.HandleFunc("POST /v1/notification-channels/{id}/test", requirePerm("notification:write", d.Notifications.TestChannel))
+
+	// Alert rules
+	mux.HandleFunc("POST /v1/alert-rules", requirePerm("notification:write", d.Notifications.CreateRule))
+	mux.HandleFunc("GET /v1/alert-rules", requirePerm("notification:read", d.Notifications.ListRules))
+	mux.HandleFunc("PATCH /v1/alert-rules/{id}", requirePerm("notification:write", d.Notifications.UpdateRule))
+	mux.HandleFunc("DELETE /v1/alert-rules/{id}", requirePerm("notification:write", d.Notifications.DeleteRule))
+
 	// API tokens (scoped to the caller)
 	mux.HandleFunc("POST /v1/tokens", requirePerm("token:write", d.Tokens.Create))
 	mux.HandleFunc("GET /v1/tokens", requirePerm("token:read", d.Tokens.List))
 	mux.HandleFunc("DELETE /v1/tokens/{id}", requirePerm("token:write", d.Tokens.Revoke))
 
 	// Middleware order (outermost first):
-	// logging -> recover -> security headers -> CORS -> auth -> mux.
-	return requestLogger(recoverer(securityHeaders(cors(d.CORSOrigin, d.Authn.Middleware(mux)))))
+	// logging -> recover -> security headers -> CORS -> auth -> audit -> mux.
+	// The audit recorder runs inside auth so the principal is available.
+	handler := d.Authn.Middleware(auditRecorder(d.AuditRecorder, mux))
+	return requestLogger(recoverer(securityHeaders(cors(d.CORSOrigin, handler))))
 }

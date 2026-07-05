@@ -306,3 +306,112 @@ export interface GrantInput {
   database?: string;
   privileges?: string[];
 }
+
+// ---- Overview dashboard ----
+export interface Overview {
+  servers: { total: number; online: number; offline: number };
+  instances: { total: number; managed: number; external: number };
+  databases: { total: number; active: number };
+  backups: { completed_24h: number; failed_24h: number; last_backup_at?: string | null };
+  operations: { running: number; failed_24h: number };
+  automation: { schedules_enabled: number; channels_enabled: number; rules_enabled: number };
+}
+
+// ---- Backup schedules ----
+export interface Schedule {
+  id: string;
+  database_id: string;
+  destination_id: string;
+  cron: string;
+  engine: string;
+  retention_days: number;
+  enabled: boolean;
+  last_run_at?: string | null;
+  next_run_at?: string | null;
+  created_at: string;
+}
+
+export interface CreateScheduleInput {
+  database_id: string;
+  destination_id: string;
+  cron: string;
+  retention_days: number;
+  enabled: boolean;
+}
+
+export interface UpdateScheduleInput {
+  destination_id: string;
+  cron: string;
+  retention_days: number;
+  enabled: boolean;
+}
+
+// ---- Audit log ----
+export interface AuditEntry {
+  id: number;
+  actor_type: string;
+  actor_id?: string | null;
+  action: string;
+  resource_type: string;
+  resource_id?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+// ---- Notification channels + alert rules ----
+export type ChannelType = "email" | "slack" | "webhook";
+
+export interface NotificationChannel {
+  id: string;
+  name: string;
+  type: ChannelType;
+  config: Record<string, string>;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ChannelInput {
+  name: string;
+  type: ChannelType;
+  config: Record<string, string>;
+  enabled: boolean;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  target_type: string;
+  target_id?: string | null;
+  metric: string;
+  comparator: string;
+  threshold: number;
+  for_seconds: number;
+  severity: string;
+  channel_ids: string[];
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface RuleInput {
+  name: string;
+  target_type: string;
+  target_id?: string;
+  metric: string;
+  comparator: string;
+  threshold: number;
+  for_seconds: number;
+  severity: string;
+  channel_ids: string[];
+  enabled: boolean;
+}
+
+// ---- Metrics history ----
+export interface MetricSample {
+  collected_at: string;
+  cpu_pct?: number | null;
+  mem_used_bytes?: number | null;
+  mem_total_bytes?: number | null;
+  disk_used_bytes?: number | null;
+  disk_total_bytes?: number | null;
+  active_connections?: number | null;
+}

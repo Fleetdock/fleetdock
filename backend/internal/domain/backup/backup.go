@@ -26,6 +26,7 @@ type Backup struct {
 	ID            uuid.UUID
 	DatabaseID    uuid.UUID
 	JobID         *uuid.UUID
+	ScheduleID    *uuid.UUID
 	DestinationID *uuid.UUID
 	Type          string // manual | scheduled
 	Engine        string // mariadb-dump
@@ -35,10 +36,19 @@ type Backup struct {
 	Checksum      *string
 	StartedAt     *time.Time
 	CompletedAt   *time.Time
+	ExpiresAt     *time.Time
 	Error         *string
 	CreatedBy     *uuid.UUID
 	CreatedAt     time.Time
 	Version       int
+}
+
+// Expired is a completed backup past its retention boundary, carrying the
+// stored object location so the retention worker can delete it.
+type Expired struct {
+	ID            uuid.UUID
+	DestinationID uuid.UUID
+	StorageURL    string
 }
 
 // ListFilter narrows backup listings.
@@ -71,4 +81,10 @@ type Repository interface {
 	List(ctx context.Context, f ListFilter) (Page, error)
 	MarkRunning(ctx context.Context, id uuid.UUID) error
 	Complete(ctx context.Context, id uuid.UUID, in CompleteInput) error
+	// ListExpired returns completed backups whose expires_at has passed.
+	ListExpired(ctx context.Context, now time.Time, limit int) ([]Expired, error)
+	// MarkExpired flags a backup as expired after its object is deleted.
+	MarkExpired(ctx context.Context, id uuid.UUID) error
+	// CountByStatusSince counts backups grouped by status created since t.
+	CountByStatusSince(ctx context.Context, since time.Time) (map[Status]int, error)
 }

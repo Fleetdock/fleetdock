@@ -3,6 +3,11 @@
 Analysis of what is **built**, what is **scaffolded but not wired up**, and what
 should be implemented next. Grounded in the current code (not aspirational).
 
+> **Status:** Phases 1 (automation layer) and 2 (observability & dashboard) are
+> now **implemented** — scheduled backups + retention, audit log, notifications
+> & alerts, the overview dashboard, and metrics history. See
+> "Automation & observability" in the [README](README.md). Phases 3–6 remain.
+
 ---
 
 ## TL;DR — the biggest gap
@@ -26,9 +31,9 @@ designed for it — it's mostly application code, not migrations.
 
 ---
 
-## Phase 1 — Finish the automation layer (schema already exists)
+## Phase 1 — Finish the automation layer (schema already exists) — ✅ DONE
 
-### 1.1 Scheduled backups ⭐ (top priority)
+### 1.1 Scheduled backups ⭐ (top priority) — ✅ DONE
 - **Backend:** cron/interval parser; a scheduler loop in [worker.go](backend/internal/worker/worker.go)
   that enqueues `backup` jobs from due `backup_schedules` rows (reuse the existing
   jobs engine); mark resulting backups `type = scheduled`.
@@ -36,19 +41,19 @@ designed for it — it's mostly application code, not migrations.
 - **Frontend:** a Schedules page/section (cron picker, target instance/db, destination, retention).
 - Only the domain type in [backup.go](backend/internal/domain/backup/backup.go) mentions `scheduled` today — no scheduler, handler, or repo exists.
 
-### 1.2 Retention & pruning
+### 1.2 Retention & pruning — ✅ DONE
 - Worker pass that deletes backups past `expires_at` (both the S3 object via the
   storage layer and the metadata row). Set `expires_at = created_at + retention_days`
   on backup creation.
 
-### 1.3 Audit log
+### 1.3 Audit log — ✅ DONE
 - The table and its immutability trigger exist; there is **no write path**.
 - Add audit writes on every mutating action (login, user/role changes, instance/db
   create/drop, backup/restore, grants). Cleanest via middleware around mutating routes
   in [router.go](backend/internal/interfaces/httpapi/router.go), or a service-level hook.
 - Add `GET /v1/audit` (filter by actor/resource/date — indexes already exist) + a read-only UI page.
 
-### 1.4 Notifications & alerts
+### 1.4 Notifications & alerts — ✅ DONE
 - `notification_channels` + `alert_rules` are empty scaffolds.
 - Build channel CRUD (email / Slack / generic webhook), a dispatcher, and alert
   evaluation (e.g. backup failed, server offline, disk > threshold).
@@ -57,19 +62,18 @@ designed for it — it's mostly application code, not migrations.
 
 ---
 
-## Phase 2 — Observability & dashboard
+## Phase 2 — Observability & dashboard — ✅ DONE
 
-### 2.1 Overview dashboard
-- There is **no landing page** — `/` and the dashboard redirect straight to `/servers`
-  ([page.tsx](frontend/src/app/page.tsx)). Add a home page: fleet health, instance/db
-  counts, recent operations, last backup status, alerts.
+### 2.1 Overview dashboard — ✅ DONE
+- Added `/dashboard` landing page (fleet health, instance/db counts, backup and
+  operation status, automation summary), backed by `GET /v1/overview`. Root and
+  login now redirect there.
 
-### 2.2 Metrics history
-- `server_health` is a single-row-per-server upsert (PK on `server_id`) —
-  no time-series. Store history and render CPU/mem/disk/connection charts on the
-  server detail page.
-- The `active_connections` column exists but the heartbeat INSERT in
-  [server_repository_agent.go](backend/internal/infra/postgres/server_repository_agent.go) never sets it — collect and store it.
+### 2.2 Metrics history — ✅ DONE
+- Added `server_health_history` time-series (one row per heartbeat) with
+  CPU/memory/disk/connection charts on the server detail page
+  (`GET /v1/servers/{id}/metrics`), plus retention pruning. The heartbeat now
+  collects and stores `active_connections`.
 
 ---
 

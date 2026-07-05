@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,6 +36,11 @@ type SecretsReader interface {
 	Get(ctx context.Context, ref string) ([]byte, error)
 }
 
+// EventEmitter queues notification events (satisfied by *notificationapp.Service).
+type EventEmitter interface {
+	Emit(ctx context.Context, eventType, title, message, severity, aggregateType string, aggregateID uuid.UUID)
+}
+
 // Service implements the operations engine.
 type Service struct {
 	jobs      jobdom.Repository
@@ -42,6 +49,7 @@ type Service struct {
 	backups   backupdom.Repository
 	dests     backupdestdom.Repository
 	secrets   SecretsReader
+	notifier  EventEmitter
 }
 
 // NewService wires the operations engine.
@@ -49,6 +57,9 @@ func NewService(jobs jobdom.Repository, instances instancedom.Repository, databa
 	backups backupdom.Repository, dests backupdestdom.Repository, secrets SecretsReader) *Service {
 	return &Service{jobs: jobs, instances: instances, databases: databases, backups: backups, dests: dests, secrets: secrets}
 }
+
+// SetNotifier attaches an event emitter (optional; nil disables events).
+func (s *Service) SetNotifier(n EventEmitter) { s.notifier = n }
 
 // Params is the stored (non-sensitive) parameter set of an operation.
 type Params struct {
@@ -301,6 +312,21 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 	case jobdom.TypeBackup:
 		if bid, e := uuid.Parse(p.BackupID); e == nil {
 			s.completeBackup(ctx, bid, ok, result, errMsg)
+			if !ok && s.notifier != nil {
+				msg := "A backup operation failed."
+				if errMsg != nil {
+					msg = *errMsg
+				}
+				s.notifier.Emit(ctx, "backup.failed", "Backup failed", msg, "critical", "backup", bid)
+			}
+		}
+	case jobdom.TypeRestore:
+		if !ok && s.notifier != nil && j.ResourceID != nil {
+			msg := "A restore operation failed."
+			if errMsg != nil {
+				msg = *errMsg
+			}
+			s.notifier.Emit(ctx, "restore.failed", "Restore failed", msg, "critical", "backup", *j.ResourceID)
 		}
 	case jobdom.TypeImportDatabases:
 		if ok {
@@ -348,6 +374,47 @@ func (s *Service) importDiscovered(ctx context.Context, p Params, result json.Ra
 		}
 		_ = s.databases.Create(ctx, db) // conflicts (already tracked) are fine
 	}
+}
+
+// PruneExpiredBackups deletes stored objects for completed backups past their
+// retention boundary and marks them expired. It processes up to `limit` per
+// call and reports how many were pruned.
+func (s *Service) PruneExpiredBackups(ctx context.Context, limit int) (int, error) {
+	expired, err := s.backups.ListExpired(ctx, time.Now(), limit)
+	if err != nil {
+		return 0, err
+	}
+	pruned := 0
+	for _, b := range expired {
+		dest, client, err := s.storageFor(ctx, b.DestinationID.String())
+		if err != nil {
+			slog.Warn("prune: storage unavailable", "backup", b.ID, "error", err.Error())
+			continue
+		}
+		key, err := keyFromStorageURL(b.StorageURL, dest.Bucket)
+		if err != nil {
+			slog.Warn("prune: bad storage url", "backup", b.ID, "error", err.Error())
+			continue
+		}
+		if err := client.Delete(ctx, key); err != nil {
+			slog.Warn("prune: delete object", "backup", b.ID, "error", err.Error())
+			continue
+		}
+		if err := s.backups.MarkExpired(ctx, b.ID); err != nil {
+			slog.Warn("prune: mark expired", "backup", b.ID, "error", err.Error())
+			continue
+		}
+		pruned++
+	}
+	return pruned, nil
+}
+
+func keyFromStorageURL(storageURL, bucket string) (string, error) {
+	want := "s3://" + bucket + "/"
+	if !strings.HasPrefix(storageURL, want) {
+		return "", fmt.Errorf("storage url %q does not match bucket %q", storageURL, bucket)
+	}
+	return strings.TrimPrefix(storageURL, want), nil
 }
 
 // UpdateProgress records executor progress.

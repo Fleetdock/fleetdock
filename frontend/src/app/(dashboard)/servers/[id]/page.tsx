@@ -6,9 +6,10 @@ import { useState, type FormEvent } from "react";
 
 import { Plus } from "lucide-react";
 import { DataTable } from "@/components/data-table";
+import { MetricChart, type ChartPoint } from "@/components/chart";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCan, useCreateInstance, useInstances, useServer } from "@/lib/hooks";
+import { useCan, useCreateInstance, useInstances, useServer, useServerMetrics } from "@/lib/hooks";
 
 export default function ServerDetailPage() {
   const params = useParams();
@@ -51,6 +52,8 @@ export default function ServerDetailPage() {
         </dl>
       </div>
 
+      <ServerMetrics id={id} />
+
       <h2 className="font-semibold" style={{ marginBottom: ".6rem" }}>Instances</h2>
       <DataTable
         columns={[
@@ -77,6 +80,58 @@ function Detail({ label, value }: { label: string; value: string }) {
       <dd className="font-medium" style={{ margin: 0 }}>{value}</dd>
     </div>
   );
+}
+
+const RANGES = [
+  { label: "1h", hours: 1 },
+  { label: "6h", hours: 6 },
+  { label: "24h", hours: 24 },
+  { label: "7d", hours: 168 },
+];
+
+function ServerMetrics({ id }: { id: string }) {
+  const [hours, setHours] = useState(6);
+  const { data, isLoading } = useServerMetrics(id, hours);
+  const samples = data?.items ?? [];
+
+  const cpu: ChartPoint[] = samples.map((s) => ({ t: s.collected_at, v: s.cpu_pct ?? null }));
+  const mem: ChartPoint[] = samples.map((s) => ({ t: s.collected_at, v: pct(s.mem_used_bytes, s.mem_total_bytes) }));
+  const disk: ChartPoint[] = samples.map((s) => ({ t: s.collected_at, v: pct(s.disk_used_bytes, s.disk_total_bytes) }));
+  const conns: ChartPoint[] = samples.map((s) => ({ t: s.collected_at, v: s.active_connections ?? null }));
+
+  return (
+    <section style={{ marginBottom: "1.5rem" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: ".6rem" }}>
+        <h2 className="font-semibold">Metrics</h2>
+        <div className="flex items-center gap-1">
+          {RANGES.map((r) => (
+            <button
+              key={r.hours}
+              className={`btn btn-sm${hours === r.hours ? " btn-primary" : ""}`}
+              onClick={() => setHours(r.hours)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {isLoading && samples.length === 0 ? (
+        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading metrics…</div>
+      ) : (
+        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: ".9rem" }}>
+          <MetricChart title="CPU" points={cpu} unit="%" max={100} color="var(--accent)" />
+          <MetricChart title="Memory used" points={mem} unit="%" max={100} color="#22c55e" />
+          <MetricChart title="Disk used" points={disk} unit="%" max={100} color="#f59e0b" />
+          <MetricChart title="Connections" points={conns} color="#8b5cf6" />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function pct(used?: number | null, total?: number | null): number | null {
+  if (used == null || total == null || total === 0) return null;
+  return (used / total) * 100;
 }
 
 function AddInstanceModal({ open, onClose, serverId }: { open: boolean; onClose: () => void; serverId: string }) {

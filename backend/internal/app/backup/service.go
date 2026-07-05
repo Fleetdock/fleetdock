@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -41,7 +42,7 @@ type TriggerInput struct {
 	CreatedBy     *uuid.UUID
 }
 
-// Trigger creates the backup record and its operation.
+// Trigger creates a manual backup record and its operation.
 func (s *Service) Trigger(ctx context.Context, in TriggerInput) (*backupdom.Backup, *jobdom.Job, error) {
 	dbID, err := uuid.Parse(in.DatabaseID)
 	if err != nil {
@@ -51,6 +52,19 @@ func (s *Service) Trigger(ctx context.Context, in TriggerInput) (*backupdom.Back
 	if err != nil {
 		return nil, nil, apperr.Invalid("destination_id", "destination_id must be a valid UUID")
 	}
+	return s.trigger(ctx, dbID, destID, "manual", nil, nil, in.CreatedBy)
+}
+
+// TriggerScheduled creates a scheduled backup with a retention boundary. It is
+// called by the scheduler and returns just the operation error (the created
+// records are internal bookkeeping).
+func (s *Service) TriggerScheduled(ctx context.Context, databaseID, destinationID, scheduleID uuid.UUID, retentionDays int, createdBy *uuid.UUID) error {
+	expiresAt := time.Now().Add(time.Duration(retentionDays) * 24 * time.Hour)
+	_, _, err := s.trigger(ctx, databaseID, destinationID, "scheduled", &scheduleID, &expiresAt, createdBy)
+	return err
+}
+
+func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind string, scheduleID *uuid.UUID, expiresAt *time.Time, createdBy *uuid.UUID) (*backupdom.Backup, *jobdom.Job, error) {
 	db, err := s.databases.GetByID(ctx, dbID)
 	if err != nil {
 		return nil, nil, err
@@ -78,7 +92,7 @@ func (s *Service) Trigger(ctx context.Context, in TriggerInput) (*backupdom.Back
 		BackupID:      backupID.String(),
 		DestinationID: dest.ID.String(),
 		Key:           key,
-	}, in.CreatedBy)
+	}, createdBy)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,11 +101,13 @@ func (s *Service) Trigger(ctx context.Context, in TriggerInput) (*backupdom.Back
 		ID:            backupID,
 		DatabaseID:    db.ID,
 		JobID:         &job.ID,
+		ScheduleID:    scheduleID,
 		DestinationID: &dest.ID,
-		Type:          "manual",
+		Type:          kind,
 		Engine:        "mariadb-dump",
 		Status:        backupdom.StatusPending,
-		CreatedBy:     in.CreatedBy,
+		ExpiresAt:     expiresAt,
+		CreatedBy:     createdBy,
 	}
 	if err := s.backups.Create(ctx, b); err != nil {
 		return nil, nil, err

@@ -160,9 +160,32 @@ func (s *Service) Heartbeat(ctx context.Context, serverID uuid.UUID, info server
 	return s.servers.Heartbeat(ctx, serverID, info)
 }
 
-// MarkStale flips servers without a recent heartbeat to offline.
-func (s *Service) MarkStale(ctx context.Context, olderThan time.Duration) (int, error) {
+// MarkStale flips servers without a recent heartbeat to offline and returns
+// the ids that changed.
+func (s *Service) MarkStale(ctx context.Context, olderThan time.Duration) ([]uuid.UUID, error) {
 	return s.servers.MarkOffline(ctx, time.Now().Add(-olderThan))
+}
+
+// LatestServerHealth returns the current health snapshot for every server.
+func (s *Service) LatestServerHealth(ctx context.Context) ([]serverdom.HealthSample, error) {
+	return s.servers.LatestHealthAll(ctx)
+}
+
+// ServerMetrics returns health-history samples for one server since `since`.
+func (s *Service) ServerMetrics(ctx context.Context, id string, since time.Time) ([]serverdom.HealthSample, error) {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, apperr.Invalid("id", "id must be a valid UUID")
+	}
+	if _, err := s.servers.GetByID(ctx, uid); err != nil {
+		return nil, err
+	}
+	return s.servers.HealthHistory(ctx, uid, since)
+}
+
+// PruneHealthHistory removes health-history samples older than cutoff.
+func (s *Service) PruneHealthHistory(ctx context.Context, cutoff time.Time) (int, error) {
+	return s.servers.PruneHealthHistory(ctx, cutoff)
 }
 
 // ---- helpers ----

@@ -37,6 +37,9 @@ var PermissionCatalog = []string{
 	"operation:read", "operation:write",
 	"backup:read", "backup:write",
 	"destination:read", "destination:write",
+	"schedule:read", "schedule:write",
+	"notification:read", "notification:write",
+	"audit:read",
 	"user:read", "user:write",
 	"token:read", "token:write",
 }

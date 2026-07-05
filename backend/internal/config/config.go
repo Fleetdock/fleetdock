@@ -42,6 +42,16 @@ type Config struct {
 	// HeartbeatTimeout is how long without a heartbeat before a server is
 	// marked offline.
 	HeartbeatTimeout time.Duration
+	// MetricsRetention is how long server health-history samples are kept.
+	MetricsRetention time.Duration
+
+	// SMTP configures outbound email for notification channels. When
+	// SMTPHost is empty, email delivery is disabled.
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
 
 	// Env is the deployment environment ("development" or "production").
 	// In production the server refuses to start with insecure defaults.
@@ -73,6 +83,13 @@ func Load() (Config, error) {
 		AgentBinDir:      getenv("MDCP_AGENT_BIN_DIR", "/opt/db-manager/agents"),
 		WorkerEnabled:    getenvBool("MDCP_WORKER_ENABLED", true),
 		HeartbeatTimeout: getenvDuration("MDCP_HEARTBEAT_TIMEOUT", 2*time.Minute),
+		MetricsRetention: getenvDuration("MDCP_METRICS_RETENTION", 7*24*time.Hour),
+
+		SMTPHost:     os.Getenv("MDCP_SMTP_HOST"),
+		SMTPPort:     getenv("MDCP_SMTP_PORT", "587"),
+		SMTPUsername: os.Getenv("MDCP_SMTP_USERNAME"),
+		SMTPPassword: os.Getenv("MDCP_SMTP_PASSWORD"),
+		SMTPFrom:     getenv("MDCP_SMTP_FROM", "db-manager@localhost"),
 
 		Env: getenv("MDCP_ENV", "development"),
 	}

@@ -88,3 +88,8 @@ func (c *Client) Upload(ctx context.Context, key string, r io.Reader, size int64
 func (c *Client) Download(ctx context.Context, key string) (io.ReadCloser, error) {
 	return c.mc.GetObject(ctx, c.bucket, key, minio.GetObjectOptions{})
 }
+
+// Delete removes an object from the bucket.
+func (c *Client) Delete(ctx context.Context, key string) error {
+	return c.mc.RemoveObject(ctx, c.bucket, key, minio.RemoveObjectOptions{})
+}

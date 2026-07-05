@@ -8,7 +8,7 @@ import { getToken } from "@/lib/auth";
 export default function Home() {
   const router = useRouter();
   useEffect(() => {
-    router.replace(getToken() ? "/servers" : "/login");
+    router.replace(getToken() ? "/dashboard" : "/login");
   }, [router]);
   return null;
 }

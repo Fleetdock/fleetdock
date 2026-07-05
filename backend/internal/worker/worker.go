@@ -1,6 +1,8 @@
 // Package worker is the control plane's in-process executor. It runs
 // operations that target external instances (which no agent can reach from
-// localhost) and housekeeping like flipping stale servers to offline.
+// localhost) plus housekeeping: offline detection, scheduled backups, backup
+// retention, metric-history pruning, alert evaluation and notification
+// dispatch.
 package worker
 
 import (
@@ -9,29 +11,39 @@ import (
 	"time"
 
 	agentapp "github.com/mariadb-cp/db-manager/backend/internal/app/agent"
+	notificationapp "github.com/mariadb-cp/db-manager/backend/internal/app/notification"
 	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
+	scheduleapp "github.com/mariadb-cp/db-manager/backend/internal/app/schedule"
 	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
 	"github.com/mariadb-cp/db-manager/backend/internal/platform/executor"
 )
 
-// Worker polls for control-plane operations and executes them.
+// Deps are the collaborators the worker drives.
+type Deps struct {
+	Ops              *operationapp.Service
+	Agents           *agentapp.Service
+	Schedules        *scheduleapp.Service
+	Notifications    *notificationapp.Service
+	HeartbeatTimeout time.Duration
+	MetricsRetention time.Duration
+}
+
+// Worker runs the control plane's background loops.
 type Worker struct {
-	ops              *operationapp.Service
-	agents           *agentapp.Service
-	heartbeatTimeout time.Duration
+	deps Deps
 }
 
 // New builds a worker.
-func New(ops *operationapp.Service, agents *agentapp.Service, heartbeatTimeout time.Duration) *Worker {
-	return &Worker{ops: ops, agents: agents, heartbeatTimeout: heartbeatTimeout}
-}
+func New(deps Deps) *Worker { return &Worker{deps: deps} }
 
 // Run blocks until ctx is canceled.
 func (w *Worker) Run(ctx context.Context) {
 	claim := time.NewTicker(3 * time.Second)
 	defer claim.Stop()
-	stale := time.NewTicker(time.Minute)
-	defer stale.Stop()
+	minute := time.NewTicker(time.Minute)
+	defer minute.Stop()
+	fast := time.NewTicker(15 * time.Second)
+	defer fast.Stop()
 
 	slog.Info("operations worker started")
 	for {
@@ -39,25 +51,75 @@ func (w *Worker) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-claim.C:
-			// Drain all currently pending control-plane jobs, one at a time.
-			for {
-				if !w.runOne(ctx) {
-					break
-				}
+			// Drain all currently pending control-plane jobs.
+			for w.runOne(ctx) {
 			}
-		case <-stale.C:
-			if n, err := w.agents.MarkStale(ctx, w.heartbeatTimeout); err != nil {
-				slog.Error("mark stale servers", "error", err.Error())
-			} else if n > 0 {
-				slog.Info("marked servers offline", "count", n)
+		case <-fast.C:
+			w.evaluateAndDispatch(ctx)
+		case <-minute.C:
+			w.housekeeping(ctx)
+		}
+	}
+}
+
+// evaluateAndDispatch runs alert evaluation then delivers queued notifications.
+func (w *Worker) evaluateAndDispatch(ctx context.Context) {
+	if w.deps.Notifications == nil {
+		return
+	}
+	if err := w.deps.Notifications.EvaluateAlerts(ctx); err != nil {
+		slog.Error("evaluate alerts", "error", err.Error())
+	}
+	if _, err := w.deps.Notifications.DispatchPending(ctx); err != nil {
+		slog.Error("dispatch notifications", "error", err.Error())
+	}
+}
+
+// housekeeping runs the once-a-minute maintenance loops.
+func (w *Worker) housekeeping(ctx context.Context) {
+	// Offline detection + notification.
+	if ids, err := w.deps.Agents.MarkStale(ctx, w.deps.HeartbeatTimeout); err != nil {
+		slog.Error("mark stale servers", "error", err.Error())
+	} else if len(ids) > 0 {
+		slog.Info("marked servers offline", "count", len(ids))
+		if w.deps.Notifications != nil {
+			for _, id := range ids {
+				w.deps.Notifications.Emit(ctx, "server.offline", "Server offline",
+					"A server stopped sending heartbeats and was marked offline.", "warning", "server", id)
 			}
+		}
+	}
+
+	// Scheduled backups.
+	if w.deps.Schedules != nil {
+		if n, err := w.deps.Schedules.RunDue(ctx); err != nil {
+			slog.Error("run due schedules", "error", err.Error())
+		} else if n > 0 {
+			slog.Info("triggered scheduled backups", "count", n)
+		}
+	}
+
+	// Backup retention.
+	if n, err := w.deps.Ops.PruneExpiredBackups(ctx, 100); err != nil {
+		slog.Error("prune expired backups", "error", err.Error())
+	} else if n > 0 {
+		slog.Info("pruned expired backups", "count", n)
+	}
+
+	// Metric-history retention.
+	if w.deps.MetricsRetention > 0 {
+		cutoff := time.Now().Add(-w.deps.MetricsRetention)
+		if n, err := w.deps.Agents.PruneHealthHistory(ctx, cutoff); err != nil {
+			slog.Error("prune health history", "error", err.Error())
+		} else if n > 0 {
+			slog.Info("pruned health history", "count", n)
 		}
 	}
 }
 
 // runOne claims and executes a single job; it reports whether one was found.
 func (w *Worker) runOne(ctx context.Context) bool {
-	job, payload, err := w.ops.Claim(ctx, nil)
+	job, payload, err := w.deps.Ops.Claim(ctx, nil)
 	if err != nil {
 		slog.Error("claim operation", "error", err.Error())
 		return false
@@ -73,13 +135,13 @@ func (w *Worker) runOne(ctx context.Context) bool {
 	result, err := executor.Execute(execCtx, string(job.Type), payload)
 	if err != nil {
 		msg := err.Error()
-		if cerr := w.ops.Complete(ctx, job.ID, jobdom.StatusFailed, nil, &msg); cerr != nil {
+		if cerr := w.deps.Ops.Complete(ctx, job.ID, jobdom.StatusFailed, nil, &msg); cerr != nil {
 			slog.Error("complete operation", "id", job.ID, "error", cerr.Error())
 		}
 		slog.Warn("operation failed", "id", job.ID, "type", job.Type, "error", msg)
 		return true
 	}
-	if err := w.ops.Complete(ctx, job.ID, jobdom.StatusSucceeded, result, nil); err != nil {
+	if err := w.deps.Ops.Complete(ctx, job.ID, jobdom.StatusSucceeded, result, nil); err != nil {
 		slog.Error("complete operation", "id", job.ID, "error", err.Error())
 	}
 	slog.Info("operation succeeded", "id", job.ID, "type", job.Type)
