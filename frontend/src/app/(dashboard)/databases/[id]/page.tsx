@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useMemo, useState, type FormEvent } from "react";
 
-import { ChevronRight, Plus, Table2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Plus, Search, Table2, Trash2, X } from "lucide-react";
+import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
@@ -20,6 +21,7 @@ import {
   useTableRows,
   useTables,
 } from "@/lib/hooks";
+import type { TableInfo } from "@/lib/types";
 
 const PAGE_SIZE = 50;
 
@@ -49,6 +51,8 @@ function DatabaseDetail() {
   const { data: db, isLoading } = useDatabase(id);
   const { data: instance } = useInstance(db?.instance_id ?? "");
   const can = useCan();
+  const canWrite = can("database:write");
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // View state lives in the URL so the browser back button steps
   // data browser -> tables list -> databases list.
@@ -89,6 +93,11 @@ function DatabaseDetail() {
           <h1 className="text-xl font-semibold">{db.name}</h1>
           <StatusBadge status={db.status} />
         </div>
+        {canWrite ? (
+          <button className="btn btn-sm btn-danger" onClick={() => setDeleteOpen(true)}>
+            <Trash2 size={15} /> Remove
+          </button>
+        ) : null}
       </div>
 
       <div className="card" style={{ padding: "1.1rem", marginBottom: "1.25rem" }}>
@@ -135,6 +144,12 @@ function DatabaseDetail() {
       ) : (
         <GrantsSection databaseId={id} canWrite={can("database:write")} />
       )}
+      <DeleteDatabaseModal
+        database={deleteOpen ? db : null}
+        instance={instance}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => router.push("/databases")}
+      />
     </div>
   );
 }
@@ -152,9 +167,88 @@ function Detail({ label, value, link }: { label: string; value: string; link?: s
 
 // ---- Tables list ----
 
+type TableSortKey = "name" | "engine" | "row_count" | "data_bytes" | "index_bytes";
+type SortDir = "asc" | "desc";
+
+function compareTables(a: TableInfo, b: TableInfo, key: TableSortKey, dir: SortDir) {
+  let cmp = 0;
+  if (key === "name" || key === "engine") {
+    cmp = a[key].localeCompare(b[key]);
+  } else {
+    cmp = a[key] - b[key];
+  }
+  return dir === "asc" ? cmp : -cmp;
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  activeKey,
+  dir,
+  onSort,
+}: {
+  label: string;
+  sortKey: TableSortKey;
+  activeKey: TableSortKey;
+  dir: SortDir;
+  onSort: (key: TableSortKey) => void;
+}) {
+  const active = sortKey === activeKey;
+  return (
+    <th>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        style={{
+          padding: 0,
+          font: "inherit",
+          color: "inherit",
+          textTransform: "inherit",
+          letterSpacing: "inherit",
+          fontWeight: 500,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: ".25rem",
+        }}
+        onClick={() => onSort(sortKey)}
+      >
+        {label}
+        {active ? (dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : null}
+      </button>
+    </th>
+  );
+}
+
 function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (table: string) => void }) {
   const { data, isLoading, error } = useTables(databaseId);
-  const paged = useClientPage(data?.items);
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<TableSortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const filtered = useMemo(() => {
+    const items = data?.items ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((t) => t.name.toLowerCase().includes(q));
+  }, [data?.items, search]);
+
+  const sorted = useMemo(() => {
+    const items = [...filtered];
+    items.sort((a, b) => compareTables(a, b, sortKey, sortDir));
+    return items;
+  }, [filtered, sortKey, sortDir]);
+
+  const paged = useClientPage(sorted);
+
+  function onSort(key: TableSortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "name" || key === "engine" ? "asc" : "desc");
+    }
+    paged.setPage(1);
+  }
 
   if (isLoading) {
     return <div className="flex items-center gap-2 muted text-sm"><Spinner /> Connecting to instance…</div>;
@@ -168,15 +262,36 @@ function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (ta
 
   return (
     <div>
+      <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", maxWidth: "22rem" }}>
+        <div style={{ position: "relative", width: "100%" }}>
+          <span style={{ position: "absolute", left: 10, top: 9, color: "var(--muted)" }}>
+            <Search size={16} />
+          </span>
+          <input
+            className="input"
+            style={{ paddingLeft: "2rem" }}
+            placeholder="Search tables…"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              paged.setPage(1);
+            }}
+          />
+        </div>
+      </div>
+      {filtered.length === 0 ? (
+        <EmptyState title="No tables match your search" hint="Try a different name or clear the search." />
+      ) : (
+      <>
       <div className="card" style={{ overflow: "hidden" }}>
       <table className="table">
         <thead>
           <tr>
-            <th>Table</th>
-            <th>Engine</th>
-            <th>Rows (est.)</th>
-            <th>Data</th>
-            <th>Indexes</th>
+            <SortableHeader label="Table" sortKey="name" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortableHeader label="Engine" sortKey="engine" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortableHeader label="Rows (est.)" sortKey="row_count" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortableHeader label="Data" sortKey="data_bytes" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortableHeader label="Indexes" sortKey="index_bytes" activeKey={sortKey} dir={sortDir} onSort={onSort} />
             <th />
           </tr>
         </thead>
@@ -201,6 +316,8 @@ function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (ta
       <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
         <Pagination page={paged.page} pageCount={paged.pageCount} onPage={paged.setPage} />
       </div>
+      </>
+      )}
     </div>
   );
 }

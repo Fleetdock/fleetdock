@@ -4,6 +4,9 @@
 BACKEND  := backend
 FRONTEND := frontend
 COMPOSE  := docker compose
+# macOS 15+ (especially Tahoe 26) requires LC_UUID in Mach-O binaries; Go <1.24
+# omits it unless -B gobuildid is passed (see golang/go#68678).
+GO_RUN   := go run -ldflags="-B gobuildid"
 
 .DEFAULT_GOAL := help
 
@@ -33,7 +36,7 @@ logs: ## Tail logs from all services
 
 .PHONY: backend-run
 backend-run: ## Run the API locally (needs MDCP_DATABASE_URL)
-	cd $(BACKEND) && go run ./cmd/api
+	cd $(BACKEND) && $(GO_RUN) ./cmd/api
 
 .PHONY: backend-build
 backend-build: ## Compile the backend
@@ -57,7 +60,7 @@ backend-tidy: ## Tidy Go modules
 
 .PHONY: backend-migrate
 backend-migrate: ## Apply DB migrations and exit (needs MDCP_DATABASE_URL)
-	cd $(BACKEND) && go run ./cmd/migrate
+	cd $(BACKEND) && $(GO_RUN) ./cmd/migrate
 
 ## ----- Frontend (Next.js) -----
 
@@ -76,6 +79,17 @@ frontend-build: ## Production build of the frontend
 .PHONY: frontend-start
 frontend-start: ## Start the built frontend
 	cd $(FRONTEND) && npm run start
+
+## ----- Local development -----
+
+.PHONY: dev
+dev: ## Run API + Next.js dev servers (hot reload; Ctrl+C stops both)
+	@echo "Starting backend http://localhost:8080 and frontend http://localhost:3000 (Ctrl+C to stop)…"
+	@trap 'kill 0' INT TERM EXIT; \
+	set -a; [ -f .env ] && . ./.env; set +a; \
+	(cd $(BACKEND) && $(GO_RUN) ./cmd/api) & \
+	(cd $(FRONTEND) && npm run dev) & \
+	wait
 
 ## ----- Aggregate -----
 

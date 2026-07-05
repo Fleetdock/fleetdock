@@ -148,9 +148,15 @@ func (h *DatabaseHandler) Unlock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toDatabaseResponse(d))
 }
 
-// Delete handles DELETE /v1/databases/{id}.
+// Delete handles DELETE /v1/databases/{id}. Query param drop=true enqueues
+// a physical DROP DATABASE on the instance (requires admin credentials).
 func (h *DatabaseHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Delete(r.Context(), r.PathValue("id")); err != nil {
+	dropPhysical := r.URL.Query().Get("drop") == "true"
+	var createdBy *uuid.UUID
+	if p := principalFrom(r.Context()); p != nil {
+		createdBy = &p.UserID
+	}
+	if err := h.svc.Delete(r.Context(), r.PathValue("id"), dropPhysical, createdBy); err != nil {
 		writeError(w, err)
 		return
 	}

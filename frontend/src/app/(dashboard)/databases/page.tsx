@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 
 import { Archive, Lock, Plus, Search, Trash2, Unlock } from "lucide-react";
+import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
@@ -11,14 +12,13 @@ import {
   useCan,
   useCreateDatabase,
   useDatabases,
-  useDeleteDatabase,
   useDestinations,
   useInstances,
   useLockDatabase,
   useTriggerBackup,
   useUnlockDatabase,
 } from "@/lib/hooks";
-import type { Database } from "@/lib/types";
+import type { Database, Instance } from "@/lib/types";
 
 export default function DatabasesPage() {
   const [search, setSearch] = useState("");
@@ -27,6 +27,7 @@ export default function DatabasesPage() {
   const { data: instances } = useInstances();
   const [open, setOpen] = useState(false);
   const [backupTarget, setBackupTarget] = useState<Database | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Database | null>(null);
   const can = useCan();
   const canWrite = can("database:write");
   const canBackup = can("backup:write");
@@ -34,11 +35,16 @@ export default function DatabasesPage() {
 
   const lock = useLockDatabase();
   const unlock = useUnlockDatabase();
-  const del = useDeleteDatabase();
 
   const instanceName = useMemo(() => {
     const m = new Map<string, string>();
     instances?.items.forEach((i) => m.set(i.id, i.name));
+    return m;
+  }, [instances]);
+
+  const instanceById = useMemo(() => {
+    const m = new Map<string, Instance>();
+    instances?.items.forEach((i) => m.set(i.id, i));
     return m;
   }, [instances]);
 
@@ -122,12 +128,7 @@ export default function DatabasesPage() {
                             )}
                             <button
                               className="btn btn-sm btn-danger"
-                              onClick={() => {
-                                if (confirm(`Delete database "${d.name}"? It enters a 7-day recovery window.`)) {
-                                  del.mutate(d.id);
-                                }
-                              }}
-                              disabled={del.isPending}
+                              onClick={() => setDeleteTarget(d)}
                               aria-label="Delete"
                             >
                               <Trash2 size={15} />
@@ -156,6 +157,11 @@ export default function DatabasesPage() {
 
       <CreateDatabaseModal open={open} onClose={() => setOpen(false)} instances={instances?.items ?? []} />
       <BackupDatabaseModal database={backupTarget} onClose={() => setBackupTarget(null)} />
+      <DeleteDatabaseModal
+        database={deleteTarget}
+        instance={deleteTarget ? instanceById.get(deleteTarget.instance_id) : undefined}
+        onClose={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

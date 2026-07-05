@@ -196,7 +196,8 @@ export function useUnlockDatabase() {
 export function useDeleteDatabase() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/v1/databases/${id}`),
+    mutationFn: ({ id, drop }: { id: string; drop?: boolean }) =>
+      api.del<void>(`/v1/databases/${id}${drop ? "?drop=true" : ""}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["databases"] }),
   });
 }

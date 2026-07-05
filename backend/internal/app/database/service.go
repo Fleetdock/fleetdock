@@ -156,11 +156,38 @@ func (s *Service) Unlock(ctx context.Context, id string) (*databasedom.Database,
 	return s.repo.Unlock(ctx, uid)
 }
 
-// Delete soft-deletes a database (opening the recovery window).
-func (s *Service) Delete(ctx context.Context, id string) error {
+// Delete soft-deletes a database. When dropPhysical is true and the instance
+// has admin credentials, a delete_database operation is enqueued to run
+// DROP DATABASE on the instance before the control-plane record is removed.
+func (s *Service) Delete(ctx context.Context, id string, dropPhysical bool, createdBy *uuid.UUID) error {
 	uid, err := uuid.Parse(id)
 	if err != nil {
 		return apperr.Invalid("id", "id must be a valid UUID")
+	}
+	db, err := s.repo.GetByID(ctx, uid)
+	if err != nil {
+		return err
+	}
+	inst, err := s.instances.GetByID(ctx, db.InstanceID)
+	if err != nil {
+		return err
+	}
+	if dropPhysical {
+		if !inst.HasCredentials() {
+			return apperr.Invalid("drop", "instance has no admin credentials; cannot drop database on server")
+		}
+		serverID := inst.ServerID
+		if inst.Kind == instancedom.KindExternal {
+			serverID = nil
+		}
+		if _, err := s.ops.Create(ctx, jobdom.TypeDeleteDatabase, "database", &db.ID, serverID,
+			operationapp.Params{
+				InstanceID: inst.ID.String(),
+				DatabaseID: db.ID.String(),
+				Database:   db.Name,
+			}, createdBy); err != nil {
+			return err
+		}
 	}
 	return s.repo.SoftDelete(ctx, uid)
 }

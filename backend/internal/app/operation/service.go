@@ -306,6 +306,8 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 		if ok {
 			s.importDiscovered(ctx, p, result)
 		}
+	case jobdom.TypeDeleteDatabase:
+		// Metadata is already soft-deleted when the job was enqueued.
 	}
 	return nil
 }
