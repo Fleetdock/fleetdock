@@ -10,7 +10,12 @@ import (
 	_ "github.com/go-sql-driver/mysql" // driver registration
 )
 
-func init() { Register("mariadb", &MariaDB{}) }
+// MariaDB and MySQL share the MySQL wire protocol and client tooling, so one
+// implementation serves both engines.
+func init() {
+	Register("mariadb", &MariaDB{})
+	Register("mysql", &MariaDB{})
+}
 
 // MariaDB implements Client over the MySQL wire protocol.
 type MariaDB struct{}
@@ -111,29 +116,41 @@ func (m *MariaDB) DropDatabase(ctx context.Context, p ConnParams, name string) e
 	return err
 }
 
+// CountTables returns the number of base tables in a database.
+func (m *MariaDB) CountTables(ctx context.Context, p ConnParams, database string) (int, error) {
+	p.Database = database
+	db, err := m.open(p)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	var n int
+	err = db.QueryRowContext(ctx,
+		"SELECT count(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?", database).Scan(&n)
+	return n, err
+}
+
 // DumpArgs builds the argv for a consistent logical dump to stdout.
-func (m *MariaDB) DumpArgs(p ConnParams, database string) ([]string, []string) {
+func (m *MariaDB) DumpArgs(p ConnParams, database string) ([]string, []string, []string) {
 	return []string{"mariadb-dump", "mysqldump"}, []string{
 		"--host=" + p.Host,
 		fmt.Sprintf("--port=%d", p.Port),
 		"--user=" + p.User,
-		"--password=" + p.Password,
 		"--single-transaction",
 		"--quick",
 		"--routines",
 		"--triggers",
 		"--events",
 		database,
-	}
+	}, []string{"MYSQL_PWD=" + p.Password}
 }
 
 // RestoreArgs builds the argv for restoring a SQL stream from stdin.
-func (m *MariaDB) RestoreArgs(p ConnParams, database string) ([]string, []string) {
+func (m *MariaDB) RestoreArgs(p ConnParams, database string) ([]string, []string, []string) {
 	return []string{"mariadb", "mysql"}, []string{
 		"--host=" + p.Host,
 		fmt.Sprintf("--port=%d", p.Port),
 		"--user=" + p.User,
-		"--password=" + p.Password,
 		database,
-	}
+	}, []string{"MYSQL_PWD=" + p.Password}
 }

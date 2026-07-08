@@ -16,19 +16,26 @@ import (
 type Type string
 
 const (
-	TypeCreateDatabase  Type = "create_database"
-	TypeDeleteDatabase  Type = "delete_database"
-	TypeBackup          Type = "backup"
-	TypeRestore         Type = "restore"
-	TypeTestConnection  Type = "test_connection"
-	TypeImportDatabases Type = "import_databases"
+	TypeCreateDatabase    Type = "create_database"
+	TypeDeleteDatabase    Type = "delete_database"
+	TypeBackup            Type = "backup"
+	TypeRestore           Type = "restore"
+	TypeTestConnection    Type = "test_connection"
+	TypeImportDatabases   Type = "import_databases"
+	TypeProvisionInstance Type = "provision_instance"
+	TypeStartInstance     Type = "start_instance"
+	TypeStopInstance      Type = "stop_instance"
+	TypeRestartInstance   Type = "restart_instance"
+	TypeRemoveInstance    Type = "remove_instance"
 )
 
 // Valid reports whether t is a known job type.
 func (t Type) Valid() bool {
 	switch t {
 	case TypeCreateDatabase, TypeDeleteDatabase, TypeBackup, TypeRestore,
-		TypeTestConnection, TypeImportDatabases:
+		TypeTestConnection, TypeImportDatabases,
+		TypeProvisionInstance, TypeStartInstance, TypeStopInstance,
+		TypeRestartInstance, TypeRemoveInstance:
 		return true
 	}
 	return false

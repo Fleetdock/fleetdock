@@ -116,8 +116,12 @@ export default function InstancesPage() {
             <button
               className="btn btn-sm btn-danger"
               onClick={() => {
-                if (confirm(`Remove instance "${i.name}" from the control plane? The actual database server is not touched.`)) {
-                  del.mutate(i.id);
+                if (i.provisioned) {
+                  if (!confirm(`Remove provisioned instance "${i.name}"? Its Docker container will be stopped and removed.`)) return;
+                  const removeVolume = confirm("Also delete the data volume? This permanently destroys the database data. Cancel to keep the volume.");
+                  del.mutate({ id: i.id, removeVolume });
+                } else if (confirm(`Remove instance "${i.name}" from the control plane? The actual database server is not touched.`)) {
+                  del.mutate({ id: i.id });
                 }
               }}
               disabled={del.isPending}

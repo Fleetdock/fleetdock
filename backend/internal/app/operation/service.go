@@ -41,6 +41,13 @@ type EventEmitter interface {
 	Emit(ctx context.Context, eventType, title, message, severity, aggregateType string, aggregateID uuid.UUID)
 }
 
+// Mover advances the move-database saga when its sub-jobs complete (satisfied
+// by *moveapp.Service).
+type Mover interface {
+	OnBackupComplete(ctx context.Context, backupID uuid.UUID, ok bool)
+	OnRestoreComplete(ctx context.Context, restoreJobID uuid.UUID, ok bool, result json.RawMessage)
+}
+
 // Service implements the operations engine.
 type Service struct {
 	jobs      jobdom.Repository
@@ -50,6 +57,7 @@ type Service struct {
 	dests     backupdestdom.Repository
 	secrets   SecretsReader
 	notifier  EventEmitter
+	mover     Mover
 }
 
 // NewService wires the operations engine.
@@ -61,6 +69,9 @@ func NewService(jobs jobdom.Repository, instances instancedom.Repository, databa
 // SetNotifier attaches an event emitter (optional; nil disables events).
 func (s *Service) SetNotifier(n EventEmitter) { s.notifier = n }
 
+// SetMover attaches the move-database saga hook (optional).
+func (s *Service) SetMover(m Mover) { s.mover = m }
+
 // Params is the stored (non-sensitive) parameter set of an operation.
 type Params struct {
 	InstanceID    string `json:"instance_id,omitempty"`
@@ -71,6 +82,20 @@ type Params struct {
 	BackupID      string `json:"backup_id,omitempty"`
 	DestinationID string `json:"destination_id,omitempty"`
 	Key           string `json:"key,omitempty"`
+	// Provisioning (container lifecycle) params.
+	Image        string `json:"image,omitempty"`
+	Version      string `json:"version,omitempty"`
+	RemoveVolume bool   `json:"remove_volume,omitempty"`
+}
+
+// isProvisionType reports whether a job type is a container lifecycle op.
+func isProvisionType(t jobdom.Type) bool {
+	switch t {
+	case jobdom.TypeProvisionInstance, jobdom.TypeStartInstance, jobdom.TypeStopInstance,
+		jobdom.TypeRestartInstance, jobdom.TypeRemoveInstance:
+		return true
+	}
+	return false
 }
 
 // Create records a new pending operation.
@@ -192,6 +217,13 @@ func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Pa
 		return nil, fmt.Errorf("parse params: %w", err)
 	}
 
+	// Container lifecycle operations need no DB connection, and the container
+	// name derives from the instance id — so remove works even after the
+	// instance record is soft-deleted.
+	if isProvisionType(j.Type) {
+		return s.provisionPayload(ctx, j.Type, p)
+	}
+
 	iid, err := uuid.Parse(p.InstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("operation has no valid instance_id")
@@ -237,8 +269,54 @@ func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Pa
 			return nil, fmt.Errorf("presign download: %w", err)
 		}
 		payload.GetURL = getURL
+		// Attach the expected checksum so the executor can verify integrity
+		// before restoring.
+		if bid, e := uuid.Parse(p.BackupID); e == nil {
+			if b, e := s.backups.GetByID(ctx, bid); e == nil && b.Checksum != nil {
+				payload.Checksum = *b.Checksum
+			}
+		}
 	}
 	return payload, nil
+}
+
+// provisionPayload builds the Docker lifecycle payload for the agent. The
+// container/volume name derives deterministically from the instance id, so
+// start/stop/restart/remove need no live instance row. Only provisioning loads
+// the instance (for its port + root password).
+func (s *Service) provisionPayload(ctx context.Context, typ jobdom.Type, p Params) (*executor.Payload, error) {
+	if p.InstanceID == "" {
+		return nil, fmt.Errorf("operation has no instance_id")
+	}
+	containerName := "dbm-" + p.InstanceID
+	spec := &executor.ProvisionSpec{
+		ContainerName: containerName,
+		Volume:        containerName,
+		RemoveVolume:  p.RemoveVolume,
+	}
+	engineName := ""
+	if typ == jobdom.TypeProvisionInstance {
+		iid, err := uuid.Parse(p.InstanceID)
+		if err != nil {
+			return nil, fmt.Errorf("operation has no valid instance_id")
+		}
+		inst, err := s.instances.GetByID(ctx, iid)
+		if err != nil {
+			return nil, err
+		}
+		spec.Image = p.Image
+		spec.Version = p.Version
+		spec.Port = inst.Port
+		engineName = string(inst.Engine)
+		if inst.RootSecretRef != nil {
+			pw, err := s.secrets.Get(ctx, *inst.RootSecretRef)
+			if err != nil {
+				return nil, fmt.Errorf("load instance credentials: %w", err)
+			}
+			spec.RootPassword = string(pw)
+		}
+	}
+	return &executor.Payload{Engine: engineName, Provision: spec}, nil
 }
 
 func (s *Service) connParams(ctx context.Context, inst *instancedom.Instance) (engine.ConnParams, error) {
@@ -319,8 +397,14 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 				}
 				s.notifier.Emit(ctx, "backup.failed", "Backup failed", msg, "critical", "backup", bid)
 			}
+			if s.mover != nil {
+				s.mover.OnBackupComplete(ctx, bid, ok)
+			}
 		}
 	case jobdom.TypeRestore:
+		if s.mover != nil {
+			s.mover.OnRestoreComplete(ctx, j.ID, ok, result)
+		}
 		if !ok && s.notifier != nil && j.ResourceID != nil {
 			msg := "A restore operation failed."
 			if errMsg != nil {
@@ -334,8 +418,49 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 		}
 	case jobdom.TypeDeleteDatabase:
 		// Metadata is already soft-deleted when the job was enqueued.
+	case jobdom.TypeProvisionInstance, jobdom.TypeStartInstance, jobdom.TypeStopInstance,
+		jobdom.TypeRestartInstance, jobdom.TypeRemoveInstance:
+		s.completeProvision(ctx, j, ok, result, errMsg)
 	}
 	return nil
+}
+
+// completeProvision applies instance status changes after a container
+// lifecycle operation.
+func (s *Service) completeProvision(ctx context.Context, j *jobdom.Job, ok bool, result json.RawMessage, errMsg *string) {
+	if j.ResourceID == nil {
+		return
+	}
+	id := *j.ResourceID
+	if !ok {
+		// remove failures leave the record soft-deleted; others go to error.
+		if j.Type != jobdom.TypeRemoveInstance {
+			_ = s.instances.SetStatus(ctx, id, instancedom.StatusError)
+		}
+		if s.notifier != nil {
+			msg := "A provisioning operation failed."
+			if errMsg != nil {
+				msg = *errMsg
+			}
+			s.notifier.Emit(ctx, string(j.Type), "Provisioning failed", msg, "critical", "instance", id)
+		}
+		return
+	}
+	switch j.Type {
+	case jobdom.TypeProvisionInstance:
+		var res executor.Result
+		_ = json.Unmarshal(result, &res)
+		if res.ContainerID != "" {
+			_ = s.instances.SetContainerID(ctx, id, res.ContainerID)
+		}
+		_ = s.instances.SetStatus(ctx, id, instancedom.StatusRunning)
+	case jobdom.TypeStartInstance, jobdom.TypeRestartInstance:
+		_ = s.instances.SetStatus(ctx, id, instancedom.StatusRunning)
+	case jobdom.TypeStopInstance:
+		_ = s.instances.SetStatus(ctx, id, instancedom.StatusStopped)
+	case jobdom.TypeRemoveInstance:
+		// Record already soft-deleted at enqueue time; nothing more to do.
+	}
 }
 
 func (s *Service) completeBackup(ctx context.Context, id uuid.UUID, ok bool, result json.RawMessage, errMsg *string) {

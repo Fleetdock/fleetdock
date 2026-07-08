@@ -3,8 +3,9 @@
 An open-source **control plane for databases** — manage a fleet of servers,
 database instances, and databases from a modern dashboard instead of SSH.
 Think "Vercel/Neon, but self-hosted and for any database" or "Dokploy for DB
-instances". The MVP ships with **MariaDB**; the engine layer is pluggable so
-postgres/mysql are cheap to add.
+instances". It supports **MariaDB, MySQL and PostgreSQL** behind a pluggable
+engine layer, and can **provision** new database containers on your servers via
+plain Docker (no Swarm/Traefik).
 
 This is a monorepo:
 
@@ -59,11 +60,19 @@ baked into the generated install command.
 - **Server** — a host running the agent (connected via install.sh).
 - **Instance** — a database server process. Two kinds:
   - `managed`: runs on one of your servers; operations are executed by that
-    server's agent against `127.0.0.1`.
+    server's agent against `127.0.0.1`. A managed instance can either be
+    **provisioned** by db-manager (the agent launches a MariaDB **Docker
+    container** with a generated root password, a named data volume and a
+    published port — Servers → *server* → **Add instance → Provision new**) or
+    **registered** (point at a MariaDB already running on the server).
   - `external`: any reachable MariaDB (e.g. databases you already run under
     Dokploy) — the control plane connects to it directly. Add it under
     **Instances → Add instance → External**, then **Import DBs** to pull in
     the existing databases.
+  Provisioned instances can be **started / stopped / restarted** from their
+  detail page; deleting one removes the container (and, if you confirm, its
+  data volume). Provisioning needs Docker on the server — `install.sh`
+  installs it automatically.
 - **Database** — a logical database on an instance. If the instance has admin
   credentials, creating a database physically creates it (via an operation);
   otherwise it's a metadata-only registration.
@@ -202,11 +211,21 @@ npm run dev
   charted (CPU/memory/disk/connections) on each server's detail page
   (`GET /v1/servers/{id}/metrics`).
 
+## Move & verify
+
+- **Move database** — a background saga (`backup → restore → verify → optional
+  drop of source`) copies or relocates a database to another instance, across
+  servers. Start it from a database's detail page ("Move"); watch it on the
+  **Moves** page. Ticking "drop source" makes it a true move (cutover); leaving
+  it unticked makes it a copy.
+- **Restore verification** — every restore verifies the backup artifact's
+  sha256 checksum *before* touching the target, then counts the restored tables
+  and reports the count.
+
 ## Roadmap (post-MVP)
 
-- One-click "move database" composite operation (backup → restore → verify →
-  cutover), building on the existing restore-to-other-instance flow.
-- More engines: PostgreSQL, MySQL (implement `engine.Client`, extend the
-  `instances.engine` CHECK).
-- Instance provisioning (agent launches MariaDB containers via Docker).
-- SQL query console, per-token scopes, SSO/OIDC, encryption-key rotation.
+- Secure external DB access without opening ports (Cloudflare Tunnel / TCP
+  proxy launched by the agent).
+- Live SQL query console; table schema/DDL viewer.
+- Per-token scopes, SSO/OIDC, encryption-key rotation.
+- Composite/HA topologies (replicas), audit-log export, more notification types.

@@ -13,17 +13,39 @@ import (
 	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
 )
 
-// Engine identifies the database engine. MariaDB is the only engine in the
-// MVP; the abstraction (validated string + engine registry in the platform
-// layer) keeps postgres/mysql cheap to add later.
+// Engine identifies the database engine.
 type Engine string
 
 const (
-	EngineMariaDB Engine = "mariadb"
+	EngineMariaDB  Engine = "mariadb"
+	EngineMySQL    Engine = "mysql"
+	EnginePostgres Engine = "postgres"
 )
 
 // Valid reports whether e is a supported engine.
-func (e Engine) Valid() bool { return e == EngineMariaDB }
+func (e Engine) Valid() bool {
+	switch e {
+	case EngineMariaDB, EngineMySQL, EnginePostgres:
+		return true
+	}
+	return false
+}
+
+// DefaultPort is the engine's conventional listening port.
+func (e Engine) DefaultPort() int {
+	if e == EnginePostgres {
+		return 5432
+	}
+	return 3306
+}
+
+// AdminUser is the engine's default superuser account name.
+func (e Engine) AdminUser() string {
+	if e == EnginePostgres {
+		return "postgres"
+	}
+	return "root"
+}
 
 // Kind distinguishes managed from external instances.
 type Kind string
@@ -71,6 +93,33 @@ func (i *Instance) HasCredentials() bool {
 	return i.Username != nil && *i.Username != "" && i.RootSecretRef != nil
 }
 
+// Provisioned reports whether this instance is a container the control plane
+// launched (as opposed to a pre-existing DB the user registered).
+func (i *Instance) Provisioned() bool {
+	return i.Kind == KindManaged && i.ContainerID != nil && *i.ContainerID != ""
+}
+
+// ContainerName is the deterministic Docker container/volume name for a
+// provisioned instance.
+func (i *Instance) ContainerName() string { return "dbm-" + i.ID.String() }
+
+// NewProvisioned builds a managed instance that the agent will create as a
+// Docker container. It starts in the provisioning state with a root admin user.
+func NewProvisioned(serverID uuid.UUID, name string, engine Engine, engineVersion string, port int) (*Instance, error) {
+	if engine == "" {
+		engine = EngineMariaDB
+	}
+	admin := engine.AdminUser()
+	base, err := newBase(name, engine, engineVersion, port, &admin, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	base.ServerID = &serverID
+	base.Kind = KindManaged
+	base.Status = StatusProvisioning
+	return base, nil
+}
+
 // NewManaged registers an already-running instance on a managed server.
 func NewManaged(serverID uuid.UUID, name string, engine Engine, engineVersion string, port int, username *string, labels map[string]string, tags []string) (*Instance, error) {
 	base, err := newBase(name, engine, engineVersion, port, username, labels, tags)
@@ -106,7 +155,7 @@ func newBase(name string, engine Engine, engineVersion string, port int, usernam
 		engine = EngineMariaDB
 	}
 	if !engine.Valid() {
-		return nil, apperr.Invalid("engine", "unsupported engine (supported: mariadb)")
+		return nil, apperr.Invalid("engine", "unsupported engine (supported: mariadb, mysql, postgres)")
 	}
 	if strings.TrimSpace(engineVersion) == "" {
 		return nil, apperr.Invalid("engine_version", "engine_version is required")

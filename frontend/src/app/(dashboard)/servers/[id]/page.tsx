@@ -9,7 +9,7 @@ import { DataTable } from "@/components/data-table";
 import { MetricChart, type ChartPoint } from "@/components/chart";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCan, useCreateInstance, useInstances, useServer, useServerMetrics } from "@/lib/hooks";
+import { useCan, useCreateInstance, useInstances, useProvisionInstance, useServer, useServerMetrics } from "@/lib/hooks";
 
 export default function ServerDetailPage() {
   const params = useParams();
@@ -134,8 +134,17 @@ function pct(used?: number | null, total?: number | null): number | null {
   return (used / total) * 100;
 }
 
+const ENGINE_DEFAULTS: Record<string, { version: string; port: string }> = {
+  mariadb: { version: "11.4", port: "3306" },
+  mysql: { version: "8.4", port: "3306" },
+  postgres: { version: "16", port: "5432" },
+};
+
 function AddInstanceModal({ open, onClose, serverId }: { open: boolean; onClose: () => void; serverId: string }) {
   const create = useCreateInstance();
+  const provision = useProvisionInstance();
+  const [mode, setMode] = useState<"provision" | "register">("provision");
+  const [engine, setEngine] = useState("mariadb");
   const [name, setName] = useState("");
   const [version, setVersion] = useState("11.4");
   const [port, setPort] = useState("3306");
@@ -143,23 +152,49 @@ function AddInstanceModal({ open, onClose, serverId }: { open: boolean; onClose:
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  function reset() {
+    setName("");
+    setUsername("");
+    setPassword("");
+    setError(null);
+  }
+
+  function onEngineChange(next: string) {
+    setEngine(next);
+    const d = ENGINE_DEFAULTS[next];
+    if (d) {
+      setVersion(d.version);
+      setPort(d.port);
+    }
+  }
+
+  const pending = create.isPending || provision.isPending;
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await create.mutateAsync({
-        kind: "managed",
-        server_id: serverId,
-        name,
-        engine: "mariadb",
-        engine_version: version,
-        port: Number(port),
-        username: username || undefined,
-        password: password || undefined,
-      });
-      setName("");
-      setUsername("");
-      setPassword("");
+      if (mode === "provision") {
+        await provision.mutateAsync({
+          server_id: serverId,
+          name,
+          engine,
+          engine_version: version,
+          port: Number(port),
+        });
+      } else {
+        await create.mutateAsync({
+          kind: "managed",
+          server_id: serverId,
+          name,
+          engine,
+          engine_version: version,
+          port: Number(port),
+          username: username || undefined,
+          password: password || undefined,
+        });
+      }
+      reset();
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to add instance");
@@ -168,32 +203,55 @@ function AddInstanceModal({ open, onClose, serverId }: { open: boolean; onClose:
 
   return (
     <Modal open={open} onClose={onClose} title="Add instance">
+      <div className="flex gap-1" style={{ marginBottom: "1rem" }}>
+        <button type="button" className={`btn btn-sm${mode === "provision" ? " btn-primary" : ""}`} onClick={() => setMode("provision")}>
+          Provision new
+        </button>
+        <button type="button" className={`btn btn-sm${mode === "register" ? " btn-primary" : ""}`} onClick={() => setMode("register")}>
+          Register existing
+        </button>
+      </div>
       <form onSubmit={onSubmit}>
-        <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="primary" required />
-        </Field>
-        <Field label="MariaDB version">
-          <input className="input" value={version} onChange={(e) => setVersion(e.target.value)} placeholder="11.4" required />
-        </Field>
-        <Field label="Port">
-          <input className="input" type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
-        </Field>
         <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
-          <Field label="Admin username (optional)">
-            <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="root" autoComplete="off" />
+          <Field label="Name">
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="primary" required />
           </Field>
-          <Field label="Admin password">
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          <Field label="Engine">
+            <select className="input" value={engine} onChange={(e) => onEngineChange(e.target.value)}>
+              <option value="mariadb">MariaDB</option>
+              <option value="mysql">MySQL</option>
+              <option value="postgres">PostgreSQL</option>
+            </select>
           </Field>
         </div>
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+          <Field label="Version">
+            <input className="input" value={version} onChange={(e) => setVersion(e.target.value)} placeholder="11.4" required />
+          </Field>
+          <Field label="Port">
+            <input className="input" type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
+          </Field>
+        </div>
+        {mode === "register" ? (
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+            <Field label="Admin username (optional)">
+              <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="root" autoComplete="off" />
+            </Field>
+            <Field label="Admin password">
+              <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+            </Field>
+          </div>
+        ) : null}
         <p className="muted text-sm">
-          Credentials enable provisioning, imports, backups and restores via the agent.
+          {mode === "provision"
+            ? "The agent launches a new database container via Docker with a generated admin password (stored encrypted). Requires Docker on the server."
+            : "Register a database already running on this server. Credentials enable imports, backups and restores via the agent."}
         </p>
         <ErrorText message={error ?? undefined} />
         <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={create.isPending}>
-            {create.isPending ? "Adding…" : "Add instance"}
+          <button type="submit" className="btn btn-primary" disabled={pending}>
+            {pending ? "Working…" : mode === "provision" ? "Provision" : "Register"}
           </button>
         </div>
       </form>

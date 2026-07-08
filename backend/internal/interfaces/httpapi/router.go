@@ -19,6 +19,7 @@ type RouterDeps struct {
 	Operations    *OperationHandler
 	Backups       *BackupHandler
 	Schedules     *ScheduleHandler
+	Moves         *MoveHandler
 	Destinations  *DestinationHandler
 	DBAdmin       *DBAdminHandler
 	Agents        *AgentHandler
@@ -104,9 +105,13 @@ func NewRouter(d RouterDeps) http.Handler {
 
 	// Instances (managed + external)
 	mux.HandleFunc("POST /v1/instances", requirePerm("instance:write", d.Instances.Register))
+	mux.HandleFunc("POST /v1/instances/provision", requirePerm("instance:write", d.Instances.Provision))
 	mux.HandleFunc("GET /v1/instances", requirePerm("instance:read", d.Instances.List))
 	mux.HandleFunc("GET /v1/instances/{id}", requirePerm("instance:read", d.Instances.Get))
 	mux.HandleFunc("DELETE /v1/instances/{id}", requirePerm("instance:write", d.Instances.Delete))
+	mux.HandleFunc("POST /v1/instances/{id}/start", requirePerm("instance:write", d.Instances.Lifecycle("start")))
+	mux.HandleFunc("POST /v1/instances/{id}/stop", requirePerm("instance:write", d.Instances.Lifecycle("stop")))
+	mux.HandleFunc("POST /v1/instances/{id}/restart", requirePerm("instance:write", d.Instances.Lifecycle("restart")))
 	mux.HandleFunc("POST /v1/instances/{id}/test-connection", requirePerm("instance:read", d.Instances.TestConnection))
 	mux.HandleFunc("POST /v1/instances/{id}/import-databases", requirePerm("instance:write", d.Instances.ImportDatabases))
 
@@ -144,6 +149,11 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/backups", requirePerm("backup:read", d.Backups.List))
 	mux.HandleFunc("GET /v1/backups/{id}", requirePerm("backup:read", d.Backups.Get))
 	mux.HandleFunc("POST /v1/backups/{id}/restore", requirePerm("backup:write", d.Backups.Restore))
+
+	// Move database (backup → restore → verify → optional drop of source)
+	mux.HandleFunc("POST /v1/moves", requirePerm("backup:write", d.Moves.Start))
+	mux.HandleFunc("GET /v1/moves", requirePerm("backup:read", d.Moves.List))
+	mux.HandleFunc("GET /v1/moves/{id}", requirePerm("backup:read", d.Moves.Get))
 
 	// Backup destinations
 	mux.HandleFunc("POST /v1/backup-destinations", requirePerm("destination:write", d.Destinations.Create))

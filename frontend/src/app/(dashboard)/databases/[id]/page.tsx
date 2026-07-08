@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
 
-import { ChevronRight, Plus, Table2, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, ChevronRight, Plus, Table2, Trash2, X } from "lucide-react";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
@@ -14,15 +14,18 @@ import {
   useDatabase,
   useDatabaseDBUsers,
   useDBPrivileges,
+  useDestinations,
   useGrantOnDatabase,
   useInstance,
+  useInstances,
   useRevokeOnDatabase,
   useSchemaGrants,
+  useStartMove,
   useTableRows,
   useTables,
 } from "@/lib/hooks";
 import { useDataTable } from "@/lib/use-data-table";
-import type { SchemaGrant, TableInfo } from "@/lib/types";
+import type { Database, SchemaGrant, TableInfo } from "@/lib/types";
 
 const PAGE_SIZE = 50;
 
@@ -53,7 +56,9 @@ function DatabaseDetail() {
   const { data: instance } = useInstance(db?.instance_id ?? "");
   const can = useCan();
   const canWrite = can("database:write");
+  const canMove = can("backup:write");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
 
   // View state lives in the URL so the browser back button steps
   // data browser -> tables list -> databases list.
@@ -94,11 +99,18 @@ function DatabaseDetail() {
           <h1 className="text-xl font-semibold">{db.name}</h1>
           <StatusBadge status={db.status} />
         </div>
-        {canWrite ? (
-          <button className="btn btn-sm btn-danger" onClick={() => setDeleteOpen(true)}>
-            <Trash2 size={15} /> Remove
-          </button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {canMove ? (
+            <button className="btn btn-sm" onClick={() => setMoveOpen(true)}>
+              <ArrowRightLeft size={15} /> Move
+            </button>
+          ) : null}
+          {canWrite ? (
+            <button className="btn btn-sm btn-danger" onClick={() => setDeleteOpen(true)}>
+              <Trash2 size={15} /> Remove
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="card" style={{ padding: "1.1rem", marginBottom: "1.25rem" }}>
@@ -151,7 +163,94 @@ function DatabaseDetail() {
         onClose={() => setDeleteOpen(false)}
         onDeleted={() => router.push("/databases")}
       />
+      <MoveDatabaseModal database={moveOpen ? db : null} onClose={() => setMoveOpen(false)} />
     </div>
+  );
+}
+
+function MoveDatabaseModal({ database, onClose }: { database: Database | null; onClose: () => void }) {
+  const start = useStartMove();
+  const { data: instances } = useInstances();
+  const { data: destinations } = useDestinations();
+  const [targetInstance, setTargetInstance] = useState("");
+  const [targetName, setTargetName] = useState("");
+  const [destination, setDestination] = useState("");
+  const [dropSource, setDropSource] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!database) return;
+    setError(null);
+    try {
+      await start.mutateAsync({
+        source_database_id: database.id,
+        target_instance_id: targetInstance,
+        target_database: targetName || undefined,
+        destination_id: destination,
+        drop_source: dropSource,
+      });
+      setNotice("Move started — it will back up, restore and verify in the background. Track it on the Moves page.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to start move");
+    }
+  }
+
+  if (!database) return null;
+  return (
+    <Modal open onClose={onClose} title={`Move "${database.name}"`}>
+      {notice ? (
+        <div>
+          <div className="card" style={{ padding: ".8rem .9rem", marginBottom: "1rem" }}>
+            <span className="text-sm">{notice}</span>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Link href="/moves" className="btn btn-sm">View moves</Link>
+            <button className="btn btn-primary btn-sm" onClick={onClose}>Done</button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={onSubmit}>
+          <Field label="Target instance">
+            <select className="input" value={targetInstance} onChange={(e) => setTargetInstance(e.target.value)} required>
+              <option value="">Select an instance…</option>
+              {(instances?.items ?? [])
+                .filter((i) => i.id !== database.instance_id && i.has_credentials)
+                .map((i) => (
+                  <option key={i.id} value={i.id}>{i.name} ({i.engine})</option>
+                ))}
+            </select>
+          </Field>
+          <Field label="Target database name (optional)">
+            <input className="input" value={targetName} onChange={(e) => setTargetName(e.target.value)} placeholder={database.name} />
+          </Field>
+          <Field label="Backup destination">
+            <select className="input" value={destination} onChange={(e) => setDestination(e.target.value)} required>
+              <option value="">Select a destination…</option>
+              {(destinations?.items ?? []).map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </Field>
+          <label className="flex items-center gap-2 text-sm" style={{ cursor: "pointer", margin: ".2rem 0 .6rem" }}>
+            <input type="checkbox" checked={dropSource} onChange={(e) => setDropSource(e.target.checked)} />
+            Drop the source database after a successful, verified move (cutover)
+          </label>
+          <p className="muted text-sm">
+            The move backs up the source, restores it to the target (verifying the checksum and table count), then
+            optionally drops the source. It runs in the background.
+          </p>
+          <ErrorText message={error ?? undefined} />
+          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
+            <button type="button" className="btn" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={start.isPending}>
+              {start.isPending ? "Starting…" : "Start move"}
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 }
 

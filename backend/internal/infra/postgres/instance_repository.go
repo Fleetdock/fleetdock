@@ -132,6 +132,29 @@ func (r *InstanceRepository) SetRootSecretRef(ctx context.Context, id uuid.UUID,
 	return nil
 }
 
+func (r *InstanceRepository) SetStatus(ctx context.Context, id uuid.UUID, status instancedom.Status) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE instances SET status = $2, version = version + 1 WHERE id = $1 AND deleted_at IS NULL`,
+		id, string(status))
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("set instance status: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("instance not found")
+	}
+	return nil
+}
+
+func (r *InstanceRepository) SetContainerID(ctx context.Context, id uuid.UUID, containerID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE instances SET container_id = $2, version = version + 1 WHERE id = $1 AND deleted_at IS NULL`,
+		id, containerID)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("set container id: %w", err))
+	}
+	return nil
+}
+
 func (r *InstanceRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE instances SET deleted_at = now(), status = 'deleting', version = version + 1

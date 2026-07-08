@@ -15,6 +15,11 @@ const TYPE_LABEL: Record<string, string> = {
   restore: "Restore",
   test_connection: "Test connection",
   import_databases: "Import databases",
+  provision_instance: "Provision instance",
+  start_instance: "Start instance",
+  stop_instance: "Stop instance",
+  restart_instance: "Restart instance",
+  remove_instance: "Remove instance",
 };
 
 export default function OperationsPage() {

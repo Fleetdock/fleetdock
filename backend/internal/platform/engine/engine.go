@@ -33,11 +33,15 @@ type Client interface {
 	ListDatabases(ctx context.Context, p ConnParams) ([]DatabaseInfo, error)
 	CreateDatabase(ctx context.Context, p ConnParams, name, charset, collation string) error
 	DropDatabase(ctx context.Context, p ConnParams, name string) error
-	// DumpArgs returns the argv (binary candidates + args) for a logical dump
-	// of one database, writing SQL to stdout.
-	DumpArgs(p ConnParams, database string) (binaries []string, args []string)
-	// RestoreArgs returns the argv for restoring a SQL stream from stdin.
-	RestoreArgs(p ConnParams, database string) (binaries []string, args []string)
+	// CountTables returns the number of user tables in a database (used to
+	// verify a restore produced a non-empty schema).
+	CountTables(ctx context.Context, p ConnParams, database string) (int, error)
+	// DumpArgs returns the argv (binary candidates + args) and extra env vars
+	// for a logical dump of one database, writing SQL to stdout.
+	DumpArgs(p ConnParams, database string) (binaries []string, args []string, env []string)
+	// RestoreArgs returns the argv and extra env for restoring a SQL stream
+	// from stdin.
+	RestoreArgs(p ConnParams, database string) (binaries []string, args []string, env []string)
 }
 
 var registry = map[string]Client{}

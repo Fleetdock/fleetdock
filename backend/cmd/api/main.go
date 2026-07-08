@@ -25,6 +25,7 @@ import (
 	dbadminapp "github.com/mariadb-cp/db-manager/backend/internal/app/dbadmin"
 	destinationapp "github.com/mariadb-cp/db-manager/backend/internal/app/destination"
 	instanceapp "github.com/mariadb-cp/db-manager/backend/internal/app/instance"
+	moveapp "github.com/mariadb-cp/db-manager/backend/internal/app/move"
 	notificationapp "github.com/mariadb-cp/db-manager/backend/internal/app/notification"
 	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
 	scheduleapp "github.com/mariadb-cp/db-manager/backend/internal/app/schedule"
@@ -112,6 +113,7 @@ func run() error {
 	auditRepo := postgres.NewAuditRepository(pool)
 	notifRepo := postgres.NewNotificationRepository(pool)
 	statsRepo := postgres.NewStatsRepository(pool)
+	moveRepo := postgres.NewMoveRepository(pool)
 
 	// Use cases (application services).
 	jwt := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
@@ -136,6 +138,8 @@ func run() error {
 	})
 	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc)
 	opsSvc.SetNotifier(notifSvc)
+	moveSvc := moveapp.NewService(moveRepo, databaseRepo, instanceRepo, backupSvc, databaseSvc)
+	opsSvc.SetMover(moveSvc)
 
 	// One-time admin bootstrap.
 	if created, err := authSvc.EnsureAdmin(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
@@ -168,6 +172,7 @@ func run() error {
 		Operations:    httpapi.NewOperationHandler(opsSvc),
 		Backups:       httpapi.NewBackupHandler(backupSvc),
 		Schedules:     httpapi.NewScheduleHandler(scheduleSvc),
+		Moves:         httpapi.NewMoveHandler(moveSvc),
 		Destinations:  httpapi.NewDestinationHandler(destSvc),
 		DBAdmin:       httpapi.NewDBAdminHandler(dbadminSvc),
 		Agents:        httpapi.NewAgentHandler(agentSvc, opsSvc),

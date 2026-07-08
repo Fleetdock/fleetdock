@@ -12,6 +12,7 @@ import type {
   CreateDatabaseInput,
   CreateDestinationInput,
   CreateInstanceInput,
+  ProvisionInstanceInput,
   CreateServerInput,
   CreateTokenInput,
   CreatedAgentToken,
@@ -20,9 +21,11 @@ import type {
   ImportDatabasesResult,
   Instance,
   Me,
+  Move,
   Operation,
   Paginated,
   RestoreBackupInput,
+  StartMoveInput,
   Server,
   TestConnectionResult,
   TriggerBackupInput,
@@ -137,8 +140,37 @@ export function useCreateInstance() {
 export function useDeleteInstance() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/v1/instances/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
+    mutationFn: ({ id, removeVolume }: { id: string; removeVolume?: boolean }) =>
+      api.del<void>(`/v1/instances/${id}${removeVolume ? "?remove_volume=true" : ""}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["instances"] });
+      qc.invalidateQueries({ queryKey: ["operations"] });
+    },
+  });
+}
+
+export function useProvisionInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ProvisionInstanceInput) =>
+      api.post<{ instance: Instance; operation_id: string }>("/v1/instances/provision", input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["instances"] });
+      qc.invalidateQueries({ queryKey: ["operations"] });
+    },
+  });
+}
+
+export function useInstanceLifecycle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "start" | "stop" | "restart" }) =>
+      api.post<{ operation_id: string }>(`/v1/instances/${id}/${action}`, {}),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["instance", v.id] });
+      qc.invalidateQueries({ queryKey: ["instances"] });
+      qc.invalidateQueries({ queryKey: ["operations"] });
+    },
   });
 }
 
@@ -253,6 +285,27 @@ export function useRestoreBackup() {
     mutationFn: ({ backup_id, ...rest }: RestoreBackupInput) =>
       api.post<{ operation_id: string }>(`/v1/backups/${backup_id}/restore`, rest),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["operations"] }),
+  });
+}
+
+// ---- Move database ----
+export function useMoves() {
+  return useQuery({
+    queryKey: ["moves"],
+    queryFn: () => api.get<{ items: Move[] }>("/v1/moves"),
+    refetchInterval: 4_000,
+  });
+}
+
+export function useStartMove() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: StartMoveInput) => api.post<Move>("/v1/moves", input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["moves"] });
+      qc.invalidateQueries({ queryKey: ["operations"] });
+      qc.invalidateQueries({ queryKey: ["backups"] });
+    },
   });
 }
 

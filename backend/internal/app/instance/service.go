@@ -5,6 +5,8 @@ package instanceapp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 
 	"github.com/google/uuid"
@@ -127,6 +129,84 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*instancedom.
 	return inst, nil
 }
 
+// ProvisionInput is the command to provision a new managed instance as a
+// Docker container on a registered server.
+type ProvisionInput struct {
+	ServerID      string
+	Name          string
+	Engine        string
+	EngineVersion string
+	Port          int
+	CreatedBy     *uuid.UUID
+}
+
+// Provision creates a managed instance and enqueues a job for the server's
+// agent to launch it as a Docker container with a generated root password.
+func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedom.Instance, *jobdom.Job, error) {
+	serverID, err := uuid.Parse(in.ServerID)
+	if err != nil {
+		return nil, nil, apperr.Invalid("server_id", "server_id must be a valid UUID")
+	}
+	eng := instancedom.Engine(in.Engine)
+	if eng == "" {
+		eng = instancedom.EngineMariaDB
+	}
+	inst, err := instancedom.NewProvisioned(serverID, in.Name, eng, in.EngineVersion, in.Port)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	password, err := genPassword()
+	if err != nil {
+		return nil, nil, apperr.Internal(err)
+	}
+	ref := "instance/" + inst.ID.String() + "/root"
+	if err := s.secrets.Put(ctx, ref, secretdom.KindMariaDBRoot, []byte(password)); err != nil {
+		return nil, nil, err
+	}
+	inst.RootSecretRef = &ref
+
+	if err := s.repo.Create(ctx, inst); err != nil {
+		_ = s.secrets.Delete(ctx, ref)
+		return nil, nil, err
+	}
+	if err := s.repo.SetRootSecretRef(ctx, inst.ID, ref); err != nil {
+		return nil, nil, err
+	}
+
+	job, err := s.ops.Create(ctx, jobdom.TypeProvisionInstance, "instance", &inst.ID, &serverID,
+		operationapp.Params{InstanceID: inst.ID.String(), Image: string(eng), Version: in.EngineVersion}, in.CreatedBy)
+	if err != nil {
+		_ = s.repo.SetStatus(ctx, inst.ID, instancedom.StatusError)
+		return nil, nil, err
+	}
+	return inst, job, nil
+}
+
+// Lifecycle enqueues a start/stop/restart operation for a provisioned instance.
+func (s *Service) Lifecycle(ctx context.Context, id, action string, createdBy *uuid.UUID) (*jobdom.Job, error) {
+	inst, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !inst.Provisioned() {
+		return nil, apperr.Invalid("id", "only provisioned instances can be started/stopped from here")
+	}
+	var typ jobdom.Type
+	switch action {
+	case "start":
+		typ = jobdom.TypeStartInstance
+	case "stop":
+		typ = jobdom.TypeStopInstance
+	case "restart":
+		typ = jobdom.TypeRestartInstance
+	default:
+		return nil, apperr.Invalid("action", "action must be start, stop or restart")
+	}
+	return s.ops.Create(ctx, typ, "instance", &inst.ID, inst.ServerID,
+		operationapp.Params{InstanceID: inst.ID.String()}, createdBy)
+}
+
 // Get returns an instance by id.
 func (s *Service) Get(ctx context.Context, id string) (*instancedom.Instance, error) {
 	uid, err := uuid.Parse(id)
@@ -136,13 +216,29 @@ func (s *Service) Get(ctx context.Context, id string) (*instancedom.Instance, er
 	return s.repo.GetByID(ctx, uid)
 }
 
-// Delete soft-deletes an instance record (does not touch the actual server).
-func (s *Service) Delete(ctx context.Context, id string) error {
-	uid, err := uuid.Parse(id)
+// Delete soft-deletes an instance record. For provisioned instances it also
+// enqueues a job for the agent to remove the Docker container (and optionally
+// its data volume). For registered/external instances it only drops the record.
+func (s *Service) Delete(ctx context.Context, id string, removeVolume bool, createdBy *uuid.UUID) error {
+	inst, err := s.Get(ctx, id)
 	if err != nil {
-		return apperr.Invalid("id", "id must be a valid UUID")
+		return err
 	}
-	return s.repo.SoftDelete(ctx, uid)
+	if inst.Provisioned() {
+		if _, err := s.ops.Create(ctx, jobdom.TypeRemoveInstance, "instance", &inst.ID, inst.ServerID,
+			operationapp.Params{InstanceID: inst.ID.String(), RemoveVolume: removeVolume}, createdBy); err != nil {
+			return err
+		}
+	}
+	return s.repo.SoftDelete(ctx, inst.ID)
+}
+
+func genPassword() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // List returns a filtered, paginated set of instances.

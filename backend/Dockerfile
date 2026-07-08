@@ -14,9 +14,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
 
 # ---- runtime stage ----
 # alpine (not distroless): the control plane shells out to mariadb-dump /
-# mariadb for backups and restores of *external* instances.
+# mariadb and pg_dump / psql for backups and restores of *external* instances.
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates mariadb-client \
+RUN apk add --no-cache ca-certificates mariadb-client postgresql-client \
  && adduser -D -H app
 COPY --from=build /out/api /api
 COPY --from=build /out/agents /opt/db-manager/agents

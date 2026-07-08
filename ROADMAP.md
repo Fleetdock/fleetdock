@@ -3,10 +3,12 @@
 Analysis of what is **built**, what is **scaffolded but not wired up**, and what
 should be implemented next. Grounded in the current code (not aspirational).
 
-> **Status:** Phases 1 (automation layer) and 2 (observability & dashboard) are
-> now **implemented** — scheduled backups + retention, audit log, notifications
-> & alerts, the overview dashboard, and metrics history. See
-> "Automation & observability" in the [README](README.md). Phases 3–6 remain.
+> **Status:** Phases 1 (automation layer), 2 (observability & dashboard) and 3
+> (core database operations) are **implemented** — scheduled backups +
+> retention, audit log, notifications & alerts, overview dashboard, metrics
+> history, **instance provisioning (plain Docker, no Swarm/Traefik), move
+> database, restore verification, and PostgreSQL/MySQL engines**. Phases 4–6
+> (live-admin depth, security/multi-tenancy, quality/DX) remain.
 
 ---
 
@@ -77,23 +79,33 @@ designed for it — it's mostly application code, not migrations.
 
 ---
 
-## Phase 3 — Core database operations
+## Phase 3 — Core database operations — ✅ DONE
 
-### 3.1 One-click "move database" (composite op)
-- Today only manual restore-to-another-instance exists. Build the composite
-  `backup → restore → verify → cutover` operation on top of the existing jobs engine.
+### 3.1 One-click "move database" (composite op) — ✅ DONE
+- A `db_moves` saga orchestrates `backup → restore → verify → optional drop of
+  source`, driven by operation-completion hooks. Start it from a database's
+  detail page ("Move"); track it on the **Moves** page. `GET/POST /v1/moves`.
 
-### 3.2 Restore verification
-- Post-restore sanity check (table counts / checksums) reported on the operation.
+### 3.2 Restore verification — ✅ DONE
+- Restore now downloads to a temp file and **verifies the sha256 checksum
+  before mutating anything**, then counts the restored tables and reports the
+  count on the operation (and on the move).
 
-### 3.3 Instance provisioning
-- Agent launches MariaDB containers via Docker (README concept "managed" instances
-  currently assumes an already-running process). New operation type + agent handler.
+### 3.3 Instance provisioning — ✅ DONE
+- The agent now launches MariaDB **Docker containers** (generated root password,
+  named volume, published port) via a `provision_instance` operation, plus
+  `start`/`stop`/`restart`/`remove` lifecycle ops. Managed from the server detail
+  page ("Provision new") and the instance detail page. `install.sh` installs
+  Docker. **No Docker Swarm / Traefik** — plain per-node Docker, since databases
+  are stateful and pinned to their node.
 
-### 3.4 More engines (PostgreSQL, MySQL)
-- The engine layer is pluggable ([engine.go](backend/internal/platform/engine/engine.go) `Register`) but only
-  MariaDB is registered. Implement `engine.Client` for postgres/mysql, extend the
-  `instances.engine` CHECK constraint, and the executor's dump/restore commands.
+### 3.4 More engines (PostgreSQL, MySQL) — ✅ DONE
+- **MySQL** reuses the MariaDB client (same wire protocol/tooling). **PostgreSQL**
+  has a full `engine.Client` (pgx: ping/list/create/drop/count, `pg_dump`/`psql`
+  for backup/restore). The `instances.engine` CHECK now allows
+  `mariadb`/`mysql`/`postgres`; provisioning is engine-aware (image, admin user,
+  data path, port); `install.sh` and the control-plane image ship both client
+  tool sets.
 
 ---
 

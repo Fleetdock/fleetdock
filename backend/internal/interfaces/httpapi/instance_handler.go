@@ -43,6 +43,7 @@ type instanceResponse struct {
 	Host           *string           `json:"host,omitempty"`
 	Username       *string           `json:"username,omitempty"`
 	HasCredentials bool              `json:"has_credentials"`
+	Provisioned    bool              `json:"provisioned"`
 	ContainerID    *string           `json:"container_id,omitempty"`
 	EngineVersion  string            `json:"engine_version"`
 	MariaDBVersion string            `json:"mariadb_version"` // back-compat
@@ -70,6 +71,7 @@ func toInstanceResponse(in *instancedom.Instance) instanceResponse {
 		Host:           in.Host,
 		Username:       in.Username,
 		HasCredentials: in.HasCredentials(),
+		Provisioned:    in.Provisioned(),
 		ContainerID:    in.ContainerID,
 		EngineVersion:  in.EngineVersion,
 		MariaDBVersion: in.EngineVersion,
@@ -114,6 +116,49 @@ func (h *InstanceHandler) Register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, toInstanceResponse(in))
 }
 
+type provisionInstanceRequest struct {
+	ServerID      string `json:"server_id"`
+	Name          string `json:"name"`
+	Engine        string `json:"engine"`
+	EngineVersion string `json:"engine_version"`
+	Port          int    `json:"port"`
+}
+
+// Provision handles POST /v1/instances/provision.
+func (h *InstanceHandler) Provision(w http.ResponseWriter, r *http.Request) {
+	var req provisionInstanceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	in, job, err := h.svc.Provision(r.Context(), instanceapp.ProvisionInput{
+		ServerID:      req.ServerID,
+		Name:          req.Name,
+		Engine:        req.Engine,
+		EngineVersion: req.EngineVersion,
+		Port:          req.Port,
+		CreatedBy:     callerID(r),
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	resp := toInstanceResponse(in)
+	writeJSON(w, http.StatusCreated, map[string]any{"instance": resp, "operation_id": job.ID.String()})
+}
+
+// Lifecycle handles POST /v1/instances/{id}/{action} for start|stop|restart.
+func (h *InstanceHandler) Lifecycle(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		job, err := h.svc.Lifecycle(r.Context(), r.PathValue("id"), action, callerID(r))
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"operation_id": job.ID.String()})
+	}
+}
+
 // Get handles GET /v1/instances/{id}.
 func (h *InstanceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	in, err := h.svc.Get(r.Context(), r.PathValue("id"))
@@ -124,9 +169,10 @@ func (h *InstanceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toInstanceResponse(in))
 }
 
-// Delete handles DELETE /v1/instances/{id}.
+// Delete handles DELETE /v1/instances/{id}?remove_volume=true.
 func (h *InstanceHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Delete(r.Context(), r.PathValue("id")); err != nil {
+	removeVolume := r.URL.Query().Get("remove_volume") == "true"
+	if err := h.svc.Delete(r.Context(), r.PathValue("id"), removeVolume, callerID(r)); err != nil {
 		writeError(w, err)
 		return
 	}

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Play, Plus, RotateCw, Square, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
@@ -15,12 +15,14 @@ import {
   useDatabases,
   useDBPrivileges,
   useDBUsers,
+  useDeleteInstance,
   useDropDBUser,
   useGrantOnInstance,
   useInstance,
+  useInstanceLifecycle,
   useUserGrants,
 } from "@/lib/hooks";
-import type { DBUser } from "@/lib/types";
+import type { DBUser, Instance } from "@/lib/types";
 
 export default function InstanceDetailPage() {
   const params = useParams();
@@ -45,8 +47,10 @@ export default function InstanceDetailPage() {
           <span className={`badge ${instance.kind === "external" ? "badge-amber" : "badge-gray"}`}>
             {instance.kind}
           </span>
+          {instance.provisioned ? <span className="badge badge-gray">docker</span> : null}
           <StatusBadge status={instance.status} />
         </div>
+        {can("instance:write") ? <InstanceControls instance={instance} /> : null}
       </div>
 
       <div className="card" style={{ padding: "1.1rem", marginBottom: "1.25rem" }}>
@@ -100,6 +104,49 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="muted text-sm">{label}</dt>
       <dd className="font-medium" style={{ margin: 0 }}>{value}</dd>
+    </div>
+  );
+}
+
+function InstanceControls({ instance }: { instance: Instance }) {
+  const router = useRouter();
+  const lifecycle = useInstanceLifecycle();
+  const del = useDeleteInstance();
+  const busy = lifecycle.isPending || del.isPending;
+
+  async function onDelete() {
+    if (instance.provisioned) {
+      if (!confirm(`Remove instance "${instance.name}"? Its Docker container will be stopped and removed.`)) return;
+      const removeVolume = confirm("Also delete the data volume? This permanently destroys the database data. Cancel to keep it.");
+      await del.mutateAsync({ id: instance.id, removeVolume });
+    } else {
+      if (!confirm(`Remove instance "${instance.name}" from the control plane? The database server is not touched.`)) return;
+      await del.mutateAsync({ id: instance.id });
+    }
+    router.push("/instances");
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {instance.provisioned ? (
+        <>
+          {instance.status === "stopped" ? (
+            <button className="btn btn-sm" disabled={busy} onClick={() => lifecycle.mutate({ id: instance.id, action: "start" })}>
+              <Play size={15} /> Start
+            </button>
+          ) : (
+            <button className="btn btn-sm" disabled={busy} onClick={() => lifecycle.mutate({ id: instance.id, action: "stop" })}>
+              <Square size={15} /> Stop
+            </button>
+          )}
+          <button className="btn btn-sm" disabled={busy} onClick={() => lifecycle.mutate({ id: instance.id, action: "restart" })}>
+            <RotateCw size={15} /> Restart
+          </button>
+        </>
+      ) : null}
+      <button className="btn btn-sm btn-danger" disabled={busy} onClick={onDelete} aria-label="Delete instance">
+        <Trash2 size={15} /> Delete
+      </button>
     </div>
   );
 }

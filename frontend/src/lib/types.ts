@@ -29,6 +29,8 @@ export interface Instance {
   host?: string | null;
   username?: string | null;
   has_credentials: boolean;
+  provisioned: boolean;
+  container_id?: string | null;
   engine_version: string;
   mariadb_version: string; // back-compat alias of engine_version
   port: number;
@@ -162,6 +164,14 @@ export interface CreateDatabaseInput {
   collation?: string;
 }
 
+export interface ProvisionInstanceInput {
+  server_id: string;
+  name: string;
+  engine?: string;
+  engine_version: string;
+  port: number;
+}
+
 export interface CreateDestinationInput {
   name: string;
   provider: string;
@@ -193,6 +203,30 @@ export interface RestoreBackupInput {
   backup_id: string;
   target_instance_id?: string;
   target_database?: string;
+}
+
+export interface Move {
+  id: string;
+  source_database_id: string;
+  target_instance_id: string;
+  target_database: string;
+  destination_id: string;
+  drop_source: boolean;
+  backup_id?: string | null;
+  restore_job_id?: string | null;
+  status: "pending" | "backing_up" | "restoring" | "completed" | "failed";
+  table_count?: number | null;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StartMoveInput {
+  source_database_id: string;
+  target_instance_id: string;
+  target_database?: string;
+  destination_id: string;
+  drop_source: boolean;
 }
 
 export interface TestConnectionResult {

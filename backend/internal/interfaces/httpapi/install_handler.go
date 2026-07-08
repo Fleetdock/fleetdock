@@ -89,15 +89,24 @@ echo "==> Downloading agent (${OS}/${ARCH})"
 curl -fsSL "${MDCP_URL}/agent/v1/binary/${OS}/${ARCH}" -o /usr/local/bin/db-manager-agent
 chmod +x /usr/local/bin/db-manager-agent
 
-echo "==> Installing MariaDB client tools (for backups/restores)"
+echo "==> Installing database client tools (for backups/restores)"
 if command -v apt-get >/dev/null 2>&1; then
-  apt-get update -qq && apt-get install -y -qq mariadb-client >/dev/null 2>&1 || true
+  apt-get update -qq && apt-get install -y -qq mariadb-client postgresql-client >/dev/null 2>&1 || true
 elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y -q mariadb >/dev/null 2>&1 || true
+  dnf install -y -q mariadb postgresql >/dev/null 2>&1 || true
 elif command -v yum >/dev/null 2>&1; then
-  yum install -y -q mariadb >/dev/null 2>&1 || true
+  yum install -y -q mariadb postgresql >/dev/null 2>&1 || true
 elif command -v apk >/dev/null 2>&1; then
-  apk add --no-cache mariadb-client >/dev/null 2>&1 || true
+  apk add --no-cache mariadb-client postgresql-client >/dev/null 2>&1 || true
+fi
+
+echo "==> Ensuring Docker is installed (for provisioning database instances)"
+if ! command -v docker >/dev/null 2>&1; then
+  curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || \
+    echo "warning: could not install Docker automatically; provisioning will be unavailable until Docker is installed" >&2
+fi
+if command -v systemctl >/dev/null 2>&1 && command -v docker >/dev/null 2>&1; then
+  systemctl enable --now docker >/dev/null 2>&1 || true
 fi
 
 mkdir -p /etc/db-manager-agent /var/lib/db-manager-agent
