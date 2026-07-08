@@ -35,10 +35,21 @@ func NewService(backups backupdom.Repository, databases databasedom.Repository,
 	return &Service{backups: backups, databases: databases, instances: instances, dests: dests, ops: ops}
 }
 
+// MoveSpec, when set on a backup trigger, marks the backup as the first leg of
+// a database move and carries the restore target, so the move advances via
+// completion hooks without a dedicated table. The backup and restore appear as
+// ordinary operations.
+type MoveSpec struct {
+	TargetInstanceID string
+	TargetDatabase   string
+	DropSource       bool
+}
+
 // TriggerInput starts a manual backup.
 type TriggerInput struct {
 	DatabaseID    string
 	DestinationID string
+	Move          *MoveSpec // set only for the backup leg of a move
 	CreatedBy     *uuid.UUID
 }
 
@@ -52,7 +63,7 @@ func (s *Service) Trigger(ctx context.Context, in TriggerInput) (*backupdom.Back
 	if err != nil {
 		return nil, nil, apperr.Invalid("destination_id", "destination_id must be a valid UUID")
 	}
-	return s.trigger(ctx, dbID, destID, "manual", nil, nil, in.CreatedBy)
+	return s.trigger(ctx, dbID, destID, "manual", nil, nil, in.Move, in.CreatedBy)
 }
 
 // TriggerScheduled creates a scheduled backup with a retention boundary. It is
@@ -60,11 +71,11 @@ func (s *Service) Trigger(ctx context.Context, in TriggerInput) (*backupdom.Back
 // records are internal bookkeeping).
 func (s *Service) TriggerScheduled(ctx context.Context, databaseID, destinationID, scheduleID uuid.UUID, retentionDays int, createdBy *uuid.UUID) error {
 	expiresAt := time.Now().Add(time.Duration(retentionDays) * 24 * time.Hour)
-	_, _, err := s.trigger(ctx, databaseID, destinationID, "scheduled", &scheduleID, &expiresAt, createdBy)
+	_, _, err := s.trigger(ctx, databaseID, destinationID, "scheduled", &scheduleID, &expiresAt, nil, createdBy)
 	return err
 }
 
-func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind string, scheduleID *uuid.UUID, expiresAt *time.Time, createdBy *uuid.UUID) (*backupdom.Backup, *jobdom.Job, error) {
+func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind string, scheduleID *uuid.UUID, expiresAt *time.Time, move *MoveSpec, createdBy *uuid.UUID) (*backupdom.Backup, *jobdom.Job, error) {
 	db, err := s.databases.GetByID(ctx, dbID)
 	if err != nil {
 		return nil, nil, err
@@ -85,14 +96,21 @@ func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind stri
 	backupID := uuid.New()
 	key := backupKey(dest.Prefix, db.Name, backupID)
 
-	job, err := s.ops.Create(ctx, jobdom.TypeBackup, "backup", &backupID, executorFor(inst), operationapp.Params{
+	params := operationapp.Params{
 		InstanceID:    inst.ID.String(),
 		DatabaseID:    db.ID.String(),
 		Database:      db.Name,
 		BackupID:      backupID.String(),
 		DestinationID: dest.ID.String(),
 		Key:           key,
-	}, createdBy)
+	}
+	if move != nil {
+		params.MoveSourceDatabaseID = db.ID.String()
+		params.MoveTargetInstanceID = move.TargetInstanceID
+		params.MoveTargetDatabase = move.TargetDatabase
+		params.MoveDropSource = move.DropSource
+	}
+	job, err := s.ops.Create(ctx, jobdom.TypeBackup, "backup", &backupID, executorFor(inst), params, createdBy)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -121,7 +139,11 @@ type RestoreInput struct {
 	BackupID         string
 	TargetInstanceID string // empty = original instance
 	TargetDatabase   string // empty = original name
-	CreatedBy        *uuid.UUID
+	// Move saga: set on the restore leg of a database move so the completion
+	// hook can register the target database and optionally drop the source.
+	MoveSourceDatabaseID string
+	MoveDropSource       bool
+	CreatedBy            *uuid.UUID
 }
 
 // Restore creates a restore operation for a completed backup.
@@ -178,13 +200,15 @@ func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, er
 	}
 
 	return s.ops.Create(ctx, jobdom.TypeRestore, "backup", &b.ID, executorFor(inst), operationapp.Params{
-		InstanceID:    inst.ID.String(),
-		Database:      targetName,
-		Charset:       charset,
-		Collation:     collation,
-		BackupID:      b.ID.String(),
-		DestinationID: dest.ID.String(),
-		Key:           key,
+		InstanceID:           inst.ID.String(),
+		Database:             targetName,
+		Charset:              charset,
+		Collation:            collation,
+		BackupID:             b.ID.String(),
+		DestinationID:        dest.ID.String(),
+		Key:                  key,
+		MoveSourceDatabaseID: in.MoveSourceDatabaseID,
+		MoveDropSource:       in.MoveDropSource,
 	}, in.CreatedBy)
 }
 

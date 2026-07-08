@@ -42,10 +42,11 @@ type EventEmitter interface {
 }
 
 // Mover advances the move-database saga when its sub-jobs complete (satisfied
-// by *moveapp.Service).
+// by *moveapp.Service). Both hooks receive the completing job so the move state
+// can be read from the job's params; they no-op when the job is not a move leg.
 type Mover interface {
-	OnBackupComplete(ctx context.Context, backupID uuid.UUID, ok bool)
-	OnRestoreComplete(ctx context.Context, restoreJobID uuid.UUID, ok bool, result json.RawMessage)
+	OnBackupComplete(ctx context.Context, job *jobdom.Job, ok bool)
+	OnRestoreComplete(ctx context.Context, job *jobdom.Job, ok bool, result json.RawMessage)
 }
 
 // Service implements the operations engine.
@@ -86,6 +87,13 @@ type Params struct {
 	Image        string `json:"image,omitempty"`
 	Version      string `json:"version,omitempty"`
 	RemoveVolume bool   `json:"remove_volume,omitempty"`
+	// Move saga: set on the backup and restore legs of a database move so the
+	// move advances via completion hooks without a dedicated table. A move has
+	// no grouping job — its backup and restore appear as normal operations.
+	MoveTargetInstanceID string `json:"move_target_instance_id,omitempty"` // backup leg only
+	MoveTargetDatabase   string `json:"move_target_database,omitempty"`    // backup leg only
+	MoveSourceDatabaseID string `json:"move_source_database_id,omitempty"` // both legs; marks a move
+	MoveDropSource       bool   `json:"move_drop_source,omitempty"`        // both legs
 }
 
 // isProvisionType reports whether a job type is a container lifecycle op.
@@ -421,12 +429,12 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 				s.notifier.Emit(ctx, "backup.failed", "Backup failed", msg, "critical", "backup", bid)
 			}
 			if s.mover != nil {
-				s.mover.OnBackupComplete(ctx, bid, ok)
+				s.mover.OnBackupComplete(ctx, j, ok)
 			}
 		}
 	case jobdom.TypeRestore:
 		if s.mover != nil {
-			s.mover.OnRestoreComplete(ctx, j.ID, ok, result)
+			s.mover.OnRestoreComplete(ctx, j, ok, result)
 		}
 		if !ok && s.notifier != nil && j.ResourceID != nil {
 			msg := "A restore operation failed."

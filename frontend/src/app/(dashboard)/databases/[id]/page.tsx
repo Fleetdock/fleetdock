@@ -178,20 +178,22 @@ function MoveDatabaseModal({ database, onClose }: { database: Database | null; o
   const [dropSource, setDropSource] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [operationId, setOperationId] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!database) return;
     setError(null);
     try {
-      await start.mutateAsync({
+      const res = await start.mutateAsync({
         source_database_id: database.id,
         target_instance_id: targetInstance,
         target_database: targetName || undefined,
         destination_id: destination,
         drop_source: dropSource,
       });
-      setNotice("Move started — it will back up, restore and verify in the background. Track it on the Moves page.");
+      setOperationId(res.operation_id);
+      setNotice("Move started — it will back up, then restore and verify in the background. Track it in Operations.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to start move");
     }
@@ -206,7 +208,7 @@ function MoveDatabaseModal({ database, onClose }: { database: Database | null; o
             <span className="text-sm">{notice}</span>
           </div>
           <div className="flex items-center justify-end gap-2">
-            <Link href="/moves" className="btn btn-sm">View moves</Link>
+            <Link href={operationId ? `/operations/${operationId}` : "/operations"} className="btn btn-sm">View operation</Link>
             <button className="btn btn-primary btn-sm" onClick={onClose}>Done</button>
           </div>
         </div>

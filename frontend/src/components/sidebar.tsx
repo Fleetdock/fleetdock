@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Activity, Archive, ArrowRightLeft, Bell, Box, CalendarClock, Cloud, Database, Key, LayoutDashboard, ScrollText, Server, ShieldCheck, Users, type LucideIcon } from "lucide-react";
+import { Activity, Archive, Bell, Box, CalendarClock, Cloud, Database, Key, LayoutDashboard, ScrollText, Server, ShieldCheck, Users, type LucideIcon } from "lucide-react";
 
 import { useCan } from "@/lib/hooks";
 
@@ -14,7 +14,6 @@ const NAV: { href: string; label: string; Icon: LucideIcon; perm: string }[] = [
   { href: "/instances", label: "Instances", Icon: Box, perm: "instance:read" },
   { href: "/databases", label: "Databases", Icon: Database, perm: "database:read" },
   { href: "/backups", label: "Backups", Icon: Archive, perm: "backup:read" },
-  { href: "/moves", label: "Moves", Icon: ArrowRightLeft, perm: "backup:read" },
   { href: "/schedules", label: "Schedules", Icon: CalendarClock, perm: "schedule:read" },
   { href: "/destinations", label: "Destinations", Icon: Cloud, perm: "destination:read" },
   { href: "/operations", label: "Operations", Icon: Activity, perm: "operation:read" },

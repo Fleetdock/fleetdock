@@ -113,7 +113,6 @@ func run() error {
 	auditRepo := postgres.NewAuditRepository(pool)
 	notifRepo := postgres.NewNotificationRepository(pool)
 	statsRepo := postgres.NewStatsRepository(pool)
-	moveRepo := postgres.NewMoveRepository(pool)
 
 	// Use cases (application services).
 	jwt := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
@@ -138,7 +137,7 @@ func run() error {
 	})
 	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc)
 	opsSvc.SetNotifier(notifSvc)
-	moveSvc := moveapp.NewService(moveRepo, databaseRepo, instanceRepo, backupSvc, databaseSvc)
+	moveSvc := moveapp.NewService(databaseRepo, instanceRepo, backupSvc, databaseSvc)
 	opsSvc.SetMover(moveSvc)
 
 	// One-time admin bootstrap.

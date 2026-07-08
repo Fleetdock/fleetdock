@@ -21,7 +21,6 @@ import type {
   ImportDatabasesResult,
   Instance,
   Me,
-  Move,
   Operation,
   OperationLog,
   Paginated,
@@ -314,20 +313,14 @@ export function useRestoreBackup() {
 }
 
 // ---- Move database ----
-export function useMoves() {
-  return useQuery({
-    queryKey: ["moves"],
-    queryFn: () => api.get<{ items: Move[] }>("/v1/moves"),
-    refetchInterval: 4_000,
-  });
-}
-
+// A move has no resource of its own: it kicks off a backup and (on completion) a
+// restore, both tracked as operations. Starting one returns the backup operation.
 export function useStartMove() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: StartMoveInput) => api.post<Move>("/v1/moves", input),
+    mutationFn: (input: StartMoveInput) =>
+      api.post<{ operation_id: string; status: string }>("/v1/moves", input),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["moves"] });
       qc.invalidateQueries({ queryKey: ["operations"] });
       qc.invalidateQueries({ queryKey: ["backups"] });
     },

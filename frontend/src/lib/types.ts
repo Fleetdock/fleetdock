@@ -212,22 +212,6 @@ export interface RestoreBackupInput {
   target_database?: string;
 }
 
-export interface Move {
-  id: string;
-  source_database_id: string;
-  target_instance_id: string;
-  target_database: string;
-  destination_id: string;
-  drop_source: boolean;
-  backup_id?: string | null;
-  restore_job_id?: string | null;
-  status: "pending" | "backing_up" | "restoring" | "completed" | "failed";
-  table_count?: number | null;
-  error?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface StartMoveInput {
   source_database_id: string;
   target_instance_id: string;

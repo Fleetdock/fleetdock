@@ -1,6 +1,8 @@
-// Package moveapp implements the move-database saga on top of the existing
-// backup + restore operations. A move is driven forward by completion hooks
-// the operations engine calls when its sub-jobs finish.
+// Package moveapp implements the move-database action on top of the existing
+// backup + restore operations. A move is not a grouped/parent job: it triggers
+// a backup of the source and, when that completes, a restore into the target —
+// both appear as ordinary operations. The saga state (target, cutover) rides in
+// the operations' own params, so there is no dedicated moves table.
 package moveapp
 
 import (
@@ -12,16 +14,15 @@ import (
 
 	backupapp "github.com/mariadb-cp/db-manager/backend/internal/app/backup"
 	databaseapp "github.com/mariadb-cp/db-manager/backend/internal/app/database"
+	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
 	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
 	instancedom "github.com/mariadb-cp/db-manager/backend/internal/domain/instance"
-	movedom "github.com/mariadb-cp/db-manager/backend/internal/domain/move"
+	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
 	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/executor"
 )
 
-// Service implements the move-database saga.
+// Service implements the move-database action.
 type Service struct {
-	repo      movedom.Repository
 	databases databasedom.Repository
 	instances instancedom.Repository
 	backups   *backupapp.Service
@@ -29,9 +30,9 @@ type Service struct {
 }
 
 // NewService wires the move service.
-func NewService(repo movedom.Repository, databases databasedom.Repository, instances instancedom.Repository,
+func NewService(databases databasedom.Repository, instances instancedom.Repository,
 	backups *backupapp.Service, dbService *databaseapp.Service) *Service {
-	return &Service{repo: repo, databases: databases, instances: instances, backups: backups, dbService: dbService}
+	return &Service{databases: databases, instances: instances, backups: backups, dbService: dbService}
 }
 
 // StartInput is the command to move a database.
@@ -44,9 +45,10 @@ type StartInput struct {
 	CreatedBy        *uuid.UUID
 }
 
-// Start validates the request, kicks off a backup of the source, and records
-// the move. It advances automatically as the backup and restore complete.
-func (s *Service) Start(ctx context.Context, in StartInput) (*movedom.Move, error) {
+// Start validates the request and kicks off a backup of the source carrying the
+// move target in its params. It returns the backup operation; the move advances
+// automatically as the backup and restore operations complete.
+func (s *Service) Start(ctx context.Context, in StartInput) (*jobdom.Job, error) {
 	srcID, err := uuid.Parse(in.SourceDatabaseID)
 	if err != nil {
 		return nil, apperr.Invalid("source_database_id", "source_database_id must be a valid UUID")
@@ -55,8 +57,7 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*movedom.Move, erro
 	if err != nil {
 		return nil, apperr.Invalid("target_instance_id", "target_instance_id must be a valid UUID")
 	}
-	destID, err := uuid.Parse(in.DestinationID)
-	if err != nil {
+	if _, err := uuid.Parse(in.DestinationID); err != nil {
 		return nil, apperr.Invalid("destination_id", "destination_id must be a valid UUID")
 	}
 	src, err := s.databases.GetByID(ctx, srcID)
@@ -75,114 +76,80 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*movedom.Move, erro
 		targetName = src.Name
 	}
 
-	backup, _, err := s.backups.Trigger(ctx, backupapp.TriggerInput{
+	_, job, err := s.backups.Trigger(ctx, backupapp.TriggerInput{
 		DatabaseID:    srcID.String(),
-		DestinationID: destID.String(),
-		CreatedBy:     in.CreatedBy,
+		DestinationID: in.DestinationID,
+		Move: &backupapp.MoveSpec{
+			TargetInstanceID: tgtInstID.String(),
+			TargetDatabase:   targetName,
+			DropSource:       in.DropSource,
+		},
+		CreatedBy: in.CreatedBy,
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	m := &movedom.Move{
-		ID:               uuid.New(),
-		SourceDatabaseID: srcID,
-		TargetInstanceID: tgtInstID,
-		TargetDatabase:   targetName,
-		DestinationID:    destID,
-		DropSource:       in.DropSource,
-		BackupID:         &backup.ID,
-		Status:           movedom.StatusBackingUp,
-		CreatedBy:        in.CreatedBy,
-	}
-	if err := s.repo.Create(ctx, m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-// List returns recent moves.
-func (s *Service) List(ctx context.Context) ([]*movedom.Move, error) { return s.repo.List(ctx) }
-
-// Get returns one move.
-func (s *Service) Get(ctx context.Context, id string) (*movedom.Move, error) {
-	uid, err := uuid.Parse(id)
-	if err != nil {
-		return nil, apperr.Invalid("id", "id must be a valid UUID")
-	}
-	return s.repo.GetByID(ctx, uid)
+	return job, nil
 }
 
 // OnBackupComplete advances a move whose backup just finished (called by the
-// operations engine). It is a no-op when the backup is not part of a move.
-func (s *Service) OnBackupComplete(ctx context.Context, backupID uuid.UUID, ok bool) {
-	m, err := s.repo.GetByBackupID(ctx, backupID)
-	if err != nil || m == nil || m.Status != movedom.StatusBackingUp {
+// operations engine). It is a no-op when the backup is not a move leg.
+func (s *Service) OnBackupComplete(ctx context.Context, job *jobdom.Job, ok bool) {
+	var p operationapp.Params
+	if json.Unmarshal(job.Params, &p) != nil || p.MoveTargetInstanceID == "" {
 		return
 	}
 	if !ok {
-		s.fail(ctx, m, "move: source backup failed")
+		// The failed backup operation is already visible in Operations; there is
+		// nothing to restore.
 		return
 	}
-	job, err := s.backups.Restore(ctx, backupapp.RestoreInput{
-		BackupID:         backupID.String(),
-		TargetInstanceID: m.TargetInstanceID.String(),
-		TargetDatabase:   m.TargetDatabase,
-		CreatedBy:        m.CreatedBy,
-	})
-	if err != nil {
-		s.fail(ctx, m, "move: could not start restore: "+err.Error())
-		return
-	}
-	m.RestoreJobID = &job.ID
-	m.Status = movedom.StatusRestoring
-	if err := s.repo.Update(ctx, m); err != nil {
-		slog.Error("move: update after backup", "id", m.ID, "error", err.Error())
+	if _, err := s.backups.Restore(ctx, backupapp.RestoreInput{
+		BackupID:             p.BackupID,
+		TargetInstanceID:     p.MoveTargetInstanceID,
+		TargetDatabase:       p.MoveTargetDatabase,
+		MoveSourceDatabaseID: p.MoveSourceDatabaseID,
+		MoveDropSource:       p.MoveDropSource,
+		CreatedBy:            job.CreatedBy,
+	}); err != nil {
+		slog.Error("move: could not start restore", "backup_job", job.ID, "error", err.Error())
 	}
 }
 
-// OnRestoreComplete finalizes a move whose restore just finished.
-func (s *Service) OnRestoreComplete(ctx context.Context, restoreJobID uuid.UUID, ok bool, result json.RawMessage) {
-	m, err := s.repo.GetByRestoreJobID(ctx, restoreJobID)
-	if err != nil || m == nil || m.Status != movedom.StatusRestoring {
+// OnRestoreComplete finalizes a move whose restore just finished: it registers
+// the moved database on the target and optionally drops the source (cutover).
+// It is a no-op when the restore is not a move leg.
+func (s *Service) OnRestoreComplete(ctx context.Context, job *jobdom.Job, ok bool, _ json.RawMessage) {
+	var p operationapp.Params
+	if json.Unmarshal(job.Params, &p) != nil || p.MoveSourceDatabaseID == "" {
 		return
 	}
 	if !ok {
-		s.fail(ctx, m, "move: restore failed")
+		return
+	}
+	srcID, err := uuid.Parse(p.MoveSourceDatabaseID)
+	if err != nil {
+		return
+	}
+	tgtInstID, err := uuid.Parse(p.InstanceID)
+	if err != nil {
 		return
 	}
 
 	// Register the moved database on the target instance (metadata record).
 	charset, collation := "utf8mb4", "utf8mb4_unicode_ci"
-	if src, e := s.databases.GetByID(ctx, m.SourceDatabaseID); e == nil {
+	if src, e := s.databases.GetByID(ctx, srcID); e == nil {
 		charset, collation = src.Charset, src.Collation
 	}
-	if db, e := databasedom.NewDatabase(m.TargetInstanceID, m.TargetDatabase, charset, collation,
+	if db, e := databasedom.NewDatabase(tgtInstID, p.Database, charset, collation,
 		map[string]string{"moved": "true"}, nil); e == nil {
 		_ = s.databases.Create(ctx, db) // conflicts (already tracked) are fine
 	}
 
-	var res executor.Result
-	if json.Unmarshal(result, &res) == nil && res.TableCount > 0 {
-		m.TableCount = &res.TableCount
-	}
-	m.Status = movedom.StatusCompleted
-	if err := s.repo.Update(ctx, m); err != nil {
-		slog.Error("move: update after restore", "id", m.ID, "error", err.Error())
-	}
-
-	// Cutover: optionally drop the source database now that the copy is verified.
-	if m.DropSource {
-		if err := s.dbService.Delete(ctx, m.SourceDatabaseID.String(), true, m.CreatedBy); err != nil {
-			slog.Warn("move: could not drop source", "id", m.ID, "error", err.Error())
+	// Cutover: optionally drop the source now that the copy is verified.
+	if p.MoveDropSource {
+		if err := s.dbService.Delete(ctx, srcID.String(), true, job.CreatedBy); err != nil {
+			slog.Warn("move: could not drop source", "source_database", srcID, "error", err.Error())
 		}
-	}
-}
-
-func (s *Service) fail(ctx context.Context, m *movedom.Move, msg string) {
-	m.Status = movedom.StatusFailed
-	m.Error = &msg
-	if err := s.repo.Update(ctx, m); err != nil {
-		slog.Error("move: mark failed", "id", m.ID, "error", err.Error())
 	}
 }

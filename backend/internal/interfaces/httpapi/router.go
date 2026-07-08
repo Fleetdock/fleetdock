@@ -152,10 +152,9 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/backups/{id}", requirePerm("backup:read", d.Backups.Get))
 	mux.HandleFunc("POST /v1/backups/{id}/restore", requirePerm("backup:write", d.Backups.Restore))
 
-	// Move database (backup → restore → verify → optional drop of source)
+	// Move database (backup → restore → verify → optional drop of source).
+	// Tracked through the backup and restore operations it creates.
 	mux.HandleFunc("POST /v1/moves", requirePerm("backup:write", d.Moves.Start))
-	mux.HandleFunc("GET /v1/moves", requirePerm("backup:read", d.Moves.List))
-	mux.HandleFunc("GET /v1/moves/{id}", requirePerm("backup:read", d.Moves.Get))
 
 	// Backup destinations
 	mux.HandleFunc("POST /v1/backup-destinations", requirePerm("destination:write", d.Destinations.Create))
