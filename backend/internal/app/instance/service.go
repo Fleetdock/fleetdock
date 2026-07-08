@@ -1,6 +1,6 @@
 // Package instanceapp holds the application use cases for instances —
 // managed (on registered servers) and external (existing databases anywhere,
-// e.g. instances already running under Dokploy).
+// e.g. databases you already run elsewhere).
 package instanceapp
 
 import (

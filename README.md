@@ -6,8 +6,8 @@
 
 An open-source **control plane for databases** — manage a fleet of servers,
 database instances, and databases from a modern dashboard instead of SSH.
-Think "Vercel/Neon, but self-hosted and for any database" or "Dokploy for DB
-instances". It supports **MariaDB, MySQL and PostgreSQL** behind a pluggable
+Think self-hosted database operations with a modern dashboard — like Vercel/Neon,
+but for any database engine you run. It supports **MariaDB, MySQL and PostgreSQL** behind a pluggable
 engine layer, and can **provision** new database containers on your servers via
 plain Docker (no Swarm/Traefik).
 
@@ -47,7 +47,7 @@ boot. To apply migrations without starting the server: `make backend-migrate`.
 **Hosted Postgres alternative:** set `MDCP_DATABASE_URL` to a Neon (or any
 PostgreSQL) connection string with `sslmode=require` instead of the local default.
 
-## Connecting a server (one command, like Dokploy)
+## Connecting a server (one command)
 
 In the dashboard: **Servers → Connect server** generates a single-use
 registration token and a ready-to-paste command:
@@ -76,8 +76,8 @@ baked into the generated install command.
     container** with a generated root password, a named data volume and a
     published port — Servers → *server* → **Add instance → Provision new**) or
     **registered** (point at a MariaDB already running on the server).
-  - `external`: any reachable MariaDB (e.g. databases you already run under
-    Dokploy) — the control plane connects to it directly. Add it under
+  - `external`: any reachable database you already host elsewhere — the control
+    plane connects to it directly. Add it under
     **Instances → Add instance → External**, then **Import DBs** to pull in
     the existing databases.
   Provisioned instances can be **started / stopped / restarted** from their

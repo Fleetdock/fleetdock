@@ -218,8 +218,8 @@ export default function InstancesPage() {
         <div>
           <h1 className="font-semibold text-xl">Instances</h1>
           <p className="text-sm muted">
-            Database instances — managed on your servers, or external (e.g.
-            running under Dokploy).
+            Database instances — managed on your servers, or external databases
+            you already host elsewhere.
           </p>
         </div>
         {canWrite ? (
@@ -331,7 +331,7 @@ function AddInstanceModal({
               Managed — runs on a connected server
             </option>
             <option value="external">
-              External — reachable over the network (e.g. Dokploy)
+              External — reachable over the network (e.g. hosted elsewhere)
             </option>
           </select>
         </Field>
