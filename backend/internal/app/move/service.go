@@ -12,13 +12,13 @@ import (
 
 	"github.com/google/uuid"
 
-	backupapp "github.com/mariadb-cp/db-manager/backend/internal/app/backup"
-	databaseapp "github.com/mariadb-cp/db-manager/backend/internal/app/database"
-	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
-	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
-	instancedom "github.com/mariadb-cp/db-manager/backend/internal/domain/instance"
-	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	backupapp "github.com/TajBrains/db-manager/backend/internal/app/backup"
+	databaseapp "github.com/TajBrains/db-manager/backend/internal/app/database"
+	operationapp "github.com/TajBrains/db-manager/backend/internal/app/operation"
+	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
+	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
+	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // Service implements the move-database action.

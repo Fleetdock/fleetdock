@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	serverdom "github.com/mariadb-cp/db-manager/backend/internal/domain/server"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 var _ serverdom.AgentRepository = (*ServerRepository)(nil)

@@ -1,7 +1,14 @@
 # macOS / editor cruft
 .DS_Store
+.cursor/
+.claude/
 # editor swap/conflict artifacts (e.g. service.go.1234567890)
 *.go.[0-9]*
+
+# secrets and keys
+*.pem
+*.key
+**/state.json
 
 # backend
 /backend/bin

@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	destinationapp "github.com/mariadb-cp/db-manager/backend/internal/app/destination"
-	backupdestdom "github.com/mariadb-cp/db-manager/backend/internal/domain/backupdest"
+	destinationapp "github.com/TajBrains/db-manager/backend/internal/app/destination"
+	backupdestdom "github.com/TajBrains/db-manager/backend/internal/domain/backupdest"
 )
 
 // DestinationHandler exposes backup-destination endpoints.

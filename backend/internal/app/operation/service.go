@@ -14,15 +14,15 @@ import (
 
 	"github.com/google/uuid"
 
-	backupdom "github.com/mariadb-cp/db-manager/backend/internal/domain/backup"
-	backupdestdom "github.com/mariadb-cp/db-manager/backend/internal/domain/backupdest"
-	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
-	instancedom "github.com/mariadb-cp/db-manager/backend/internal/domain/instance"
-	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/engine"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/executor"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/storage"
+	backupdom "github.com/TajBrains/db-manager/backend/internal/domain/backup"
+	backupdestdom "github.com/TajBrains/db-manager/backend/internal/domain/backupdest"
+	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
+	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
+	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/engine"
+	"github.com/TajBrains/db-manager/backend/internal/platform/executor"
+	"github.com/TajBrains/db-manager/backend/internal/platform/storage"
 )
 
 // DatabaseStatusRepo is the slice of the database repository this service needs.

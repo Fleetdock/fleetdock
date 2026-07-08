@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"time"
 
-	agentapp "github.com/mariadb-cp/db-manager/backend/internal/app/agent"
-	summaryapp "github.com/mariadb-cp/db-manager/backend/internal/app/summary"
-	serverdom "github.com/mariadb-cp/db-manager/backend/internal/domain/server"
-	statsdom "github.com/mariadb-cp/db-manager/backend/internal/domain/stats"
+	agentapp "github.com/TajBrains/db-manager/backend/internal/app/agent"
+	summaryapp "github.com/TajBrains/db-manager/backend/internal/app/summary"
+	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
+	statsdom "github.com/TajBrains/db-manager/backend/internal/domain/stats"
 )
 
 // OverviewHandler exposes the dashboard summary and server metrics.

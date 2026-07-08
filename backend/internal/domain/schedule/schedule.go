@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/cron"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/cron"
 )
 
 // Schedule is a recurring backup of one database to one destination.

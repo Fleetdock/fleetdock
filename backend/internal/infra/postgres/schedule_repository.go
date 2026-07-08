@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	scheduledom "github.com/mariadb-cp/db-manager/backend/internal/domain/schedule"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	scheduledom "github.com/TajBrains/db-manager/backend/internal/domain/schedule"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // ScheduleRepository is the Postgres adapter for scheduledom.Repository.

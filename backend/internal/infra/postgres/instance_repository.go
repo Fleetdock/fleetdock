@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	instancedom "github.com/mariadb-cp/db-manager/backend/internal/domain/instance"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 const foreignKeyViolation = "23503"

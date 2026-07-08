@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/uuid"
 
-	backupdestdom "github.com/mariadb-cp/db-manager/backend/internal/domain/backupdest"
-	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
-	scheduledom "github.com/mariadb-cp/db-manager/backend/internal/domain/schedule"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	backupdestdom "github.com/TajBrains/db-manager/backend/internal/domain/backupdest"
+	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
+	scheduledom "github.com/TajBrains/db-manager/backend/internal/domain/schedule"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // BackupRunner triggers a scheduled backup (satisfied by *backupapp.Service).

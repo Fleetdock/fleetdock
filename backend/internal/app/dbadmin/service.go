@@ -14,11 +14,11 @@ import (
 
 	"github.com/google/uuid"
 
-	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
-	instancedom "github.com/mariadb-cp/db-manager/backend/internal/domain/instance"
-	serverdom "github.com/mariadb-cp/db-manager/backend/internal/domain/server"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/engine"
+	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
+	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
+	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/engine"
 )
 
 // Secrets is the secret store surface this service needs.

@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	auditapp "github.com/mariadb-cp/db-manager/backend/internal/app/audit"
-	auditdom "github.com/mariadb-cp/db-manager/backend/internal/domain/audit"
+	auditapp "github.com/TajBrains/db-manager/backend/internal/app/audit"
+	auditdom "github.com/TajBrains/db-manager/backend/internal/domain/audit"
 )
 
 // auditRecorder records successful mutating requests to the audit log. It runs

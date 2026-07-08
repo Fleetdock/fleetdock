@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	userdom "github.com/mariadb-cp/db-manager/backend/internal/domain/user"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 var _ userdom.AdminRepository = (*UserRepository)(nil)

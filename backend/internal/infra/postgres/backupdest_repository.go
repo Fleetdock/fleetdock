@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	backupdestdom "github.com/mariadb-cp/db-manager/backend/internal/domain/backupdest"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	backupdestdom "github.com/TajBrains/db-manager/backend/internal/domain/backupdest"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // BackupDestRepository is the Postgres adapter for backupdestdom.Repository.

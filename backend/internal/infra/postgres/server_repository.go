@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	serverdom "github.com/mariadb-cp/db-manager/backend/internal/domain/server"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // uniqueViolation is the PostgreSQL SQLSTATE for a unique-constraint breach.

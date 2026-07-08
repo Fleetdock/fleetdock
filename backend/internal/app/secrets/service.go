@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	secretdom "github.com/mariadb-cp/db-manager/backend/internal/domain/secret"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/crypto"
+	secretdom "github.com/TajBrains/db-manager/backend/internal/domain/secret"
+	"github.com/TajBrains/db-manager/backend/internal/platform/crypto"
 )
 
 // Service encrypts on write and decrypts on read.

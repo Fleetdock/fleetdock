@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	databaseapp "github.com/mariadb-cp/db-manager/backend/internal/app/database"
-	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
+	databaseapp "github.com/TajBrains/db-manager/backend/internal/app/database"
+	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
 )
 
 // DatabaseHandler exposes database endpoints.

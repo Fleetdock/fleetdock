@@ -23,7 +23,7 @@ func NewInstallHandler(publicURL, binDir string) *InstallHandler {
 // Script handles GET /install.sh (public).
 func (h *InstallHandler) Script(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
-	fmt.Fprintf(w, installScript, h.publicURL)
+	_, _ = fmt.Fprintf(w, installScript, h.publicURL)
 }
 
 // Binary handles GET /agent/v1/binary/{os}/{arch} (public: binaries are not
@@ -47,7 +47,7 @@ func (h *InstallHandler) Binary(w http.ResponseWriter, r *http.Request) {
 func sanitizeComponent(s string) string {
 	s = strings.ToLower(s)
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9') {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
 			return ""
 		}
 	}

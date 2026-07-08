@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	notifdom "github.com/mariadb-cp/db-manager/backend/internal/domain/notification"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	notifdom "github.com/TajBrains/db-manager/backend/internal/domain/notification"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // NotificationRepository is the Postgres adapter for notifdom.Repository.

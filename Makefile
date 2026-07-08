@@ -91,6 +91,18 @@ dev: ## Run API + Next.js dev servers (hot reload; Ctrl+C stops both)
 	(cd $(FRONTEND) && npm run dev) & \
 	wait
 
+.PHONY: backend-lint
+backend-lint: ## Run golangci-lint on the backend
+	cd $(BACKEND) && golangci-lint run ./...
+
+.PHONY: frontend-lint
+frontend-lint: ## Run ESLint on the frontend
+	cd $(FRONTEND) && npm run lint
+
+.PHONY: frontend-typecheck
+frontend-typecheck: ## Typecheck the frontend
+	cd $(FRONTEND) && npm run typecheck
+
 ## ----- Aggregate -----
 
 .PHONY: install
@@ -99,8 +111,11 @@ install: frontend-install backend-tidy ## Install/prepare all dependencies
 .PHONY: build
 build: backend-build frontend-build ## Build backend and frontend
 
+.PHONY: lint
+lint: backend-lint frontend-lint ## Lint backend and frontend
+
 .PHONY: test
-test: backend-vet backend-test ## Vet and test the backend
+test: backend-vet backend-test frontend-typecheck ## Vet, test backend, typecheck frontend
 
 .PHONY: fmt
 fmt: backend-fmt ## Format the codebase

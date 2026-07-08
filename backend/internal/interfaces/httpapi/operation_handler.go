@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
-	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
+	operationapp "github.com/TajBrains/db-manager/backend/internal/app/operation"
+	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
 )
 
 // OperationHandler exposes read access to the operations log.

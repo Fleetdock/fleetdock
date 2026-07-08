@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 
 import { Bell, Pencil, Plug, Plus, Trash2 } from "lucide-react";
 
@@ -22,14 +28,23 @@ import {
 } from "@/lib/hooks";
 import type { AlertRule, ChannelType, NotificationChannel } from "@/lib/types";
 
-const CHANNEL_LABEL: Record<string, string> = { email: "Email", slack: "Slack", webhook: "Webhook" };
+const CHANNEL_LABEL: Record<string, string> = {
+  email: "Email",
+  slack: "Slack",
+  webhook: "Webhook",
+};
 const METRIC_LABEL: Record<string, string> = {
   cpu_pct: "CPU %",
   mem_used_pct: "Memory used %",
   disk_used_pct: "Disk used %",
   connections: "Connections",
 };
-const COMPARATOR_LABEL: Record<string, string> = { gt: ">", gte: "≥", lt: "<", lte: "≤" };
+const COMPARATOR_LABEL: Record<string, string> = {
+  gt: ">",
+  gte: "≥",
+  lt: "<",
+  lte: "≤",
+};
 
 export default function NotificationsPage() {
   const can = useCan();
@@ -39,12 +54,18 @@ export default function NotificationsPage() {
   return (
     <div>
       <div style={{ marginBottom: "1.1rem" }}>
-        <h1 className="text-xl font-semibold">Notifications</h1>
-        <p className="muted text-sm">Delivery channels and alert rules for backup failures, offline servers and metric thresholds.</p>
+        <h1 className="font-semibold text-xl">Notifications</h1>
+        <p className="text-sm muted">
+          Delivery channels and alert rules for backup failures, offline servers
+          and metric thresholds.
+        </p>
       </div>
 
       {notice ? (
-        <div className="card" style={{ padding: ".7rem .9rem", marginBottom: ".9rem" }}>
+        <div
+          className="card"
+          style={{ padding: ".7rem .9rem", marginBottom: ".9rem" }}
+        >
           <span className="text-sm">{notice}</span>
         </div>
       ) : null}
@@ -57,28 +78,62 @@ export default function NotificationsPage() {
 
 // ---------------- Channels ----------------
 
-function ChannelsSection({ canWrite, onNotice }: { canWrite: boolean; onNotice: (s: string) => void }) {
+function ChannelsSection({
+  canWrite,
+  onNotice,
+}: {
+  canWrite: boolean;
+  onNotice: (s: string) => void;
+}) {
   const { data, isLoading, error } = useChannels();
   const del = useDeleteChannel();
   const test = useTestChannel();
   const [addOpen, setAddOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<NotificationChannel | null>(null);
+  const [editTarget, setEditTarget] = useState<NotificationChannel | null>(
+    null,
+  );
 
-  async function onTest(id: string, name: string) {
-    try {
-      await test.mutateAsync(id);
-      onNotice(`"${name}": test notification delivered.`);
-    } catch (err) {
-      onNotice(err instanceof ApiError ? `"${name}": ${err.message}` : "Test failed");
-    }
-  }
+  const onTest = useCallback(
+    async (id: string, name: string) => {
+      try {
+        await test.mutateAsync(id);
+        onNotice(`"${name}": test notification delivered.`);
+      } catch (err) {
+        onNotice(
+          err instanceof ApiError ? `"${name}": ${err.message}` : "Test failed",
+        );
+      }
+    },
+    [onNotice, test],
+  );
 
   const columns = useMemo(() => {
     const cols: DataTableColumn<NotificationChannel>[] = [
-      { id: "name", header: "Name", className: "font-medium", render: (c) => c.name },
-      { id: "type", header: "Type", className: "muted", render: (c) => CHANNEL_LABEL[c.type] ?? c.type },
-      { id: "target", header: "Target", className: "muted", render: (c) => channelTarget(c) },
-      { id: "enabled", header: "Status", render: (c) => <StatusBadge status={c.enabled ? "active" : "stopped"} /> },
+      {
+        id: "name",
+        header: "Name",
+        className: "font-medium",
+        render: (c) => c.name,
+      },
+      {
+        id: "type",
+        header: "Type",
+        className: "muted",
+        render: (c) => CHANNEL_LABEL[c.type] ?? c.type,
+      },
+      {
+        id: "target",
+        header: "Target",
+        className: "muted",
+        render: (c) => channelTarget(c),
+      },
+      {
+        id: "enabled",
+        header: "Status",
+        render: (c) => (
+          <StatusBadge status={c.enabled ? "active" : "stopped"} />
+        ),
+      },
     ];
     if (canWrite) {
       cols.push({
@@ -86,12 +141,29 @@ function ChannelsSection({ canWrite, onNotice }: { canWrite: boolean; onNotice: 
         header: "Actions",
         align: "right",
         render: (c) => (
-          <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-            <button className="btn btn-sm" onClick={() => onTest(c.id, c.name)} disabled={test.isPending}><Plug size={15} /> Test</button>
-            <button className="btn btn-sm" onClick={() => setEditTarget(c)} aria-label="Edit"><Pencil size={15} /></button>
+          <div
+            className="flex items-center gap-2"
+            style={{ justifyContent: "flex-end" }}
+          >
+            <button
+              className="btn btn-sm"
+              onClick={() => onTest(c.id, c.name)}
+              disabled={test.isPending}
+            >
+              <Plug size={15} /> Test
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => setEditTarget(c)}
+              aria-label="Edit"
+            >
+              <Pencil size={15} />
+            </button>
             <button
               className="btn btn-sm btn-danger"
-              onClick={() => confirm(`Delete channel "${c.name}"?`) && del.mutate(c.id)}
+              onClick={() =>
+                confirm(`Delete channel "${c.name}"?`) && del.mutate(c.id)
+              }
               disabled={del.isPending}
               aria-label="Delete"
             >
@@ -102,14 +174,22 @@ function ChannelsSection({ canWrite, onNotice }: { canWrite: boolean; onNotice: 
       });
     }
     return cols;
-  }, [canWrite, del, test]);
+  }, [canWrite, del, onTest, test]);
 
   return (
     <section style={{ marginBottom: "1.8rem" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: ".7rem" }}>
+      <div
+        className="flex justify-between items-center"
+        style={{ marginBottom: ".7rem" }}
+      >
         <h2 className="font-semibold">Channels</h2>
         {canWrite ? (
-          <button className="btn btn-primary btn-sm" onClick={() => setAddOpen(true)}><Plus size={15} /> Add channel</button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus size={15} /> Add channel
+          </button>
         ) : null}
       </div>
       <DataTable<NotificationChannel>
@@ -122,8 +202,17 @@ function ChannelsSection({ canWrite, onNotice }: { canWrite: boolean; onNotice: 
         emptyTitle="No channels yet"
         emptyHint="Add a webhook, Slack or email channel to receive notifications."
       />
-      <ChannelModal mode="create" open={addOpen} onClose={() => setAddOpen(false)} />
-      <ChannelModal mode="edit" channel={editTarget} open={editTarget !== null} onClose={() => setEditTarget(null)} />
+      <ChannelModal
+        mode="create"
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+      />
+      <ChannelModal
+        mode="edit"
+        channel={editTarget}
+        open={editTarget !== null}
+        onClose={() => setEditTarget(null)}
+      />
     </section>
   );
 }
@@ -136,7 +225,12 @@ function channelTarget(c: NotificationChannel): string {
 
 type ChannelModalProps =
   | { mode: "create"; channel?: undefined; open: boolean; onClose: () => void }
-  | { mode: "edit"; channel: NotificationChannel | null; open: boolean; onClose: () => void };
+  | {
+      mode: "edit";
+      channel: NotificationChannel | null;
+      open: boolean;
+      onClose: () => void;
+    };
 
 function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps) {
   const create = useCreateChannel();
@@ -191,19 +285,40 @@ function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps) {
       }
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Failed to ${isEdit ? "update" : "add"} channel`);
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : `Failed to ${isEdit ? "update" : "add"} channel`,
+      );
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={isEdit ? "Edit channel" : "Add channel"}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isEdit ? "Edit channel" : "Add channel"}
+    >
       <form onSubmit={onSubmit}>
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}
+        >
           <Field label="Name">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="ops-alerts" required />
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="ops-alerts"
+              required
+            />
           </Field>
           <Field label="Type">
-            <select className="input" value={type} onChange={(e) => setType(e.target.value as ChannelType)}>
+            <select
+              className="input"
+              value={type}
+              onChange={(e) => setType(e.target.value as ChannelType)}
+            >
               <option value="webhook">Webhook</option>
               <option value="slack">Slack</option>
               <option value="email">Email</option>
@@ -212,33 +327,61 @@ function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps) {
         </div>
         {type === "webhook" ? (
           <Field label="Webhook URL">
-            <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/hook" required={!isEdit} />
+            <input
+              className="input"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com/hook"
+              required={!isEdit}
+            />
           </Field>
         ) : null}
         {type === "slack" ? (
           <Field label="Slack incoming webhook URL">
-            <input className="input" value={slackUrl} onChange={(e) => setSlackUrl(e.target.value)} placeholder="https://hooks.slack.com/services/…" required={!isEdit} />
+            <input
+              className="input"
+              value={slackUrl}
+              onChange={(e) => setSlackUrl(e.target.value)}
+              placeholder="https://hooks.slack.com/services/…"
+              required={!isEdit}
+            />
           </Field>
         ) : null}
         {type === "email" ? (
           <Field label="Recipient address">
-            <input className="input" type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="oncall@example.com" required />
+            <input
+              className="input"
+              type="email"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder="oncall@example.com"
+              required
+            />
           </Field>
         ) : null}
         <Field label="Status">
-          <select className="input" value={enabled ? "yes" : "no"} onChange={(e) => setEnabled(e.target.value === "yes")}>
+          <select
+            className="input"
+            value={enabled ? "yes" : "no"}
+            onChange={(e) => setEnabled(e.target.value === "yes")}
+          >
             <option value="yes">Enabled</option>
             <option value="no">Disabled</option>
           </select>
         </Field>
-        <p className="muted text-sm">
+        <p className="text-sm muted">
           {type === "email"
             ? "Email requires SMTP to be configured on the server (MDCP_SMTP_HOST)."
             : "The URL is stored securely; leave it blank when editing to keep the current one."}
         </p>
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+        <div
+          className="flex justify-end items-center gap-2"
+          style={{ marginTop: ".5rem" }}
+        >
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
           <button type="submit" className="btn btn-primary" disabled={pending}>
             {pending ? "Saving…" : isEdit ? "Save changes" : "Add channel"}
           </button>
@@ -265,21 +408,50 @@ function RulesSection({ canWrite }: { canWrite: boolean }) {
 
   const columns = useMemo(() => {
     const cols: DataTableColumn<AlertRule>[] = [
-      { id: "name", header: "Name", className: "font-medium", render: (r) => r.name },
+      {
+        id: "name",
+        header: "Name",
+        className: "font-medium",
+        render: (r) => r.name,
+      },
       {
         id: "condition",
         header: "Condition",
         className: "muted",
-        render: (r) => `${METRIC_LABEL[r.metric] ?? r.metric} ${COMPARATOR_LABEL[r.comparator] ?? r.comparator} ${r.threshold} for ${r.for_seconds}s`,
+        render: (r) =>
+          `${METRIC_LABEL[r.metric] ?? r.metric} ${COMPARATOR_LABEL[r.comparator] ?? r.comparator} ${r.threshold} for ${r.for_seconds}s`,
       },
-      { id: "severity", header: "Severity", render: (r) => <StatusBadge status={r.severity === "critical" ? "failed" : r.severity === "warning" ? "pending" : "canceled"} /> },
+      {
+        id: "severity",
+        header: "Severity",
+        render: (r) => (
+          <StatusBadge
+            status={
+              r.severity === "critical"
+                ? "failed"
+                : r.severity === "warning"
+                  ? "pending"
+                  : "canceled"
+            }
+          />
+        ),
+      },
       {
         id: "channels",
         header: "Channels",
         className: "muted",
-        render: (r) => (r.channel_ids.length ? r.channel_ids.map((id) => channelName.get(id) ?? "?").join(", ") : "all"),
+        render: (r) =>
+          r.channel_ids.length
+            ? r.channel_ids.map((id) => channelName.get(id) ?? "?").join(", ")
+            : "all",
       },
-      { id: "enabled", header: "Status", render: (r) => <StatusBadge status={r.enabled ? "active" : "stopped"} /> },
+      {
+        id: "enabled",
+        header: "Status",
+        render: (r) => (
+          <StatusBadge status={r.enabled ? "active" : "stopped"} />
+        ),
+      },
     ];
     if (canWrite) {
       cols.push({
@@ -287,11 +459,22 @@ function RulesSection({ canWrite }: { canWrite: boolean }) {
         header: "Actions",
         align: "right",
         render: (r) => (
-          <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-            <button className="btn btn-sm" onClick={() => setEditTarget(r)} aria-label="Edit"><Pencil size={15} /></button>
+          <div
+            className="flex items-center gap-2"
+            style={{ justifyContent: "flex-end" }}
+          >
+            <button
+              className="btn btn-sm"
+              onClick={() => setEditTarget(r)}
+              aria-label="Edit"
+            >
+              <Pencil size={15} />
+            </button>
             <button
               className="btn btn-sm btn-danger"
-              onClick={() => confirm(`Delete rule "${r.name}"?`) && del.mutate(r.id)}
+              onClick={() =>
+                confirm(`Delete rule "${r.name}"?`) && del.mutate(r.id)
+              }
               disabled={del.isPending}
               aria-label="Delete"
             >
@@ -306,10 +489,20 @@ function RulesSection({ canWrite }: { canWrite: boolean }) {
 
   return (
     <section>
-      <div className="flex items-center justify-between" style={{ marginBottom: ".7rem" }}>
-        <h2 className="font-semibold flex items-center gap-2"><Bell size={16} /> Alert rules</h2>
+      <div
+        className="flex justify-between items-center"
+        style={{ marginBottom: ".7rem" }}
+      >
+        <h2 className="flex items-center gap-2 font-semibold">
+          <Bell size={16} /> Alert rules
+        </h2>
         {canWrite ? (
-          <button className="btn btn-primary btn-sm" onClick={() => setAddOpen(true)}><Plus size={15} /> Add rule</button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus size={15} /> Add rule
+          </button>
         ) : null}
       </div>
       <DataTable<AlertRule>
@@ -322,15 +515,29 @@ function RulesSection({ canWrite }: { canWrite: boolean }) {
         emptyTitle="No alert rules yet"
         emptyHint="Create a rule to be notified when a server metric crosses a threshold."
       />
-      <RuleModal mode="create" open={addOpen} onClose={() => setAddOpen(false)} />
-      <RuleModal mode="edit" rule={editTarget} open={editTarget !== null} onClose={() => setEditTarget(null)} />
+      <RuleModal
+        mode="create"
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+      />
+      <RuleModal
+        mode="edit"
+        rule={editTarget}
+        open={editTarget !== null}
+        onClose={() => setEditTarget(null)}
+      />
     </section>
   );
 }
 
 type RuleModalProps =
   | { mode: "create"; rule?: undefined; open: boolean; onClose: () => void }
-  | { mode: "edit"; rule: AlertRule | null; open: boolean; onClose: () => void };
+  | {
+      mode: "edit";
+      rule: AlertRule | null;
+      open: boolean;
+      onClose: () => void;
+    };
 
 function RuleModal({ mode, rule, open, onClose }: RuleModalProps) {
   const create = useCreateAlertRule();
@@ -382,7 +589,9 @@ function RuleModal({ mode, rule, open, onClose }: RuleModalProps) {
   const pending = create.isPending || update.isPending;
 
   function toggleChannel(id: string) {
-    setChannelIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+    setChannelIds((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
+    );
   }
 
   async function onSubmit(e: FormEvent) {
@@ -408,44 +617,87 @@ function RuleModal({ mode, rule, open, onClose }: RuleModalProps) {
       }
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Failed to ${isEdit ? "update" : "add"} rule`);
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : `Failed to ${isEdit ? "update" : "add"} rule`,
+      );
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={isEdit ? "Edit alert rule" : "New alert rule"}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isEdit ? "Edit alert rule" : "New alert rule"}
+    >
       <form onSubmit={onSubmit}>
         <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="High CPU" required />
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="High CPU"
+            required
+          />
         </Field>
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}
+        >
           <Field label="Scope">
-            <select className="input" value={targetType} onChange={(e) => setTargetType(e.target.value)}>
+            <select
+              className="input"
+              value={targetType}
+              onChange={(e) => setTargetType(e.target.value)}
+            >
               <option value="global">Any server</option>
               <option value="server">Specific server</option>
             </select>
           </Field>
           {targetType === "server" ? (
             <Field label="Server">
-              <select className="input" value={targetId} onChange={(e) => setTargetId(e.target.value)} required>
+              <select
+                className="input"
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+                required
+              >
                 <option value="">Select…</option>
                 {servers?.items.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
                 ))}
               </select>
             </Field>
-          ) : <div />}
+          ) : (
+            <div />
+          )}
         </div>
-        <div className="grid" style={{ gridTemplateColumns: "1.3fr .7fr 1fr", gap: ".75rem" }}>
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: "1.3fr .7fr 1fr", gap: ".75rem" }}
+        >
           <Field label="Metric">
-            <select className="input" value={metric} onChange={(e) => setMetric(e.target.value)}>
+            <select
+              className="input"
+              value={metric}
+              onChange={(e) => setMetric(e.target.value)}
+            >
               {Object.entries(METRIC_LABEL).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
+                <option key={v} value={v}>
+                  {l}
+                </option>
               ))}
             </select>
           </Field>
           <Field label="When">
-            <select className="input" value={comparator} onChange={(e) => setComparator(e.target.value)}>
+            <select
+              className="input"
+              value={comparator}
+              onChange={(e) => setComparator(e.target.value)}
+            >
               <option value="gt">&gt;</option>
               <option value="gte">≥</option>
               <option value="lt">&lt;</option>
@@ -453,15 +705,36 @@ function RuleModal({ mode, rule, open, onClose }: RuleModalProps) {
             </select>
           </Field>
           <Field label="Threshold">
-            <input className="input" type="number" step="any" value={threshold} onChange={(e) => setThreshold(e.target.value)} required />
+            <input
+              className="input"
+              type="number"
+              step="any"
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+              required
+            />
           </Field>
         </div>
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}
+        >
           <Field label="For (seconds)">
-            <input className="input" type="number" min={0} value={forSeconds} onChange={(e) => setForSeconds(e.target.value)} required />
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={forSeconds}
+              onChange={(e) => setForSeconds(e.target.value)}
+              required
+            />
           </Field>
           <Field label="Severity">
-            <select className="input" value={severity} onChange={(e) => setSeverity(e.target.value)}>
+            <select
+              className="input"
+              value={severity}
+              onChange={(e) => setSeverity(e.target.value)}
+            >
               <option value="info">Info</option>
               <option value="warning">Warning</option>
               <option value="critical">Critical</option>
@@ -469,29 +742,57 @@ function RuleModal({ mode, rule, open, onClose }: RuleModalProps) {
           </Field>
         </div>
         <Field label="Channels (none = all enabled)">
-          <div className="card" style={{ padding: ".5rem .7rem", maxHeight: "8rem", overflowY: "auto" }}>
+          <div
+            className="card"
+            style={{
+              padding: ".5rem .7rem",
+              maxHeight: "8rem",
+              overflowY: "auto",
+            }}
+          >
             {channels?.items.length ? (
               channels.items.map((c) => (
-                <label key={c.id} className="flex items-center gap-2" style={{ padding: ".2rem 0", cursor: "pointer" }}>
-                  <input type="checkbox" checked={channelIds.includes(c.id)} onChange={() => toggleChannel(c.id)} />
+                <label
+                  key={c.id}
+                  className="flex items-center gap-2"
+                  style={{ padding: ".2rem 0", cursor: "pointer" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={channelIds.includes(c.id)}
+                    onChange={() => toggleChannel(c.id)}
+                  />
                   <span className="text-sm">{c.name}</span>
-                  <span className="muted text-sm">({CHANNEL_LABEL[c.type] ?? c.type})</span>
+                  <span className="text-sm muted">
+                    ({CHANNEL_LABEL[c.type] ?? c.type})
+                  </span>
                 </label>
               ))
             ) : (
-              <span className="muted text-sm">No channels yet — add one above.</span>
+              <span className="text-sm muted">
+                No channels yet — add one above.
+              </span>
             )}
           </div>
         </Field>
         <Field label="Status">
-          <select className="input" value={enabled ? "yes" : "no"} onChange={(e) => setEnabled(e.target.value === "yes")}>
+          <select
+            className="input"
+            value={enabled ? "yes" : "no"}
+            onChange={(e) => setEnabled(e.target.value === "yes")}
+          >
             <option value="yes">Enabled</option>
             <option value="no">Disabled</option>
           </select>
         </Field>
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+        <div
+          className="flex justify-end items-center gap-2"
+          style={{ marginTop: ".5rem" }}
+        >
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
           <button type="submit" className="btn btn-primary" disabled={pending}>
             {pending ? "Saving…" : isEdit ? "Save changes" : "Create rule"}
           </button>

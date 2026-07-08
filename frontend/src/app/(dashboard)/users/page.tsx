@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 
-import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
@@ -15,14 +20,17 @@ import {
   useUpdateUser,
   useUsers,
 } from "@/lib/hooks";
-import { useDataTable } from "@/lib/use-data-table";
 import type { Role, User } from "@/lib/types";
+import { useDataTable } from "@/lib/use-data-table";
+import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 
 function compareUsers(a: User, b: User, key: string) {
   if (key === "created_at") {
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   }
-  return String(a[key as keyof User] ?? "").localeCompare(String(b[key as keyof User] ?? ""));
+  return String(a[key as keyof User] ?? "").localeCompare(
+    String(b[key as keyof User] ?? ""),
+  );
 }
 
 export default function UsersPage() {
@@ -41,20 +49,26 @@ export default function UsersPage() {
     items: data?.items,
     search: {
       query: search,
-      match: (u, q) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q),
+      match: (u, q) =>
+        u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q),
     },
     sort: { key: "name", dir: "asc", compare: compareUsers },
   });
 
-  async function onDelete(u: User) {
-    if (!confirm(`Delete user "${u.email}" permanently?`)) return;
-    setNotice(null);
-    try {
-      await del.mutateAsync(u.id);
-    } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : "Failed to delete user");
-    }
-  }
+  const onDelete = useCallback(
+    async (u: User) => {
+      if (!confirm(`Delete user "${u.email}" permanently?`)) return;
+      setNotice(null);
+      try {
+        await del.mutateAsync(u.id);
+      } catch (err) {
+        setNotice(
+          err instanceof ApiError ? err.message : "Failed to delete user",
+        );
+      }
+    },
+    [del],
+  );
 
   const columns = useMemo(() => {
     const cols: DataTableColumn<User>[] = [
@@ -71,9 +85,25 @@ export default function UsersPage() {
           </>
         ),
       },
-      { id: "email", header: "Email", sortable: true, sortKey: "email", className: "muted", render: (u) => u.email },
-      { id: "role", header: "Role", className: "muted", render: (u) => u.roles.join(", ") || "—" },
-      { id: "status", header: "Status", render: (u) => <StatusBadge status={u.status} /> },
+      {
+        id: "email",
+        header: "Email",
+        sortable: true,
+        sortKey: "email",
+        className: "muted",
+        render: (u) => u.email,
+      },
+      {
+        id: "role",
+        header: "Role",
+        className: "muted",
+        render: (u) => u.roles.join(", ") || "—",
+      },
+      {
+        id: "status",
+        header: "Status",
+        render: (u) => <StatusBadge status={u.status} />,
+      },
       {
         id: "created",
         header: "Created",
@@ -89,15 +119,32 @@ export default function UsersPage() {
         header: "Actions",
         align: "right",
         render: (u) => (
-          <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-            <button className="btn btn-sm" onClick={() => setEditTarget(u)} aria-label={`Edit ${u.email}`}>
+          <div
+            className="flex items-center gap-2"
+            style={{ justifyContent: "flex-end" }}
+          >
+            <button
+              className="btn btn-sm"
+              onClick={() => setEditTarget(u)}
+              aria-label={`Edit ${u.email}`}
+            >
               <Pencil size={15} />
             </button>
-            <button className="btn btn-sm" onClick={() => setResetTarget(u)} title="Reset password" aria-label={`Reset password for ${u.email}`}>
+            <button
+              className="btn btn-sm"
+              onClick={() => setResetTarget(u)}
+              title="Reset password"
+              aria-label={`Reset password for ${u.email}`}
+            >
               <KeyRound size={15} />
             </button>
             {me?.id !== u.id ? (
-              <button className="btn btn-sm btn-danger" onClick={() => onDelete(u)} disabled={del.isPending} aria-label={`Delete ${u.email}`}>
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => onDelete(u)}
+                disabled={del.isPending}
+                aria-label={`Delete ${u.email}`}
+              >
                 <Trash2 size={15} />
               </button>
             ) : null}
@@ -106,24 +153,33 @@ export default function UsersPage() {
       });
     }
     return cols;
-  }, [canWrite, del.isPending, me?.id]);
+  }, [canWrite, del.isPending, me?.id, onDelete]);
 
   return (
     <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: "1.1rem" }}>
+      <div
+        className="flex justify-between items-center"
+        style={{ marginBottom: "1.1rem" }}
+      >
         <div>
-          <h1 className="text-xl font-semibold">Users</h1>
-          <p className="muted text-sm">Operator accounts and their roles.</p>
+          <h1 className="font-semibold text-xl">Users</h1>
+          <p className="text-sm muted">Operator accounts and their roles.</p>
         </div>
         {canWrite ? (
-          <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+          <button
+            className="btn btn-primary"
+            onClick={() => setCreateOpen(true)}
+          >
             <Plus size={16} /> Add user
           </button>
         ) : null}
       </div>
 
       {notice ? (
-        <div className="card" style={{ padding: ".7rem .9rem", marginBottom: ".9rem" }}>
+        <div
+          className="card"
+          style={{ padding: ".7rem .9rem", marginBottom: ".9rem" }}
+        >
           <span className="text-sm">{notice}</span>
         </div>
       ) : null}
@@ -146,17 +202,41 @@ export default function UsersPage() {
           placeholder: "Search name or email…",
         }}
         sort={{ key: table.sortKey, dir: table.sortDir, onSort: table.setSort }}
-        pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
+        pagination={{
+          page: table.page,
+          pageCount: table.pageCount,
+          onPage: table.setPage,
+        }}
       />
 
-      <CreateUserModal open={createOpen} onClose={() => setCreateOpen(false)} roles={roles?.items ?? []} />
-      <EditUserModal user={editTarget} onClose={() => setEditTarget(null)} roles={roles?.items ?? []} isSelf={editTarget?.id === me?.id} />
-      <ResetPasswordModal user={resetTarget} onClose={() => setResetTarget(null)} />
+      <CreateUserModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        roles={roles?.items ?? []}
+      />
+      <EditUserModal
+        user={editTarget}
+        onClose={() => setEditTarget(null)}
+        roles={roles?.items ?? []}
+        isSelf={editTarget?.id === me?.id}
+      />
+      <ResetPasswordModal
+        user={resetTarget}
+        onClose={() => setResetTarget(null)}
+      />
     </div>
   );
 }
 
-function CreateUserModal({ open, onClose, roles }: { open: boolean; onClose: () => void; roles: Role[] }) {
+function CreateUserModal({
+  open,
+  onClose,
+  roles,
+}: {
+  open: boolean;
+  onClose: () => void;
+  roles: Role[];
+}) {
   const create = useCreateUser();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -182,25 +262,59 @@ function CreateUserModal({ open, onClose, roles }: { open: boolean; onClose: () 
     <Modal open={open} onClose={onClose} title="Add user">
       <form onSubmit={onSubmit}>
         <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
         </Field>
         <Field label="Email">
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input
+            className="input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
         </Field>
         <Field label="Password (min 8 characters)">
-          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} autoComplete="new-password" required />
+          <input
+            className="input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={8}
+            autoComplete="new-password"
+            required
+          />
         </Field>
         <Field label="Role">
-          <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
+          <select
+            className="input"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+          >
             {roles.map((r) => (
-              <option key={r.id} value={r.name}>{r.name} — {r.description}</option>
+              <option key={r.id} value={r.name}>
+                {r.name} — {r.description}
+              </option>
             ))}
           </select>
         </Field>
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={create.isPending}>
+        <div
+          className="flex justify-end items-center gap-2"
+          style={{ marginTop: ".5rem" }}
+        >
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={create.isPending}
+          >
             {create.isPending ? "Creating…" : "Create user"}
           </button>
         </div>
@@ -209,7 +323,17 @@ function CreateUserModal({ open, onClose, roles }: { open: boolean; onClose: () 
   );
 }
 
-function EditUserModal({ user, onClose, roles, isSelf }: { user: User | null; onClose: () => void; roles: Role[]; isSelf: boolean }) {
+function EditUserModal({
+  user,
+  onClose,
+  roles,
+  isSelf,
+}: {
+  user: User | null;
+  onClose: () => void;
+  roles: Role[];
+  isSelf: boolean;
+}) {
   const update = useUpdateUser();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -249,29 +373,62 @@ function EditUserModal({ user, onClose, roles, isSelf }: { user: User | null; on
     <Modal open onClose={onClose} title={`Edit ${user.email}`}>
       <form onSubmit={onSubmit}>
         <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
         </Field>
         <Field label="Email">
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input
+            className="input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
         </Field>
         <Field label="Role">
-          <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
+          <select
+            className="input"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+          >
             {roles.map((r) => (
-              <option key={r.id} value={r.name}>{r.name} — {r.description}</option>
+              <option key={r.id} value={r.name}>
+                {r.name} — {r.description}
+              </option>
             ))}
           </select>
         </Field>
         <Field label="Status">
-          <select className="input" value={status} onChange={(e) => setStatus(e.target.value)} disabled={isSelf}>
+          <select
+            className="input"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            disabled={isSelf}
+          >
             <option value="active">active</option>
             <option value="suspended">suspended</option>
           </select>
         </Field>
-        {isSelf ? <p className="muted text-sm">You cannot suspend your own account.</p> : null}
+        {isSelf ? (
+          <p className="text-sm muted">You cannot suspend your own account.</p>
+        ) : null}
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={update.isPending}>
+        <div
+          className="flex justify-end items-center gap-2"
+          style={{ marginTop: ".5rem" }}
+        >
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={update.isPending}
+          >
             {update.isPending ? "Saving…" : "Save changes"}
           </button>
         </div>
@@ -280,7 +437,13 @@ function EditUserModal({ user, onClose, roles, isSelf }: { user: User | null; on
   );
 }
 
-function ResetPasswordModal({ user, onClose }: { user: User | null; onClose: () => void }) {
+function ResetPasswordModal({
+  user,
+  onClose,
+}: {
+  user: User | null;
+  onClose: () => void;
+}) {
   const reset = useResetUserPassword();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -293,7 +456,9 @@ function ResetPasswordModal({ user, onClose }: { user: User | null; onClose: () 
       await reset.mutateAsync({ id: user!.id, password });
       setDone(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to reset password");
+      setError(
+        err instanceof ApiError ? err.message : "Failed to reset password",
+      );
     }
   }
 
@@ -309,20 +474,44 @@ function ResetPasswordModal({ user, onClose }: { user: User | null; onClose: () 
     <Modal open onClose={close} title={`Reset password for ${user.email}`}>
       {done ? (
         <div>
-          <p className="text-sm">Password updated. Share it with the user securely.</p>
-          <div className="flex items-center justify-end" style={{ marginTop: ".8rem" }}>
-            <button className="btn btn-primary" onClick={close}>Done</button>
+          <p className="text-sm">
+            Password updated. Share it with the user securely.
+          </p>
+          <div
+            className="flex justify-end items-center"
+            style={{ marginTop: ".8rem" }}
+          >
+            <button className="btn btn-primary" onClick={close}>
+              Done
+            </button>
           </div>
         </div>
       ) : (
         <form onSubmit={onSubmit}>
           <Field label="New password (min 8 characters)">
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} autoComplete="new-password" required />
+            <input
+              className="input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={8}
+              autoComplete="new-password"
+              required
+            />
           </Field>
           <ErrorText message={error ?? undefined} />
-          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-            <button type="button" className="btn" onClick={close}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={reset.isPending}>
+          <div
+            className="flex justify-end items-center gap-2"
+            style={{ marginTop: ".5rem" }}
+          >
+            <button type="button" className="btn" onClick={close}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={reset.isPending}
+            >
               {reset.isPending ? "Saving…" : "Set password"}
             </button>
           </div>

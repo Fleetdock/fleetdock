@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	agentapp "github.com/mariadb-cp/db-manager/backend/internal/app/agent"
-	regtokendom "github.com/mariadb-cp/db-manager/backend/internal/domain/regtoken"
+	agentapp "github.com/TajBrains/db-manager/backend/internal/app/agent"
+	regtokendom "github.com/TajBrains/db-manager/backend/internal/domain/regtoken"
 )
 
 // RegTokenHandler manages agent registration tokens (server connect flow).

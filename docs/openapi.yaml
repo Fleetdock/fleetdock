@@ -1,0 +1,1092 @@
+openapi: 3.1.0
+info:
+  title: db-manager API
+  version: 0.1.0
+  description: |
+    Self-hosted database control plane API. User routes require a Bearer JWT or
+    API token (`mdcp_` prefix). Agent routes under `/agent/v1` use agent bearer
+    tokens (`mdcpa_` prefix).
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Profile
+  - name: Users
+  - name: Overview
+  - name: Servers
+  - name: AgentTokens
+  - name: Instances
+  - name: Databases
+  - name: DBAdmin
+  - name: Operations
+  - name: Backups
+  - name: Moves
+  - name: Destinations
+  - name: Schedules
+  - name: Audit
+  - name: Notifications
+  - name: Tokens
+  - name: Agent
+  - name: Install
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    agentAuth:
+      type: http
+      scheme: bearer
+      description: Agent bearer token (mdcpa_ prefix)
+
+  parameters:
+    ResourceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+    Server:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        hostname:
+          type: string
+        status:
+          type: string
+    Instance:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        engine:
+          type: string
+          enum: [mariadb, mysql, postgres]
+        kind:
+          type: string
+          enum: [managed, external]
+    Database:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+    Backup:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+    Operation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        status:
+          type: string
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        "200":
+          description: OK
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness probe (metadata DB)
+      responses:
+        "200":
+          description: Ready
+        "503":
+          description: Unavailable
+
+  /install.sh:
+    get:
+      tags: [Install]
+      summary: Agent install script
+      responses:
+        "200":
+          description: Shell script
+
+  /agent/v1/binary/{os}/{arch}:
+    get:
+      tags: [Agent]
+      summary: Download agent binary
+      parameters:
+        - name: os
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: arch
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Binary
+
+  /agent/v1/register:
+    post:
+      tags: [Agent]
+      summary: Enroll agent with registration token
+      responses:
+        "200":
+          description: Enrolled
+
+  /agent/v1/heartbeat:
+    post:
+      tags: [Agent]
+      security: [{agentAuth: []}]
+      summary: Agent heartbeat
+      responses:
+        "200":
+          description: OK
+
+  /agent/v1/jobs/claim:
+    post:
+      tags: [Agent]
+      security: [{agentAuth: []}]
+      summary: Claim next pending job
+      responses:
+        "200":
+          description: Job or empty
+
+  /agent/v1/jobs/{id}/status:
+    post:
+      tags: [Agent]
+      security: [{agentAuth: []}]
+      summary: Update job status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Updated
+
+  /agent/v1/jobs/{id}/logs:
+    post:
+      tags: [Agent]
+      security: [{agentAuth: []}]
+      summary: Append job logs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Appended
+
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Password login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      security: [{bearerAuth: []}]
+      summary: Current user
+      responses:
+        "200":
+          description: User profile
+
+  /v1/profile:
+    get:
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      summary: Get profile
+      responses:
+        "200":
+          description: Profile
+    patch:
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      summary: Update profile
+      responses:
+        "200":
+          description: Updated
+
+  /v1/profile/password:
+    post:
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      summary: Change own password
+      responses:
+        "200":
+          description: Changed
+
+  /v1/users:
+    get:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: List users
+      responses:
+        "200":
+          description: User list
+    post:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Create user
+      responses:
+        "201":
+          description: Created
+
+  /v1/users/{id}:
+    patch:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Update user
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Delete user
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/users/{id}/password:
+    post:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Reset user password
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Reset
+
+  /v1/roles:
+    get:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: List roles
+      responses:
+        "200":
+          description: Roles
+    post:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Create role
+      responses:
+        "201":
+          description: Created
+
+  /v1/roles/{id}:
+    patch:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Update role
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Delete role
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/permissions:
+    get:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Permission catalog
+      responses:
+        "200":
+          description: Permissions
+
+  /v1/overview:
+    get:
+      tags: [Overview]
+      security: [{bearerAuth: []}]
+      summary: Fleet overview dashboard
+      responses:
+        "200":
+          description: Overview stats
+
+  /v1/servers:
+    get:
+      tags: [Servers]
+      security: [{bearerAuth: []}]
+      summary: List servers
+      responses:
+        "200":
+          description: Server list
+    post:
+      tags: [Servers]
+      security: [{bearerAuth: []}]
+      summary: Register server metadata
+      responses:
+        "201":
+          description: Created
+
+  /v1/servers/{id}:
+    get:
+      tags: [Servers]
+      security: [{bearerAuth: []}]
+      summary: Get server
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+
+  /v1/servers/{id}/metrics:
+    get:
+      tags: [Overview]
+      security: [{bearerAuth: []}]
+      summary: Server health metrics history
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Metrics series
+
+  /v1/agent-tokens:
+    get:
+      tags: [AgentTokens]
+      security: [{bearerAuth: []}]
+      summary: List registration tokens
+      responses:
+        "200":
+          description: Tokens
+    post:
+      tags: [AgentTokens]
+      security: [{bearerAuth: []}]
+      summary: Create registration token
+      responses:
+        "201":
+          description: Token with raw secret
+
+  /v1/agent-tokens/{id}:
+    delete:
+      tags: [AgentTokens]
+      security: [{bearerAuth: []}]
+      summary: Revoke registration token
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Revoked
+
+  /v1/instances:
+    get:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: List instances
+      responses:
+        "200":
+          description: Instances
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Register external instance
+      responses:
+        "201":
+          description: Created
+
+  /v1/instances/provision:
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Provision managed instance
+      responses:
+        "202":
+          description: Provisioning started
+
+  /v1/instances/{id}:
+    get:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Get instance
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Instance
+    delete:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Delete instance
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/instances/{id}/start:
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Start instance
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Started
+
+  /v1/instances/{id}/stop:
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Stop instance
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Stopped
+
+  /v1/instances/{id}/restart:
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Restart instance
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Restarted
+
+  /v1/instances/{id}/test-connection:
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Test instance connectivity
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Result
+
+  /v1/instances/{id}/import-databases:
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Import databases from instance
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Import started
+
+  /v1/databases:
+    get:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: List databases
+      responses:
+        "200":
+          description: Databases
+    post:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Create database
+      responses:
+        "201":
+          description: Created
+
+  /v1/databases/{id}:
+    get:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Get database
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Database
+    delete:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Delete database
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/databases/{id}/lock:
+    post:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Lock database
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Locked
+
+  /v1/databases/{id}/unlock:
+    post:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Unlock database
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Unlocked
+
+  /v1/instances/{id}/db-users:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: List DB users on instance
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Users
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Create DB user
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "201":
+          description: Created
+
+  /v1/instances/{id}/db-users/drop:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Drop DB user
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Dropped
+
+  /v1/instances/{id}/db-users/grants:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: User grants on instance
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Grants
+
+  /v1/instances/{id}/grants:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Grant privileges
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Granted
+
+  /v1/instances/{id}/grants/revoke:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Revoke privileges
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Revoked
+
+  /v1/databases/{id}/grants:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Schema grants
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Grants
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Grant on database
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Granted
+
+  /v1/databases/{id}/grants/revoke:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Revoke on database
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Revoked
+
+  /v1/databases/{id}/db-users:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: DB users for database
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Users
+
+  /v1/databases/{id}/tables:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: List tables
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Tables
+
+  /v1/databases/{id}/tables/{table}/rows:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Browse table rows
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: table
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rows
+
+  /v1/databases/{id}/tables/{table}/schema:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Table schema
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: table
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Schema
+
+  /v1/databases/{id}/tables/{table}/export:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Export table CSV
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: table
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Export URL
+
+  /v1/databases/{id}/query:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: SQL query console
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Query result
+
+  /v1/databases/{id}/export:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Export query results
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Export URL
+
+  /v1/db-privileges:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Privilege catalog
+      responses:
+        "200":
+          description: Privileges
+
+  /v1/operations:
+    get:
+      tags: [Operations]
+      security: [{bearerAuth: []}]
+      summary: List operations
+      responses:
+        "200":
+          description: Operations
+
+  /v1/operations/{id}:
+    get:
+      tags: [Operations]
+      security: [{bearerAuth: []}]
+      summary: Get operation
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Operation
+
+  /v1/operations/{id}/logs:
+    get:
+      tags: [Operations]
+      security: [{bearerAuth: []}]
+      summary: Operation logs
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Log lines
+
+  /v1/backups:
+    get:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      summary: List backups
+      responses:
+        "200":
+          description: Backups
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      summary: Trigger backup
+      responses:
+        "202":
+          description: Backup started
+
+  /v1/backups/{id}:
+    get:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      summary: Get backup
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Backup
+
+  /v1/backups/{id}/restore:
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      summary: Restore backup
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Restore started
+
+  /v1/moves:
+    post:
+      tags: [Moves]
+      security: [{bearerAuth: []}]
+      summary: Start database move
+      responses:
+        "202":
+          description: Move started
+
+  /v1/backup-destinations:
+    get:
+      tags: [Destinations]
+      security: [{bearerAuth: []}]
+      summary: List backup destinations
+      responses:
+        "200":
+          description: Destinations
+    post:
+      tags: [Destinations]
+      security: [{bearerAuth: []}]
+      summary: Create destination
+      responses:
+        "201":
+          description: Created
+
+  /v1/backup-destinations/{id}:
+    patch:
+      tags: [Destinations]
+      security: [{bearerAuth: []}]
+      summary: Update destination
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: [Destinations]
+      security: [{bearerAuth: []}]
+      summary: Delete destination
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/backup-destinations/{id}/test:
+    post:
+      tags: [Destinations]
+      security: [{bearerAuth: []}]
+      summary: Test destination connectivity
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Result
+
+  /v1/backup-schedules:
+    get:
+      tags: [Schedules]
+      security: [{bearerAuth: []}]
+      summary: List backup schedules
+      responses:
+        "200":
+          description: Schedules
+    post:
+      tags: [Schedules]
+      security: [{bearerAuth: []}]
+      summary: Create schedule
+      responses:
+        "201":
+          description: Created
+
+  /v1/backup-schedules/{id}:
+    patch:
+      tags: [Schedules]
+      security: [{bearerAuth: []}]
+      summary: Update schedule
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: [Schedules]
+      security: [{bearerAuth: []}]
+      summary: Delete schedule
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/audit:
+    get:
+      tags: [Audit]
+      security: [{bearerAuth: []}]
+      summary: Audit log
+      responses:
+        "200":
+          description: Audit entries
+
+  /v1/notification-channels:
+    get:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: List notification channels
+      responses:
+        "200":
+          description: Channels
+    post:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: Create channel
+      responses:
+        "201":
+          description: Created
+
+  /v1/notification-channels/{id}:
+    patch:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: Update channel
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: Delete channel
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/notification-channels/{id}/test:
+    post:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: Test notification channel
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Sent
+
+  /v1/alert-rules:
+    get:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: List alert rules
+      responses:
+        "200":
+          description: Rules
+    post:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: Create alert rule
+      responses:
+        "201":
+          description: Created
+
+  /v1/alert-rules/{id}:
+    patch:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: Update alert rule
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: [Notifications]
+      security: [{bearerAuth: []}]
+      summary: Delete alert rule
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/tokens:
+    get:
+      tags: [Tokens]
+      security: [{bearerAuth: []}]
+      summary: List API tokens
+      responses:
+        "200":
+          description: Tokens
+    post:
+      tags: [Tokens]
+      security: [{bearerAuth: []}]
+      summary: Create API token
+      responses:
+        "201":
+          description: Token with raw secret
+
+  /v1/tokens/{id}:
+    delete:
+      tags: [Tokens]
+      security: [{bearerAuth: []}]
+      summary: Revoke API token
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Revoked

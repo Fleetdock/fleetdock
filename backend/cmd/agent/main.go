@@ -29,7 +29,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/executor"
+	"github.com/TajBrains/db-manager/backend/internal/platform/executor"
 )
 
 const version = "0.1.0"

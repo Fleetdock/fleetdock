@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	tokendom "github.com/mariadb-cp/db-manager/backend/internal/domain/token"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // TokenRepository is the Postgres adapter for tokendom.Repository.

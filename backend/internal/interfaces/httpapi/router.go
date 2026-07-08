@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	auditapp "github.com/mariadb-cp/db-manager/backend/internal/app/audit"
+	auditapp "github.com/TajBrains/db-manager/backend/internal/app/audit"
 )
 
 // RouterDeps are the handlers and middleware the router wires together.

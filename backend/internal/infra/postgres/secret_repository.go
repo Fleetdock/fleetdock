@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	secretdom "github.com/mariadb-cp/db-manager/backend/internal/domain/secret"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	secretdom "github.com/TajBrains/db-manager/backend/internal/domain/secret"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // SecretRepository is the Postgres adapter for secretdom.Repository.

@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // DatabaseRepository is the Postgres adapter for databasedom.Repository.

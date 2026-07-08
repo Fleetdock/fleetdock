@@ -17,7 +17,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/engine"
+	"github.com/TajBrains/db-manager/backend/internal/platform/engine"
 )
 
 // Payload is the enriched, credential-bearing input for one operation.
@@ -150,8 +150,8 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 		return nil, fmt.Errorf("create temp file: %w", err)
 	}
 	defer func() {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 	}()
 
 	hasher := sha256.New()
@@ -221,8 +221,8 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload, sink LogSink
 		return nil, err
 	}
 	defer func() {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 	}()
 
 	// Integrity check before touching the target database.
@@ -296,8 +296,8 @@ func downloadToTemp(ctx context.Context, getURL string) (*os.File, error) {
 		return nil, fmt.Errorf("create temp file: %w", err)
 	}
 	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
 	return tmp, nil

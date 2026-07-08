@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // Status is the lifecycle state of a server.
@@ -94,7 +94,7 @@ func validateName(name string) error {
 		return apperr.Invalid("name", "name must be between 2 and 63 characters")
 	}
 	for _, r := range name {
-		if !(unicode.IsLower(r) || unicode.IsDigit(r) || r == '-' || r == '_') {
+		if !unicode.IsLower(r) && !unicode.IsDigit(r) && r != '-' && r != '_' {
 			return apperr.Invalid("name", "name may only contain lowercase letters, digits, '-' and '_'")
 		}
 	}

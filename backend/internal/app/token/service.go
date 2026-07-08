@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
-	tokendom "github.com/mariadb-cp/db-manager/backend/internal/domain/token"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/auth"
+	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/auth"
 )
 
 // Service implements API-token management.

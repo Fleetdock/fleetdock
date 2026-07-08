@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // ChannelType is the delivery mechanism of a notification channel.

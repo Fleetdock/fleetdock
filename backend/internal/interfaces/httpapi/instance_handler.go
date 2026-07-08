@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	instanceapp "github.com/mariadb-cp/db-manager/backend/internal/app/instance"
-	instancedom "github.com/mariadb-cp/db-manager/backend/internal/domain/instance"
+	instanceapp "github.com/TajBrains/db-manager/backend/internal/app/instance"
+	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
 )
 
 // InstanceHandler exposes instance endpoints.

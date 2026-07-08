@@ -1,0 +1,19 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+        path: _test\.go
+      # defer Close/Rollback/Remove cleanup is intentionally unchecked in this codebase.
+      - linters:
+          - errcheck
+        source: defer

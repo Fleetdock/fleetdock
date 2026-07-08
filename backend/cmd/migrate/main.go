@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/mariadb-cp/db-manager/backend/internal/config"
-	"github.com/mariadb-cp/db-manager/backend/internal/infra/postgres"
+	"github.com/TajBrains/db-manager/backend/internal/config"
+	"github.com/TajBrains/db-manager/backend/internal/infra/postgres"
 )
 
 func main() {

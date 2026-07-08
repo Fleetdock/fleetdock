@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	tokenapp "github.com/mariadb-cp/db-manager/backend/internal/app/token"
-	tokendom "github.com/mariadb-cp/db-manager/backend/internal/domain/token"
+	tokenapp "github.com/TajBrains/db-manager/backend/internal/app/token"
+	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
 )
 
 // TokenHandler exposes API-token endpoints scoped to the caller.

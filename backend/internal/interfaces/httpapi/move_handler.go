@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	moveapp "github.com/mariadb-cp/db-manager/backend/internal/app/move"
+	moveapp "github.com/TajBrains/db-manager/backend/internal/app/move"
 )
 
 // MoveHandler exposes the move-database action. A move has no resource of its

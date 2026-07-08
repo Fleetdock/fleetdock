@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	authapp "github.com/mariadb-cp/db-manager/backend/internal/app/auth"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	authapp "github.com/TajBrains/db-manager/backend/internal/app/auth"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // Authenticator resolves the request principal from the Authorization header

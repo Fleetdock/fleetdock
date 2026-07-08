@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	statsdom "github.com/mariadb-cp/db-manager/backend/internal/domain/stats"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	statsdom "github.com/TajBrains/db-manager/backend/internal/domain/stats"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // StatsRepository is the Postgres adapter for statsdom.Repository.

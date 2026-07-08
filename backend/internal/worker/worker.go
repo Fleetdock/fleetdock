@@ -12,12 +12,12 @@ import (
 
 	"github.com/google/uuid"
 
-	agentapp "github.com/mariadb-cp/db-manager/backend/internal/app/agent"
-	notificationapp "github.com/mariadb-cp/db-manager/backend/internal/app/notification"
-	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
-	scheduleapp "github.com/mariadb-cp/db-manager/backend/internal/app/schedule"
-	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/executor"
+	agentapp "github.com/TajBrains/db-manager/backend/internal/app/agent"
+	notificationapp "github.com/TajBrains/db-manager/backend/internal/app/notification"
+	operationapp "github.com/TajBrains/db-manager/backend/internal/app/operation"
+	scheduleapp "github.com/TajBrains/db-manager/backend/internal/app/schedule"
+	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
+	"github.com/TajBrains/db-manager/backend/internal/platform/executor"
 )
 
 // toJobLogs maps buffered executor log lines to domain log records for a job.

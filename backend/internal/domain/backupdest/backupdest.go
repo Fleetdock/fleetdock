@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // Provider identifies the storage flavour (drives endpoint defaults).

@@ -3,7 +3,7 @@ package httpapi
 import (
 	"context"
 
-	authapp "github.com/mariadb-cp/db-manager/backend/internal/app/auth"
+	authapp "github.com/TajBrains/db-manager/backend/internal/app/auth"
 )
 
 type ctxKey int

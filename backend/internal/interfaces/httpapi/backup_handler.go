@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	backupapp "github.com/mariadb-cp/db-manager/backend/internal/app/backup"
-	backupdom "github.com/mariadb-cp/db-manager/backend/internal/domain/backup"
+	backupapp "github.com/TajBrains/db-manager/backend/internal/app/backup"
+	backupdom "github.com/TajBrains/db-manager/backend/internal/domain/backup"
 )
 
 // BackupHandler exposes backup + restore endpoints.

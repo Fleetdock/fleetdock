@@ -139,17 +139,17 @@ func writeEnvFile(line string) (string, error) {
 		return "", fmt.Errorf("create env file: %w", err)
 	}
 	if err := os.Chmod(f.Name(), 0o600); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	if _, err := f.WriteString(line + "\n"); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	return f.Name(), nil

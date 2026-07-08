@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	notifdom "github.com/mariadb-cp/db-manager/backend/internal/domain/notification"
-	serverdom "github.com/mariadb-cp/db-manager/backend/internal/domain/server"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/notify"
+	notifdom "github.com/TajBrains/db-manager/backend/internal/domain/notification"
+	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/notify"
 )
 
 // MetricsSource provides the latest server health for alert evaluation.

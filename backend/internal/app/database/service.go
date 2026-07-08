@@ -6,11 +6,11 @@ import (
 
 	"github.com/google/uuid"
 
-	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
-	databasedom "github.com/mariadb-cp/db-manager/backend/internal/domain/database"
-	instancedom "github.com/mariadb-cp/db-manager/backend/internal/domain/instance"
-	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	operationapp "github.com/TajBrains/db-manager/backend/internal/app/operation"
+	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
+	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
+	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // CreateInput is the command to register/create a database on an instance.

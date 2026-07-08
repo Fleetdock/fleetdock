@@ -14,9 +14,9 @@ import (
 
 	"github.com/google/uuid"
 
-	regtokendom "github.com/mariadb-cp/db-manager/backend/internal/domain/regtoken"
-	serverdom "github.com/mariadb-cp/db-manager/backend/internal/domain/server"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	regtokendom "github.com/TajBrains/db-manager/backend/internal/domain/regtoken"
+	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // ServerRepo is the server persistence surface this service needs.

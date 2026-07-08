@@ -8,10 +8,10 @@ import (
 
 	"github.com/google/uuid"
 
-	backupdestdom "github.com/mariadb-cp/db-manager/backend/internal/domain/backupdest"
-	secretdom "github.com/mariadb-cp/db-manager/backend/internal/domain/secret"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/storage"
+	backupdestdom "github.com/TajBrains/db-manager/backend/internal/domain/backupdest"
+	secretdom "github.com/TajBrains/db-manager/backend/internal/domain/secret"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/db-manager/backend/internal/platform/storage"
 )
 
 // Secrets is the secret store surface this service needs.

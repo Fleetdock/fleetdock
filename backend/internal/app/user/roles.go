@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	userdom "github.com/mariadb-cp/db-manager/backend/internal/domain/user"
-	"github.com/mariadb-cp/db-manager/backend/internal/platform/apperr"
+	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // PermissionCatalog returns every permission the API enforces.
@@ -125,7 +125,7 @@ func validateRoleName(raw string) (string, error) {
 		return "", apperr.Invalid("name", "name must be 2-40 characters")
 	}
 	for _, r := range name {
-		if !(unicode.IsLower(r) || unicode.IsDigit(r) || r == '-' || r == '_') {
+		if !unicode.IsLower(r) && !unicode.IsDigit(r) && r != '-' && r != '_' {
 			return "", apperr.Invalid("name", "name may only contain lowercase letters, digits, '-' and '_'")
 		}
 	}
