@@ -139,6 +139,11 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/db-users", requirePerm("database:read", d.DBAdmin.ListDBUsersForDatabase))
 	mux.HandleFunc("GET /v1/databases/{id}/tables", requirePerm("database:read", d.DBAdmin.ListTables))
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/rows", requirePerm("database:read", d.DBAdmin.TableRows))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/schema", requirePerm("database:read", d.DBAdmin.TableSchema))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/export", requirePerm("database:read", d.DBAdmin.ExportTable))
+	// SQL console: any writes are gated inside the handler by database:write.
+	mux.HandleFunc("POST /v1/databases/{id}/query", requirePerm("database:read", d.DBAdmin.Query))
+	mux.HandleFunc("POST /v1/databases/{id}/export", requirePerm("database:read", d.DBAdmin.ExportQuery))
 	mux.HandleFunc("GET /v1/db-privileges", requirePerm("instance:read", d.DBAdmin.ListPrivileges))
 
 	// Operations (jobs)

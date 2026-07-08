@@ -9,6 +9,7 @@ package dbadminapp
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,7 +40,11 @@ func NewService(instances instancedom.Repository, databases databasedom.Reposito
 	return &Service{instances: instances, databases: databases, servers: servers, secrets: secrets}
 }
 
-const opTimeout = 15 * time.Second
+const (
+	opTimeout     = 15 * time.Second
+	queryTimeout  = 30 * time.Second
+	exportTimeout = 5 * time.Minute
+)
 
 // target resolves the instance, admin surface and connection parameters.
 func (s *Service) target(ctx context.Context, instanceID string) (*instancedom.Instance, engine.Admin, engine.ConnParams, error) {
@@ -262,4 +267,55 @@ func (s *Service) ListDBUsersForDatabase(ctx context.Context, databaseID string)
 	defer cancel()
 	users, err := admin.ListDBUsers(cctx, conn)
 	return users, wrap(err)
+}
+
+// TableSchema returns a table's columns, indexes and CREATE DDL.
+func (s *Service) TableSchema(ctx context.Context, databaseID, table string) (*engine.TableSchema, error) {
+	db, admin, conn, err := s.databaseTarget(ctx, databaseID)
+	if err != nil {
+		return nil, err
+	}
+	cctx, cancel := context.WithTimeout(ctx, opTimeout)
+	defer cancel()
+	schema, err := admin.TableSchema(cctx, conn, db.Name, table)
+	return schema, wrap(err)
+}
+
+// Query runs an ad-hoc console statement against the database. Writes are only
+// permitted when allowWrite is true (the handler derives this from the caller's
+// database:write permission).
+func (s *Service) Query(ctx context.Context, databaseID, sql string, limit int, allowWrite bool) (*engine.QueryResult, error) {
+	db, admin, conn, err := s.databaseTarget(ctx, databaseID)
+	if err != nil {
+		return nil, err
+	}
+	cctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
+	res, err := admin.Query(cctx, conn, db.Name, sql, limit, allowWrite)
+	return res, wrap(err)
+}
+
+// ExportTableCSV streams a whole table to w as CSV. onStart is invoked once the
+// result set opens successfully, before any bytes are written.
+func (s *Service) ExportTableCSV(ctx context.Context, databaseID, table string, w io.Writer, onStart func()) (int64, error) {
+	db, admin, conn, err := s.databaseTarget(ctx, databaseID)
+	if err != nil {
+		return 0, err
+	}
+	cctx, cancel := context.WithTimeout(ctx, exportTimeout)
+	defer cancel()
+	n, err := admin.ExportCSV(cctx, conn, db.Name, table, "", w, onStart)
+	return n, wrap(err)
+}
+
+// ExportQueryCSV streams a read-only query's result to w as CSV.
+func (s *Service) ExportQueryCSV(ctx context.Context, databaseID, sql string, w io.Writer, onStart func()) (int64, error) {
+	db, admin, conn, err := s.databaseTarget(ctx, databaseID)
+	if err != nil {
+		return 0, err
+	}
+	cctx, cancel := context.WithTimeout(ctx, exportTimeout)
+	defer cancel()
+	n, err := admin.ExportCSV(cctx, conn, db.Name, "", sql, w, onStart)
+	return n, wrap(err)
 }

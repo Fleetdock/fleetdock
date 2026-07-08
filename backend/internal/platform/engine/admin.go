@@ -1,6 +1,9 @@
 package engine
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // DBUser is a database-level account (not a control-plane user).
 type DBUser struct {
@@ -32,6 +35,45 @@ type RowsPage struct {
 	Total   int64       `json:"total"` // estimated total rows in the table
 }
 
+// ColumnInfo describes one column of a table.
+type ColumnInfo struct {
+	Name     string  `json:"name"`
+	Type     string  `json:"type"`
+	Nullable bool    `json:"nullable"`
+	Key      string  `json:"key"`     // PRI, UNI, MUL, or ""
+	Default  *string `json:"default"` // nil = no default
+	Extra    string  `json:"extra"`   // auto_increment, ...
+	Comment  string  `json:"comment"`
+}
+
+// IndexInfo describes one index on a table.
+type IndexInfo struct {
+	Name    string   `json:"name"`
+	Columns []string `json:"columns"`
+	Unique  bool     `json:"unique"`
+	Type    string   `json:"type"` // BTREE, FULLTEXT, ...
+}
+
+// TableSchema is a table's structure: columns, indexes and the CREATE DDL.
+type TableSchema struct {
+	Table   string       `json:"table"`
+	Columns []ColumnInfo `json:"columns"`
+	Indexes []IndexInfo  `json:"indexes"`
+	DDL     string       `json:"ddl"`
+}
+
+// QueryResult is the outcome of a console query. For statements that return a
+// result set, Columns/Rows are populated; for writes, RowsAffected is set.
+type QueryResult struct {
+	Columns      []string    `json:"columns"`
+	Rows         [][]*string `json:"rows"`
+	RowCount     int         `json:"row_count"`
+	Truncated    bool        `json:"truncated"`     // more rows existed than the limit
+	RowsAffected int64       `json:"rows_affected"` // for write statements
+	ReadOnly     bool        `json:"read_only"`     // whether it ran as a read-only statement
+	DurationMS   int64       `json:"duration_ms"`
+}
+
 // Admin is the set of live administration operations the dashboard uses
 // (database users, grants, table browsing). Implemented per engine.
 type Admin interface {
@@ -47,6 +89,19 @@ type Admin interface {
 
 	ListTables(ctx context.Context, p ConnParams, database string) ([]TableInfo, error)
 	TableRows(ctx context.Context, p ConnParams, database, table string, limit, offset int) (*RowsPage, error)
+
+	// TableSchema returns a table's columns, indexes and CREATE DDL.
+	TableSchema(ctx context.Context, p ConnParams, database, table string) (*TableSchema, error)
+	// Query runs a single ad-hoc statement. Read-only statements return a
+	// (capped) result set; writes are permitted only when allowWrite is true
+	// and return the affected-row count.
+	Query(ctx context.Context, p ConnParams, database, sql string, limit int, allowWrite bool) (*QueryResult, error)
+	// ExportCSV streams a whole table (when table is set) or a read-only query
+	// (when query is set) to w as CSV. onStart, if non-nil, is invoked once the
+	// result set has opened successfully and before any bytes are written, so
+	// callers can defer setting response headers to the success path. It returns
+	// the number of data rows written.
+	ExportCSV(ctx context.Context, p ConnParams, database, table, query string, w io.Writer, onStart func()) (int64, error)
 }
 
 // AdminFor returns the admin surface for the engine name.

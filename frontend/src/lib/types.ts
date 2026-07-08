@@ -318,6 +318,45 @@ export interface RowsPage {
   total: number;
 }
 
+export interface ColumnInfo {
+  name: string;
+  type: string;
+  nullable: boolean;
+  key: string; // PRI, UNI, MUL, or ""
+  default: string | null;
+  extra: string;
+  comment: string;
+}
+
+export interface IndexInfo {
+  name: string;
+  columns: string[];
+  unique: boolean;
+  type: string;
+}
+
+export interface TableSchema {
+  table: string;
+  columns: ColumnInfo[];
+  indexes: IndexInfo[];
+  ddl: string;
+}
+
+export interface QueryResult {
+  columns: string[];
+  rows: (string | null)[][];
+  row_count: number;
+  truncated: boolean;
+  rows_affected: number;
+  read_only: boolean;
+  duration_ms: number;
+}
+
+export interface RunQueryInput {
+  sql: string;
+  limit?: number;
+}
+
 export interface CreateDBUserInput {
   instance_id: string;
   username: string;

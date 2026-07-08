@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api } from "./api";
+import { api, download } from "./api";
 import type {
   AgentToken,
   ApiToken,
@@ -44,6 +44,9 @@ import type {
   RowsPage,
   SchemaGrant,
   TableInfo,
+  TableSchema,
+  QueryResult,
+  RunQueryInput,
   Overview,
   Schedule,
   CreateScheduleInput,
@@ -626,6 +629,43 @@ export function useTableRows(databaseId: string, table: string, limit: number, o
     enabled: Boolean(databaseId && table),
     retry: false,
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useTableSchema(databaseId: string, table: string) {
+  return useQuery({
+    queryKey: ["table-schema", databaseId, table],
+    queryFn: () =>
+      api.get<TableSchema>(
+        `/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/schema`,
+      ),
+    enabled: Boolean(databaseId && table),
+    retry: false,
+  });
+}
+
+// useRunQuery executes an ad-hoc SQL console statement. Whether writes are
+// allowed is decided server-side from the caller's database:write permission.
+export function useRunQuery(databaseId: string) {
+  return useMutation({
+    mutationFn: (input: RunQueryInput) =>
+      api.post<QueryResult>(`/v1/databases/${databaseId}/query`, input),
+  });
+}
+
+// exportTableCSV streams a whole table to a CSV download.
+export function exportTableCSV(databaseId: string, table: string) {
+  return download(
+    `/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/export`,
+  );
+}
+
+// exportQueryCSV streams a read-only query's result set to a CSV download.
+export function exportQueryCSV(databaseId: string, sql: string) {
+  return download(`/v1/databases/${databaseId}/export`, {
+    method: "POST",
+    body: { sql },
+    filename: "query.csv",
   });
 }
 

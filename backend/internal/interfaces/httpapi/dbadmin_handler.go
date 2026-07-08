@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
 
 	dbadminapp "github.com/mariadb-cp/db-manager/backend/internal/app/dbadmin"
 	"github.com/mariadb-cp/db-manager/backend/internal/platform/engine"
@@ -199,4 +202,95 @@ func (h *DBAdminHandler) TableRows(w http.ResponseWriter, r *http.Request) {
 // ListPrivileges handles GET /v1/db-privileges (the grantable catalog).
 func (h *DBAdminHandler) ListPrivileges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": engine.GrantablePrivileges})
+}
+
+// TableSchema handles GET /v1/databases/{id}/tables/{table}/schema.
+func (h *DBAdminHandler) TableSchema(w http.ResponseWriter, r *http.Request) {
+	schema, err := h.svc.TableSchema(r.Context(), r.PathValue("id"), r.PathValue("table"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, schema)
+}
+
+type queryRequest struct {
+	SQL   string `json:"sql"`
+	Limit int    `json:"limit"`
+}
+
+// Query handles POST /v1/databases/{id}/query. Whether write statements are
+// allowed is derived from the caller's database:write permission, so a
+// read-only user can open the console but only run reads.
+func (h *DBAdminHandler) Query(w http.ResponseWriter, r *http.Request) {
+	var req queryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	allowWrite := principalFrom(r.Context()).Can("database:write")
+	res, err := h.svc.Query(r.Context(), r.PathValue("id"), req.SQL, req.Limit, allowWrite)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// ExportTable handles GET /v1/databases/{id}/tables/{table}/export, streaming
+// the whole table as CSV.
+func (h *DBAdminHandler) ExportTable(w http.ResponseWriter, r *http.Request) {
+	table := r.PathValue("table")
+	h.streamCSV(w, csvFilename(table), func(onStart func()) (int64, error) {
+		return h.svc.ExportTableCSV(r.Context(), r.PathValue("id"), table, w, onStart)
+	})
+}
+
+// ExportQuery handles POST /v1/databases/{id}/export, streaming a read-only
+// query's result set as CSV.
+func (h *DBAdminHandler) ExportQuery(w http.ResponseWriter, r *http.Request) {
+	var req queryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	h.streamCSV(w, "query.csv", func(onStart func()) (int64, error) {
+		return h.svc.ExportQueryCSV(r.Context(), r.PathValue("id"), req.SQL, w, onStart)
+	})
+}
+
+// streamCSV runs a CSV export, sending a clean JSON error if it fails before any
+// byte is written and otherwise setting download headers on the success path.
+// An error after streaming has begun can only be logged (status is already 200).
+func (h *DBAdminHandler) streamCSV(w http.ResponseWriter, filename string, run func(onStart func()) (int64, error)) {
+	started := false
+	_, err := run(func() {
+		started = true
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+		w.WriteHeader(http.StatusOK)
+	})
+	if err != nil {
+		if !started {
+			writeError(w, err)
+			return
+		}
+		slog.Error("csv export failed mid-stream", "error", err.Error())
+	}
+}
+
+// csvFilename builds a safe download filename from a table name.
+func csvFilename(table string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			return r
+		default:
+			return '_'
+		}
+	}, table)
+	if safe == "" {
+		safe = "table"
+	}
+	return safe + ".csv"
 }

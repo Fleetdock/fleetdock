@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent, type KeyboardEvent } from "react";
 
-import { ArrowRightLeft, ChevronRight, Plus, Table2, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, ChevronRight, Download, KeyRound, Play, Plus, Table2, TerminalSquare, Trash2, X } from "lucide-react";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  exportQueryCSV,
+  exportTableCSV,
   useCan,
   useDatabase,
   useDatabaseDBUsers,
@@ -19,13 +21,15 @@ import {
   useInstance,
   useInstances,
   useRevokeOnDatabase,
+  useRunQuery,
   useSchemaGrants,
   useStartMove,
   useTableRows,
   useTables,
+  useTableSchema,
 } from "@/lib/hooks";
 import { useDataTable } from "@/lib/use-data-table";
-import type { Database, SchemaGrant, TableInfo } from "@/lib/types";
+import type { Database, QueryResult, SchemaGrant, TableInfo } from "@/lib/types";
 
 const PAGE_SIZE = 50;
 
@@ -65,7 +69,8 @@ function DatabaseDetail() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
-  const tab = sp.get("tab") === "users" ? "users" : "tables";
+  const tabParam = sp.get("tab");
+  const tab = tabParam === "users" ? "users" : tabParam === "query" ? "query" : "tables";
   const table = sp.get("table");
   const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
 
@@ -130,6 +135,12 @@ function DatabaseDetail() {
           Tables
         </button>
         <button
+          className={`btn btn-sm${tab === "query" ? " btn-primary" : ""}`}
+          onClick={() => navigate({ tab: "query", table: null, page: null })}
+        >
+          <TerminalSquare size={15} /> SQL console
+        </button>
+        <button
           className={`btn btn-sm${tab === "users" ? " btn-primary" : ""}`}
           onClick={() => navigate({ tab: "users", table: null, page: null })}
         >
@@ -142,20 +153,20 @@ function DatabaseDetail() {
           title="Live browsing unavailable"
           hint="Add admin credentials to the instance to browse tables and manage grants."
         />
-      ) : tab === "tables" ? (
-        table ? (
-          <DataBrowser
-            databaseId={id}
-            table={table}
-            page={page}
-            onPage={(p) => navigate({ page: p <= 1 ? null : String(p) })}
-            onClose={() => navigate({ table: null, page: null })}
-          />
-        ) : (
-          <TablesSection databaseId={id} onOpen={(t) => navigate({ table: t, page: null })} />
-        )
+      ) : tab === "query" ? (
+        <QueryConsole databaseId={id} canWrite={canWrite} />
+      ) : tab === "users" ? (
+        <GrantsSection databaseId={id} canWrite={canWrite} />
+      ) : table ? (
+        <DataBrowser
+          databaseId={id}
+          table={table}
+          page={page}
+          onPage={(p) => navigate({ page: p <= 1 ? null : String(p) })}
+          onClose={() => navigate({ table: null, page: null })}
+        />
       ) : (
-        <GrantsSection databaseId={id} canWrite={can("database:write")} />
+        <TablesSection databaseId={id} onOpen={(t) => navigate({ table: t, page: null })} />
       )}
       <DeleteDatabaseModal
         database={deleteOpen ? db : null}
@@ -381,6 +392,7 @@ function DataBrowser({
   onPage: (page: number) => void;
   onClose: () => void;
 }) {
+  const [view, setView] = useState<"data" | "schema">("data");
   const offset = (page - 1) * PAGE_SIZE;
   const { data, isLoading, error, isFetching } = useTableRows(databaseId, table, PAGE_SIZE, offset);
 
@@ -398,18 +410,29 @@ function DataBrowser({
             <X size={15} />
           </button>
           <span className="font-semibold flex items-center gap-2"><Table2 size={15} /> {table}</span>
-          {data ? (
+          {view === "data" && data ? (
             <span className="muted text-sm">
               rows {offset + 1}–{offset + data.rows.length}
               {data.total > 0 ? ` of ~${data.total.toLocaleString()}` : ""}
             </span>
           ) : null}
-          {isFetching ? <Spinner /> : null}
+          {isFetching && view === "data" ? <Spinner /> : null}
         </div>
-        <Pagination page={page} pageCount={pageCount} hasMore={hasFullPage} onPage={onPage} />
+        <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+          <div className="flex items-center gap-1">
+            <button className={`btn btn-sm${view === "data" ? " btn-primary" : ""}`} onClick={() => setView("data")}>Data</button>
+            <button className={`btn btn-sm${view === "schema" ? " btn-primary" : ""}`} onClick={() => setView("schema")}>Schema</button>
+          </div>
+          <ExportButton label="Export CSV" run={() => exportTableCSV(databaseId, table)} />
+          {view === "data" ? (
+            <Pagination page={page} pageCount={pageCount} hasMore={hasFullPage} onPage={onPage} />
+          ) : null}
+        </div>
       </div>
 
-      {isLoading ? (
+      {view === "schema" ? (
+        <SchemaView databaseId={databaseId} table={table} />
+      ) : isLoading ? (
         <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading rows…</div>
       ) : error ? (
         <EmptyState title="Could not load rows" hint={(error as ApiError).message} />
@@ -450,6 +473,244 @@ function DataBrowser({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ExportButton triggers a CSV download, showing a spinner while streaming and
+// surfacing any error inline (downloads have no natural error surface otherwise).
+function ExportButton({ label, run }: { label: string; run: () => Promise<void>; }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onClick() {
+    setBusy(true);
+    setError(null);
+    try {
+      await run();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Export failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="flex items-center gap-2">
+      {error ? <span className="text-sm" style={{ color: "var(--danger, #c00)" }} title={error}>Export failed</span> : null}
+      <button className="btn btn-sm" onClick={onClick} disabled={busy}>
+        {busy ? <Spinner /> : <Download size={15} />} {label}
+      </button>
+    </span>
+  );
+}
+
+// ---- Table schema (columns, indexes, DDL) ----
+
+function SchemaView({ databaseId, table }: { databaseId: string; table: string }) {
+  const { data, isLoading, error } = useTableSchema(databaseId, table);
+
+  if (isLoading) {
+    return <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading schema…</div>;
+  }
+  if (error) {
+    return <EmptyState title="Could not load schema" hint={(error as ApiError).message} />;
+  }
+  if (!data) {
+    return <EmptyState title="No schema" />;
+  }
+
+  return (
+    <div className="flex" style={{ flexDirection: "column", gap: "1.1rem" }}>
+      <div>
+        <p className="muted text-sm" style={{ marginBottom: ".4rem" }}>Columns</p>
+        <div className="card" style={{ overflowX: "auto" }}>
+          <table className="table" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+            <thead>
+              <tr>
+                <th>Column</th>
+                <th>Type</th>
+                <th>Null</th>
+                <th>Key</th>
+                <th>Default</th>
+                <th>Extra</th>
+                <th>Comment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.columns.map((c) => (
+                <tr key={c.name}>
+                  <td className="font-medium">{c.name}</td>
+                  <td className="muted"><code>{c.type}</code></td>
+                  <td className="muted">{c.nullable ? "YES" : "NO"}</td>
+                  <td className="muted">{c.key ? <span className="badge badge-gray" style={{ fontSize: 11 }}>{c.key}</span> : "—"}</td>
+                  <td className={c.default === null ? "muted" : undefined}>{c.default === null ? "NULL" : c.default}</td>
+                  <td className="muted">{c.extra || "—"}</td>
+                  <td className="muted">{c.comment || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <p className="muted text-sm" style={{ marginBottom: ".4rem" }}>Indexes</p>
+        {data.indexes.length === 0 ? (
+          <p className="muted text-sm">No indexes.</p>
+        ) : (
+          <div className="card" style={{ overflowX: "auto" }}>
+            <table className="table" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+              <thead>
+                <tr>
+                  <th>Index</th>
+                  <th>Columns</th>
+                  <th>Unique</th>
+                  <th>Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.indexes.map((idx) => (
+                  <tr key={idx.name}>
+                    <td className="font-medium">{idx.name}</td>
+                    <td className="muted">{idx.columns.join(", ")}</td>
+                    <td className="muted">{idx.unique ? "YES" : "NO"}</td>
+                    <td className="muted">{idx.type}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {data.ddl ? (
+        <div>
+          <p className="muted text-sm" style={{ marginBottom: ".4rem" }}>DDL</p>
+          <pre className="card" style={{ padding: ".9rem", overflowX: "auto", fontSize: 12, margin: 0 }}>
+            <code>{data.ddl}</code>
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---- SQL console ----
+
+function QueryConsole({ databaseId, canWrite }: { databaseId: string; canWrite: boolean }) {
+  const run = useRunQuery(databaseId);
+  const [sql, setSql] = useState("");
+  const [ranSql, setRanSql] = useState("");
+  const [result, setResult] = useState<QueryResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onRun() {
+    const trimmed = sql.trim();
+    if (!trimmed) return;
+    setError(null);
+    try {
+      const res = await run.mutateAsync({ sql: trimmed, limit: 200 });
+      setResult(res);
+      setRanSql(trimmed);
+    } catch (err) {
+      setResult(null);
+      setError(err instanceof ApiError ? err.message : "Query failed");
+    }
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      void onRun();
+    }
+  }
+
+  const canExport = Boolean(result && result.columns.length > 0 && ranSql);
+
+  return (
+    <div>
+      <p className="muted text-sm" style={{ marginBottom: ".5rem" }}>
+        {canWrite
+          ? "Run SQL against this database. Reads return up to 200 rows; write statements report affected rows."
+          : "Run read-only SQL against this database (returns up to 200 rows). You do not have write access."}
+      </p>
+      <textarea
+        className="input"
+        value={sql}
+        onChange={(e) => setSql(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="SELECT * FROM ... "
+        spellCheck={false}
+        rows={5}
+        style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 13, resize: "vertical", whiteSpace: "pre" }}
+      />
+      <div className="flex items-center justify-between" style={{ marginTop: ".5rem", flexWrap: "wrap", gap: ".5rem" }}>
+        <span className="muted text-sm">Press ⌘/Ctrl + Enter to run.</span>
+        <div className="flex items-center gap-2">
+          {canExport ? (
+            <ExportButton label="Export CSV" run={() => exportQueryCSV(databaseId, ranSql)} />
+          ) : null}
+          <button className="btn btn-primary btn-sm" onClick={onRun} disabled={run.isPending || !sql.trim()}>
+            {run.isPending ? <Spinner /> : <Play size={15} />} Run
+          </button>
+        </div>
+      </div>
+
+      <ErrorText message={error ?? undefined} />
+
+      {result ? <QueryResultView result={result} /> : null}
+    </div>
+  );
+}
+
+function QueryResultView({ result }: { result: QueryResult }) {
+  if (result.columns.length === 0) {
+    return (
+      <div className="card" style={{ padding: ".8rem .9rem", marginTop: ".9rem" }}>
+        <span className="text-sm flex items-center gap-2">
+          <KeyRound size={15} /> {result.rows_affected.toLocaleString()} row{result.rows_affected === 1 ? "" : "s"} affected
+          <span className="muted">· {result.duration_ms} ms</span>
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: ".9rem" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: ".5rem", flexWrap: "wrap", gap: ".4rem" }}>
+        <span className="muted text-sm">
+          {result.row_count.toLocaleString()} row{result.row_count === 1 ? "" : "s"} · {result.duration_ms} ms
+          {result.truncated ? " · truncated to first 200" : ""}
+        </span>
+      </div>
+      <div className="card" style={{ overflowX: "auto" }}>
+        <table className="table" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+          <thead>
+            <tr>
+              {result.columns.map((c, i) => (
+                <th key={`${c}-${i}`}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {result.rows.length === 0 ? (
+              <tr>
+                <td colSpan={result.columns.length} className="muted">No rows returned.</td>
+              </tr>
+            ) : (
+              result.rows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} className={cell === null ? "muted" : undefined} style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis" }} title={cell ?? undefined}>
+                      {cell === null ? "NULL" : cell}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
