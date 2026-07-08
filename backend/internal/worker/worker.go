@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+
 	agentapp "github.com/mariadb-cp/db-manager/backend/internal/app/agent"
 	notificationapp "github.com/mariadb-cp/db-manager/backend/internal/app/notification"
 	operationapp "github.com/mariadb-cp/db-manager/backend/internal/app/operation"
@@ -17,6 +19,15 @@ import (
 	jobdom "github.com/mariadb-cp/db-manager/backend/internal/domain/job"
 	"github.com/mariadb-cp/db-manager/backend/internal/platform/executor"
 )
+
+// toJobLogs maps buffered executor log lines to domain log records for a job.
+func toJobLogs(jobID uuid.UUID, lines []executor.LogLine) []jobdom.JobLog {
+	out := make([]jobdom.JobLog, len(lines))
+	for i, l := range lines {
+		out[i] = jobdom.JobLog{JobID: jobID, Seq: l.Seq, Level: l.Level, Message: l.Message, CreatedAt: l.Time}
+	}
+	return out
+}
 
 // Deps are the collaborators the worker drives.
 type Deps struct {
@@ -132,7 +143,16 @@ func (w *Worker) runOne(ctx context.Context) bool {
 	execCtx, cancel := context.WithTimeout(ctx, 2*time.Hour)
 	defer cancel()
 
-	result, err := executor.Execute(execCtx, string(job.Type), payload)
+	// In-process executor: flush each line straight to the DB (threshold 1) so
+	// the detail page tails logs live. Flush errors are logged, never fatal.
+	sink := executor.NewBufferedSink(1, func(lines []executor.LogLine) error {
+		return w.deps.Ops.AppendLogs(ctx, job.ID, toJobLogs(job.ID, lines))
+	}, func(err error) {
+		slog.Warn("append operation logs", "id", job.ID, "error", err.Error())
+	})
+
+	result, err := executor.Execute(execCtx, string(job.Type), payload, sink)
+	sink.Flush()
 	if err != nil {
 		msg := err.Error()
 		if cerr := w.deps.Ops.Complete(ctx, job.ID, jobdom.StatusFailed, nil, &msg); cerr != nil {

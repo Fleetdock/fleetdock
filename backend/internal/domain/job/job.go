@@ -73,6 +73,17 @@ type Job struct {
 	Version      int
 }
 
+// JobLog is one line of execution output for a job. Seq is monotonic per job,
+// assigned by the executor's log sink, so lines can be ordered and tailed
+// incrementally (WHERE seq > afterSeq).
+type JobLog struct {
+	JobID     uuid.UUID
+	Seq       int
+	Level     string // info | warn | error | stderr
+	Message   string
+	CreatedAt time.Time
+}
+
 // ListFilter narrows job listings.
 type ListFilter struct {
 	Status       *Status
@@ -100,4 +111,9 @@ type Repository interface {
 	// Complete finalizes a job with succeeded/failed status.
 	Complete(ctx context.Context, id uuid.UUID, status Status, result json.RawMessage, errMsg *string) error
 	UpdateProgress(ctx context.Context, id uuid.UUID, progress int) error
+	// AppendLogs persists a batch of execution log lines for a job.
+	AppendLogs(ctx context.Context, jobID uuid.UUID, lines []JobLog) error
+	// ListLogs returns a job's log lines with seq > afterSeq, ordered by seq,
+	// capped at limit.
+	ListLogs(ctx context.Context, jobID uuid.UUID, afterSeq, limit int) ([]JobLog, error)
 }

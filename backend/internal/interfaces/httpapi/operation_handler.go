@@ -92,3 +92,27 @@ func (h *OperationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, toOperationResponse(j))
 }
+
+type operationLogResponse struct {
+	Seq       int       `json:"seq"`
+	Level     string    `json:"level"`
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Logs handles GET /v1/operations/{id}/logs. Supports ?after_seq= for
+// incremental tailing and ?limit= (default 500) to cap the batch size.
+func (h *OperationHandler) Logs(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	logs, err := h.svc.Logs(r.Context(), r.PathValue("id"),
+		atoiDefault(q.Get("after_seq"), 0), atoiDefault(q.Get("limit"), 0))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	items := make([]operationLogResponse, 0, len(logs))
+	for _, l := range logs {
+		items = append(items, operationLogResponse{Seq: l.Seq, Level: l.Level, Message: l.Message, CreatedAt: l.CreatedAt})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}

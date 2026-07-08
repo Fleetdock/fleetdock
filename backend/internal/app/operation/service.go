@@ -130,6 +130,29 @@ func (s *Service) Get(ctx context.Context, id string) (*jobdom.Job, error) {
 	return s.jobs.GetByID(ctx, uid)
 }
 
+// AppendLogs persists execution log lines for an operation. It is called by
+// the control-plane worker directly and by the agent handler on behalf of a
+// remote agent. Logs are best-effort; callers must not fail a job on error.
+func (s *Service) AppendLogs(ctx context.Context, jobID uuid.UUID, lines []jobdom.JobLog) error {
+	return s.jobs.AppendLogs(ctx, jobID, lines)
+}
+
+// Logs returns an operation's log lines with seq > afterSeq (for incremental
+// tailing), ordered by seq and capped at limit.
+func (s *Service) Logs(ctx context.Context, id string, afterSeq, limit int) ([]jobdom.JobLog, error) {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, apperr.Invalid("id", "id must be a valid UUID")
+	}
+	if limit <= 0 || limit > 2000 {
+		limit = 500
+	}
+	if afterSeq < 0 {
+		afterSeq = 0
+	}
+	return s.jobs.ListLogs(ctx, uid, afterSeq, limit)
+}
+
 // ListParams filters operation listings.
 type ListParams struct {
 	Status     string

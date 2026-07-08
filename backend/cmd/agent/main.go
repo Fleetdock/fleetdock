@@ -208,8 +208,19 @@ func (a *agent) claimAndRun(ctx context.Context) bool {
 
 	slog.Info("executing operation", "id", cj.Job.ID, "type", cj.Job.Type)
 	execCtx, cancel := context.WithTimeout(ctx, 2*time.Hour)
-	result, execErr := executor.Execute(execCtx, cj.Job.Type, cj.Payload)
+
+	// Ship logs back to the control plane in batches (threshold 25) to cut HTTP
+	// round-trips; a final Flush below persists the tail before we report status.
+	jobID := cj.Job.ID
+	sink := executor.NewBufferedSink(25, func(lines []executor.LogLine) error {
+		return a.postLogs(ctx, jobID, lines)
+	}, func(err error) {
+		slog.Warn("ship operation logs failed", "id", jobID, "error", err.Error())
+	})
+
+	result, execErr := executor.Execute(execCtx, cj.Job.Type, cj.Payload, sink)
 	cancel()
+	sink.Flush() // persist remaining logs before the job is finalized
 
 	report := map[string]any{"status": "succeeded", "result": json.RawMessage(result)}
 	if execErr != nil {
@@ -222,6 +233,15 @@ func (a *agent) claimAndRun(ctx context.Context) bool {
 		slog.Error("report job status failed", "id", cj.Job.ID, "error", err.Error())
 	}
 	return true // keep draining the queue either way
+}
+
+// postLogs ships a batch of execution log lines for a job to the control plane.
+func (a *agent) postLogs(ctx context.Context, jobID string, lines []executor.LogLine) error {
+	logs := make([]map[string]any, len(lines))
+	for i, l := range lines {
+		logs[i] = map[string]any{"seq": l.Seq, "level": l.Level, "message": l.Message}
+	}
+	return a.post(ctx, "/agent/v1/jobs/"+jobID+"/logs", map[string]any{"logs": logs}, nil, true)
 }
 
 // ---- http ----

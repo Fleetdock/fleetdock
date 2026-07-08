@@ -66,6 +66,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /agent/v1/heartbeat", d.Agents.Auth(d.Agents.Heartbeat))
 	mux.HandleFunc("POST /agent/v1/jobs/claim", d.Agents.Auth(d.Agents.Claim))
 	mux.HandleFunc("POST /agent/v1/jobs/{id}/status", d.Agents.Auth(d.Agents.UpdateJob))
+	mux.HandleFunc("POST /agent/v1/jobs/{id}/logs", d.Agents.Auth(d.Agents.AppendLogs))
 
 	// Auth (login is rate limited per client IP)
 	limiter := newLoginLimiter(10, time.Minute)
@@ -143,6 +144,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	// Operations (jobs)
 	mux.HandleFunc("GET /v1/operations", requirePerm("operation:read", d.Operations.List))
 	mux.HandleFunc("GET /v1/operations/{id}", requirePerm("operation:read", d.Operations.Get))
+	mux.HandleFunc("GET /v1/operations/{id}/logs", requirePerm("operation:read", d.Operations.Logs))
 
 	// Backups + restore
 	mux.HandleFunc("POST /v1/backups", requirePerm("backup:write", d.Backups.Trigger))

@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
+import { ChevronRight } from "lucide-react";
 import { DataTable } from "@/components/data-table";
 import { StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
@@ -57,6 +59,16 @@ export default function OperationsPage() {
             header: "Finished",
             className: "muted",
             render: (op) => (op.completed_at ? new Date(op.completed_at).toLocaleString() : "—"),
+          },
+          {
+            id: "actions",
+            header: "",
+            align: "right",
+            render: (op) => (
+              <Link href={`/operations/${op.id}`} className="btn btn-ghost btn-sm">
+                Open <ChevronRight size={15} />
+              </Link>
+            ),
           },
         ]}
         rows={data?.items ?? []}

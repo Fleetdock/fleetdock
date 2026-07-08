@@ -150,6 +150,50 @@ func (h *AgentHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// jobLogsRequest carries a batch of execution log lines an agent produced
+// while running a job. Seq is monotonic per job (assigned agent-side).
+type jobLogsRequest struct {
+	Logs []struct {
+		Seq     int    `json:"seq"`
+		Level   string `json:"level"`
+		Message string `json:"message"`
+	} `json:"logs"`
+}
+
+// AppendLogs handles POST /agent/v1/jobs/{id}/logs.
+func (h *AgentHandler) AppendLogs(w http.ResponseWriter, r *http.Request) {
+	srv := agentServerFrom(r.Context())
+	jobID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, apperr.Invalid("id", "id must be a valid UUID"))
+		return
+	}
+	j, err := h.ops.Get(r.Context(), jobID.String())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if j.ServerID == nil || *j.ServerID != srv.ID {
+		writeError(w, apperr.Forbidden("job does not belong to this agent"))
+		return
+	}
+
+	var req jobLogsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	lines := make([]jobdom.JobLog, 0, len(req.Logs))
+	for _, l := range req.Logs {
+		lines = append(lines, jobdom.JobLog{JobID: jobID, Seq: l.Seq, Level: l.Level, Message: l.Message})
+	}
+	if err := h.ops.AppendLogs(r.Context(), jobID, lines); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 type jobStatusRequest struct {
 	Status   string          `json:"status"` // succeeded | failed | running
 	Progress *int            `json:"progress"`

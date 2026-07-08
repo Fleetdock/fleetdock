@@ -167,6 +167,54 @@ func (r *JobRepository) UpdateProgress(ctx context.Context, id uuid.UUID, progre
 	return nil
 }
 
+func (r *JobRepository) AppendLogs(ctx context.Context, jobID uuid.UUID, lines []jobdom.JobLog) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	rows := make([][]any, 0, len(lines))
+	for _, l := range lines {
+		level := l.Level
+		if level == "" {
+			level = "info"
+		}
+		rows = append(rows, []any{jobID, l.Seq, level, l.Message})
+	}
+	_, err := r.pool.CopyFrom(ctx,
+		pgx.Identifier{"job_logs"},
+		[]string{"job_id", "seq", "level", "message"},
+		pgx.CopyFromRows(rows),
+	)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("append job logs: %w", err))
+	}
+	return nil
+}
+
+func (r *JobRepository) ListLogs(ctx context.Context, jobID uuid.UUID, afterSeq, limit int) ([]jobdom.JobLog, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT seq, level, message, created_at FROM job_logs
+		WHERE job_id = $1 AND seq > $2
+		ORDER BY seq
+		LIMIT $3`, jobID, afterSeq, limit)
+	if err != nil {
+		return nil, apperr.Internal(fmt.Errorf("list job logs: %w", err))
+	}
+	defer rows.Close()
+
+	logs := make([]jobdom.JobLog, 0)
+	for rows.Next() {
+		l := jobdom.JobLog{JobID: jobID}
+		if err := rows.Scan(&l.Seq, &l.Level, &l.Message, &l.CreatedAt); err != nil {
+			return nil, apperr.Internal(fmt.Errorf("scan job log: %w", err))
+		}
+		logs = append(logs, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperr.Internal(err)
+	}
+	return logs, nil
+}
+
 func scanJob(row rowScanner) (*jobdom.Job, error) {
 	var (
 		j           jobdom.Job

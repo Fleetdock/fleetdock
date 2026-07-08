@@ -76,6 +76,13 @@ export interface Operation {
   created_at: string;
 }
 
+export interface OperationLog {
+  seq: number;
+  level: string;
+  message: string;
+  created_at: string;
+}
+
 export interface Backup {
   id: string;
   database_id: string;

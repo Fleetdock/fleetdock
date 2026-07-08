@@ -59,13 +59,16 @@ type Result struct {
 	TableCount  int                   `json:"table_count,omitempty"` // tables present after a restore
 }
 
-// Execute runs the operation named by jobType with the given payload.
-func Execute(ctx context.Context, jobType string, p *Payload) (json.RawMessage, error) {
+// Execute runs the operation named by jobType with the given payload. Progress
+// and diagnostic lines are emitted to sink; pass NopSink{} to discard them.
+func Execute(ctx context.Context, jobType string, p *Payload, sink LogSink) (json.RawMessage, error) {
+	sink.Log("info", "starting "+jobType)
+
 	// Container lifecycle operations run on the host via Docker and need no
 	// database engine client.
 	switch jobType {
 	case "provision_instance", "start_instance", "stop_instance", "restart_instance", "remove_instance":
-		res, err := runProvision(ctx, jobType, p)
+		res, err := runProvision(ctx, jobType, p, sink)
 		if err != nil {
 			return nil, err
 		}
@@ -80,40 +83,48 @@ func Execute(ctx context.Context, jobType string, p *Payload) (json.RawMessage, 
 	var res Result
 	switch jobType {
 	case "test_connection":
+		sink.Log("info", "testing connection to "+p.Engine+" instance")
 		version, err := eng.Ping(ctx, p.Conn)
 		if err != nil {
 			return nil, fmt.Errorf("connection failed: %w", err)
 		}
+		sink.Log("info", "connected: "+version)
 		res = Result{OK: true, Version: version}
 
 	case "create_database":
+		sink.Log("info", "creating database "+p.Database)
 		if err := eng.CreateDatabase(ctx, p.Conn, p.Database, p.Charset, p.Collation); err != nil {
 			return nil, err
 		}
+		sink.Log("info", "database created")
 		res = Result{OK: true}
 
 	case "delete_database":
+		sink.Log("info", "dropping database "+p.Database)
 		if err := eng.DropDatabase(ctx, p.Conn, p.Database); err != nil {
 			return nil, err
 		}
+		sink.Log("info", "database dropped")
 		res = Result{OK: true}
 
 	case "import_databases":
+		sink.Log("info", "listing databases on the instance")
 		dbs, err := eng.ListDatabases(ctx, p.Conn)
 		if err != nil {
 			return nil, err
 		}
+		sink.Log("info", fmt.Sprintf("found %d databases", len(dbs)))
 		res = Result{OK: true, Databases: dbs}
 
 	case "backup":
-		out, err := runBackup(ctx, eng, p)
+		out, err := runBackup(ctx, eng, p, sink)
 		if err != nil {
 			return nil, err
 		}
 		res = *out
 
 	case "restore":
-		out, err := runRestore(ctx, eng, p)
+		out, err := runRestore(ctx, eng, p, sink)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +138,7 @@ func Execute(ctx context.Context, jobType string, p *Payload) (json.RawMessage, 
 
 // runBackup dumps one database, gzips it into a temp file (hashing as it
 // goes), then uploads it via the presigned PUT URL.
-func runBackup(ctx context.Context, eng engine.Client, p *Payload) (*Result, error) {
+func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink) (*Result, error) {
 	binaries, args, env := eng.DumpArgs(p.Conn, p.Database)
 	bin, err := lookPath(binaries)
 	if err != nil {
@@ -146,14 +157,18 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload) (*Result, err
 	hasher := sha256.New()
 	gz := gzip.NewWriter(io.MultiWriter(tmp, hasher))
 
+	sink.Log("info", "dumping database "+p.Database)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout = gz
 	var stderr strings.Builder
-	cmd.Stderr = &stderr
+	tee := newLineSink(sink, "stderr")
+	cmd.Stderr = io.MultiWriter(&stderr, tee)
 	if err := cmd.Run(); err != nil {
+		tee.Close()
 		return nil, fmt.Errorf("dump failed: %s: %w", firstLine(stderr.String()), err)
 	}
+	tee.Close()
 	if err := gz.Close(); err != nil {
 		return nil, fmt.Errorf("compress: %w", err)
 	}
@@ -166,6 +181,10 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload) (*Result, err
 		return nil, err
 	}
 
+	checksum := hex.EncodeToString(hasher.Sum(nil))
+	sink.Log("info", fmt.Sprintf("compressed %d bytes (sha256 %s)", size, checksum))
+
+	sink.Log("info", "uploading backup artifact to storage")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, p.PutURL, tmp)
 	if err != nil {
 		return nil, err
@@ -181,11 +200,12 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload) (*Result, err
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("upload failed: %s: %s", resp.Status, firstLine(string(body)))
 	}
+	sink.Log("info", "upload complete")
 
 	return &Result{
 		OK:         true,
 		SizeBytes:  size,
-		Checksum:   hex.EncodeToString(hasher.Sum(nil)),
+		Checksum:   checksum,
 		StorageURL: p.StorageURL,
 	}, nil
 }
@@ -194,7 +214,8 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload) (*Result, err
 // verifies its checksum (when known) before mutating anything, creates the
 // target database, restores the SQL stream, then counts the resulting tables
 // as a sanity check.
-func runRestore(ctx context.Context, eng engine.Client, p *Payload) (*Result, error) {
+func runRestore(ctx context.Context, eng engine.Client, p *Payload, sink LogSink) (*Result, error) {
+	sink.Log("info", "downloading backup artifact")
 	tmp, err := downloadToTemp(ctx, p.GetURL)
 	if err != nil {
 		return nil, err
@@ -206,6 +227,7 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload) (*Result, er
 
 	// Integrity check before touching the target database.
 	if p.Checksum != "" {
+		sink.Log("info", "verifying checksum")
 		sum, err := hashFile(tmp)
 		if err != nil {
 			return nil, err
@@ -218,6 +240,7 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload) (*Result, er
 		return nil, err
 	}
 
+	sink.Log("info", "creating target database "+p.Database)
 	if err := eng.CreateDatabase(ctx, p.Conn, p.Database, p.Charset, p.Collation); err != nil {
 		return nil, fmt.Errorf("create target database: %w", err)
 	}
@@ -233,20 +256,25 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload) (*Result, er
 	if err != nil {
 		return nil, err
 	}
+	sink.Log("info", "restoring SQL stream")
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdin = gz
 	var stderr strings.Builder
-	cmd.Stderr = &stderr
+	tee := newLineSink(sink, "stderr")
+	cmd.Stderr = io.MultiWriter(&stderr, tee)
 	if err := cmd.Run(); err != nil {
+		tee.Close()
 		return nil, fmt.Errorf("restore failed: %s: %w", firstLine(stderr.String()), err)
 	}
+	tee.Close()
 
 	// Verify the restore produced a schema.
 	tables, err := eng.CountTables(ctx, p.Conn, p.Database)
 	if err != nil {
 		return nil, fmt.Errorf("restore verification failed: %w", err)
 	}
+	sink.Log("info", fmt.Sprintf("restore verified: %d tables", tables))
 	return &Result{OK: true, TableCount: tables}, nil
 }
 

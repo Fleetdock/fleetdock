@@ -23,6 +23,7 @@ import type {
   Me,
   Move,
   Operation,
+  OperationLog,
   Paginated,
   RestoreBackupInput,
   StartMoveInput,
@@ -245,6 +246,8 @@ export function useDeleteDatabase() {
 }
 
 // ---- Operations ----
+const TERMINAL_OP_STATUS = new Set(["succeeded", "failed", "canceled"]);
+
 export function useOperations(params?: { status?: string; resource_id?: string; page?: number }) {
   const q = new URLSearchParams();
   if (params?.status) q.set("status", params.status);
@@ -254,6 +257,28 @@ export function useOperations(params?: { status?: string; resource_id?: string; 
     queryFn: () => api.get<Paginated<Operation>>(`/v1/operations?${q.toString()}&${pageQS(params?.page)}`),
     refetchInterval: 4_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useOperation(id: string) {
+  return useQuery({
+    queryKey: ["operation", id],
+    queryFn: () => api.get<Operation>(`/v1/operations/${id}`),
+    enabled: Boolean(id),
+    // Poll while the operation is still in flight; stop once it's terminal.
+    refetchInterval: (query) =>
+      query.state.data && TERMINAL_OP_STATUS.has(query.state.data.status) ? false : 4_000,
+  });
+}
+
+export function useOperationLogs(id: string, running: boolean) {
+  return useQuery({
+    queryKey: ["operation-logs", id],
+    queryFn: () => api.get<{ items: OperationLog[] }>(`/v1/operations/${id}/logs?limit=2000`),
+    enabled: Boolean(id),
+    // Tail while running; when the op turns terminal `running` flips false and
+    // React Query does one final fetch, then stops.
+    refetchInterval: running ? 2_000 : false,
   });
 }
 
@@ -681,9 +706,10 @@ export function useDeleteSchedule() {
 }
 
 // ---- Audit log ----
-export function useAudit(params?: { resource_type?: string; page?: number }) {
+export function useAudit(params?: { resource_type?: string; resource_id?: string; page?: number }) {
   const q = new URLSearchParams();
   if (params?.resource_type) q.set("resource_type", params.resource_type);
+  if (params?.resource_id) q.set("resource_id", params.resource_id);
   return useQuery({
     queryKey: ["audit", q.toString(), params?.page ?? 1],
     queryFn: () => api.get<Paginated<AuditEntry>>(`/v1/audit?${q.toString()}&${pageQS(params?.page)}`),

@@ -12,7 +12,7 @@ import (
 // runProvision performs a Docker container lifecycle action for a managed
 // instance. It runs on the agent (which has Docker); the control-plane worker
 // never receives these jobs.
-func runProvision(ctx context.Context, jobType string, p *Payload) (*Result, error) {
+func runProvision(ctx context.Context, jobType string, p *Payload, sink LogSink) (*Result, error) {
 	if p.Provision == nil {
 		return nil, fmt.Errorf("provision spec is missing")
 	}
@@ -23,14 +23,19 @@ func runProvision(ctx context.Context, jobType string, p *Payload) (*Result, err
 
 	switch jobType {
 	case "provision_instance":
+		sink.Log("info", "provisioning container "+spec.ContainerName)
 		return provisionContainer(ctx, p.Engine, spec)
 	case "start_instance":
+		sink.Log("info", "starting container "+spec.ContainerName)
 		return &Result{OK: true}, dockerSimple(ctx, "start", spec.ContainerName)
 	case "stop_instance":
+		sink.Log("info", "stopping container "+spec.ContainerName)
 		return &Result{OK: true}, dockerSimple(ctx, "stop", spec.ContainerName)
 	case "restart_instance":
+		sink.Log("info", "restarting container "+spec.ContainerName)
 		return &Result{OK: true}, dockerSimple(ctx, "restart", spec.ContainerName)
 	case "remove_instance":
+		sink.Log("info", "removing container "+spec.ContainerName)
 		return removeContainer(ctx, spec)
 	}
 	return nil, fmt.Errorf("unsupported provision operation %q", jobType)
