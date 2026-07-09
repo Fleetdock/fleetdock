@@ -68,5 +68,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: prepare env
+        run: |
+          cp .env.example .env
+          ./scripts/generate-secrets.sh >> .env
+
       - name: build images
         run: docker compose build
