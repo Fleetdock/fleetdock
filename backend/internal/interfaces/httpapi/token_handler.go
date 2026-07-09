@@ -6,6 +6,7 @@ import (
 
 	tokenapp "github.com/TajBrains/db-manager/backend/internal/app/token"
 	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // TokenHandler exposes API-token endpoints scoped to the caller.
@@ -17,8 +18,9 @@ type TokenHandler struct {
 func NewTokenHandler(svc *tokenapp.Service) *TokenHandler { return &TokenHandler{svc: svc} }
 
 type createTokenRequest struct {
-	Name   string   `json:"name"`
-	Scopes []string `json:"scopes"`
+	Name     string   `json:"name"`
+	Scopes   []string `json:"scopes"`
+	TTLHours *int     `json:"ttl_hours"` // optional token lifetime in hours
 }
 
 type tokenResponse struct {
@@ -58,10 +60,21 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principalFrom(r.Context())
+	var expiresAt *time.Time
+	if req.TTLHours != nil {
+		if *req.TTLHours <= 0 {
+			writeError(w, apperr.Invalid("ttl_hours", "ttl_hours must be positive"))
+			return
+		}
+		t := time.Now().Add(time.Duration(*req.TTLHours) * time.Hour)
+		expiresAt = &t
+	}
 	created, err := h.svc.Create(r.Context(), tokenapp.CreateInput{
-		UserID: p.UserID,
-		Name:   req.Name,
-		Scopes: req.Scopes,
+		UserID:        p.UserID,
+		Name:          req.Name,
+		Scopes:        req.Scopes,
+		AllowedScopes: p.AllPermissions(),
+		ExpiresAt:     expiresAt,
 	})
 	if err != nil {
 		writeError(w, err)

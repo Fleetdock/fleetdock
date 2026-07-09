@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 
 	authapp "github.com/TajBrains/db-manager/backend/internal/app/auth"
+	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
 	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 	"github.com/TajBrains/db-manager/backend/internal/platform/auth"
@@ -32,8 +34,12 @@ func (r *stubAuthRepo) GetByID(_ context.Context, id uuid.UUID) (userdom.User, e
 	return u, nil
 }
 
-func (r *stubAuthRepo) PermissionsFor(_ context.Context, id uuid.UUID) ([]string, error) {
-	return r.perms[id], nil
+func (r *stubAuthRepo) GrantsFor(_ context.Context, id uuid.UUID) ([]authz.Grant, error) {
+	out := make([]authz.Grant, 0, len(r.perms[id]))
+	for _, p := range r.perms[id] {
+		out = append(out, authz.Grant{Permission: p, Scope: authz.Scope{Type: authz.ScopeGlobal}})
+	}
+	return out, nil
 }
 
 func (r *stubAuthRepo) CountUsers(_ context.Context) (int, error) { return 0, nil }
@@ -109,5 +115,59 @@ func TestRequirePerm_AllowsWithPermission(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+// fakeAuthzRepo resolves every instance to a fixed server, for scope tests.
+type fakeAuthzRepo struct{ serverID uuid.UUID }
+
+func (r fakeAuthzRepo) ServerOfInstance(_ context.Context, _ uuid.UUID) (uuid.UUID, error) {
+	return r.serverID, nil
+}
+func (r fakeAuthzRepo) LineageOfDatabase(_ context.Context, _ uuid.UUID) (uuid.UUID, uuid.UUID, error) {
+	return uuid.New(), r.serverID, nil
+}
+func (r fakeAuthzRepo) DatabaseOfBackup(_ context.Context, _ uuid.UUID) (uuid.UUID, error) {
+	return uuid.New(), nil
+}
+func (r fakeAuthzRepo) JobResource(_ context.Context, _ uuid.UUID) (string, uuid.UUID, error) {
+	return "", uuid.Nil, nil
+}
+
+func newScopedPrincipal(perm string, scope authz.Scope) *authapp.Principal {
+	// Build a principal carrying a single scoped grant via a token-like path is
+	// awkward; NewPrincipalWithGrants keeps the test focused on the middleware.
+	return authapp.NewPrincipalWithGrants(uuid.New(), "u@example.com",
+		[]authz.Grant{{Permission: perm, Scope: scope}})
+}
+
+func TestRequireResourcePerm_ScopeEnforced(t *testing.T) {
+	serverA := uuid.New()
+	resolver := authzapp.NewResolver(fakeAuthzRepo{serverID: serverA})
+	instanceID := uuid.New()
+
+	handler := requireResourcePerm(resolver, "instance:write", authz.ResourceInstance, "id",
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+
+	// In-scope: grant on serverA covers the instance on serverA.
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/"+instanceID.String()+"/start", nil)
+	req.SetPathValue("id", instanceID.String())
+	req = req.WithContext(withPrincipal(req.Context(),
+		newScopedPrincipal("instance:write", authz.Scope{Type: authz.ScopeServer, ID: serverA})))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("in-scope: expected 200, got %d", rec.Code)
+	}
+
+	// Out-of-scope: grant on a different server must be forbidden.
+	req = httptest.NewRequest(http.MethodPost, "/v1/instances/"+instanceID.String()+"/start", nil)
+	req.SetPathValue("id", instanceID.String())
+	req = req.WithContext(withPrincipal(req.Context(),
+		newScopedPrincipal("instance:write", authz.Scope{Type: authz.ScopeServer, ID: uuid.New()})))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("out-of-scope: expected 403, got %d", rec.Code)
 	}
 }

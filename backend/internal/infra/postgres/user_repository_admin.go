@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
@@ -162,6 +163,89 @@ func (r *UserRepository) CountActiveOwners(ctx context.Context) (int, error) {
 		return 0, apperr.Internal(fmt.Errorf("count owners: %w", err))
 	}
 	return n, nil
+}
+
+// ListGrants returns all role grants (global and scoped) for a user.
+func (r *UserRepository) ListGrants(ctx context.Context, userID uuid.UUID) ([]userdom.RoleGrant, error) {
+	const q = `
+		SELECT ur.id, ur.role_id, ro.name, ur.scope_type, ur.scope_id
+		FROM user_roles ur
+		JOIN roles ro ON ro.id = ur.role_id
+		WHERE ur.user_id = $1
+		ORDER BY ur.scope_type, ro.name`
+	rows, err := r.pool.Query(ctx, q, userID)
+	if err != nil {
+		return nil, apperr.Internal(fmt.Errorf("list grants: %w", err))
+	}
+	defer rows.Close()
+	out := make([]userdom.RoleGrant, 0)
+	for rows.Next() {
+		var g userdom.RoleGrant
+		if err := rows.Scan(&g.ID, &g.RoleID, &g.RoleName, &g.ScopeType, &g.ScopeID); err != nil {
+			return nil, apperr.Internal(err)
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// GetGrant returns one grant belonging to a user.
+func (r *UserRepository) GetGrant(ctx context.Context, userID, grantID uuid.UUID) (userdom.RoleGrant, error) {
+	const q = `
+		SELECT ur.id, ur.role_id, ro.name, ur.scope_type, ur.scope_id
+		FROM user_roles ur
+		JOIN roles ro ON ro.id = ur.role_id
+		WHERE ur.id = $1 AND ur.user_id = $2`
+	var g userdom.RoleGrant
+	err := r.pool.QueryRow(ctx, q, grantID, userID).Scan(&g.ID, &g.RoleID, &g.RoleName, &g.ScopeType, &g.ScopeID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return userdom.RoleGrant{}, apperr.NotFound("grant not found")
+		}
+		return userdom.RoleGrant{}, apperr.Internal(fmt.Errorf("get grant: %w", err))
+	}
+	return g, nil
+}
+
+// AddGrant assigns a role to a user at a scope (scopeID nil for global).
+func (r *UserRepository) AddGrant(ctx context.Context, userID uuid.UUID, roleName, scopeType string, scopeID *uuid.UUID) (userdom.RoleGrant, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return userdom.RoleGrant{}, apperr.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // best-effort on the non-commit path
+
+	var roleID uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT id FROM roles WHERE name = $1`, roleName).Scan(&roleID); err != nil {
+		return userdom.RoleGrant{}, apperr.Invalid("role", "unknown role")
+	}
+	id := uuid.New()
+	_, err = tx.Exec(ctx,
+		`INSERT INTO user_roles (id, user_id, role_id, scope_type, scope_id) VALUES ($1, $2, $3, $4, $5)`,
+		id, userID, roleID, scopeType, scopeID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return userdom.RoleGrant{}, apperr.Conflict("this role is already granted at that scope")
+		}
+		return userdom.RoleGrant{}, apperr.Internal(fmt.Errorf("add grant: %w", err))
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return userdom.RoleGrant{}, apperr.Internal(err)
+	}
+	return userdom.RoleGrant{ID: id, RoleID: roleID, RoleName: roleName, ScopeType: scopeType, ScopeID: scopeID}, nil
+}
+
+// RemoveGrant deletes a user's grant by id.
+func (r *UserRepository) RemoveGrant(ctx context.Context, userID, grantID uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM user_roles WHERE id = $1 AND user_id = $2`, grantID, userID)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("remove grant: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("grant not found")
+	}
+	return nil
 }
 
 // ListRoles returns the role catalog with permissions.

@@ -4,17 +4,25 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
+	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
 	backupapp "github.com/TajBrains/db-manager/backend/internal/app/backup"
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	backupdom "github.com/TajBrains/db-manager/backend/internal/domain/backup"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // BackupHandler exposes backup + restore endpoints.
 type BackupHandler struct {
-	svc *backupapp.Service
+	svc      *backupapp.Service
+	resolver *authzapp.Resolver
 }
 
 // NewBackupHandler builds the backup handler.
-func NewBackupHandler(svc *backupapp.Service) *BackupHandler { return &BackupHandler{svc: svc} }
+func NewBackupHandler(svc *backupapp.Service, resolver *authzapp.Resolver) *BackupHandler {
+	return &BackupHandler{svc: svc, resolver: resolver}
+}
 
 type triggerBackupRequest struct {
 	DatabaseID    string `json:"database_id"`
@@ -78,6 +86,15 @@ func (h *BackupHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	dbID, err := uuid.Parse(req.DatabaseID)
+	if err != nil {
+		writeError(w, apperr.Invalid("database_id", "must be a valid UUID"))
+		return
+	}
+	if err := authorizeResource(r.Context(), h.resolver, "backup:write", authz.ResourceDatabase, dbID); err != nil {
+		writeError(w, err)
+		return
+	}
 	b, job, err := h.svc.Trigger(r.Context(), backupapp.TriggerInput{
 		DatabaseID:    req.DatabaseID,
 		DestinationID: req.DestinationID,
@@ -120,6 +137,7 @@ func (h *BackupHandler) List(w http.ResponseWriter, r *http.Request) {
 		DatabaseID: q.Get("database_id"),
 		Limit:      atoiDefault(q.Get("limit"), 0),
 		Offset:     atoiDefault(q.Get("offset"), 0),
+		Scope:      readScope(r.Context(), "backup:read"),
 	})
 	if err != nil {
 		writeError(w, err)

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 )
 
 // Status is the lifecycle state of a backup.
@@ -57,6 +59,8 @@ type ListFilter struct {
 	Status     *Status
 	Limit      int
 	Offset     int
+	// Scope, when non-nil, restricts results to the caller's readable scope.
+	Scope *authz.ReadSet
 }
 
 // Page is one page of backups plus the unpaginated total.

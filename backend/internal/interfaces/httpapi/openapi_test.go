@@ -18,7 +18,7 @@ func TestOpenAPI_CoversRouterRoutes(t *testing.T) {
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", ".."))
 	routerPath := filepath.Join(repoRoot, "backend", "internal", "interfaces", "httpapi", "router.go")
-	openAPIPath := filepath.Join(repoRoot, "docs", "openapi.yaml")
+	openAPIPath := filepath.Join(repoRoot, "backend", "internal", "openapi", "openapi.yaml")
 
 	routerBytes, err := os.ReadFile(routerPath)
 	if err != nil {

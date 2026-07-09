@@ -86,6 +86,15 @@ func (r *DatabaseRepository) List(ctx context.Context, f databasedom.ListFilter)
 		args = append(args, "%"+f.Search+"%")
 		conds = append(conds, fmt.Sprintf("name ILIKE $%d", len(args)))
 	}
+	if f.Scope != nil {
+		args = append(args, idArray(f.Scope.DatabaseIDs))
+		dbPos := len(args)
+		args = append(args, idArray(f.Scope.ServerIDs))
+		serverPos := len(args)
+		conds = append(conds, fmt.Sprintf(
+			"(id = ANY($%d) OR instance_id IN (SELECT id FROM instances WHERE server_id = ANY($%d)))",
+			dbPos, serverPos))
+	}
 	args = append(args, f.Limit)
 	limitPos := len(args)
 	args = append(args, f.Offset)

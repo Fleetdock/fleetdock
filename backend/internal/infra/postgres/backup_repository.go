@@ -65,6 +65,15 @@ func (r *BackupRepository) List(ctx context.Context, f backupdom.ListFilter) (ba
 		args = append(args, string(*f.Status))
 		conds = append(conds, fmt.Sprintf("status = $%d", len(args)))
 	}
+	if f.Scope != nil {
+		args = append(args, idArray(f.Scope.DatabaseIDs))
+		dbPos := len(args)
+		args = append(args, idArray(f.Scope.ServerIDs))
+		serverPos := len(args)
+		conds = append(conds, fmt.Sprintf(
+			"(database_id = ANY($%d) OR database_id IN (SELECT d.id FROM databases d JOIN instances i ON i.id = d.instance_id WHERE i.server_id = ANY($%d)))",
+			dbPos, serverPos))
+	}
 	args = append(args, f.Limit)
 	limitPos := len(args)
 	args = append(args, f.Offset)

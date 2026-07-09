@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
 	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
 	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
@@ -14,17 +15,19 @@ import (
 )
 
 type fakeUserRepo struct {
-	creds map[string]userdom.Credentials
-	users map[uuid.UUID]userdom.User
-	perms map[uuid.UUID][]string
-	count int
+	creds  map[string]userdom.Credentials
+	users  map[uuid.UUID]userdom.User
+	perms  map[uuid.UUID][]string        // global permissions
+	grants map[uuid.UUID][]authz.Grant   // scoped grants (overrides perms when set)
+	count  int
 }
 
 func newFakeUserRepo() *fakeUserRepo {
 	return &fakeUserRepo{
-		creds: map[string]userdom.Credentials{},
-		users: map[uuid.UUID]userdom.User{},
-		perms: map[uuid.UUID][]string{},
+		creds:  map[string]userdom.Credentials{},
+		users:  map[uuid.UUID]userdom.User{},
+		perms:  map[uuid.UUID][]string{},
+		grants: map[uuid.UUID][]authz.Grant{},
 	}
 }
 
@@ -44,8 +47,15 @@ func (r *fakeUserRepo) GetByID(_ context.Context, id uuid.UUID) (userdom.User, e
 	return u, nil
 }
 
-func (r *fakeUserRepo) PermissionsFor(_ context.Context, id uuid.UUID) ([]string, error) {
-	return r.perms[id], nil
+func (r *fakeUserRepo) GrantsFor(_ context.Context, id uuid.UUID) ([]authz.Grant, error) {
+	if g, ok := r.grants[id]; ok && len(g) > 0 {
+		return g, nil
+	}
+	out := make([]authz.Grant, 0, len(r.perms[id]))
+	for _, p := range r.perms[id] {
+		out = append(out, authz.Grant{Permission: p, Scope: authz.Scope{Type: authz.ScopeGlobal}})
+	}
+	return out, nil
 }
 
 func (r *fakeUserRepo) CountUsers(_ context.Context) (int, error) {
@@ -152,6 +162,80 @@ func TestPrincipal_JWT(t *testing.T) {
 	}
 	if !p.Can("server:read") {
 		t.Fatal("expected server:read permission")
+	}
+}
+
+func TestPrincipal_TokenEmptyScopesInheritAll(t *testing.T) {
+	id := uuid.New()
+	users := newFakeUserRepo()
+	users.users[id] = userdom.User{ID: id, Email: "u@example.com", Status: "active"}
+	users.perms[id] = []string{"database:read", "database:write"}
+	tokens := &fakeTokenRepo{lookups: map[string]tokendom.Lookup{
+		auth.HashToken("mdcp_empty"): {UserID: id, Scopes: []string{}}, // no scopes
+	}}
+	svc := NewService(users, tokens, auth.NewJWT("secret", time.Hour))
+
+	p, err := svc.Principal(context.Background(), "mdcp_empty")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !p.Can("database:read") || !p.Can("database:write") {
+		t.Fatal("empty-scope token should inherit all of the user's grants")
+	}
+}
+
+func TestPrincipal_TokenScopesRestrict(t *testing.T) {
+	id := uuid.New()
+	users := newFakeUserRepo()
+	users.users[id] = userdom.User{ID: id, Email: "u@example.com", Status: "active"}
+	users.perms[id] = []string{"database:read", "database:write"}
+	tokens := &fakeTokenRepo{lookups: map[string]tokendom.Lookup{
+		auth.HashToken("mdcp_ro"): {UserID: id, Scopes: []string{"database:read"}},
+	}}
+	svc := NewService(users, tokens, auth.NewJWT("secret", time.Hour))
+
+	p, err := svc.Principal(context.Background(), "mdcp_ro")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !p.Can("database:read") {
+		t.Fatal("scoped token should keep database:read")
+	}
+	if p.Can("database:write") {
+		t.Fatal("scoped token must not grant database:write")
+	}
+}
+
+func TestPrincipal_ScopedGrantsCanOn(t *testing.T) {
+	id := uuid.New()
+	serverA := uuid.New()
+	jwt := auth.NewJWT("secret", time.Hour)
+	tok, _ := jwt.Issue(id.String())
+
+	users := newFakeUserRepo()
+	users.users[id] = userdom.User{ID: id, Email: "u@example.com", Status: "active"}
+	users.grants[id] = []authz.Grant{
+		{Permission: "instance:write", Scope: authz.Scope{Type: authz.ScopeServer, ID: serverA}},
+	}
+	svc := NewService(users, &fakeTokenRepo{}, jwt)
+
+	p, err := svc.Principal(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.Can("instance:write") {
+		t.Fatal("scoped grant must not satisfy a global Can check")
+	}
+	if !p.CanAny("instance:write") {
+		t.Fatal("CanAny should be true for a scoped grant")
+	}
+	inScope := authz.Ancestry{Covers: []authz.Scope{{Type: authz.ScopeServer, ID: serverA}}}
+	if !p.CanOn("instance:write", inScope) {
+		t.Fatal("CanOn should allow a resource under the granted server")
+	}
+	outScope := authz.Ancestry{Covers: []authz.Scope{{Type: authz.ScopeServer, ID: uuid.New()}}}
+	if p.CanOn("instance:write", outScope) {
+		t.Fatal("CanOn should deny a resource under a different server")
 	}
 }
 

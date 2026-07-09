@@ -92,6 +92,9 @@ type ListFilter struct {
 	ResourceID   *uuid.UUID
 	Limit        int
 	Offset       int
+	// CreatedBy, when non-nil, restricts results to jobs created by that user
+	// (used to scope operations for callers without global operation:read).
+	CreatedBy *uuid.UUID
 }
 
 // Page is one page of jobs plus the unpaginated total.

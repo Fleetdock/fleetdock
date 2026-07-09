@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 )
 
 // ListFilter narrows a List query. Zero values mean "no filter".
@@ -13,6 +15,8 @@ type ListFilter struct {
 	Tag    string // exact tag membership
 	Limit  int
 	Offset int
+	// Scope, when non-nil, restricts results to the caller's readable scope.
+	Scope *authz.ReadSet
 }
 
 // Page is a slice of servers plus the total count matching the filter

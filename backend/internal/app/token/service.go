@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
+	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
 	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 	"github.com/TajBrains/db-manager/backend/internal/platform/auth"
 )
@@ -23,10 +24,13 @@ func NewService(repo tokendom.Repository) *Service { return &Service{repo: repo}
 
 // CreateInput is the command to mint a new token.
 type CreateInput struct {
-	UserID    uuid.UUID
-	Name      string
-	Scopes    []string
-	ExpiresAt *time.Time
+	UserID uuid.UUID
+	Name   string
+	Scopes []string
+	// AllowedScopes is the set of permissions the creating user actually holds;
+	// requested scopes must be a subset. Empty/nil skips the subset check.
+	AllowedScopes []string
+	ExpiresAt     *time.Time
 }
 
 // Created carries the persisted token plus its one-time plaintext secret.
@@ -39,6 +43,9 @@ type Created struct {
 func (s *Service) Create(ctx context.Context, in CreateInput) (Created, error) {
 	if strings.TrimSpace(in.Name) == "" {
 		return Created{}, apperr.Invalid("name", "token name is required")
+	}
+	if err := validateScopes(in.Scopes, in.AllowedScopes); err != nil {
+		return Created{}, err
 	}
 	full, prefix, hash, err := auth.GenerateToken()
 	if err != nil {
@@ -59,6 +66,33 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Created, error) {
 		return Created{}, err
 	}
 	return Created{Token: t, Plaintext: full}, nil
+}
+
+// validateScopes rejects scopes outside the permission catalog and, when
+// allowed is non-empty, any scope the creating user does not hold.
+func validateScopes(scopes, allowed []string) error {
+	catalog := make(map[string]struct{}, len(userdom.PermissionCatalog))
+	for _, p := range userdom.PermissionCatalog {
+		catalog[p] = struct{}{}
+	}
+	var allowSet map[string]struct{}
+	if len(allowed) > 0 {
+		allowSet = make(map[string]struct{}, len(allowed))
+		for _, p := range allowed {
+			allowSet[p] = struct{}{}
+		}
+	}
+	for _, sc := range scopes {
+		if _, ok := catalog[sc]; !ok {
+			return apperr.Invalid("scopes", "unknown permission: "+sc)
+		}
+		if allowSet != nil {
+			if _, ok := allowSet[sc]; !ok {
+				return apperr.Invalid("scopes", "you do not hold the permission: "+sc)
+			}
+		}
+	}
+	return nil
 }
 
 // List returns the caller's tokens (without secrets).

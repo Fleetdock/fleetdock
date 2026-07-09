@@ -5,18 +5,19 @@ import { usePathname } from "next/navigation";
 
 import { Activity, Archive, Bell, Box, CalendarClock, Cloud, Database, Key, LayoutDashboard, ScrollText, Server, ShieldCheck, Users, type LucideIcon } from "lucide-react";
 
-import { useCan } from "@/lib/hooks";
+import { useCan, useCanAny } from "@/lib/hooks";
 
 // perm: the read permission required to see the section (empty = always).
-const NAV: { href: string; label: string; Icon: LucideIcon; perm: string }[] = [
+// scoped: resource sections a user may reach with a scoped (non-global) grant.
+const NAV: { href: string; label: string; Icon: LucideIcon; perm: string; scoped?: boolean }[] = [
   { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard, perm: "" },
-  { href: "/servers", label: "Servers", Icon: Server, perm: "server:read" },
-  { href: "/instances", label: "Instances", Icon: Box, perm: "instance:read" },
-  { href: "/databases", label: "Databases", Icon: Database, perm: "database:read" },
-  { href: "/backups", label: "Backups", Icon: Archive, perm: "backup:read" },
+  { href: "/servers", label: "Servers", Icon: Server, perm: "server:read", scoped: true },
+  { href: "/instances", label: "Instances", Icon: Box, perm: "instance:read", scoped: true },
+  { href: "/databases", label: "Databases", Icon: Database, perm: "database:read", scoped: true },
+  { href: "/backups", label: "Backups", Icon: Archive, perm: "backup:read", scoped: true },
   { href: "/schedules", label: "Schedules", Icon: CalendarClock, perm: "schedule:read" },
   { href: "/destinations", label: "Destinations", Icon: Cloud, perm: "destination:read" },
-  { href: "/operations", label: "Operations", Icon: Activity, perm: "operation:read" },
+  { href: "/operations", label: "Operations", Icon: Activity, perm: "operation:read", scoped: true },
   { href: "/notifications", label: "Notifications", Icon: Bell, perm: "notification:read" },
   { href: "/audit", label: "Audit log", Icon: ScrollText, perm: "audit:read" },
   { href: "/users", label: "Users", Icon: Users, perm: "user:read" },
@@ -27,6 +28,7 @@ const NAV: { href: string; label: string; Icon: LucideIcon; perm: string }[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const can = useCan();
+  const canAny = useCanAny();
   return (
     <aside
       className="flex flex-col"
@@ -48,7 +50,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="flex flex-col gap-1" style={{ padding: ".6rem" }}>
-        {NAV.filter(({ perm }) => !perm || can(perm)).map(({ href, label, Icon }) => {
+        {NAV.filter(({ perm, scoped }) => !perm || (scoped ? canAny(perm) : can(perm))).map(({ href, label, Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link key={href} href={href} className={`sidebar-link${active ? " active" : ""}`}>

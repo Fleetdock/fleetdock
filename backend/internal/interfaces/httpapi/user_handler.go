@@ -232,6 +232,72 @@ func (h *UserHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": h.svc.PermissionCatalog()})
 }
 
+// ---- Scoped role grants ----
+
+type roleGrantResponse struct {
+	ID        string  `json:"id"`
+	Role      string  `json:"role"`
+	ScopeType string  `json:"scope_type"`
+	ScopeID   *string `json:"scope_id,omitempty"`
+}
+
+func toRoleGrantResponse(g userdom.RoleGrant) roleGrantResponse {
+	var scopeID *string
+	if g.ScopeID != nil {
+		s := g.ScopeID.String()
+		scopeID = &s
+	}
+	return roleGrantResponse{ID: g.ID.String(), Role: g.RoleName, ScopeType: g.ScopeType, ScopeID: scopeID}
+}
+
+// ListGrants handles GET /v1/users/{id}/role-grants.
+func (h *UserHandler) ListGrants(w http.ResponseWriter, r *http.Request) {
+	grants, err := h.svc.ListGrants(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	items := make([]roleGrantResponse, 0, len(grants))
+	for _, g := range grants {
+		items = append(items, toRoleGrantResponse(g))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+type addGrantRequest struct {
+	Role      string `json:"role"`
+	ScopeType string `json:"scope_type"`
+	ScopeID   string `json:"scope_id"`
+}
+
+// AddGrant handles POST /v1/users/{id}/role-grants.
+func (h *UserHandler) AddGrant(w http.ResponseWriter, r *http.Request) {
+	var req addGrantRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	g, err := h.svc.AddGrant(r.Context(), r.PathValue("id"), userapp.AddGrantInput{
+		Role:      req.Role,
+		ScopeType: req.ScopeType,
+		ScopeID:   req.ScopeID,
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, toRoleGrantResponse(g))
+}
+
+// RemoveGrant handles DELETE /v1/users/{id}/role-grants/{grantId}.
+func (h *UserHandler) RemoveGrant(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.RemoveGrant(r.Context(), r.PathValue("id"), r.PathValue("grantId")); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
 // ---- Self-service profile ----
 
 // Profile handles GET /v1/profile.

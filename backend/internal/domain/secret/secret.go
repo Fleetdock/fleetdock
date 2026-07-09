@@ -37,4 +37,9 @@ type Repository interface {
 	Upsert(ctx context.Context, s *Secret) error
 	GetByRef(ctx context.Context, ref string) (*Secret, error)
 	DeleteByRef(ctx context.Context, ref string) error
+	// ListAll returns every stored secret (used by key rotation).
+	ListAll(ctx context.Context) ([]*Secret, error)
+	// Rewrap replaces a secret's wrapped data key and key id after re-wrapping
+	// under a new master key (payload ciphertext is unchanged).
+	Rewrap(ctx context.Context, id uuid.UUID, encryptedDataKey []byte, keyID string) error
 }

@@ -62,6 +62,10 @@ backend-tidy: ## Tidy Go modules
 backend-migrate: ## Apply DB migrations and exit (needs MDCP_DATABASE_URL)
 	cd $(BACKEND) && $(GO_RUN) ./cmd/migrate
 
+.PHONY: rotate-keys
+rotate-keys: ## Re-wrap secrets under a new MDCP_ENCRYPTION_KEY (see cmd/rotate-keys)
+	cd $(BACKEND) && $(GO_RUN) ./cmd/rotate-keys
+
 ## ----- Frontend (Next.js) -----
 
 .PHONY: frontend-install

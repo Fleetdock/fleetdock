@@ -196,7 +196,9 @@ name retained for agent compatibility).
 | `MDCP_ENV` | `development` | `production` refuses to start with default secrets |
 | `MDCP_HTTP_ADDR` | `:8080` | |
 | `MDCP_JWT_SECRET` | dev default | set a strong secret in production |
-| `MDCP_ENCRYPTION_KEY` | dev default | encrypts credentials/S3 keys at rest; set a strong value and never rotate casually |
+| `MDCP_ENCRYPTION_KEY` | dev default | primary key that encrypts credentials/S3 keys at rest; rotate via `make rotate-keys` (see Security) |
+| `MDCP_ENCRYPTION_KEY_ID` | `master-1` | id stamped on secrets wrapped by the primary key; use a new id when rotating |
+| `MDCP_ENCRYPTION_KEYS_OLD` | — | retired keys still needed to decrypt during rotation, as `id=secret,id2=secret2` |
 | `MDCP_PUBLIC_URL` | `http://localhost:8080` | URL agents/installers use to reach the API |
 | `MDCP_AGENT_BIN_DIR` | `/opt/db-manager/agents` | where cross-compiled agent binaries live |
 | `MDCP_WORKER_ENABLED` | `true` | in-process worker (external-instance ops, offline detection, scheduled backups, retention, alerts, notifications) |
@@ -211,8 +213,11 @@ name retained for agent compatibility).
 
 ## API documentation
 
-The HTTP API is documented in [`docs/openapi.yaml`](docs/openapi.yaml). A CI
-test ensures the spec stays in sync with routes defined in `router.go`.
+The HTTP API is documented by a hand-authored OpenAPI 3 spec at
+[`backend/internal/openapi/openapi.yaml`](backend/internal/openapi/openapi.yaml).
+It is embedded in the binary and served at **`GET /openapi.yaml`**, with an
+interactive Redoc page at **`GET /docs`** (both public). A unit test keeps the
+spec in sync with the routes defined in `router.go`.
 
 ## Security
 
@@ -222,8 +227,21 @@ test ensures the spec stays in sync with routes defined in `router.go`.
 - **JWT storage:** the dashboard stores the session JWT in `localStorage`. This
   is convenient but exposes the token to XSS — deploy only on trusted networks
   and keep the frontend dependency supply chain clean.
-- **Encryption key rotation:** changing `MDCP_ENCRYPTION_KEY` makes existing
-  stored secrets unreadable. Plan a re-wrap migration before rotating in production.
+- **Encryption key rotation:** secrets are envelope-encrypted, so rotating the
+  master key only re-wraps each secret's data key — the payload ciphertext is
+  never touched. To rotate, keep the old key readable and promote a new key with
+  a **new id**, then run the offline re-wrap:
+
+  ```sh
+  export MDCP_ENCRYPTION_KEYS_OLD="master-1=<old-secret>"   # keep old key readable
+  export MDCP_ENCRYPTION_KEY="<new-secret>"                 # new primary secret
+  export MDCP_ENCRYPTION_KEY_ID="master-2"                  # new primary id
+  make rotate-keys                                          # re-wrap every secret
+  # once it reports 0 remaining, drop MDCP_ENCRYPTION_KEYS_OLD and keep the new key
+  ```
+
+  Rotation requires a new key id — reusing the same id with a different secret
+  would leave existing secrets unreadable.
 - **Vulnerability reports:** see [SECURITY.md](SECURITY.md).
 
 ## Automation & observability

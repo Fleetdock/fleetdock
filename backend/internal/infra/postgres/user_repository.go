@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
 	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
@@ -65,26 +66,34 @@ func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (userdom.Use
 	return u, nil
 }
 
-func (r *UserRepository) PermissionsFor(ctx context.Context, id uuid.UUID) ([]string, error) {
+func (r *UserRepository) GrantsFor(ctx context.Context, id uuid.UUID) ([]authz.Grant, error) {
 	const q = `
-		SELECT DISTINCT rp.permission
+		SELECT DISTINCT rp.permission, ur.scope_type, ur.scope_id
 		FROM user_roles ur
 		JOIN role_permissions rp ON rp.role_id = ur.role_id
-		WHERE ur.user_id = $1 AND ur.scope_type = 'global'`
+		WHERE ur.user_id = $1`
 	rows, err := r.pool.Query(ctx, q, id)
 	if err != nil {
-		return nil, apperr.Internal(fmt.Errorf("permissions: %w", err))
+		return nil, apperr.Internal(fmt.Errorf("grants: %w", err))
 	}
 	defer rows.Close()
-	perms := make([]string, 0)
+	grants := make([]authz.Grant, 0)
 	for rows.Next() {
-		var p string
-		if err := rows.Scan(&p); err != nil {
+		var (
+			perm      string
+			scopeType string
+			scopeID   *uuid.UUID
+		)
+		if err := rows.Scan(&perm, &scopeType, &scopeID); err != nil {
 			return nil, apperr.Internal(err)
 		}
-		perms = append(perms, p)
+		g := authz.Grant{Permission: perm, Scope: authz.Scope{Type: authz.ScopeType(scopeType)}}
+		if scopeID != nil {
+			g.Scope.ID = *scopeID
+		}
+		grants = append(grants, g)
 	}
-	return perms, rows.Err()
+	return grants, rows.Err()
 }
 
 func (r *UserRepository) CountUsers(ctx context.Context) (int, error) {

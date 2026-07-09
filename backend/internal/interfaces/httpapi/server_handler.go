@@ -130,6 +130,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		Tag:    q.Get("tag"),
 		Limit:  atoiDefault(q.Get("limit"), 0),
 		Offset: atoiDefault(q.Get("offset"), 0),
+		Scope:  readScope(r.Context(), "server:read"),
 	})
 	if err != nil {
 		writeError(w, err)

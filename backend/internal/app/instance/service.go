@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	operationapp "github.com/TajBrains/db-manager/backend/internal/app/operation"
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
 	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
 	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
@@ -49,6 +50,7 @@ type ListParams struct {
 	Kind     string
 	Limit    int
 	Offset   int
+	Scope    *authz.ReadSet
 }
 
 // ListResult is a page of instances with pagination metadata.
@@ -248,7 +250,7 @@ func (s *Service) List(ctx context.Context, p ListParams) (ListResult, error) {
 	if offset < 0 {
 		offset = 0
 	}
-	f := instancedom.ListFilter{Limit: limit, Offset: offset}
+	f := instancedom.ListFilter{Limit: limit, Offset: offset, Scope: p.Scope}
 	if p.ServerID != "" {
 		sid, err := uuid.Parse(p.ServerID)
 		if err != nil {

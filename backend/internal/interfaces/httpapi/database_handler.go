@@ -6,17 +6,23 @@ import (
 
 	"github.com/google/uuid"
 
+	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
 	databaseapp "github.com/TajBrains/db-manager/backend/internal/app/database"
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // DatabaseHandler exposes database endpoints.
 type DatabaseHandler struct {
-	svc *databaseapp.Service
+	svc      *databaseapp.Service
+	resolver *authzapp.Resolver
 }
 
 // NewDatabaseHandler builds the database handler.
-func NewDatabaseHandler(svc *databaseapp.Service) *DatabaseHandler { return &DatabaseHandler{svc: svc} }
+func NewDatabaseHandler(svc *databaseapp.Service, resolver *authzapp.Resolver) *DatabaseHandler {
+	return &DatabaseHandler{svc: svc, resolver: resolver}
+}
 
 type createDatabaseRequest struct {
 	InstanceID string            `json:"instance_id"`
@@ -77,6 +83,15 @@ func (h *DatabaseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	instID, err := uuid.Parse(req.InstanceID)
+	if err != nil {
+		writeError(w, apperr.Invalid("instance_id", "must be a valid UUID"))
+		return
+	}
+	if err := authorizeResource(r.Context(), h.resolver, "database:write", authz.ResourceInstance, instID); err != nil {
+		writeError(w, err)
+		return
+	}
 	var createdBy *uuid.UUID
 	if p := principalFrom(r.Context()); p != nil {
 		createdBy = &p.UserID
@@ -115,6 +130,7 @@ func (h *DatabaseHandler) List(w http.ResponseWriter, r *http.Request) {
 		Search:     q.Get("search"),
 		Limit:      atoiDefault(q.Get("limit"), 0),
 		Offset:     atoiDefault(q.Get("offset"), 0),
+		Scope:      readScope(r.Context(), "database:read"),
 	})
 	if err != nil {
 		writeError(w, err)

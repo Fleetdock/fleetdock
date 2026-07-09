@@ -86,6 +86,11 @@ func (r *ServerRepository) List(ctx context.Context, f serverdom.ListFilter) (se
 		args = append(args, f.Tag)
 		conds = append(conds, fmt.Sprintf("$%d = ANY(tags)", len(args)))
 	}
+	if f.Scope != nil {
+		// Only server-scoped grants surface a server in the list.
+		args = append(args, idArray(f.Scope.ServerIDs))
+		conds = append(conds, fmt.Sprintf("id = ANY($%d)", len(args)))
+	}
 
 	args = append(args, f.Limit)
 	limitPos := len(args)

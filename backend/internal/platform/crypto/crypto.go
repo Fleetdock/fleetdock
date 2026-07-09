@@ -14,19 +14,46 @@ import (
 	"fmt"
 )
 
-// Encryptor wraps and unwraps payloads with a single master key.
+// Encryptor wraps and unwraps payloads with a keyring of master keys. New
+// payloads are sealed under the primary key; decryption selects the master key
+// named by the envelope's KeyID, so old keys can still be read during a
+// rotation window.
 type Encryptor struct {
-	master [32]byte
-	keyID  string
+	keys    map[string][32]byte
+	primary string
 }
 
-// NewEncryptor derives a 256-bit master key from the given secret string.
+// NewEncryptor derives a single 256-bit master key from the given secret.
 func NewEncryptor(secret, keyID string) *Encryptor {
-	return &Encryptor{master: sha256.Sum256([]byte(secret)), keyID: keyID}
+	return &Encryptor{
+		keys:    map[string][32]byte{keyID: sha256.Sum256([]byte(secret))},
+		primary: keyID,
+	}
 }
 
-// KeyID identifies the master key that wrapped a data key.
-func (e *Encryptor) KeyID() string { return e.keyID }
+// NewKeyring builds an encryptor from several named secrets. New writes use the
+// primary key; every listed key can still decrypt. primaryID must be present.
+func NewKeyring(primaryID string, secrets map[string]string) (*Encryptor, error) {
+	keys := make(map[string][32]byte, len(secrets))
+	for id, secret := range secrets {
+		keys[id] = sha256.Sum256([]byte(secret))
+	}
+	if _, ok := keys[primaryID]; !ok {
+		return nil, fmt.Errorf("crypto: primary key %q missing from keyring", primaryID)
+	}
+	return &Encryptor{keys: keys, primary: primaryID}, nil
+}
+
+// KeyID identifies the primary master key that wraps new data keys.
+func (e *Encryptor) KeyID() string { return e.primary }
+
+func (e *Encryptor) masterFor(keyID string) ([32]byte, error) {
+	k, ok := e.keys[keyID]
+	if !ok {
+		return [32]byte{}, fmt.Errorf("crypto: no master key %q in keyring", keyID)
+	}
+	return k, nil
+}
 
 // Envelope is the encrypted form of a payload.
 type Envelope struct {
@@ -36,7 +63,7 @@ type Envelope struct {
 	KeyID            string
 }
 
-// Encrypt seals plaintext under a fresh data key.
+// Encrypt seals plaintext under a fresh data key wrapped by the primary key.
 func (e *Encryptor) Encrypt(plaintext []byte) (Envelope, error) {
 	var dataKey [32]byte
 	if _, err := rand.Read(dataKey[:]); err != nil {
@@ -47,7 +74,8 @@ func (e *Encryptor) Encrypt(plaintext []byte) (Envelope, error) {
 	if err != nil {
 		return Envelope{}, err
 	}
-	wrapped, keyNonce, err := seal(e.master[:], dataKey[:])
+	master := e.keys[e.primary]
+	wrapped, keyNonce, err := seal(master[:], dataKey[:])
 	if err != nil {
 		return Envelope{}, err
 	}
@@ -56,13 +84,17 @@ func (e *Encryptor) Encrypt(plaintext []byte) (Envelope, error) {
 		Ciphertext:       ciphertext,
 		EncryptedDataKey: append(keyNonce, wrapped...),
 		Nonce:            nonce,
-		KeyID:            e.keyID,
+		KeyID:            e.primary,
 	}, nil
 }
 
-// Decrypt unwraps the data key and opens the payload.
-func (e *Encryptor) Decrypt(env Envelope) ([]byte, error) {
-	gcm, err := newGCM(e.master[:])
+// unwrapDataKey opens the wrapped data key using the master named by env.KeyID.
+func (e *Encryptor) unwrapDataKey(env Envelope) ([]byte, error) {
+	master, err := e.masterFor(env.KeyID)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := newGCM(master[:])
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +106,15 @@ func (e *Encryptor) Decrypt(env Envelope) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("crypto: unwrap data key: %w", err)
 	}
+	return dataKey, nil
+}
 
+// Decrypt unwraps the data key and opens the payload.
+func (e *Encryptor) Decrypt(env Envelope) ([]byte, error) {
+	dataKey, err := e.unwrapDataKey(env)
+	if err != nil {
+		return nil, err
+	}
 	pgcm, err := newGCM(dataKey)
 	if err != nil {
 		return nil, err
@@ -84,6 +124,23 @@ func (e *Encryptor) Decrypt(env Envelope) ([]byte, error) {
 		return nil, fmt.Errorf("crypto: open payload: %w", err)
 	}
 	return plaintext, nil
+}
+
+// Rewrap re-encrypts a payload's data key under the primary key without
+// touching the payload ciphertext. It returns the new wrapped data key and the
+// primary key id. Rewrapping a payload already at the primary key is a no-op
+// re-wrap (still valid). The payload plaintext is never exposed.
+func (e *Encryptor) Rewrap(env Envelope) (encryptedDataKey []byte, keyID string, err error) {
+	dataKey, err := e.unwrapDataKey(env)
+	if err != nil {
+		return nil, "", err
+	}
+	master := e.keys[e.primary]
+	wrapped, keyNonce, err := seal(master[:], dataKey)
+	if err != nil {
+		return nil, "", err
+	}
+	return append(keyNonce, wrapped...), e.primary, nil
 }
 
 func seal(key, plaintext []byte) (ciphertext, nonce []byte, err error) {

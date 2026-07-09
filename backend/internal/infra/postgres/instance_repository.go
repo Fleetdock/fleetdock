@@ -85,6 +85,15 @@ func (r *InstanceRepository) List(ctx context.Context, f instancedom.ListFilter)
 		args = append(args, string(*f.Kind))
 		conds = append(conds, fmt.Sprintf("kind = $%d", len(args)))
 	}
+	if f.Scope != nil {
+		args = append(args, idArray(f.Scope.ServerIDs))
+		serverPos := len(args)
+		args = append(args, idArray(f.Scope.DatabaseIDs))
+		dbPos := len(args)
+		conds = append(conds, fmt.Sprintf(
+			"(server_id = ANY($%d) OR id IN (SELECT instance_id FROM databases WHERE id = ANY($%d)))",
+			serverPos, dbPos))
+	}
 	args = append(args, f.Limit)
 	limitPos := len(args)
 	args = append(args, f.Offset)

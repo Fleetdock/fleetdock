@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	operationapp "github.com/TajBrains/db-manager/backend/internal/app/operation"
 	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
 )
@@ -65,12 +67,18 @@ func toOperationResponse(j *jobdom.Job) operationResponse {
 // List handles GET /v1/operations.
 func (h *OperationHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	// Callers without global operation:read see only operations they created.
+	var createdBy *uuid.UUID
+	if p := principalFrom(r.Context()); p != nil && !p.Can("operation:read") {
+		createdBy = &p.UserID
+	}
 	res, err := h.svc.List(r.Context(), operationapp.ListParams{
 		Status:     q.Get("status"),
 		Type:       q.Get("type"),
 		ResourceID: q.Get("resource_id"),
 		Limit:      atoiDefault(q.Get("limit"), 0),
 		Offset:     atoiDefault(q.Get("offset"), 0),
+		CreatedBy:  createdBy,
 	})
 	if err != nil {
 		writeError(w, err)

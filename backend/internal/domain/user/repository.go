@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 )
 
 // Credentials bundles a user with its stored password hash for authentication.
@@ -18,9 +20,9 @@ type Repository interface {
 	GetCredentialsByEmail(ctx context.Context, email string) (Credentials, error)
 	// GetByID returns a user by id.
 	GetByID(ctx context.Context, id uuid.UUID) (User, error)
-	// PermissionsFor returns the distinct permission strings granted to a user
-	// via its global role assignments.
-	PermissionsFor(ctx context.Context, id uuid.UUID) ([]string, error)
+	// GrantsFor returns the flattened (permission, scope) grants a user holds
+	// across all of its role assignments (global and scoped).
+	GrantsFor(ctx context.Context, id uuid.UUID) ([]authz.Grant, error)
 
 	// CountUsers returns the number of user accounts (for bootstrap).
 	CountUsers(ctx context.Context) (int, error)

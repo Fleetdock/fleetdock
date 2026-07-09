@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -31,6 +32,11 @@ type Config struct {
 
 	// EncryptionKey protects secrets at rest (instance credentials, S3 keys).
 	EncryptionKey string
+	// EncryptionKeyID names the primary key that wraps new data keys.
+	EncryptionKeyID string
+	// EncryptionKeysOld holds retired keys still needed to decrypt existing
+	// secrets during a rotation window, as id=secret pairs.
+	EncryptionKeysOld map[string]string
 	// PublicURL is the externally reachable base URL of this API (used in
 	// the agent install command).
 	PublicURL string
@@ -61,6 +67,39 @@ type Config struct {
 // IsProduction reports whether the server runs in production mode.
 func (c Config) IsProduction() bool { return c.Env == "production" }
 
+// EncryptionKeyring returns every key id → secret needed to decrypt secrets:
+// the primary key plus any retired keys. The primary key always wins on a
+// collision.
+func (c Config) EncryptionKeyring() map[string]string {
+	m := make(map[string]string, len(c.EncryptionKeysOld)+1)
+	for id, s := range c.EncryptionKeysOld {
+		m[id] = s
+	}
+	m[c.EncryptionKeyID] = c.EncryptionKey
+	return m
+}
+
+// parseKeyList parses "id=secret,id2=secret2" into a map.
+func parseKeyList(raw string) map[string]string {
+	out := map[string]string{}
+	for _, pair := range strings.Split(raw, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		i := strings.IndexByte(pair, '=')
+		if i <= 0 {
+			continue
+		}
+		id := strings.TrimSpace(pair[:i])
+		secret := strings.TrimSpace(pair[i+1:])
+		if id != "" && secret != "" {
+			out[id] = secret
+		}
+	}
+	return out
+}
+
 // Load reads configuration from the environment and validates it.
 func Load() (Config, error) {
 	cfg := Config{
@@ -78,8 +117,10 @@ func Load() (Config, error) {
 
 		CORSOrigin: getenv("MDCP_CORS_ORIGIN", "http://localhost:3000"),
 
-		EncryptionKey:    getenv("MDCP_ENCRYPTION_KEY", "dev-insecure-encryption-key"),
-		PublicURL:        getenv("MDCP_PUBLIC_URL", "http://localhost:8080"),
+		EncryptionKey:     getenv("MDCP_ENCRYPTION_KEY", "dev-insecure-encryption-key"),
+		EncryptionKeyID:   getenv("MDCP_ENCRYPTION_KEY_ID", "master-1"),
+		EncryptionKeysOld: parseKeyList(os.Getenv("MDCP_ENCRYPTION_KEYS_OLD")),
+		PublicURL:         getenv("MDCP_PUBLIC_URL", "http://localhost:8080"),
 		AgentBinDir:      getenv("MDCP_AGENT_BIN_DIR", "/opt/db-manager/agents"),
 		WorkerEnabled:    getenvBool("MDCP_WORKER_ENABLED", true),
 		HeartbeatTimeout: getenvDuration("MDCP_HEARTBEAT_TIMEOUT", 2*time.Minute),

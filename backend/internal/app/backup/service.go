@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	operationapp "github.com/TajBrains/db-manager/backend/internal/app/operation"
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	backupdom "github.com/TajBrains/db-manager/backend/internal/domain/backup"
 	backupdestdom "github.com/TajBrains/db-manager/backend/internal/domain/backupdest"
 	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
@@ -217,6 +218,7 @@ type ListParams struct {
 	DatabaseID string
 	Limit      int
 	Offset     int
+	Scope      *authz.ReadSet
 }
 
 // ListResult is a page of backups.
@@ -240,7 +242,7 @@ func (s *Service) List(ctx context.Context, p ListParams) (ListResult, error) {
 	if offset < 0 {
 		offset = 0
 	}
-	f := backupdom.ListFilter{Limit: limit, Offset: offset}
+	f := backupdom.ListFilter{Limit: limit, Offset: offset, Scope: p.Scope}
 	if p.DatabaseID != "" {
 		did, err := uuid.Parse(p.DatabaseID)
 		if err != nil {

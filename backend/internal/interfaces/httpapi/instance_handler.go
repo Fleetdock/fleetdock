@@ -6,17 +6,23 @@ import (
 
 	"github.com/google/uuid"
 
+	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
 	instanceapp "github.com/TajBrains/db-manager/backend/internal/app/instance"
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // InstanceHandler exposes instance endpoints.
 type InstanceHandler struct {
-	svc *instanceapp.Service
+	svc      *instanceapp.Service
+	resolver *authzapp.Resolver
 }
 
 // NewInstanceHandler builds the instance handler.
-func NewInstanceHandler(svc *instanceapp.Service) *InstanceHandler { return &InstanceHandler{svc: svc} }
+func NewInstanceHandler(svc *instanceapp.Service, resolver *authzapp.Resolver) *InstanceHandler {
+	return &InstanceHandler{svc: svc, resolver: resolver}
+}
 
 type registerInstanceRequest struct {
 	Kind          string `json:"kind"` // managed (default) | external
@@ -92,6 +98,22 @@ func (h *InstanceHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	// Registering an instance under a managed server requires instance:write on
+	// that server; external instances (no server) require it globally.
+	if req.ServerID != "" {
+		sid, err := uuid.Parse(req.ServerID)
+		if err != nil {
+			writeError(w, apperr.Invalid("server_id", "must be a valid UUID"))
+			return
+		}
+		if err := authorizeResource(r.Context(), h.resolver, "instance:write", authz.ResourceServer, sid); err != nil {
+			writeError(w, err)
+			return
+		}
+	} else if p := principalFrom(r.Context()); p == nil || !p.Can("instance:write") {
+		writeError(w, apperr.Forbidden("insufficient permissions"))
+		return
+	}
 	engineVersion := req.EngineVersion
 	if engineVersion == "" {
 		engineVersion = req.MariaDBVersion
@@ -128,6 +150,15 @@ type provisionInstanceRequest struct {
 func (h *InstanceHandler) Provision(w http.ResponseWriter, r *http.Request) {
 	var req provisionInstanceRequest
 	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	sid, err := uuid.Parse(req.ServerID)
+	if err != nil {
+		writeError(w, apperr.Invalid("server_id", "must be a valid UUID"))
+		return
+	}
+	if err := authorizeResource(r.Context(), h.resolver, "instance:write", authz.ResourceServer, sid); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -187,6 +218,7 @@ func (h *InstanceHandler) List(w http.ResponseWriter, r *http.Request) {
 		Kind:     q.Get("kind"),
 		Limit:    atoiDefault(q.Get("limit"), 0),
 		Offset:   atoiDefault(q.Get("offset"), 0),
+		Scope:    readScope(r.Context(), "instance:read"),
 	})
 	if err != nil {
 		writeError(w, err)

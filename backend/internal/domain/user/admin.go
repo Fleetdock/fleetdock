@@ -28,6 +28,16 @@ type Role struct {
 	Permissions []string
 }
 
+// RoleGrant is a role assignment to a user at a scope (global, server, or
+// database). ScopeID is nil when ScopeType is "global".
+type RoleGrant struct {
+	ID        uuid.UUID
+	RoleID    uuid.UUID
+	RoleName  string
+	ScopeType string
+	ScopeID   *uuid.UUID
+}
+
 // PermissionCatalog is the full set of permissions the API enforces.
 // requirePerm() strings in the HTTP router must stay within this set.
 var PermissionCatalog = []string{
@@ -59,6 +69,14 @@ type AdminRepository interface {
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error
 	// SetGlobalRole replaces all global role grants with the named role.
 	SetGlobalRole(ctx context.Context, id uuid.UUID, roleName string) error
+	// ListGrants returns all role grants (global and scoped) for a user.
+	ListGrants(ctx context.Context, userID uuid.UUID) ([]RoleGrant, error)
+	// GetGrant returns one grant belonging to a user.
+	GetGrant(ctx context.Context, userID, grantID uuid.UUID) (RoleGrant, error)
+	// AddGrant assigns a role to a user at a scope (scopeID nil for global).
+	AddGrant(ctx context.Context, userID uuid.UUID, roleName, scopeType string, scopeID *uuid.UUID) (RoleGrant, error)
+	// RemoveGrant deletes a user's grant by id.
+	RemoveGrant(ctx context.Context, userID, grantID uuid.UUID) error
 	// Delete permanently removes the account.
 	Delete(ctx context.Context, id uuid.UUID) error
 	// CountActiveOwners counts active users holding the owner role globally

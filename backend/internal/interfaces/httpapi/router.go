@@ -6,6 +6,8 @@ import (
 	"time"
 
 	auditapp "github.com/TajBrains/db-manager/backend/internal/app/audit"
+	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 )
 
 // RouterDeps are the handlers and middleware the router wires together.
@@ -28,7 +30,10 @@ type RouterDeps struct {
 	Audit         *AuditHandler
 	Notifications *NotificationHandler
 	Overview      *OverviewHandler
+	Docs          *DocsHandler
 	Authn         *Authenticator
+	// Resolver resolves resource scope ancestry for per-resource authorization.
+	Resolver *authzapp.Resolver
 	// AuditRecorder records mutating requests (optional).
 	AuditRecorder *auditapp.Service
 	CORSOrigin    string
@@ -41,6 +46,7 @@ type RouterDeps struct {
 // ServeMux (no external router dependency).
 func NewRouter(d RouterDeps) http.Handler {
 	mux := http.NewServeMux()
+	rv := d.Resolver
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -56,6 +62,10 @@ func NewRouter(d RouterDeps) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
+
+	// Public: API documentation (spec + Redoc page).
+	mux.HandleFunc("GET /openapi.yaml", d.Docs.Spec)
+	mux.HandleFunc("GET /docs", d.Docs.Page)
 
 	// Public: agent install script + binaries.
 	mux.HandleFunc("GET /install.sh", d.Install.Script)
@@ -84,6 +94,9 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("PATCH /v1/users/{id}", requirePerm("user:write", d.Users.Update))
 	mux.HandleFunc("POST /v1/users/{id}/password", requirePerm("user:write", d.Users.ResetPassword))
 	mux.HandleFunc("DELETE /v1/users/{id}", requirePerm("user:write", d.Users.Delete))
+	mux.HandleFunc("GET /v1/users/{id}/role-grants", requirePerm("user:read", d.Users.ListGrants))
+	mux.HandleFunc("POST /v1/users/{id}/role-grants", requirePerm("user:write", d.Users.AddGrant))
+	mux.HandleFunc("DELETE /v1/users/{id}/role-grants/{grantId}", requirePerm("user:write", d.Users.RemoveGrant))
 	mux.HandleFunc("GET /v1/roles", requirePerm("user:read", d.Users.ListRoles))
 	mux.HandleFunc("POST /v1/roles", requirePerm("user:write", d.Users.CreateRole))
 	mux.HandleFunc("PATCH /v1/roles/{id}", requirePerm("user:write", d.Users.UpdateRole))
@@ -95,71 +108,72 @@ func NewRouter(d RouterDeps) http.Handler {
 
 	// Servers
 	mux.HandleFunc("POST /v1/servers", requirePerm("server:write", d.Servers.Register))
-	mux.HandleFunc("GET /v1/servers", requirePerm("server:read", d.Servers.List))
-	mux.HandleFunc("GET /v1/servers/{id}", requirePerm("server:read", d.Servers.Get))
-	mux.HandleFunc("GET /v1/servers/{id}/metrics", requirePerm("server:read", d.Overview.ServerMetrics))
+	mux.HandleFunc("GET /v1/servers", requireAnyPerm("server:read", d.Servers.List))
+	mux.HandleFunc("GET /v1/servers/{id}", requireResourcePerm(rv, "server:read", authz.ResourceServer, "id", d.Servers.Get))
+	mux.HandleFunc("GET /v1/servers/{id}/metrics", requireResourcePerm(rv, "server:read", authz.ResourceServer, "id", d.Overview.ServerMetrics))
 
 	// Agent registration tokens (server connect flow)
 	mux.HandleFunc("POST /v1/agent-tokens", requirePerm("server:write", d.RegTokens.Create))
 	mux.HandleFunc("GET /v1/agent-tokens", requirePerm("server:read", d.RegTokens.List))
 	mux.HandleFunc("DELETE /v1/agent-tokens/{id}", requirePerm("server:write", d.RegTokens.Revoke))
 
-	// Instances (managed + external)
-	mux.HandleFunc("POST /v1/instances", requirePerm("instance:write", d.Instances.Register))
-	mux.HandleFunc("POST /v1/instances/provision", requirePerm("instance:write", d.Instances.Provision))
-	mux.HandleFunc("GET /v1/instances", requirePerm("instance:read", d.Instances.List))
-	mux.HandleFunc("GET /v1/instances/{id}", requirePerm("instance:read", d.Instances.Get))
-	mux.HandleFunc("DELETE /v1/instances/{id}", requirePerm("instance:write", d.Instances.Delete))
-	mux.HandleFunc("POST /v1/instances/{id}/start", requirePerm("instance:write", d.Instances.Lifecycle("start")))
-	mux.HandleFunc("POST /v1/instances/{id}/stop", requirePerm("instance:write", d.Instances.Lifecycle("stop")))
-	mux.HandleFunc("POST /v1/instances/{id}/restart", requirePerm("instance:write", d.Instances.Lifecycle("restart")))
-	mux.HandleFunc("POST /v1/instances/{id}/test-connection", requirePerm("instance:read", d.Instances.TestConnection))
-	mux.HandleFunc("POST /v1/instances/{id}/import-databases", requirePerm("instance:write", d.Instances.ImportDatabases))
+	// Instances (managed + external). Register/Provision authorize the target
+	// server inside the handler (external instances need it globally).
+	mux.HandleFunc("POST /v1/instances", requireAnyPerm("instance:write", d.Instances.Register))
+	mux.HandleFunc("POST /v1/instances/provision", requireAnyPerm("instance:write", d.Instances.Provision))
+	mux.HandleFunc("GET /v1/instances", requireAnyPerm("instance:read", d.Instances.List))
+	mux.HandleFunc("GET /v1/instances/{id}", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.Get))
+	mux.HandleFunc("DELETE /v1/instances/{id}", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Delete))
+	mux.HandleFunc("POST /v1/instances/{id}/start", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("start")))
+	mux.HandleFunc("POST /v1/instances/{id}/stop", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("stop")))
+	mux.HandleFunc("POST /v1/instances/{id}/restart", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("restart")))
+	mux.HandleFunc("POST /v1/instances/{id}/test-connection", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.TestConnection))
+	mux.HandleFunc("POST /v1/instances/{id}/import-databases", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.ImportDatabases))
 
-	// Databases
-	mux.HandleFunc("POST /v1/databases", requirePerm("database:write", d.Databases.Create))
-	mux.HandleFunc("GET /v1/databases", requirePerm("database:read", d.Databases.List))
-	mux.HandleFunc("GET /v1/databases/{id}", requirePerm("database:read", d.Databases.Get))
-	mux.HandleFunc("POST /v1/databases/{id}/lock", requirePerm("database:write", d.Databases.Lock))
-	mux.HandleFunc("POST /v1/databases/{id}/unlock", requirePerm("database:write", d.Databases.Unlock))
-	mux.HandleFunc("DELETE /v1/databases/{id}", requirePerm("database:write", d.Databases.Delete))
+	// Databases. Create authorizes the target instance inside the handler.
+	mux.HandleFunc("POST /v1/databases", requireAnyPerm("database:write", d.Databases.Create))
+	mux.HandleFunc("GET /v1/databases", requireAnyPerm("database:read", d.Databases.List))
+	mux.HandleFunc("GET /v1/databases/{id}", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.Databases.Get))
+	mux.HandleFunc("POST /v1/databases/{id}/lock", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Databases.Lock))
+	mux.HandleFunc("POST /v1/databases/{id}/unlock", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Databases.Unlock))
+	mux.HandleFunc("DELETE /v1/databases/{id}", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Databases.Delete))
 
 	// Live DB administration: accounts + grants (instance scope)
-	mux.HandleFunc("GET /v1/instances/{id}/db-users", requirePerm("instance:read", d.DBAdmin.ListDBUsers))
-	mux.HandleFunc("POST /v1/instances/{id}/db-users", requirePerm("instance:write", d.DBAdmin.CreateDBUser))
-	mux.HandleFunc("POST /v1/instances/{id}/db-users/drop", requirePerm("instance:write", d.DBAdmin.DropDBUser))
-	mux.HandleFunc("GET /v1/instances/{id}/db-users/grants", requirePerm("instance:read", d.DBAdmin.UserGrants))
-	mux.HandleFunc("POST /v1/instances/{id}/grants", requirePerm("instance:write", d.DBAdmin.Grant))
-	mux.HandleFunc("POST /v1/instances/{id}/grants/revoke", requirePerm("instance:write", d.DBAdmin.Revoke))
+	mux.HandleFunc("GET /v1/instances/{id}/db-users", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.ListDBUsers))
+	mux.HandleFunc("POST /v1/instances/{id}/db-users", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.CreateDBUser))
+	mux.HandleFunc("POST /v1/instances/{id}/db-users/drop", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.DropDBUser))
+	mux.HandleFunc("GET /v1/instances/{id}/db-users/grants", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.UserGrants))
+	mux.HandleFunc("POST /v1/instances/{id}/grants", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.Grant))
+	mux.HandleFunc("POST /v1/instances/{id}/grants/revoke", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.Revoke))
 
 	// Live DB administration: database scope (grants, tables, data)
-	mux.HandleFunc("GET /v1/databases/{id}/grants", requirePerm("database:read", d.DBAdmin.SchemaGrants))
-	mux.HandleFunc("POST /v1/databases/{id}/grants", requirePerm("database:write", d.DBAdmin.GrantOnDatabase))
-	mux.HandleFunc("POST /v1/databases/{id}/grants/revoke", requirePerm("database:write", d.DBAdmin.RevokeOnDatabase))
-	mux.HandleFunc("GET /v1/databases/{id}/db-users", requirePerm("database:read", d.DBAdmin.ListDBUsersForDatabase))
-	mux.HandleFunc("GET /v1/databases/{id}/tables", requirePerm("database:read", d.DBAdmin.ListTables))
-	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/rows", requirePerm("database:read", d.DBAdmin.TableRows))
-	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/schema", requirePerm("database:read", d.DBAdmin.TableSchema))
-	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/export", requirePerm("database:read", d.DBAdmin.ExportTable))
+	mux.HandleFunc("GET /v1/databases/{id}/grants", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaGrants))
+	mux.HandleFunc("POST /v1/databases/{id}/grants", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.GrantOnDatabase))
+	mux.HandleFunc("POST /v1/databases/{id}/grants/revoke", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.RevokeOnDatabase))
+	mux.HandleFunc("GET /v1/databases/{id}/db-users", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ListDBUsersForDatabase))
+	mux.HandleFunc("GET /v1/databases/{id}/tables", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ListTables))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/rows", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.TableRows))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/schema", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.TableSchema))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/export", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ExportTable))
 	// SQL console: any writes are gated inside the handler by database:write.
-	mux.HandleFunc("POST /v1/databases/{id}/query", requirePerm("database:read", d.DBAdmin.Query))
-	mux.HandleFunc("POST /v1/databases/{id}/export", requirePerm("database:read", d.DBAdmin.ExportQuery))
-	mux.HandleFunc("GET /v1/db-privileges", requirePerm("instance:read", d.DBAdmin.ListPrivileges))
+	mux.HandleFunc("POST /v1/databases/{id}/query", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Query))
+	mux.HandleFunc("POST /v1/databases/{id}/export", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ExportQuery))
+	mux.HandleFunc("GET /v1/db-privileges", requireAnyPerm("instance:read", d.DBAdmin.ListPrivileges))
 
 	// Operations (jobs)
-	mux.HandleFunc("GET /v1/operations", requirePerm("operation:read", d.Operations.List))
-	mux.HandleFunc("GET /v1/operations/{id}", requirePerm("operation:read", d.Operations.Get))
-	mux.HandleFunc("GET /v1/operations/{id}/logs", requirePerm("operation:read", d.Operations.Logs))
+	mux.HandleFunc("GET /v1/operations", requireAnyPerm("operation:read", d.Operations.List))
+	mux.HandleFunc("GET /v1/operations/{id}", requireResourcePerm(rv, "operation:read", authz.ResourceOperation, "id", d.Operations.Get))
+	mux.HandleFunc("GET /v1/operations/{id}/logs", requireResourcePerm(rv, "operation:read", authz.ResourceOperation, "id", d.Operations.Logs))
 
 	// Backups + restore
-	mux.HandleFunc("POST /v1/backups", requirePerm("backup:write", d.Backups.Trigger))
-	mux.HandleFunc("GET /v1/backups", requirePerm("backup:read", d.Backups.List))
-	mux.HandleFunc("GET /v1/backups/{id}", requirePerm("backup:read", d.Backups.Get))
-	mux.HandleFunc("POST /v1/backups/{id}/restore", requirePerm("backup:write", d.Backups.Restore))
+	mux.HandleFunc("POST /v1/backups", requireAnyPerm("backup:write", d.Backups.Trigger))
+	mux.HandleFunc("GET /v1/backups", requireAnyPerm("backup:read", d.Backups.List))
+	mux.HandleFunc("GET /v1/backups/{id}", requireResourcePerm(rv, "backup:read", authz.ResourceBackup, "id", d.Backups.Get))
+	mux.HandleFunc("POST /v1/backups/{id}/restore", requireResourcePerm(rv, "backup:write", authz.ResourceBackup, "id", d.Backups.Restore))
 
 	// Move database (backup → restore → verify → optional drop of source).
-	// Tracked through the backup and restore operations it creates.
-	mux.HandleFunc("POST /v1/moves", requirePerm("backup:write", d.Moves.Start))
+	// Authorizes source database + target instance inside the handler.
+	mux.HandleFunc("POST /v1/moves", requireAnyPerm("backup:write", d.Moves.Start))
 
 	// Backup destinations
 	mux.HandleFunc("POST /v1/backup-destinations", requirePerm("destination:write", d.Destinations.Create))

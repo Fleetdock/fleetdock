@@ -168,6 +168,9 @@ type ListParams struct {
 	ResourceID string
 	Limit      int
 	Offset     int
+	// CreatedBy, when non-nil, restricts results to operations created by that
+	// user (set for callers without global operation:read).
+	CreatedBy *uuid.UUID
 }
 
 // ListResult is a page of operations.
@@ -191,7 +194,7 @@ func (s *Service) List(ctx context.Context, p ListParams) (ListResult, error) {
 	if offset < 0 {
 		offset = 0
 	}
-	f := jobdom.ListFilter{Limit: limit, Offset: offset}
+	f := jobdom.ListFilter{Limit: limit, Offset: offset, CreatedBy: p.CreatedBy}
 	if p.Status != "" {
 		st := jobdom.Status(p.Status)
 		f.Status = &st

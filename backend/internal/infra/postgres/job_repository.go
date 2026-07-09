@@ -78,6 +78,10 @@ func (r *JobRepository) List(ctx context.Context, f jobdom.ListFilter) (jobdom.P
 		args = append(args, *f.ResourceID)
 		conds = append(conds, fmt.Sprintf("resource_id = $%d", len(args)))
 	}
+	if f.CreatedBy != nil {
+		args = append(args, *f.CreatedBy)
+		conds = append(conds, fmt.Sprintf("created_by = $%d", len(args)))
+	}
 	args = append(args, f.Limit)
 	limitPos := len(args)
 	args = append(args, f.Offset)

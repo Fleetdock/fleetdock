@@ -9,20 +9,25 @@ import {
 } from "react";
 
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  useAddGrant,
   useCreateUser,
+  useDatabases,
   useDeleteUser,
   useMe,
+  useRemoveGrant,
   useResetUserPassword,
+  useRoleGrants,
   useRoles,
+  useServers,
   useUpdateUser,
   useUsers,
 } from "@/lib/hooks";
-import type { Role, User } from "@/lib/types";
+import type { Role, RoleGrant, ScopeType, User } from "@/lib/types";
 import { useDataTable } from "@/lib/use-data-table";
-import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
+import { KeyRound, Pencil, Plus, Shield, Trash2 } from "lucide-react";
 
 function compareUsers(a: User, b: User, key: string) {
   if (key === "created_at") {
@@ -40,6 +45,7 @@ export default function UsersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [grantsTarget, setGrantsTarget] = useState<User | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
@@ -138,6 +144,14 @@ export default function UsersPage() {
             >
               <KeyRound size={15} />
             </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => setGrantsTarget(u)}
+              title="Scoped role grants"
+              aria-label={`Manage role grants for ${u.email}`}
+            >
+              <Shield size={15} />
+            </button>
             {me?.id !== u.id ? (
               <button
                 className="btn btn-sm btn-danger"
@@ -224,7 +238,182 @@ export default function UsersPage() {
         user={resetTarget}
         onClose={() => setResetTarget(null)}
       />
+      <ManageGrantsModal
+        user={grantsTarget}
+        onClose={() => setGrantsTarget(null)}
+        roles={roles?.items ?? []}
+      />
     </div>
+  );
+}
+
+function scopeLabel(
+  g: RoleGrant,
+  serverName: (id: string) => string,
+  dbName: (id: string) => string,
+): string {
+  if (g.scope_type === "global") return "everything";
+  if (g.scope_type === "server") return `server: ${serverName(g.scope_id ?? "")}`;
+  return `database: ${dbName(g.scope_id ?? "")}`;
+}
+
+function ManageGrantsModal({
+  user,
+  onClose,
+  roles,
+}: {
+  user: User | null;
+  onClose: () => void;
+  roles: Role[];
+}) {
+  const { data, isLoading, error } = useRoleGrants(user?.id ?? "");
+  const { data: servers } = useServers();
+  const { data: databases } = useDatabases();
+  const add = useAddGrant();
+  const remove = useRemoveGrant();
+
+  const [role, setRole] = useState("viewer");
+  const [scopeType, setScopeType] = useState<ScopeType>("global");
+  const [scopeId, setScopeId] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const serverName = useCallback(
+    (id: string) => servers?.items.find((s) => s.id === id)?.name ?? id.slice(0, 8),
+    [servers],
+  );
+  const dbName = useCallback(
+    (id: string) => databases?.items.find((d) => d.id === id)?.name ?? id.slice(0, 8),
+    [databases],
+  );
+
+  async function onAdd(e: FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    if (scopeType !== "global" && !scopeId) {
+      setFormError("Choose a scope target.");
+      return;
+    }
+    try {
+      await add.mutateAsync({
+        userId: user!.id,
+        role,
+        scope_type: scopeType,
+        scope_id: scopeType === "global" ? undefined : scopeId,
+      });
+      setScopeId("");
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Failed to add grant");
+    }
+  }
+
+  async function onRemove(g: RoleGrant) {
+    setFormError(null);
+    try {
+      await remove.mutateAsync({ userId: user!.id, grantId: g.id });
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Failed to remove grant");
+    }
+  }
+
+  if (!user) return null;
+  return (
+    <Modal open onClose={onClose} title={`Role grants — ${user.email}`}>
+      <p className="text-sm muted" style={{ marginBottom: ".8rem" }}>
+        Grant a role globally or scoped to a single server or database. Server
+        grants also cover that server&apos;s instances and databases.
+      </p>
+
+      {isLoading ? (
+        <Spinner />
+      ) : error ? (
+        <ErrorText message={(error as ApiError).message} />
+      ) : (data?.items.length ?? 0) === 0 ? (
+        <EmptyState title="No grants yet" hint="Add one below." />
+      ) : (
+        <div className="flex flex-col gap-2" style={{ marginBottom: "1rem" }}>
+          {data!.items.map((g) => (
+            <div
+              key={g.id}
+              className="card flex items-center justify-between"
+              style={{ padding: ".5rem .75rem" }}
+            >
+              <span className="text-sm">
+                <span className="font-medium">{g.role}</span> @{" "}
+                {scopeLabel(g, serverName, dbName)}
+              </span>
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => onRemove(g)}
+                disabled={remove.isPending}
+                aria-label="Remove grant"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={onAdd}>
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".6rem" }}>
+          <Field label="Role">
+            <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
+              {roles.map((r) => (
+                <option key={r.id} value={r.name}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Scope">
+            <select
+              className="input"
+              value={scopeType}
+              onChange={(e) => {
+                setScopeType(e.target.value as ScopeType);
+                setScopeId("");
+              }}
+            >
+              <option value="global">Global</option>
+              <option value="server">Server</option>
+              <option value="database">Database</option>
+            </select>
+          </Field>
+        </div>
+        {scopeType === "server" ? (
+          <Field label="Server">
+            <select className="input" value={scopeId} onChange={(e) => setScopeId(e.target.value)}>
+              <option value="">Select a server…</option>
+              {servers?.items.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : scopeType === "database" ? (
+          <Field label="Database">
+            <select className="input" value={scopeId} onChange={(e) => setScopeId(e.target.value)}>
+              <option value="">Select a database…</option>
+              {databases?.items.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+        <ErrorText message={formError ?? undefined} />
+        <div className="flex justify-end items-center gap-2" style={{ marginTop: ".5rem" }}>
+          <button type="button" className="btn" onClick={onClose}>
+            Close
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={add.isPending}>
+            {add.isPending ? "Adding…" : "Add grant"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

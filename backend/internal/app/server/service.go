@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
 	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
@@ -29,6 +30,7 @@ type ListParams struct {
 	Tag    string
 	Limit  int
 	Offset int
+	Scope  *authz.ReadSet
 }
 
 // ListResult is a page of servers with pagination metadata.
@@ -87,7 +89,7 @@ func (s *Service) List(ctx context.Context, p ListParams) (ListResult, error) {
 		offset = 0
 	}
 
-	f := serverdom.ListFilter{Search: p.Search, Tag: p.Tag, Limit: limit, Offset: offset}
+	f := serverdom.ListFilter{Search: p.Search, Tag: p.Tag, Limit: limit, Offset: offset, Scope: p.Scope}
 	if p.Status != "" {
 		st := serverdom.Status(p.Status)
 		if !st.Valid() {

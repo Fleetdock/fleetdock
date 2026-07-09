@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -63,6 +64,47 @@ func (r *SecretRepository) DeleteByRef(ctx context.Context, ref string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM secrets WHERE ref = $1`, ref)
 	if err != nil {
 		return apperr.Internal(fmt.Errorf("delete secret: %w", err))
+	}
+	return nil
+}
+
+// ListAll returns every stored secret (used by key rotation).
+func (r *SecretRepository) ListAll(ctx context.Context) ([]*secretdom.Secret, error) {
+	const q = `
+		SELECT id, ref, kind, ciphertext, encrypted_data_key, key_id, nonce, created_at, rotated_at
+		FROM secrets ORDER BY created_at`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, apperr.Internal(fmt.Errorf("list secrets: %w", err))
+	}
+	defer rows.Close()
+	out := make([]*secretdom.Secret, 0)
+	for rows.Next() {
+		var (
+			s    secretdom.Secret
+			kind string
+		)
+		if err := rows.Scan(
+			&s.ID, &s.Ref, &kind, &s.Ciphertext, &s.EncryptedDataKey, &s.KeyID, &s.Nonce, &s.CreatedAt, &s.RotatedAt,
+		); err != nil {
+			return nil, apperr.Internal(err)
+		}
+		s.Kind = secretdom.Kind(kind)
+		out = append(out, &s)
+	}
+	return out, rows.Err()
+}
+
+// Rewrap replaces a secret's wrapped data key and key id (payload untouched).
+func (r *SecretRepository) Rewrap(ctx context.Context, id uuid.UUID, encryptedDataKey []byte, keyID string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE secrets SET encrypted_data_key = $2, key_id = $3, rotated_at = now() WHERE id = $1`,
+		id, encryptedDataKey, keyID)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("rewrap secret: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("secret not found")
 	}
 	return nil
 }

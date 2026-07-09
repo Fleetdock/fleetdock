@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 import { Key, Plus, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table";
 import { ErrorText, Field, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCan, useCreateToken, useRevokeToken, useTokens } from "@/lib/hooks";
+import { useCan, useCreateToken, useMe, useRevokeToken, useTokens } from "@/lib/hooks";
 import { useDataTable } from "@/lib/use-data-table";
 import type { ApiToken } from "@/lib/types";
 
@@ -50,6 +50,23 @@ export default function TokensPage() {
             header: "Prefix",
             className: "muted",
             render: (t) => <code>{t.prefix}…</code>,
+          },
+          {
+            id: "scopes",
+            header: "Scopes",
+            className: "muted text-sm",
+            render: (t) =>
+              t.scopes.length === 0 ? (
+                <span className="muted">all (account)</span>
+              ) : (
+                t.scopes.join(", ")
+              ),
+          },
+          {
+            id: "expires",
+            header: "Expires",
+            className: "muted",
+            render: (t) => (t.expires_at ? new Date(t.expires_at).toLocaleDateString() : "never"),
           },
           {
             id: "created",
@@ -130,15 +147,35 @@ function CreateTokenModal({
   onCreated: (secret: string) => void;
 }) {
   const create = useCreateToken();
+  const { data: me } = useMe();
   const [name, setName] = useState("");
+  const [scopes, setScopes] = useState<string[]>([]);
+  const [ttlHours, setTtlHours] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // A token can only carry scopes the user actually holds (at any scope).
+  const available = useMemo(() => {
+    const held = new Set((me?.grants ?? []).map((g) => g.permission));
+    return [...held].sort();
+  }, [me]);
+
+  function toggle(perm: string) {
+    setScopes((s) => (s.includes(perm) ? s.filter((p) => p !== perm) : [...s, perm]));
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    const ttl = ttlHours.trim() === "" ? undefined : Number(ttlHours);
+    if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
+      setError("Expiry must be a positive number of hours.");
+      return;
+    }
     try {
-      const res = await create.mutateAsync({ name });
+      const res = await create.mutateAsync({ name, scopes, ttl_hours: ttl });
       setName("");
+      setScopes([]);
+      setTtlHours("");
       onClose();
       onCreated(res.token);
     } catch (err) {
@@ -152,7 +189,33 @@ function CreateTokenModal({
         <Field label="Name">
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="ci-pipeline" required />
         </Field>
-        <p className="muted text-sm">The token inherits your account permissions.</p>
+        <Field label="Scopes (none selected = inherit all your permissions)">
+          <div
+            className="card"
+            style={{ padding: ".5rem .6rem", maxHeight: "11rem", overflowY: "auto", display: "grid", gap: ".3rem" }}
+          >
+            {available.length === 0 ? (
+              <span className="muted text-sm">No permissions available.</span>
+            ) : (
+              available.map((perm) => (
+                <label key={perm} className="flex items-center gap-2 text-sm" style={{ cursor: "pointer" }}>
+                  <input type="checkbox" checked={scopes.includes(perm)} onChange={() => toggle(perm)} />
+                  <code>{perm}</code>
+                </label>
+              ))
+            )}
+          </div>
+        </Field>
+        <Field label="Expires in (hours, optional)">
+          <input
+            className="input"
+            type="number"
+            min={1}
+            value={ttlHours}
+            onChange={(e) => setTtlHours(e.target.value)}
+            placeholder="never"
+          />
+        </Field>
         <ErrorText message={error ?? undefined} />
         <div className="flex items-center justify-end gap-2" style={{ marginTop: ".7rem" }}>
           <button type="button" className="btn" onClick={onClose}>Cancel</button>

@@ -20,6 +20,7 @@ import (
 	agentapp "github.com/TajBrains/db-manager/backend/internal/app/agent"
 	auditapp "github.com/TajBrains/db-manager/backend/internal/app/audit"
 	authapp "github.com/TajBrains/db-manager/backend/internal/app/auth"
+	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
 	backupapp "github.com/TajBrains/db-manager/backend/internal/app/backup"
 	databaseapp "github.com/TajBrains/db-manager/backend/internal/app/database"
 	dbadminapp "github.com/TajBrains/db-manager/backend/internal/app/dbadmin"
@@ -113,13 +114,19 @@ func run() error {
 	auditRepo := postgres.NewAuditRepository(pool)
 	notifRepo := postgres.NewNotificationRepository(pool)
 	statsRepo := postgres.NewStatsRepository(pool)
+	authzRepo := postgres.NewAuthzRepository(pool)
 
 	// Use cases (application services).
 	jwt := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
 	authSvc := authapp.NewService(userRepo, tokenRepo, jwt)
+	resolver := authzapp.NewResolver(authzRepo)
 	tokenSvc := tokenapp.NewService(tokenRepo)
 	serverSvc := serverapp.NewService(serverRepo)
-	secretsSvc := secretsapp.NewService(secretRepo, crypto.NewEncryptor(cfg.EncryptionKey, "master-1"))
+	encryptor, err := crypto.NewKeyring(cfg.EncryptionKeyID, cfg.EncryptionKeyring())
+	if err != nil {
+		return err
+	}
+	secretsSvc := secretsapp.NewService(secretRepo, encryptor)
 	opsSvc := operationapp.NewService(jobRepo, instanceRepo, databaseRepo, backupRepo, destRepo, secretsSvc)
 	instanceSvc := instanceapp.NewService(instanceRepo, databaseRepo, secretsSvc, opsSvc)
 	databaseSvc := databaseapp.NewService(databaseRepo, instanceRepo, opsSvc)
@@ -164,14 +171,14 @@ func run() error {
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Auth:          httpapi.NewAuthHandler(authSvc),
 		Servers:       httpapi.NewServerHandler(serverSvc),
-		Instances:     httpapi.NewInstanceHandler(instanceSvc),
-		Databases:     httpapi.NewDatabaseHandler(databaseSvc),
+		Instances:     httpapi.NewInstanceHandler(instanceSvc, resolver),
+		Databases:     httpapi.NewDatabaseHandler(databaseSvc, resolver),
 		Tokens:        httpapi.NewTokenHandler(tokenSvc),
 		Users:         httpapi.NewUserHandler(userSvc),
 		Operations:    httpapi.NewOperationHandler(opsSvc),
-		Backups:       httpapi.NewBackupHandler(backupSvc),
+		Backups:       httpapi.NewBackupHandler(backupSvc, resolver),
 		Schedules:     httpapi.NewScheduleHandler(scheduleSvc),
-		Moves:         httpapi.NewMoveHandler(moveSvc),
+		Moves:         httpapi.NewMoveHandler(moveSvc, resolver),
 		Destinations:  httpapi.NewDestinationHandler(destSvc),
 		DBAdmin:       httpapi.NewDBAdminHandler(dbadminSvc),
 		Agents:        httpapi.NewAgentHandler(agentSvc, opsSvc),
@@ -180,7 +187,9 @@ func run() error {
 		Audit:         httpapi.NewAuditHandler(auditSvc),
 		Notifications: httpapi.NewNotificationHandler(notifSvc),
 		Overview:      httpapi.NewOverviewHandler(summarySvc, agentSvc),
+		Docs:          httpapi.NewDocsHandler(),
 		Authn:         httpapi.NewAuthenticator(authSvc),
+		Resolver:      resolver,
 		AuditRecorder: auditSvc,
 		CORSOrigin:    cfg.CORSOrigin,
 		Ready:         pool.Ping,

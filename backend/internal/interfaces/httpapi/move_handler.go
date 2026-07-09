@@ -3,17 +3,25 @@ package httpapi
 import (
 	"net/http"
 
+	"github.com/google/uuid"
+
+	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
 	moveapp "github.com/TajBrains/db-manager/backend/internal/app/move"
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
+	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
 )
 
 // MoveHandler exposes the move-database action. A move has no resource of its
 // own: it is tracked through the backup and restore operations it creates.
 type MoveHandler struct {
-	svc *moveapp.Service
+	svc      *moveapp.Service
+	resolver *authzapp.Resolver
 }
 
 // NewMoveHandler builds the move handler.
-func NewMoveHandler(svc *moveapp.Service) *MoveHandler { return &MoveHandler{svc: svc} }
+func NewMoveHandler(svc *moveapp.Service, resolver *authzapp.Resolver) *MoveHandler {
+	return &MoveHandler{svc: svc, resolver: resolver}
+}
 
 type startMoveRequest struct {
 	SourceDatabaseID string `json:"source_database_id"`
@@ -28,6 +36,25 @@ type startMoveRequest struct {
 func (h *MoveHandler) Start(w http.ResponseWriter, r *http.Request) {
 	var req startMoveRequest
 	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	// A move reads the source database and writes into the target instance.
+	srcID, err := uuid.Parse(req.SourceDatabaseID)
+	if err != nil {
+		writeError(w, apperr.Invalid("source_database_id", "must be a valid UUID"))
+		return
+	}
+	if err := authorizeResource(r.Context(), h.resolver, "backup:write", authz.ResourceDatabase, srcID); err != nil {
+		writeError(w, err)
+		return
+	}
+	dstInst, err := uuid.Parse(req.TargetInstanceID)
+	if err != nil {
+		writeError(w, apperr.Invalid("target_instance_id", "must be a valid UUID"))
+		return
+	}
+	if err := authorizeResource(r.Context(), h.resolver, "database:write", authz.ResourceInstance, dstInst); err != nil {
 		writeError(w, err)
 		return
 	}

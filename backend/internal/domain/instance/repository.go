@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+
+	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
 )
 
 // ListFilter narrows a List query.
@@ -12,6 +14,8 @@ type ListFilter struct {
 	Kind     *Kind
 	Limit    int
 	Offset   int
+	// Scope, when non-nil, restricts results to the caller's readable scope.
+	Scope *authz.ReadSet
 }
 
 // Page is a slice of instances plus the total matching count.

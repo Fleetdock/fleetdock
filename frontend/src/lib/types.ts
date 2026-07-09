@@ -137,10 +137,32 @@ export interface ApiToken {
   created_at: string;
 }
 
+export type ScopeType = "global" | "server" | "database";
+
+export interface Grant {
+  permission: string;
+  scope_type: ScopeType;
+  scope_id?: string;
+}
+
 export interface Me {
   id: string;
   email: string;
   permissions: string[];
+  grants: Grant[];
+}
+
+export interface RoleGrant {
+  id: string;
+  role: string;
+  scope_type: ScopeType;
+  scope_id?: string;
+}
+
+export interface AddGrantInput {
+  role: string;
+  scope_type: ScopeType;
+  scope_id?: string;
 }
 
 export interface CreateServerInput {
@@ -237,6 +259,7 @@ export interface ImportDatabasesResult {
 export interface CreateTokenInput {
   name: string;
   scopes?: string[];
+  ttl_hours?: number;
 }
 
 export interface User {
