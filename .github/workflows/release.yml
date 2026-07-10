@@ -9,16 +9,20 @@ permissions:
   contents: write
   packages: write
 
-env:
-  REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/db-manager-backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/db-manager-frontend
-
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io
     steps:
       - uses: actions/checkout@v4
+
+      - name: Image names (GHCR requires lowercase)
+        id: images
+        run: |
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "backend=ghcr.io/${owner}/db-manager-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${owner}/db-manager-frontend" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
         with:
@@ -48,8 +52,8 @@ jobs:
           context: ./backend
           push: true
           tags: |
-            ${{ env.BACKEND_IMAGE }}:${{ steps.version.outputs.tag }}
-            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ steps.images.outputs.backend }}:${{ steps.version.outputs.tag }}
+            ${{ steps.images.outputs.backend }}:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ github.ref_name }}
@@ -62,8 +66,8 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8080' }}
           tags: |
-            ${{ env.FRONTEND_IMAGE }}:${{ steps.version.outputs.tag }}
-            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ steps.images.outputs.frontend }}:${{ steps.version.outputs.tag }}
+            ${{ steps.images.outputs.frontend }}:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ github.ref_name }}
