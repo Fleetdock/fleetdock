@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- [RELEASING.md](RELEASING.md) — tag, GHCR, and smoke-test runbook for maintainers
+- `docker-compose.ghcr.yml` — run published images without local builds
+- Dependabot for Go, npm, and GitHub Actions
+- CI uploads backend `coverage.out` artifact with summary in logs
+- [docs/screenshots/README.md](docs/screenshots/README.md) — how to capture real dashboard screenshots
+
+### Changed
+
+- [ROADMAP.md](ROADMAP.md) rewritten with post-v0.1.0 backlog (removed completed phase sections)
+- README: GHCR quick-start, removed AI-generated screenshot placeholder
+
 ## [0.1.0] - 2026-07-10
 
 Initial open-source release.

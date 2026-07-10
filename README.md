@@ -18,7 +18,7 @@ on their own servers and want a single dashboard for fleet health, backups,
 provisioning, and day-to-day admin — without handing database credentials to a
 SaaS vendor.
 
-![db-manager overview dashboard](docs/screenshots/dashboard-overview.png)
+> Screenshots: see [docs/screenshots/](docs/screenshots/). Replace placeholders with real captures from a running stack before major launch posts.
 
 | In 60 seconds | |
 |---------------|---|
@@ -35,11 +35,24 @@ db-manager/
     cmd/api          control-plane API
     cmd/agent        server agent (enrolls via install.sh, heartbeats, executes operations)
   frontend/          Next.js dashboard (React 19, TypeScript, TanStack Query)
-  docs/              OpenAPI specification
+  docs/              Deployment, operations, security guides
   docker-compose.yml
 ```
 
-## Quickstart (control plane)
+## Quickstart with published images (GHCR)
+
+Skip local builds by using release images ([RELEASING.md](RELEASING.md)):
+
+```bash
+cp .env.example .env
+./scripts/generate-secrets.sh >> .env
+export MDCP_RELEASE_TAG=v0.1.0
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
+Images: `ghcr.io/tajbrains/db-manager-backend` and `db-manager-frontend` (set package visibility to **Public** on GitHub if `docker pull` fails).
+
+## Quickstart (build from source)
 
 The Docker Compose stack includes a **local Postgres** container — no external
 database account required. Configuration lives in a git-ignored root `.env` file
@@ -311,6 +324,7 @@ setup, code style, and pull request guidelines.
 - [Security policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 - [Roadmap](ROADMAP.md)
+- [Releasing](RELEASING.md)
 
 ## Roadmap
 
