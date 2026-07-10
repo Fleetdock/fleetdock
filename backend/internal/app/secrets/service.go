@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	secretdom "github.com/TajBrains/db-manager/backend/internal/domain/secret"
-	"github.com/TajBrains/db-manager/backend/internal/platform/crypto"
+	secretdom "github.com/TajBrains/fleetdock/backend/internal/domain/secret"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/crypto"
 )
 
 // Service encrypts on write and decrypts on read.
@@ -70,7 +70,7 @@ type RotateResult struct {
 // Rotate re-wraps every secret's data key under the current primary key,
 // leaving payload ciphertext untouched. Secrets already at the primary key are
 // skipped, so a second run is a no-op. Rotation therefore requires the new key
-// to use a new key id (MDCP_ENCRYPTION_KEY_ID).
+// to use a new key id (FLEETDOCK_ENCRYPTION_KEY_ID).
 func (s *Service) Rotate(ctx context.Context) (RotateResult, error) {
 	secs, err := s.repo.ListAll(ctx)
 	if err != nil {

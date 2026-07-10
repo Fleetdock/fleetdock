@@ -9,9 +9,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
-	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // UserRepository is the Postgres adapter for userdom.Repository.

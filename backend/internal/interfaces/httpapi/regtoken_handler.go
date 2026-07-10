@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	agentapp "github.com/TajBrains/db-manager/backend/internal/app/agent"
-	regtokendom "github.com/TajBrains/db-manager/backend/internal/domain/regtoken"
+	agentapp "github.com/TajBrains/fleetdock/backend/internal/app/agent"
+	regtokendom "github.com/TajBrains/fleetdock/backend/internal/domain/regtoken"
 )
 
 // RegTokenHandler manages agent registration tokens (server connect flow).
@@ -75,7 +75,7 @@ func (h *RegTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		regTokenResponse: toRegTokenResponse(t),
 		Token:            raw,
 		InstallCommand: fmt.Sprintf(
-			"curl -sSL %s/install.sh | MDCP_URL=%s MDCP_TOKEN=%s sh",
+			"curl -sSL %s/install.sh | FLEETDOCK_URL=%s FLEETDOCK_TOKEN=%s sh",
 			h.publicURL, h.publicURL, raw),
 	}
 	writeJSON(w, http.StatusCreated, resp)

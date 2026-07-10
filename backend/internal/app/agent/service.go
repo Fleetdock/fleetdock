@@ -14,9 +14,9 @@ import (
 
 	"github.com/google/uuid"
 
-	regtokendom "github.com/TajBrains/db-manager/backend/internal/domain/regtoken"
-	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	regtokendom "github.com/TajBrains/fleetdock/backend/internal/domain/regtoken"
+	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // ServerRepo is the server persistence surface this service needs.
@@ -46,7 +46,7 @@ type CreateTokenInput struct {
 // CreateToken issues a single-use registration token; the raw value is
 // returned exactly once.
 func (s *Service) CreateToken(ctx context.Context, in CreateTokenInput) (*regtokendom.Token, string, error) {
-	raw, hash, err := newToken("mdcpr")
+	raw, hash, err := newToken("fleetr")
 	if err != nil {
 		return nil, "", apperr.Internal(err)
 	}
@@ -115,7 +115,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*serverdom.Se
 		return nil, "", err
 	}
 
-	raw, hash, err := newToken("mdcpa")
+	raw, hash, err := newToken("fleeta")
 	if err != nil {
 		return nil, "", apperr.Internal(err)
 	}

@@ -1,13 +1,15 @@
-// Command agent is the db-manager server agent. It enrolls with the control
+// Command agent is the Fleetdock server agent. It enrolls with the control
 // plane using a single-use registration token, then heartbeats and executes
 // operations (database create/drop, backups, restores) against local
 // database instances.
 //
 // Configuration (environment):
 //
-//	MDCP_URL        control plane base URL (required)
-//	MDCP_TOKEN      registration token (required until enrolled)
-//	MDCP_STATE_DIR  state directory (default /var/lib/db-manager-agent)
+//	FLEETDOCK_URL        control plane base URL (required)
+//	FLEETDOCK_TOKEN      registration token (required until enrolled)
+//	FLEETDOCK_STATE_DIR  state directory (default /var/lib/fleetdock-agent)
+//
+// Legacy MDCP_* names are accepted as aliases.
 package main
 
 import (
@@ -29,7 +31,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/TajBrains/db-manager/backend/internal/platform/executor"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/executor"
 )
 
 const version = "0.1.0"
@@ -55,13 +57,13 @@ func main() {
 }
 
 func run() error {
-	baseURL := strings.TrimSuffix(os.Getenv("MDCP_URL"), "/")
+	baseURL := strings.TrimSuffix(agentEnv("FLEETDOCK_URL", "MDCP_URL"), "/")
 	if baseURL == "" {
-		return errors.New("MDCP_URL is required")
+		return errors.New("FLEETDOCK_URL is required")
 	}
-	stateDir := os.Getenv("MDCP_STATE_DIR")
+	stateDir := agentEnv("FLEETDOCK_STATE_DIR", "MDCP_STATE_DIR")
 	if stateDir == "" {
-		stateDir = "/var/lib/db-manager-agent"
+		stateDir = "/var/lib/fleetdock-agent"
 	}
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return err
@@ -107,9 +109,9 @@ func run() error {
 // ---- enrollment ----
 
 func (a *agent) register(ctx context.Context) error {
-	token := os.Getenv("MDCP_TOKEN")
+	token := agentEnv("FLEETDOCK_TOKEN", "MDCP_TOKEN")
 	if token == "" {
-		return errors.New("MDCP_TOKEN is required for first-time registration")
+		return errors.New("FLEETDOCK_TOKEN is required for first-time registration")
 	}
 	hostname, _ := os.Hostname()
 	osName := detectOS()
@@ -353,4 +355,11 @@ func diskInfo(path string) (used, total int64, err error) {
 	total = int64(st.Blocks) * int64(st.Bsize)
 	free := int64(st.Bavail) * int64(st.Bsize)
 	return total - free, total, nil
+}
+
+func agentEnv(primary, legacy string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	return os.Getenv(legacy)
 }

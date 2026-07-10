@@ -1,4 +1,4 @@
-module github.com/TajBrains/db-manager/backend
+module github.com/TajBrains/fleetdock/backend
 
 go 1.25.0
 

@@ -2,7 +2,7 @@
 
 ## Cursor Cloud specific instructions
 
-Product: **db-manager**, a self-hosted database control plane. Three parts run
+Product: **Fleetdock**, a self-hosted database control plane. Three parts run
 locally for development: the Go API (`backend/cmd/api`, port **8080**, includes
 the in-process operations worker), the Next.js dashboard (`frontend`, port
 **3000**), and a **PostgreSQL 16** metadata database (port **5432**). Standard
@@ -21,20 +21,20 @@ caveats for this environment.
 - Postgres runs as a local system cluster, not via `docker compose`. It is
   **not auto-started** on boot — start it with `sudo pg_ctlcluster 16 main start`
   (check with `pg_lsclusters`).
-- Credentials/database (created during setup): user `dbmanager`, password
-  `dbmanager`, database `dbmanager`, on `localhost:5432`.
+- Credentials/database (created during setup): user `fleetdock`, password
+  `fleetdock`, database `fleetdock`, on `localhost:5432`.
 
 ### Environment files (git-ignored, must exist)
 - Root `.env` is required by `make dev` / `make backend-run`. Create it with
   `cp .env.example .env && ./scripts/generate-secrets.sh >> .env`, then change
-  `MDCP_DATABASE_URL` host from `@postgres:5432` (Docker service name) to
+  `FLEETDOCK_DATABASE_URL` host from `@postgres:5432` (Docker service name) to
   `@localhost:5432` for local, non-Docker dev.
 - `frontend/.env.local` = `cp frontend/.env.local.example frontend/.env.local`.
 
 ### Running
 - `make dev` loads root `.env` and runs API + Next.js with hot reload.
 - Dashboard: http://localhost:3000 — log in as `admin@example.com` with the
-  `MDCP_ADMIN_PASSWORD` value from `.env` (the API bootstraps this admin on
+  `FLEETDOCK_ADMIN_PASSWORD` value from `.env` (the API bootstraps this admin on
   first boot when the users table is empty).
 - `/healthz` is an unauthenticated liveness check; `/readyz` is an unauthenticated
   readiness check (metadata DB ping).

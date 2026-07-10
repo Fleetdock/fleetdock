@@ -14,7 +14,7 @@ Security fixes are applied to the latest release on the `main` branch.
 
 Instead, use one of the following channels:
 
-1. **GitHub Security Advisories** (preferred): open a [private vulnerability report](https://github.com/TajBrains/db-manager/security/advisories/new) on this repository.
+1. **GitHub Security Advisories** (preferred): open a [private vulnerability report](https://github.com/TajBrains/fleetdock/security/advisories/new) on this repository.
 2. **Email**: contact the maintainers at `security@tajbrains.com` with a detailed description.
 
 Include as much of the following as you can:
@@ -39,14 +39,14 @@ We will acknowledge receipt, keep you informed of progress, and credit reporters
 
 In scope:
 
-- The db-manager API (`backend/cmd/api`)
+- The Fleetdock API (`backend/cmd/api`)
 - The server agent (`backend/cmd/agent`)
 - The web dashboard (`frontend/`)
 - Official install script served at `/install.sh`
 
 Out of scope:
 
-- Vulnerabilities in third-party database engines (MariaDB, MySQL, PostgreSQL) managed by db-manager
+- Vulnerabilities in third-party database engines (MariaDB, MySQL, PostgreSQL) managed by Fleetdock
 - Misconfigurations on user-operated infrastructure (weak passwords, exposed ports, missing TLS)
 - Social engineering attacks against operators
 

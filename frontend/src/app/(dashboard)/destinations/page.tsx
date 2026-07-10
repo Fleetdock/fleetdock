@@ -385,7 +385,7 @@ function DestinationModal({
             className="input"
             value={prefix}
             onChange={(e) => setPrefix(e.target.value)}
-            placeholder="db-manager"
+            placeholder="fleetdock"
           />
         </Field>
         <div

@@ -12,10 +12,10 @@ import (
 
 	"github.com/google/uuid"
 
-	authapp "github.com/TajBrains/db-manager/backend/internal/app/auth"
-	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
-	"github.com/TajBrains/db-manager/backend/internal/openapi"
-	"github.com/TajBrains/db-manager/backend/internal/platform/auth"
+	authapp "github.com/TajBrains/fleetdock/backend/internal/app/auth"
+	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
+	"github.com/TajBrains/fleetdock/backend/internal/openapi"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/auth"
 )
 
 // newSmokeHandler wires public routes and auth login for HTTP smoke tests.
@@ -123,7 +123,7 @@ func TestSmoke_InstallScript(t *testing.T) {
 	if !strings.Contains(body, "https://cp.example.com") {
 		t.Fatalf("install script missing public URL")
 	}
-	if !strings.Contains(body, "MDCP_TOKEN") {
+	if !strings.Contains(body, "FLEETDOCK_TOKEN") {
 		t.Fatal("install script missing token env var")
 	}
 }

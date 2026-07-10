@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
-	regtokendom "github.com/TajBrains/db-manager/backend/internal/domain/regtoken"
-	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	regtokendom "github.com/TajBrains/fleetdock/backend/internal/domain/regtoken"
+	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 type fakeRegTokenRepo struct {
@@ -138,8 +138,8 @@ func TestCreateToken_Prefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(raw, "mdcpr_") {
-		t.Fatalf("expected mdcpr_ prefix, got %q", raw)
+	if !strings.HasPrefix(raw, "fleetr_") {
+		t.Fatalf("expected fleetr_ prefix, got %q", raw)
 	}
 }
 
@@ -172,8 +172,8 @@ func TestRegister_Success(t *testing.T) {
 	if srv == nil || srv.Hostname != "db1.internal" {
 		t.Fatal("expected enrolled server")
 	}
-	if !strings.HasPrefix(agentTok, "mdcpa_") {
-		t.Fatalf("expected mdcpa_ agent token, got %q", agentTok)
+	if !strings.HasPrefix(agentTok, "fleeta_") {
+		t.Fatalf("expected fleeta_ agent token, got %q", agentTok)
 	}
 }
 

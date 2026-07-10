@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	userapp "github.com/TajBrains/db-manager/backend/internal/app/user"
-	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	userapp "github.com/TajBrains/fleetdock/backend/internal/app/user"
+	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // UserHandler exposes user administration and self-service profile endpoints.

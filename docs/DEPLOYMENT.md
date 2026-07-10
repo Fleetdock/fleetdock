@@ -1,6 +1,6 @@
 # Production deployment
 
-This guide covers deploying db-manager on a single host with Docker Compose,
+This guide covers deploying Fleetdock on a single host with Docker Compose,
 TLS termination, and the environment variables you must set for production.
 
 For day-2 operations (backups, upgrades, key rotation), see [OPERATIONS.md](OPERATIONS.md).
@@ -13,7 +13,7 @@ For a security checklist before exposing the control plane, see
 Browser ──HTTPS──► reverse proxy (Caddy / nginx / Traefik)
                         ├── /        → frontend :3000
                         └── /api/*   → backend  :8080   (or same-origin /)
-Managed servers ──HTTPS──► MDCP_PUBLIC_URL (install.sh + agent API)
+Managed servers ──HTTPS──► FLEETDOCK_PUBLIC_URL (install.sh + agent API)
 ```
 
 The control plane stores metadata (users, servers, credentials, jobs) in
@@ -33,8 +33,8 @@ one-time registration token and polls for operations.
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/TajBrains/db-manager.git
-cd db-manager
+git clone https://github.com/TajBrains/fleetdock.git
+cd Fleetdock
 cp .env.example .env
 ./scripts/generate-secrets.sh >> .env
 ```
@@ -43,14 +43,14 @@ Edit `.env` for production:
 
 | Variable | Example | Notes |
 |----------|---------|-------|
-| `MDCP_ENV` | `production` | Refuses insecure default secrets |
-| `MDCP_DATABASE_URL` | `postgres://user:pass@db.example.com:5432/dbmanager?sslmode=require` | Use managed Postgres in production |
-| `MDCP_JWT_SECRET` | *(from generate-secrets)* | Strong random string |
-| `MDCP_ENCRYPTION_KEY` | *(from generate-secrets)* | Encrypts instance/S3 credentials at rest |
-| `MDCP_ADMIN_EMAIL` | `admin@yourcompany.com` | Bootstrap admin (first boot only) |
-| `MDCP_ADMIN_PASSWORD` | *(strong password)* | Change after first login |
-| `MDCP_PUBLIC_URL` | `https://dbm.example.com` | URL **servers** use to reach the API |
-| `MDCP_CORS_ORIGIN` | `https://dbm.example.com` | URL **browsers** load the dashboard from |
+| `FLEETDOCK_ENV` | `production` | Refuses insecure default secrets |
+| `FLEETDOCK_DATABASE_URL` | `postgres://user:pass@db.example.com:5432/fleetdock?sslmode=require` | Use managed Postgres in production |
+| `FLEETDOCK_JWT_SECRET` | *(from generate-secrets)* | Strong random string |
+| `FLEETDOCK_ENCRYPTION_KEY` | *(from generate-secrets)* | Encrypts instance/S3 credentials at rest |
+| `FLEETDOCK_ADMIN_EMAIL` | `admin@yourcompany.com` | Bootstrap admin (first boot only) |
+| `FLEETDOCK_ADMIN_PASSWORD` | *(strong password)* | Change after first login |
+| `FLEETDOCK_PUBLIC_URL` | `https://dbm.example.com` | URL **servers** use to reach the API |
+| `FLEETDOCK_CORS_ORIGIN` | `https://dbm.example.com` | URL **browsers** load the dashboard from |
 | `NEXT_PUBLIC_API_URL` | `https://dbm.example.com` | Baked into the frontend build |
 
 **Important:** `NEXT_PUBLIC_API_URL` is embedded at **image build time**. Rebuild
@@ -58,16 +58,16 @@ the frontend image whenever this value changes.
 
 ### 2. Use the production Compose overlay
 
-`docker-compose.prod.yml` sets `MDCP_ENV=production` and expects you to supply
+`docker-compose.prod.yml` sets `FLEETDOCK_ENV=production` and expects you to supply
 secrets via `.env`. It does **not** start a local Postgres container — point
-`MDCP_DATABASE_URL` at your managed database.
+`FLEETDOCK_DATABASE_URL` at your managed database.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 ```
 
 For a quick lab deploy with the bundled Postgres container, omit the prod
-overlay and only set `MDCP_ENV=production` plus strong secrets in `.env`.
+overlay and only set `FLEETDOCK_ENV=production` plus strong secrets in `.env`.
 
 ### 3. Verify
 
@@ -84,8 +84,8 @@ on the **Profile** page.
 After a release is tagged (`v0.1.0`, etc.), images are published to GHCR:
 
 ```text
-ghcr.io/tajbrains/db-manager-backend:<tag>
-ghcr.io/tajbrains/db-manager-frontend:<tag>
+ghcr.io/tajbrains/fleetdock-backend:<tag>
+ghcr.io/tajbrains/fleetdock-frontend:<tag>
 ```
 
 Example `docker-compose.override.yml` snippet:
@@ -93,17 +93,17 @@ Example `docker-compose.override.yml` snippet:
 ```yaml
 services:
   backend:
-    image: ghcr.io/tajbrains/db-manager-backend:v0.1.0
+    image: ghcr.io/tajbrains/fleetdock-backend:v0.1.0
     build: !reset null
   frontend:
-    image: ghcr.io/tajbrains/db-manager-frontend:v0.1.0
+    image: ghcr.io/tajbrains/fleetdock-frontend:v0.1.0
     build: !reset null
 ```
 
 Or use the provided overlay:
 
 ```bash
-export MDCP_RELEASE_TAG=v0.1.0
+export FLEETDOCK_RELEASE_TAG=v0.1.0
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
@@ -154,7 +154,7 @@ Run Caddy on the host or as a fourth Compose service on ports 80/443.
 
 ### Same-origin vs split origins
 
-| Layout | `MDCP_CORS_ORIGIN` | `NEXT_PUBLIC_API_URL` | `MDCP_PUBLIC_URL` |
+| Layout | `FLEETDOCK_CORS_ORIGIN` | `NEXT_PUBLIC_API_URL` | `FLEETDOCK_PUBLIC_URL` |
 |--------|--------------------|-----------------------|---------------------|
 | Same host, path routing | `https://dbm.example.com` | `https://dbm.example.com` | `https://dbm.example.com` |
 | API on subdomain | `https://app.example.com` | `https://api.example.com` | `https://api.example.com` |
@@ -173,7 +173,7 @@ Neon, RDS, Cloud SQL, or any PostgreSQL 14+ instance works. Requirements:
 Example connection string:
 
 ```text
-postgres://dbmanager:SECRET@ep-xxx.us-east-1.aws.neon.tech/dbmanager?sslmode=require
+postgres://fleetdock:SECRET@ep-xxx.us-east-1.aws.neon.tech/fleetdock?sslmode=require
 ```
 
 ## Connecting servers
@@ -183,16 +183,16 @@ each database host:
 
 ```bash
 curl -sSL https://dbm.example.com/install.sh | \
-  MDCP_URL=https://dbm.example.com MDCP_TOKEN=mdcpr_... sh
+  FLEETDOCK_URL=https://dbm.example.com FLEETDOCK_TOKEN=fleetr_... sh
 ```
 
-`MDCP_PUBLIC_URL` must match the URL servers can reach (no localhost, no
+`FLEETDOCK_PUBLIC_URL` must match the URL servers can reach (no localhost, no
 internal-only DNS names unless every server is on that network).
 
 ## SMTP (optional)
 
-Set `MDCP_SMTP_*` variables to enable email notification channels. When
-`MDCP_SMTP_HOST` is empty, email delivery is disabled; Slack and webhook
+Set `FLEETDOCK_SMTP_*` variables to enable email notification channels. When
+`FLEETDOCK_SMTP_HOST` is empty, email delivery is disabled; Slack and webhook
 channels still work.
 
 ## Resource sizing
@@ -207,10 +207,10 @@ channels still work.
 
 | Symptom | Likely cause |
 |---------|----------------|
-| API exits on start | `MDCP_ENV=production` with default secrets — run `generate-secrets.sh` |
-| CORS errors in browser | `MDCP_CORS_ORIGIN` does not match the dashboard URL |
-| Agent never appears | `MDCP_PUBLIC_URL` unreachable from the server; firewall blocks 443 |
+| API exits on start | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh` |
+| CORS errors in browser | `FLEETDOCK_CORS_ORIGIN` does not match the dashboard URL |
+| Agent never appears | `FLEETDOCK_PUBLIC_URL` unreachable from the server; firewall blocks 443 |
 | Frontend calls wrong API | Rebuild frontend after changing `NEXT_PUBLIC_API_URL` |
-| `/readyz` returns 503 | Metadata database down or `MDCP_DATABASE_URL` wrong |
+| `/readyz` returns 503 | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong |
 
 Interactive API docs are available at `https://<your-host>/docs` after deploy.

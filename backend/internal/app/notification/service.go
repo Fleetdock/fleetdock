@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	notifdom "github.com/TajBrains/db-manager/backend/internal/domain/notification"
-	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
-	"github.com/TajBrains/db-manager/backend/internal/platform/notify"
+	notifdom "github.com/TajBrains/fleetdock/backend/internal/domain/notification"
+	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/notify"
 )
 
 // MetricsSource provides the latest server health for alert evaluation.
@@ -124,8 +124,8 @@ func (s *Service) TestChannel(ctx context.Context, id string) error {
 		return err
 	}
 	err = s.sender.Deliver(ctx, notify.Channel{Type: string(c.Type), Config: c.Config}, notify.Message{
-		Title:    "db-manager test notification",
-		Body:     "This is a test message from db-manager. If you can read this, the channel works.",
+		Title:    "Fleetdock test notification",
+		Body:     "This is a test message from Fleetdock. If you can read this, the channel works.",
 		Severity: "info",
 		Event:    "test",
 	})

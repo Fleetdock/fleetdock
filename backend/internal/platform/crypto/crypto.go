@@ -2,7 +2,7 @@
 //
 // A random 256-bit data key encrypts each payload with AES-GCM; the data key
 // itself is wrapped (AES-GCM) by a master key derived from the
-// MDCP_ENCRYPTION_KEY environment value. Postgres stores only ciphertext,
+// FLEETDOCK_ENCRYPTION_KEY environment value. Postgres stores only ciphertext,
 // the wrapped data key, nonces and a key id — never plaintext.
 package crypto
 

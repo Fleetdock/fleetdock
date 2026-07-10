@@ -7,10 +7,10 @@ import (
 
 	"github.com/google/uuid"
 
-	authapp "github.com/TajBrains/db-manager/backend/internal/app/auth"
-	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	authapp "github.com/TajBrains/fleetdock/backend/internal/app/auth"
+	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // Authenticator resolves the request principal from the Authorization header

@@ -7,7 +7,7 @@ import (
 )
 
 // TokenPrefix identifies API tokens issued by this platform.
-const TokenPrefix = "mdcp_"
+const TokenPrefix = "fleetd_"
 
 // GenerateToken creates a new random API token. It returns the full secret
 // (shown to the user exactly once), a non-secret display prefix, and the

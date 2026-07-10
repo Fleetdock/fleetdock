@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/TajBrains/db-manager/backend/internal/openapi"
+	"github.com/TajBrains/fleetdock/backend/internal/openapi"
 )
 
 // DocsHandler serves the OpenAPI spec and a self-contained Redoc docs page.
@@ -24,7 +24,7 @@ const redocPage = `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8"/>
-    <title>db-manager API</title>
+    <title>Fleetdock API</title>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <style>body { margin: 0; padding: 0; }</style>
   </head>

@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "db-manager",
+  title: "Fleetdock",
   description: "MariaDB control plane",
 };
 

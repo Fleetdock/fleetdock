@@ -88,7 +88,7 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec) (*
 		"--env-file", envFile,
 		"-v", spec.Volume + ":" + ec.dataPath,
 		"-p", strconv.Itoa(spec.Port) + ":" + strconv.Itoa(ec.internalPort),
-		"--label", "app=db-manager",
+		"--label", "app=fleetdock",
 		image,
 	}
 	out, err := runDocker(ctx, args...)

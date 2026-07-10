@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	jobdom "github.com/TajBrains/fleetdock/backend/internal/domain/job"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // JobRepository is the Postgres adapter for jobdom.Repository.

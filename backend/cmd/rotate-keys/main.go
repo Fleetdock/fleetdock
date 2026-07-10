@@ -1,17 +1,17 @@
 // Command rotate-keys re-wraps every stored secret's data key under the current
-// primary encryption key, so MDCP_ENCRYPTION_KEY can be rotated without losing
+// primary encryption key, so FLEETDOCK_ENCRYPTION_KEY can be rotated without losing
 // data. Only the wrapped data key is re-encrypted — payload ciphertext is never
 // touched or exposed.
 //
 // Usage (during a maintenance window):
 //
 //	# 1. keep the old key readable, promote a NEW key with a NEW id
-//	export MDCP_ENCRYPTION_KEYS_OLD="master-1=<old-secret>"
-//	export MDCP_ENCRYPTION_KEY="<new-secret>"
-//	export MDCP_ENCRYPTION_KEY_ID="master-2"
+//	export FLEETDOCK_ENCRYPTION_KEYS_OLD="master-1=<old-secret>"
+//	export FLEETDOCK_ENCRYPTION_KEY="<new-secret>"
+//	export FLEETDOCK_ENCRYPTION_KEY_ID="master-2"
 //	# 2. run the rotation
 //	go run ./cmd/rotate-keys   # or: make rotate-keys
-//	# 3. once it reports 0 remaining, drop MDCP_ENCRYPTION_KEYS_OLD
+//	# 3. once it reports 0 remaining, drop FLEETDOCK_ENCRYPTION_KEYS_OLD
 //
 // Rotation requires a NEW key id: secrets already stamped with the primary id
 // are skipped, so reusing the same id with a different secret would silently
@@ -24,10 +24,10 @@ import (
 	"os"
 	"time"
 
-	secretsapp "github.com/TajBrains/db-manager/backend/internal/app/secrets"
-	"github.com/TajBrains/db-manager/backend/internal/config"
-	"github.com/TajBrains/db-manager/backend/internal/infra/postgres"
-	"github.com/TajBrains/db-manager/backend/internal/platform/crypto"
+	secretsapp "github.com/TajBrains/fleetdock/backend/internal/app/secrets"
+	"github.com/TajBrains/fleetdock/backend/internal/config"
+	"github.com/TajBrains/fleetdock/backend/internal/infra/postgres"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/crypto"
 )
 
 func main() {

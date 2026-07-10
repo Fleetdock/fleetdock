@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	scheduleapp "github.com/TajBrains/db-manager/backend/internal/app/schedule"
-	scheduledom "github.com/TajBrains/db-manager/backend/internal/domain/schedule"
+	scheduleapp "github.com/TajBrains/fleetdock/backend/internal/app/schedule"
+	scheduledom "github.com/TajBrains/fleetdock/backend/internal/domain/schedule"
 )
 
 // ScheduleHandler exposes backup-schedule endpoints.

@@ -1,4 +1,4 @@
-# Contributing to db-manager
+# Contributing to Fleetdock
 
 Thank you for your interest in contributing! This document covers how to set up a development environment, run tests, and submit changes.
 
@@ -7,8 +7,8 @@ Thank you for your interest in contributing! This document covers how to set up 
 1. Fork the repository on GitHub.
 2. Clone your fork and create a feature branch:
    ```bash
-   git clone git@github.com:YOUR_USER/db-manager.git
-   cd db-manager
+   git clone git@github.com:YOUR_USER/Fleetdock.git
+   cd Fleetdock
    git checkout -b my-feature
    ```
 3. Copy the environment template and generate secrets:
@@ -43,7 +43,7 @@ docs/        Deployment, operations, and security guides
 scripts/     Helper scripts (secret generation, etc.)
 ```
 
-Configuration uses the `MDCP_*` environment prefix (MariaDB Control Plane — historical name retained for compatibility).
+Configuration uses the `MDCP_*` environment prefix (Fleetdock control plane — historical name retained for compatibility).
 
 ## Code Style
 

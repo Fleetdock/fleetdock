@@ -4,7 +4,7 @@ package summaryapp
 import (
 	"context"
 
-	statsdom "github.com/TajBrains/db-manager/backend/internal/domain/stats"
+	statsdom "github.com/TajBrains/fleetdock/backend/internal/domain/stats"
 )
 
 // Service returns aggregate control-plane statistics.

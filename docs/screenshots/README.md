@@ -13,7 +13,7 @@ before major announcements.
 cp .env.example .env
 ./scripts/generate-secrets.sh >> .env
 docker compose up --build -d
-# Dashboard: http://localhost:3000 — log in with MDCP_ADMIN_* from .env
+# Dashboard: http://localhost:3000 — log in with FLEETDOCK_ADMIN_* from .env
 ```
 
 Suggested files:

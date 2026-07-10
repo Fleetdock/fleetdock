@@ -6,11 +6,11 @@ import (
 
 	"github.com/google/uuid"
 
-	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
-	instanceapp "github.com/TajBrains/db-manager/backend/internal/app/instance"
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
-	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
+	instanceapp "github.com/TajBrains/fleetdock/backend/internal/app/instance"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	instancedom "github.com/TajBrains/fleetdock/backend/internal/domain/instance"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // InstanceHandler exposes instance endpoints.

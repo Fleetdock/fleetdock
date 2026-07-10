@@ -1,4 +1,4 @@
-# Example Caddy v2 config for db-manager.
+# Example Caddy v2 config for Fleetdock.
 # Copy to your host and adjust the domain name.
 #
 # Assumes docker compose service names `frontend` and `backend` on a shared network.

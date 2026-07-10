@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	jobdom "github.com/TajBrains/fleetdock/backend/internal/domain/job"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 type fakeJobRepo struct {

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Rebrand to Fleetdock** — product rename from db-manager; website [fleetdock.dev](https://fleetdock.dev)
+- Environment prefix `FLEETDOCK_*` (legacy `MDCP_*` aliases still accepted)
+- Agent binary/service paths, API token prefixes (`fleetd_`, `fleetr_`, `fleeta_`)
+- Go module `github.com/TajBrains/fleetdock/backend`
+- GHCR images `fleetdock-backend` / `fleetdock-frontend`
+
+See [docs/MIGRATION.md](docs/MIGRATION.md) for upgrade notes from db-manager.
+
 ### Added
 
 - [RELEASING.md](RELEASING.md) — tag, GHCR, and smoke-test runbook for maintainers
@@ -52,5 +62,5 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/TajBrains/db-manager/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/TajBrains/db-manager/releases/tag/v0.1.0
+[Unreleased]: https://github.com/TajBrains/fleetdock/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/TajBrains/fleetdock/releases/tag/v0.1.0

@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
 )
 
 // Credentials bundles a user with its stored password hash for authentication.

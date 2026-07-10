@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	tokenapp "github.com/TajBrains/db-manager/backend/internal/app/token"
-	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	tokenapp "github.com/TajBrains/fleetdock/backend/internal/app/token"
+	tokendom "github.com/TajBrains/fleetdock/backend/internal/domain/token"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // TokenHandler exposes API-token endpoints scoped to the caller.

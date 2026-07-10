@@ -56,9 +56,9 @@ func TestValidateSecrets_DevelopmentWarnsOnDefaults(t *testing.T) {
 }
 
 func TestLoad_RequiresDatabaseURL(t *testing.T) {
-	t.Setenv("MDCP_DATABASE_URL", "")
+	t.Setenv("FLEETDOCK_DATABASE_URL", "")
 	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "MDCP_DATABASE_URL") {
+	if err == nil || !strings.Contains(err.Error(), "FLEETDOCK_DATABASE_URL") {
 		t.Fatalf("expected missing database URL error, got: %v", err)
 	}
 }

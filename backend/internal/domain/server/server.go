@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // Status is the lifecycle state of a server.
