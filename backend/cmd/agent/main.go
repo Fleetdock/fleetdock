@@ -8,8 +8,6 @@
 //	FLEETDOCK_URL        control plane base URL (required)
 //	FLEETDOCK_TOKEN      registration token (required until enrolled)
 //	FLEETDOCK_STATE_DIR  state directory (default /var/lib/fleetdock-agent)
-//
-// Legacy MDCP_* names are accepted as aliases.
 package main
 
 import (
@@ -57,11 +55,11 @@ func main() {
 }
 
 func run() error {
-	baseURL := strings.TrimSuffix(agentEnv("FLEETDOCK_URL", "MDCP_URL"), "/")
+	baseURL := strings.TrimSuffix(os.Getenv("FLEETDOCK_URL"), "/")
 	if baseURL == "" {
 		return errors.New("FLEETDOCK_URL is required")
 	}
-	stateDir := agentEnv("FLEETDOCK_STATE_DIR", "MDCP_STATE_DIR")
+	stateDir := os.Getenv("FLEETDOCK_STATE_DIR")
 	if stateDir == "" {
 		stateDir = "/var/lib/fleetdock-agent"
 	}
@@ -109,7 +107,7 @@ func run() error {
 // ---- enrollment ----
 
 func (a *agent) register(ctx context.Context) error {
-	token := agentEnv("FLEETDOCK_TOKEN", "MDCP_TOKEN")
+	token := os.Getenv("FLEETDOCK_TOKEN")
 	if token == "" {
 		return errors.New("FLEETDOCK_TOKEN is required for first-time registration")
 	}
@@ -355,11 +353,4 @@ func diskInfo(path string) (used, total int64, err error) {
 	total = int64(st.Blocks) * int64(st.Bsize)
 	free := int64(st.Bavail) * int64(st.Bsize)
 	return total - free, total, nil
-}
-
-func agentEnv(primary, legacy string) string {
-	if v := os.Getenv(primary); v != "" {
-		return v
-	}
-	return os.Getenv(legacy)
 }

@@ -1,5 +1,5 @@
 // Command migrate applies the embedded database migrations and exits.
-// It reads FLEETDOCK_DATABASE_URL (MDCP_DATABASE_URL is a deprecated alias).
+// It reads FLEETDOCK_DATABASE_URL from the environment.
 package main
 
 import (

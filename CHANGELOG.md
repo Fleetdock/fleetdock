@@ -9,13 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Rebrand to Fleetdock** — product rename from db-manager; website [fleetdock.dev](https://fleetdock.dev)
-- Environment prefix `FLEETDOCK_*` (legacy `MDCP_*` aliases still accepted)
+- **Rebrand to Fleetdock** — product rename; website [fleetdock.dev](https://fleetdock.dev)
+- Environment prefix `FLEETDOCK_*`
 - Agent binary/service paths, API token prefixes (`fleetd_`, `fleetr_`, `fleeta_`)
 - Go module `github.com/TajBrains/fleetdock/backend`
 - GHCR images `fleetdock-backend` / `fleetdock-frontend`
-
-See [docs/MIGRATION.md](docs/MIGRATION.md) for upgrade notes from db-manager.
 
 ### Added
 

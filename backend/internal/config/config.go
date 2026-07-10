@@ -1,11 +1,11 @@
 // Package config loads runtime configuration from the environment.
 //
-// Variables use the FLEETDOCK_* prefix. The legacy MDCP_* names are still read
-// as aliases for backward compatibility during upgrades.
+// All variables use the FLEETDOCK_* prefix. FLEETDOCK_DATABASE_URL is required.
 package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -122,41 +122,63 @@ func parseKeyList(raw string) map[string]string {
 
 // Load reads configuration from the environment and validates it.
 func Load() (Config, error) {
-	keysOld := env("FLEETDOCK_ENCRYPTION_KEYS_OLD", "MDCP_ENCRYPTION_KEYS_OLD", "")
 	cfg := Config{
-		HTTPAddr:        env("FLEETDOCK_HTTP_ADDR", "MDCP_HTTP_ADDR", ":8080"),
-		DatabaseURL:     envRequired("FLEETDOCK_DATABASE_URL", "MDCP_DATABASE_URL"),
-		ShutdownTimeout: envDuration("FLEETDOCK_SHUTDOWN_TIMEOUT", "MDCP_SHUTDOWN_TIMEOUT", 15*time.Second),
-		RequestTimeout:  envDuration("FLEETDOCK_REQUEST_TIMEOUT", "MDCP_REQUEST_TIMEOUT", 30*time.Second),
-		RunMigrations:   envBool("FLEETDOCK_RUN_MIGRATIONS", "MDCP_RUN_MIGRATIONS", true),
+		HTTPAddr:        getenv("FLEETDOCK_HTTP_ADDR", ":8080"),
+		DatabaseURL:     os.Getenv("FLEETDOCK_DATABASE_URL"),
+		ShutdownTimeout: getenvDuration("FLEETDOCK_SHUTDOWN_TIMEOUT", 15*time.Second),
+		RequestTimeout:  getenvDuration("FLEETDOCK_REQUEST_TIMEOUT", 30*time.Second),
+		RunMigrations:   getenvBool("FLEETDOCK_RUN_MIGRATIONS", true),
 
-		JWTSecret: env("FLEETDOCK_JWT_SECRET", "MDCP_JWT_SECRET", "dev-insecure-change-me"),
-		JWTTTL:    envDuration("FLEETDOCK_JWT_TTL", "MDCP_JWT_TTL", 24*time.Hour),
+		JWTSecret: getenv("FLEETDOCK_JWT_SECRET", "dev-insecure-change-me"),
+		JWTTTL:    getenvDuration("FLEETDOCK_JWT_TTL", 24*time.Hour),
 
-		AdminEmail:    env("FLEETDOCK_ADMIN_EMAIL", "MDCP_ADMIN_EMAIL", "admin@example.com"),
-		AdminPassword: env("FLEETDOCK_ADMIN_PASSWORD", "MDCP_ADMIN_PASSWORD", "admin12345"),
+		AdminEmail:    getenv("FLEETDOCK_ADMIN_EMAIL", "admin@example.com"),
+		AdminPassword: getenv("FLEETDOCK_ADMIN_PASSWORD", "admin12345"),
 
-		CORSOrigin: env("FLEETDOCK_CORS_ORIGIN", "MDCP_CORS_ORIGIN", "http://localhost:3000"),
+		CORSOrigin: getenv("FLEETDOCK_CORS_ORIGIN", "http://localhost:3000"),
 
-		EncryptionKey:     env("FLEETDOCK_ENCRYPTION_KEY", "MDCP_ENCRYPTION_KEY", "dev-insecure-encryption-key"),
-		EncryptionKeyID:   env("FLEETDOCK_ENCRYPTION_KEY_ID", "MDCP_ENCRYPTION_KEY_ID", "master-1"),
-		EncryptionKeysOld: parseKeyList(keysOld),
-		PublicURL:         env("FLEETDOCK_PUBLIC_URL", "MDCP_PUBLIC_URL", "http://localhost:8080"),
-		AgentBinDir:       env("FLEETDOCK_AGENT_BIN_DIR", "MDCP_AGENT_BIN_DIR", "/opt/fleetdock/agents"),
-		WorkerEnabled:     envBool("FLEETDOCK_WORKER_ENABLED", "MDCP_WORKER_ENABLED", true),
-		HeartbeatTimeout:  envDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", "MDCP_HEARTBEAT_TIMEOUT", 2*time.Minute),
-		MetricsRetention:  envDuration("FLEETDOCK_METRICS_RETENTION", "MDCP_METRICS_RETENTION", 7*24*time.Hour),
+		EncryptionKey:     getenv("FLEETDOCK_ENCRYPTION_KEY", "dev-insecure-encryption-key"),
+		EncryptionKeyID:   getenv("FLEETDOCK_ENCRYPTION_KEY_ID", "master-1"),
+		EncryptionKeysOld: parseKeyList(os.Getenv("FLEETDOCK_ENCRYPTION_KEYS_OLD")),
+		PublicURL:         getenv("FLEETDOCK_PUBLIC_URL", "http://localhost:8080"),
+		AgentBinDir:       getenv("FLEETDOCK_AGENT_BIN_DIR", "/opt/fleetdock/agents"),
+		WorkerEnabled:     getenvBool("FLEETDOCK_WORKER_ENABLED", true),
+		HeartbeatTimeout:  getenvDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", 2*time.Minute),
+		MetricsRetention:  getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
 
-		SMTPHost:     env("FLEETDOCK_SMTP_HOST", "MDCP_SMTP_HOST", ""),
-		SMTPPort:     env("FLEETDOCK_SMTP_PORT", "MDCP_SMTP_PORT", "587"),
-		SMTPUsername: env("FLEETDOCK_SMTP_USERNAME", "MDCP_SMTP_USERNAME", ""),
-		SMTPPassword: env("FLEETDOCK_SMTP_PASSWORD", "MDCP_SMTP_PASSWORD", ""),
-		SMTPFrom:     env("FLEETDOCK_SMTP_FROM", "MDCP_SMTP_FROM", "fleetdock@localhost"),
+		SMTPHost:     os.Getenv("FLEETDOCK_SMTP_HOST"),
+		SMTPPort:     getenv("FLEETDOCK_SMTP_PORT", "587"),
+		SMTPUsername: os.Getenv("FLEETDOCK_SMTP_USERNAME"),
+		SMTPPassword: os.Getenv("FLEETDOCK_SMTP_PASSWORD"),
+		SMTPFrom:     getenv("FLEETDOCK_SMTP_FROM", "fleetdock@localhost"),
 
-		Env: env("FLEETDOCK_ENV", "MDCP_ENV", "development"),
+		Env: getenv("FLEETDOCK_ENV", "development"),
 	}
 	if cfg.DatabaseURL == "" {
-		return Config{}, fmt.Errorf("config: FLEETDOCK_DATABASE_URL is required (MDCP_DATABASE_URL is a deprecated alias)")
+		return Config{}, fmt.Errorf("config: FLEETDOCK_DATABASE_URL is required")
 	}
 	return cfg, nil
+}
+
+func getenv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func getenvDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
+}
+
+func getenvBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		return v == "1" || strings.EqualFold(v, "true")
+	}
+	return def
 }

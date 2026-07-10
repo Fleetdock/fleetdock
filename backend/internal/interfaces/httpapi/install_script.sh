@@ -2,12 +2,10 @@
 # Fleetdock agent installer
 # Usage:
 #   curl -sSL <control-plane>/install.sh | FLEETDOCK_URL=<control-plane> FLEETDOCK_TOKEN=<registration-token> sh
-#
-# Legacy MDCP_URL / MDCP_TOKEN are still accepted.
 set -eu
 
-FLEETDOCK_URL="${FLEETDOCK_URL:-${MDCP_URL:-%s}}"
-FLEETDOCK_TOKEN="${FLEETDOCK_TOKEN:-${MDCP_TOKEN:-}}"
+FLEETDOCK_URL="${FLEETDOCK_URL:-%s}"
+FLEETDOCK_TOKEN="${FLEETDOCK_TOKEN:-}"
 
 if [ -z "$FLEETDOCK_TOKEN" ]; then
   echo "error: FLEETDOCK_TOKEN is required. Generate a registration token in the dashboard (Servers -> Connect server)." >&2

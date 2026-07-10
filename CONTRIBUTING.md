@@ -43,7 +43,7 @@ docs/        Deployment, operations, and security guides
 scripts/     Helper scripts (secret generation, etc.)
 ```
 
-Configuration uses the `MDCP_*` environment prefix (Fleetdock control plane — historical name retained for compatibility).
+Configuration uses the `FLEETDOCK_*` environment prefix.
 
 ## Code Style
 

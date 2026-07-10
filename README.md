@@ -215,8 +215,7 @@ npm run dev
 
 ## Configuration (backend env)
 
-Environment variables use the `FLEETDOCK_*` prefix (legacy `MDCP_*` aliases still work)
-name retained for agent compatibility).
+Environment variables use the `FLEETDOCK_*` prefix.
 
 | Variable | Default | Notes |
 |----------|---------|-------|
@@ -228,14 +227,14 @@ name retained for agent compatibility).
 | `FLEETDOCK_ENCRYPTION_KEY_ID` | `master-1` | id stamped on secrets wrapped by the primary key; use a new id when rotating |
 | `FLEETDOCK_ENCRYPTION_KEYS_OLD` | — | retired keys still needed to decrypt during rotation, as `id=secret,id2=secret2` |
 | `FLEETDOCK_PUBLIC_URL` | `http://localhost:8080` | URL agents/installers use to reach the API |
-| `FLEETDOCK_AGENT_BIN_DIR` | `/opt/Fleetdock/agents` | where cross-compiled agent binaries live |
+| `FLEETDOCK_AGENT_BIN_DIR` | `/opt/fleetdock/agents` | where cross-compiled agent binaries live |
 | `FLEETDOCK_WORKER_ENABLED` | `true` | in-process worker (external-instance ops, offline detection, scheduled backups, retention, alerts, notifications) |
 | `FLEETDOCK_HEARTBEAT_TIMEOUT` | `2m` | no heartbeat for this long ⇒ server `offline` |
 | `FLEETDOCK_METRICS_RETENTION` | `168h` | how long per-heartbeat server metrics history is kept |
 | `FLEETDOCK_SMTP_HOST` | — | SMTP host for email notification channels (empty ⇒ email delivery disabled) |
 | `FLEETDOCK_SMTP_PORT` | `587` | SMTP port |
 | `FLEETDOCK_SMTP_USERNAME` / `FLEETDOCK_SMTP_PASSWORD` | — | SMTP auth (optional) |
-| `FLEETDOCK_SMTP_FROM` | `Fleetdock@localhost` | envelope/from address for emails |
+| `FLEETDOCK_SMTP_FROM` | `fleetdock@localhost` | envelope/from address for emails |
 | `FLEETDOCK_ADMIN_EMAIL` / `FLEETDOCK_ADMIN_PASSWORD` | — | first-run bootstrap only; generate with `./scripts/generate-secrets.sh` |
 | `FLEETDOCK_CORS_ORIGIN` | `http://localhost:3000` | frontend origin |
 
@@ -326,7 +325,6 @@ setup, code style, and pull request guidelines.
 - [Changelog](CHANGELOG.md)
 - [Roadmap](ROADMAP.md)
 - [Releasing](RELEASING.md)
-- [Migrating from db-manager](docs/MIGRATION.md)
 
 ## Roadmap
 
