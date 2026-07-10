@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	auditdom "github.com/TajBrains/db-manager/backend/internal/domain/audit"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	auditdom "github.com/TajBrains/fleetdock/backend/internal/domain/audit"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // Service implements audit use cases.

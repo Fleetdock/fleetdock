@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
-	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
-	"github.com/TajBrains/db-manager/backend/internal/platform/auth"
+	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/auth"
 )
 
 // Repo is the persistence surface this service needs.

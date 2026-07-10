@@ -1,4 +1,4 @@
-# Releasing db-manager
+# Releasing Fleetdock
 
 How maintainers cut a new version, publish container images, and verify the result.
 
@@ -19,7 +19,7 @@ Tags use a `v` prefix: `v0.1.0`, `v0.1.1`, `v0.2.0`.
 3. Open a PR if the changelog commit is not on `main` yet
 4. Create and push the tag (see below)
 5. Wait for the **[Release workflow](.github/workflows/release.yml)** to finish on GitHub Actions
-6. Verify the [GitHub Release](https://github.com/TajBrains/db-manager/releases) and GHCR images
+6. Verify the [GitHub Release](https://github.com/TajBrains/fleetdock/releases) and GHCR images
 7. Optionally announce (release notes, blog, social)
 
 ## Tag and push
@@ -50,8 +50,8 @@ git push origin v0.1.1
 On every `v*` tag push:
 
 1. Builds and pushes Docker images to GHCR (lowercase org name):
-   - `ghcr.io/tajbrains/db-manager-backend:<tag>` and `:latest`
-   - `ghcr.io/tajbrains/db-manager-frontend:<tag>` and `:latest`
+   - `ghcr.io/tajbrains/fleetdock-backend:<tag>` and `:latest`
+   - `ghcr.io/tajbrains/fleetdock-frontend:<tag>` and `:latest`
 2. Cross-compiles Linux agent binaries (`amd64`, `arm64`) and API binary (`amd64`)
 3. Creates a GitHub Release with tarballs and `SHA256SUMS`
 4. Attaches changelog section for that version as release notes (when present in CHANGELOG.md)
@@ -72,18 +72,18 @@ Re-tag or cut a new patch release after changing this variable so the frontend i
 
 Packages are private by default. To allow unauthenticated `docker pull`:
 
-1. GitHub → **Packages** → `db-manager-backend` / `db-manager-frontend`
+1. GitHub → **Packages** → `fleetdock-backend` / `fleetdock-frontend`
 2. **Package settings** → **Change visibility** → Public
 
 ## Smoke-test a release
 
 ```bash
 export TAG=v0.1.1
-docker pull ghcr.io/tajbrains/db-manager-backend:${TAG}
-docker pull ghcr.io/tajbrains/db-manager-frontend:${TAG}
+docker pull ghcr.io/tajbrains/fleetdock-backend:${TAG}
+docker pull ghcr.io/tajbrains/fleetdock-frontend:${TAG}
 
 # Or use the GHCR compose overlay:
-MDCP_RELEASE_TAG=${TAG} docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+FLEETDOCK_RELEASE_TAG=${TAG} docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz

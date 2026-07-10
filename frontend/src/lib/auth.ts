@@ -1,4 +1,4 @@
-const TOKEN_KEY = "mdcp_token";
+const TOKEN_KEY = "fleetdock_token";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;

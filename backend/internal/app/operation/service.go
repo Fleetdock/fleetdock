@@ -14,15 +14,15 @@ import (
 
 	"github.com/google/uuid"
 
-	backupdom "github.com/TajBrains/db-manager/backend/internal/domain/backup"
-	backupdestdom "github.com/TajBrains/db-manager/backend/internal/domain/backupdest"
-	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
-	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
-	jobdom "github.com/TajBrains/db-manager/backend/internal/domain/job"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
-	"github.com/TajBrains/db-manager/backend/internal/platform/engine"
-	"github.com/TajBrains/db-manager/backend/internal/platform/executor"
-	"github.com/TajBrains/db-manager/backend/internal/platform/storage"
+	backupdom "github.com/TajBrains/fleetdock/backend/internal/domain/backup"
+	backupdestdom "github.com/TajBrains/fleetdock/backend/internal/domain/backupdest"
+	databasedom "github.com/TajBrains/fleetdock/backend/internal/domain/database"
+	instancedom "github.com/TajBrains/fleetdock/backend/internal/domain/instance"
+	jobdom "github.com/TajBrains/fleetdock/backend/internal/domain/job"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/engine"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/executor"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/storage"
 )
 
 // DatabaseStatusRepo is the slice of the database repository this service needs.

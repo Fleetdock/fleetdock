@@ -1,5 +1,5 @@
 -- =============================================================================
--- MariaDB Control Plane — Control-plane metadata schema
+-- Fleetdock — Control-plane metadata schema
 -- Migration: 0001_init.sql   (PostgreSQL 15+)
 --
 -- Design rules baked into this schema:
@@ -91,7 +91,7 @@ CREATE TABLE api_tokens (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name         text NOT NULL,
-  prefix       text NOT NULL,                          -- non-secret display prefix, e.g. 'mdcp_ab12'
+  prefix       text NOT NULL,                          -- non-secret display prefix, e.g. 'fleetd_ab12'
   token_hash   text NOT NULL UNIQUE,                   -- sha256 of the full token; raw token never stored
   scopes       text[] NOT NULL DEFAULT '{}',           -- subset of the permission catalog
   last_used_at timestamptz,

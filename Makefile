@@ -1,4 +1,4 @@
-# db-manager — common developer commands.
+# Fleetdock — common developer commands.
 # Run `make` or `make help` to list targets.
 
 BACKEND  := backend
@@ -35,7 +35,7 @@ logs: ## Tail logs from all services
 ## ----- Backend (Go) -----
 
 .PHONY: backend-run
-backend-run: ## Run the API locally (needs MDCP_DATABASE_URL)
+backend-run: ## Run the API locally (needs FLEETDOCK_DATABASE_URL)
 	cd $(BACKEND) && $(GO_RUN) ./cmd/api
 
 .PHONY: backend-build
@@ -59,11 +59,11 @@ backend-tidy: ## Tidy Go modules
 	cd $(BACKEND) && go mod tidy
 
 .PHONY: backend-migrate
-backend-migrate: ## Apply DB migrations and exit (needs MDCP_DATABASE_URL)
+backend-migrate: ## Apply DB migrations and exit (needs FLEETDOCK_DATABASE_URL)
 	cd $(BACKEND) && $(GO_RUN) ./cmd/migrate
 
 .PHONY: rotate-keys
-rotate-keys: ## Re-wrap secrets under a new MDCP_ENCRYPTION_KEY (see cmd/rotate-keys)
+rotate-keys: ## Re-wrap secrets under a new FLEETDOCK_ENCRYPTION_KEY (see cmd/rotate-keys)
 	cd $(BACKEND) && $(GO_RUN) ./cmd/rotate-keys
 
 ## ----- Frontend (Next.js) -----

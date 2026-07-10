@@ -9,15 +9,15 @@ import (
 
 	"github.com/google/uuid"
 
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
-	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
-	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
-	"github.com/TajBrains/db-manager/backend/internal/platform/auth"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	tokendom "github.com/TajBrains/fleetdock/backend/internal/domain/token"
+	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/auth"
 )
 
 // apiTokenPrefix marks a presented credential as an API token rather than a JWT.
-const apiTokenPrefix = "mdcp_"
+const apiTokenPrefix = "fleetd_"
 
 // Principal is the authenticated caller plus its effective (scoped) grants.
 type Principal struct {

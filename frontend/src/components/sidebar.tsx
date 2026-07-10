@@ -45,7 +45,7 @@ export function Sidebar() {
           db
         </div>
         <div>
-          <div className="font-semibold text-sm">db-manager</div>
+          <div className="font-semibold text-sm">Fleetdock</div>
           <div className="muted" style={{ fontSize: 11 }}>MariaDB control plane</div>
         </div>
       </div>

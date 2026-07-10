@@ -43,7 +43,7 @@ export default function LoginPage() {
             db
           </div>
           <div>
-            <div className="font-semibold">db-manager</div>
+            <div className="font-semibold">Fleetdock</div>
             <div className="muted text-sm">Sign in to continue</div>
           </div>
         </div>

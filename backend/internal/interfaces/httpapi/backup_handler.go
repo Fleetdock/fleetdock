@@ -6,11 +6,11 @@ import (
 
 	"github.com/google/uuid"
 
-	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
-	backupapp "github.com/TajBrains/db-manager/backend/internal/app/backup"
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
-	backupdom "github.com/TajBrains/db-manager/backend/internal/domain/backup"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
+	backupapp "github.com/TajBrains/fleetdock/backend/internal/app/backup"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	backupdom "github.com/TajBrains/fleetdock/backend/internal/domain/backup"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // BackupHandler exposes backup + restore endpoints.

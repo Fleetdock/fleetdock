@@ -21,8 +21,8 @@ jobs:
         id: images
         run: |
           owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          echo "backend=ghcr.io/${owner}/db-manager-backend" >> "$GITHUB_OUTPUT"
-          echo "frontend=ghcr.io/${owner}/db-manager-frontend" >> "$GITHUB_OUTPUT"
+          echo "backend=ghcr.io/${owner}/fleetdock-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${owner}/fleetdock-frontend" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v6
         with:
@@ -64,7 +64,7 @@ jobs:
           context: ./frontend
           push: true
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8080' }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'https://fleetdock.dev' }}
           tags: |
             ${{ steps.images.outputs.frontend }}:${{ steps.version.outputs.tag }}
             ${{ steps.images.outputs.frontend }}:latest
@@ -77,19 +77,19 @@ jobs:
         run: |
           mkdir -p ../dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/db-manager-agent-linux-amd64 ./cmd/agent
+            -o ../dist/fleetdock-agent-linux-amd64 ./cmd/agent
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/db-manager-agent-linux-arm64 ./cmd/agent
+            -o ../dist/fleetdock-agent-linux-arm64 ./cmd/agent
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/db-manager-api-linux-amd64 ./cmd/api
-          cd ../dist && sha256sum db-manager-* > SHA256SUMS
+            -o ../dist/fleetdock-api-linux-amd64 ./cmd/api
+          cd ../dist && sha256sum fleetdock-* > SHA256SUMS
 
       - name: Package release tarballs
         run: |
-          tar -czf db-manager-agents-${{ github.ref_name }}.tar.gz -C dist \
-            db-manager-agent-linux-amd64 db-manager-agent-linux-arm64 SHA256SUMS
-          tar -czf db-manager-api-${{ github.ref_name }}.tar.gz -C dist \
-            db-manager-api-linux-amd64 SHA256SUMS
+          tar -czf fleetdock-agents-${{ github.ref_name }}.tar.gz -C dist \
+            fleetdock-agent-linux-amd64 fleetdock-agent-linux-arm64 SHA256SUMS
+          tar -czf fleetdock-api-${{ github.ref_name }}.tar.gz -C dist \
+            fleetdock-api-linux-amd64 SHA256SUMS
 
       - name: Generate release notes
         run: |
@@ -107,6 +107,6 @@ jobs:
           generate_release_notes: true
           body_path: release-notes.md
           files: |
-            db-manager-agents-${{ github.ref_name }}.tar.gz
-            db-manager-api-${{ github.ref_name }}.tar.gz
+            fleetdock-agents-${{ github.ref_name }}.tar.gz
+            fleetdock-api-${{ github.ref_name }}.tar.gz
             dist/SHA256SUMS

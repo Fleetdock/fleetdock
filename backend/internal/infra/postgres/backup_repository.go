@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	backupdom "github.com/TajBrains/db-manager/backend/internal/domain/backup"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	backupdom "github.com/TajBrains/fleetdock/backend/internal/domain/backup"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // BackupRepository is the Postgres adapter for backupdom.Repository.

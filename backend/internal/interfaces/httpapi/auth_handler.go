@@ -3,8 +3,8 @@ package httpapi
 import (
 	"net/http"
 
-	authapp "github.com/TajBrains/db-manager/backend/internal/app/auth"
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
+	authapp "github.com/TajBrains/fleetdock/backend/internal/app/auth"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
 )
 
 // AuthHandler exposes login and identity endpoints.

@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
-	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // RegisterInput is the command to register a new server.

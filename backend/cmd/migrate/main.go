@@ -1,5 +1,5 @@
 // Command migrate applies the embedded database migrations and exits.
-// It reads MDCP_DATABASE_URL like the API server.
+// It reads FLEETDOCK_DATABASE_URL from the environment.
 package main
 
 import (
@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/TajBrains/db-manager/backend/internal/config"
-	"github.com/TajBrains/db-manager/backend/internal/infra/postgres"
+	"github.com/TajBrains/fleetdock/backend/internal/config"
+	"github.com/TajBrains/fleetdock/backend/internal/infra/postgres"
 )
 
 func main() {

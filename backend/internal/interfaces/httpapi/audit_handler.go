@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	auditapp "github.com/TajBrains/db-manager/backend/internal/app/audit"
-	auditdom "github.com/TajBrains/db-manager/backend/internal/domain/audit"
+	auditapp "github.com/TajBrains/fleetdock/backend/internal/app/audit"
+	auditdom "github.com/TajBrains/fleetdock/backend/internal/domain/audit"
 )
 
 // AuditHandler exposes the audit-log read endpoint.

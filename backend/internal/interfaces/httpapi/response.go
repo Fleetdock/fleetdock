@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

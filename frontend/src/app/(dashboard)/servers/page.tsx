@@ -23,7 +23,7 @@ export default function ServersPage() {
       <div className="flex items-center justify-between" style={{ marginBottom: "1.1rem" }}>
         <div>
           <h1 className="text-xl font-semibold">Servers</h1>
-          <p className="muted text-sm">Hosts running the db-manager agent.</p>
+          <p className="muted text-sm">Hosts running the Fleetdock agent.</p>
         </div>
         {can("server:write") ? (
           <div className="flex items-center gap-2">

@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
-  title: db-manager API
+  title: Fleetdock API
   version: 0.1.0
   description: |
     Self-hosted database control plane API. User routes require a Bearer JWT or
-    API token (`mdcp_` prefix). Agent routes under `/agent/v1` use agent bearer
-    tokens (`mdcpa_` prefix).
+    API token (`fleetd_` prefix). Agent routes under `/agent/v1` use agent bearer
+    tokens (`fleeta_` prefix).
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -45,7 +45,7 @@ components:
     agentAuth:
       type: http
       scheme: bearer
-      description: Agent bearer token (mdcpa_ prefix)
+      description: Agent bearer token (fleeta_ prefix)
 
   parameters:
     ResourceID:

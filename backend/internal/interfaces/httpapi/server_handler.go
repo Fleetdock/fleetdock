@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	serverapp "github.com/TajBrains/db-manager/backend/internal/app/server"
-	serverdom "github.com/TajBrains/db-manager/backend/internal/domain/server"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	serverapp "github.com/TajBrains/fleetdock/backend/internal/app/server"
+	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // ServersService is the use-case surface the HTTP layer depends on

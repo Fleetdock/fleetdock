@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	auditapp "github.com/TajBrains/db-manager/backend/internal/app/audit"
-	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
+	auditapp "github.com/TajBrains/fleetdock/backend/internal/app/audit"
+	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
 )
 
 // RouterDeps are the handlers and middleware the router wires together.

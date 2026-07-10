@@ -103,7 +103,7 @@ func (s *Sender) post(ctx context.Context, url string, body []byte) error {
 
 func (s *Sender) deliverEmail(to string, msg Message) error {
 	if s.smtp.Host == "" {
-		return fmt.Errorf("email delivery is not configured (set MDCP_SMTP_HOST)")
+		return fmt.Errorf("email delivery is not configured (set FLEETDOCK_SMTP_HOST)")
 	}
 	if to == "" {
 		return fmt.Errorf("email channel has no recipient")

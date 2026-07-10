@@ -6,11 +6,11 @@ import (
 
 	"github.com/google/uuid"
 
-	authzapp "github.com/TajBrains/db-manager/backend/internal/app/authz"
-	databaseapp "github.com/TajBrains/db-manager/backend/internal/app/database"
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
-	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
+	databaseapp "github.com/TajBrains/fleetdock/backend/internal/app/database"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	databasedom "github.com/TajBrains/fleetdock/backend/internal/domain/database"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 // DatabaseHandler exposes database endpoints.

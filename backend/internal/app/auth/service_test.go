@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
-	authz "github.com/TajBrains/db-manager/backend/internal/domain/authz"
-	tokendom "github.com/TajBrains/db-manager/backend/internal/domain/token"
-	userdom "github.com/TajBrains/db-manager/backend/internal/domain/user"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
-	"github.com/TajBrains/db-manager/backend/internal/platform/auth"
+	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	tokendom "github.com/TajBrains/fleetdock/backend/internal/domain/token"
+	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/auth"
 )
 
 type fakeUserRepo struct {
@@ -171,11 +171,11 @@ func TestPrincipal_TokenEmptyScopesInheritAll(t *testing.T) {
 	users.users[id] = userdom.User{ID: id, Email: "u@example.com", Status: "active"}
 	users.perms[id] = []string{"database:read", "database:write"}
 	tokens := &fakeTokenRepo{lookups: map[string]tokendom.Lookup{
-		auth.HashToken("mdcp_empty"): {UserID: id, Scopes: []string{}}, // no scopes
+		auth.HashToken("fleetd_empty"): {UserID: id, Scopes: []string{}}, // no scopes
 	}}
 	svc := NewService(users, tokens, auth.NewJWT("secret", time.Hour))
 
-	p, err := svc.Principal(context.Background(), "mdcp_empty")
+	p, err := svc.Principal(context.Background(), "fleetd_empty")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,11 +190,11 @@ func TestPrincipal_TokenScopesRestrict(t *testing.T) {
 	users.users[id] = userdom.User{ID: id, Email: "u@example.com", Status: "active"}
 	users.perms[id] = []string{"database:read", "database:write"}
 	tokens := &fakeTokenRepo{lookups: map[string]tokendom.Lookup{
-		auth.HashToken("mdcp_ro"): {UserID: id, Scopes: []string{"database:read"}},
+		auth.HashToken("fleetd_ro"): {UserID: id, Scopes: []string{"database:read"}},
 	}}
 	svc := NewService(users, tokens, auth.NewJWT("secret", time.Hour))
 
-	p, err := svc.Principal(context.Background(), "mdcp_ro")
+	p, err := svc.Principal(context.Background(), "fleetd_ro")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

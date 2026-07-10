@@ -1,4 +1,4 @@
-# db-manager — Roadmap
+# Fleetdock — Roadmap
 
 What ships in **v0.1.0** and what we are building next. For release mechanics see
 [RELEASING.md](RELEASING.md).

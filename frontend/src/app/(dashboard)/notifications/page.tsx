@@ -371,7 +371,7 @@ function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps) {
         </Field>
         <p className="text-sm muted">
           {type === "email"
-            ? "Email requires SMTP to be configured on the server (MDCP_SMTP_HOST)."
+            ? "Email requires SMTP to be configured on the server (FLEETDOCK_SMTP_HOST)."
             : "The URL is stored securely; leave it blank when editing to keep the current one."}
         </p>
         <ErrorText message={error ?? undefined} />

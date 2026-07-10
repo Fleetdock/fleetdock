@@ -6,9 +6,9 @@ import (
 
 	"github.com/google/uuid"
 
-	databasedom "github.com/TajBrains/db-manager/backend/internal/domain/database"
-	instancedom "github.com/TajBrains/db-manager/backend/internal/domain/instance"
-	"github.com/TajBrains/db-manager/backend/internal/platform/apperr"
+	databasedom "github.com/TajBrains/fleetdock/backend/internal/domain/database"
+	instancedom "github.com/TajBrains/fleetdock/backend/internal/domain/instance"
+	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
 )
 
 type fakeDatabaseRepo struct {
