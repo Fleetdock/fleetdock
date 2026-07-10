@@ -72,10 +72,11 @@ Add tests for new service logic. Focus on validation, state transitions, and err
 
 ## Pull Requests
 
-1. Ensure `make lint && make test && make build` pass.
-2. Update [CHANGELOG.md](CHANGELOG.md) under `Unreleased` if the change is user-facing.
-3. Open a PR against `main` using the PR template.
-4. Describe what changed and how you tested it.
+1. Branch from `main` — direct pushes to `main` are blocked once [branch protection](docs/BRANCH_PROTECTION.md) is enabled.
+2. Ensure `make lint && make test && make build` pass.
+3. Update [CHANGELOG.md](CHANGELOG.md) under `Unreleased` if the change is user-facing.
+4. Open a PR against `main` using the PR template.
+5. Describe what changed and how you tested it.
 
 ### Commit Messages
 

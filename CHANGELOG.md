@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Main branch ruleset definition (`.github/rulesets/protect-main.json`) and `scripts/setup-branch-protection.sh`
+- [docs/BRANCH_PROTECTION.md](docs/BRANCH_PROTECTION.md) — apply via script or GitHub UI
+
 ## [0.1.0] - 2026-07-10
 
 Initial open-source release.
