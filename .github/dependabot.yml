@@ -23,6 +23,12 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # Next.js 16 / eslint-config-next do not support these majors yet.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
