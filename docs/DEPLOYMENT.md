@@ -100,6 +100,13 @@ services:
     build: !reset null
 ```
 
+Or use the provided overlay:
+
+```bash
+export MDCP_RELEASE_TAG=v0.1.0
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
 Replace `tajbrains` with the GitHub org or user that owns the fork if you build
 your own images.
 
