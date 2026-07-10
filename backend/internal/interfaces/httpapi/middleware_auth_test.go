@@ -20,9 +20,15 @@ import (
 type stubAuthRepo struct {
 	users map[uuid.UUID]userdom.User
 	perms map[uuid.UUID][]string
+	creds map[string]userdom.Credentials
 }
 
-func (r *stubAuthRepo) GetCredentialsByEmail(_ context.Context, _ string) (userdom.Credentials, error) {
+func (r *stubAuthRepo) GetCredentialsByEmail(_ context.Context, email string) (userdom.Credentials, error) {
+	if r.creds != nil {
+		if c, ok := r.creds[email]; ok {
+			return c, nil
+		}
+	}
 	return userdom.Credentials{}, apperr.NotFound("not found")
 }
 
@@ -64,7 +70,7 @@ func TestAuthenticator_PublicRoutes(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	for _, path := range []string{"/healthz", "/v1/auth/login", "/install.sh", "/agent/v1/heartbeat"} {
+	for _, path := range []string{"/healthz", "/readyz", "/v1/auth/login", "/install.sh", "/agent/v1/heartbeat"} {
 		called = false
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()

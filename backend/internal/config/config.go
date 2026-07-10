@@ -67,6 +67,27 @@ type Config struct {
 // IsProduction reports whether the server runs in production mode.
 func (c Config) IsProduction() bool { return c.Env == "production" }
 
+// ValidateSecrets warns about (dev) or refuses (production) insecure defaults.
+func (c Config) ValidateSecrets(warn func(name string)) error {
+	insecure := map[string]bool{
+		"MDCP_JWT_SECRET":     c.JWTSecret == "dev-insecure-change-me" || c.JWTSecret == "change-me-in-production",
+		"MDCP_ENCRYPTION_KEY": c.EncryptionKey == "dev-insecure-encryption-key" || c.EncryptionKey == "change-me-in-production",
+		"MDCP_ADMIN_PASSWORD": c.AdminPassword == "admin12345",
+	}
+	for name, bad := range insecure {
+		if !bad {
+			continue
+		}
+		if c.IsProduction() {
+			return fmt.Errorf("refusing to start: %s uses an insecure default (MDCP_ENV=production)", name)
+		}
+		if warn != nil {
+			warn(name)
+		}
+	}
+	return nil
+}
+
 // EncryptionKeyring returns every key id → secret needed to decrypt secrets:
 // the primary key plus any retired keys. The primary key always wins on a
 // collision.

@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/db-manager-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/db-manager-frontend
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: backend/go.sum
+
+      - name: Parse version
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare env for frontend build arg
+        run: |
+          cp .env.example .env
+          ./scripts/generate-secrets.sh >> .env
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ steps.version.outputs.tag }}
+            ${{ env.BACKEND_IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8080' }}
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ steps.version.outputs.tag }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+
+      - name: Build release archives
+        working-directory: backend
+        run: |
+          mkdir -p ../dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
+            -o ../dist/db-manager-agent-linux-amd64 ./cmd/agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
+            -o ../dist/db-manager-agent-linux-arm64 ./cmd/agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
+            -o ../dist/db-manager-api-linux-amd64 ./cmd/api
+          cd ../dist && sha256sum db-manager-* > SHA256SUMS
+
+      - name: Package release tarballs
+        run: |
+          tar -czf db-manager-agents-${{ github.ref_name }}.tar.gz -C dist \
+            db-manager-agent-linux-amd64 db-manager-agent-linux-arm64 SHA256SUMS
+          tar -czf db-manager-api-${{ github.ref_name }}.tar.gz -C dist \
+            db-manager-api-linux-amd64 SHA256SUMS
+
+      - name: Generate release notes
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$ver" '/^## \[Unreleased\]/{p=0} p; $0 ~ "^## \\[" ver "\\]"{p=1}' CHANGELOG.md > release-notes.md || true
+          fi
+          if [ ! -s release-notes.md ]; then
+            echo "Release ${{ github.ref_name }}" > release-notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body_path: release-notes.md
+          files: |
+            db-manager-agents-${{ github.ref_name }}.tar.gz
+            db-manager-api-${{ github.ref_name }}.tar.gz
+            dist/SHA256SUMS

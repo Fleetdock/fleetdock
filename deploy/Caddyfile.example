@@ -1,0 +1,34 @@
+# Example Caddy v2 config for db-manager.
+# Copy to your host and adjust the domain name.
+#
+# Assumes docker compose service names `frontend` and `backend` on a shared network.
+
+dbm.example.com {
+	encode gzip
+
+	handle /healthz* {
+		reverse_proxy backend:8080
+	}
+	handle /readyz* {
+		reverse_proxy backend:8080
+	}
+	handle /v1/* {
+		reverse_proxy backend:8080
+	}
+	handle /agent/* {
+		reverse_proxy backend:8080
+	}
+	handle /install.sh {
+		reverse_proxy backend:8080
+	}
+	handle /openapi.yaml {
+		reverse_proxy backend:8080
+	}
+	handle /docs* {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

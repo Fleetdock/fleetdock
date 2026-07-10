@@ -29,7 +29,7 @@ The dashboard is at http://localhost:3000 and the API at http://localhost:8080.
 
 ## Development Requirements
 
-- Go 1.22+
+- Go 1.25+
 - Node.js 22+
 - Docker and Docker Compose (for the full stack)
 - `golangci-lint` (for linting; CI installs it automatically)
@@ -39,7 +39,7 @@ The dashboard is at http://localhost:3000 and the API at http://localhost:8080.
 ```
 backend/     Go API, worker, and agent (clean architecture)
 frontend/    Next.js dashboard
-docs/        OpenAPI specification
+docs/        Deployment, operations, and security guides
 scripts/     Helper scripts (secret generation, etc.)
 ```
 
@@ -88,7 +88,9 @@ Reference issue numbers when applicable (`Fixes #123`).
 
 ## API Changes
 
-If you add or modify HTTP routes, update [docs/openapi.yaml](docs/openapi.yaml) and ensure the OpenAPI drift test passes.
+If you add or modify HTTP routes, update
+[`backend/internal/openapi/openapi.yaml`](backend/internal/openapi/openapi.yaml)
+and ensure the OpenAPI drift test passes.
 
 ## Security
 

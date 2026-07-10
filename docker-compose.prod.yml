@@ -1,0 +1,24 @@
+# Production overlay for docker compose.
+#
+# Usage:
+#   cp .env.example .env && ./scripts/generate-secrets.sh >> .env
+#   # Edit .env: MDCP_ENV=production, MDCP_DATABASE_URL (hosted Postgres), URLs, etc.
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+#
+# This file:
+#   - Forces MDCP_ENV=production
+#   - Omits the bundled postgres service (use managed Postgres via MDCP_DATABASE_URL)
+#   - Does not publish backend/frontend ports (put TLS reverse proxy in front)
+
+services:
+  postgres:
+    profiles: ["dev-postgres"]
+
+  backend:
+    depends_on: !reset {}
+    environment:
+      MDCP_ENV: production
+    ports: !reset []
+
+  frontend:
+    ports: !reset []

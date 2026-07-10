@@ -26,6 +26,7 @@ func NewAuthenticator(svc *authapp.Service) *Authenticator {
 		svc: svc,
 		public: map[string]bool{
 			"/healthz":       true,
+			"/readyz":        true,
 			"/v1/auth/login": true,
 			"/openapi.yaml":  true,
 			"/docs":          true,

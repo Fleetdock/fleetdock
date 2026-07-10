@@ -18,5 +18,5 @@
 ## Checklist
 
 - [ ] Updated [CHANGELOG.md](CHANGELOG.md) if user-facing
-- [ ] Updated [docs/openapi.yaml](docs/openapi.yaml) if API routes changed
+- [ ] Updated [`backend/internal/openapi/openapi.yaml`](backend/internal/openapi/openapi.yaml) if API routes changed
 - [ ] No secrets or credentials committed
