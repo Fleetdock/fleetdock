@@ -15,8 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"fmt"
-
 	agentapp "github.com/TajBrains/db-manager/backend/internal/app/agent"
 	auditapp "github.com/TajBrains/db-manager/backend/internal/app/audit"
 	authapp "github.com/TajBrains/db-manager/backend/internal/app/auth"
@@ -53,31 +51,15 @@ func main() {
 	}
 }
 
-// checkSecrets warns about (dev) or refuses (production) insecure defaults.
-func checkSecrets(cfg config.Config) error {
-	insecure := map[string]bool{
-		"MDCP_JWT_SECRET":     cfg.JWTSecret == "dev-insecure-change-me" || cfg.JWTSecret == "change-me-in-production",
-		"MDCP_ENCRYPTION_KEY": cfg.EncryptionKey == "dev-insecure-encryption-key" || cfg.EncryptionKey == "change-me-in-production",
-		"MDCP_ADMIN_PASSWORD": cfg.AdminPassword == "admin12345",
-	}
-	for name, bad := range insecure {
-		if !bad {
-			continue
-		}
-		if cfg.IsProduction() {
-			return fmt.Errorf("refusing to start: %s uses an insecure default (MDCP_ENV=production)", name)
-		}
-		slog.Warn("insecure default in use; set a strong value before production", "var", name)
-	}
-	return nil
-}
 
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	if err := checkSecrets(cfg); err != nil {
+	if err := cfg.ValidateSecrets(func(name string) {
+		slog.Warn("insecure default in use; set a strong value before production", "var", name)
+	}); err != nil {
 		return err
 	}
 

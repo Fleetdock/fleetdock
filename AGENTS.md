@@ -36,8 +36,8 @@ caveats for this environment.
 - Dashboard: http://localhost:3000 — log in as `admin@example.com` with the
   `MDCP_ADMIN_PASSWORD` value from `.env` (the API bootstraps this admin on
   first boot when the users table is empty).
-- `/readyz` requires auth in this build and returns 401 unauthenticated; use
-  `/healthz` for an unauthenticated liveness check.
+- `/healthz` is an unauthenticated liveness check; `/readyz` is an unauthenticated
+  readiness check (metadata DB ping).
 
 ### Not installed by default
 - **Docker** is not installed, so `docker compose up` (full-stack path) and the

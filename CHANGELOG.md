@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Production guides: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), [docs/OPERATIONS.md](docs/OPERATIONS.md), [docs/SECURITY-CHECKLIST.md](docs/SECURITY-CHECKLIST.md)
+- `docker-compose.prod.yml` overlay and `deploy/Caddyfile.example` for TLS reverse proxy
+- GitHub Actions release workflow publishing GHCR images and release archives on version tags
+- HTTP smoke tests for health, OpenAPI, install script, and login flow
+- Config validation tests for production secret enforcement
+- README hero screenshot and production deployment section
+
+### Fixed
+
+- `/readyz` is now a public readiness probe (no authentication required)
+
 ## [0.1.0] - 2026-07-08
 
 Initial open-source release.

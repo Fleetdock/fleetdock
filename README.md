@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/TajBrains/db-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/TajBrains/db-manager/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](backend/go.mod)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](backend/go.mod)
 
 An open-source **control plane for databases** — manage a fleet of servers,
 database instances, and databases from a modern dashboard instead of SSH.
@@ -12,6 +12,20 @@ engine layer, and can **provision** new database containers on your servers via
 plain Docker (no Swarm/Traefik).
 
 Licensed under [Apache-2.0](LICENSE).
+
+**Who is this for?** Teams and individuals who run MariaDB, MySQL, or PostgreSQL
+on their own servers and want a single dashboard for fleet health, backups,
+provisioning, and day-to-day admin — without handing database credentials to a
+SaaS vendor.
+
+![db-manager overview dashboard](docs/screenshots/dashboard-overview.png)
+
+| In 60 seconds | |
+|---------------|---|
+| **Install** | `docker compose up --build` (local Postgres included) |
+| **Connect a server** | One `curl … install.sh` command from the dashboard |
+| **Manage** | Instances, databases, backups, users/grants, operations log |
+| **Docs** | [Deploy to production](docs/DEPLOYMENT.md) · [Operations](docs/OPERATIONS.md) · [Security checklist](docs/SECURITY-CHECKLIST.md) · [API `/docs`](http://localhost:8080/docs) |
 
 This is a monorepo:
 
@@ -141,8 +155,8 @@ Backend (Go):
   instances are reached at their host, managed instances at their server's
   address — the DB port must be reachable from the control plane.
 - **Hardening** — login rate limiting (per client IP), security headers,
-  `/healthz` + `/readyz` (DB ping) probes, and `MDCP_ENV=production` mode
-  that refuses to boot with insecure default secrets.
+  `/healthz` (liveness) and `/readyz` (metadata DB ping) probes, and
+  `MDCP_ENV=production` mode that refuses to boot with insecure default secrets.
 
 Frontend (Next.js): login, dashboard shell, servers (connect flow with
 install command), instances (external DBs, test connection, import),
@@ -158,7 +172,7 @@ grants with grant/revoke).
 
 ## Local development (without Docker)
 
-Backend (needs Go 1.22+ and a Postgres):
+Backend (needs Go 1.25+ and a Postgres):
 
 ```bash
 cd backend
@@ -273,6 +287,21 @@ spec in sync with the routes defined in `router.go`.
   sha256 checksum *before* touching the target, then counts the restored tables
   and reports the count.
 
+## Production deployment
+
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for TLS, reverse proxy, hosted
+Postgres, and environment variables. Day-2 operations (backups, upgrades, key
+rotation) are in **[docs/OPERATIONS.md](docs/OPERATIONS.md)**. Run through
+**[docs/SECURITY-CHECKLIST.md](docs/SECURITY-CHECKLIST.md)** before exposing the
+control plane to the internet.
+
+Pre-built images are published to GitHub Container Registry on each version tag:
+
+```text
+ghcr.io/tajbrains/db-manager-backend:<tag>
+ghcr.io/tajbrains/db-manager-frontend:<tag>
+```
+
 ## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for development
@@ -283,12 +312,12 @@ setup, code style, and pull request guidelines.
 - [Changelog](CHANGELOG.md)
 - [Roadmap](ROADMAP.md)
 
-## Roadmap (post-MVP)
+## Roadmap
 
-- Secure external DB access without opening ports (Cloudflare Tunnel / TCP
-  proxy launched by the agent).
-- Live SQL query console depth; table schema/DDL viewer.
-- Per-token scopes, SSO/OIDC, encryption-key rotation.
-- Composite/HA topologies (replicas), audit-log export, more notification types.
+See **[ROADMAP.md](ROADMAP.md)** for the full phased plan. Highlights still on
+the horizon:
 
-See [ROADMAP.md](ROADMAP.md) for the full phased plan.
+- SSO/OIDC login and optional 2FA/MFA
+- Secure external DB access without opening ports (Cloudflare Tunnel / TCP proxy)
+- Composite/HA topologies (replicas), audit-log export
+- Expanded integration test coverage
