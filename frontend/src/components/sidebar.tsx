@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { Activity, Archive, Bell, Box, CalendarClock, Cloud, Database, Key, LayoutDashboard, ScrollText, Server, ShieldCheck, Users, type LucideIcon } from "lucide-react";
 
+import { Logo } from "@/components/logo";
 import { useCan, useCanAny } from "@/lib/hooks";
 
 // perm: the read permission required to see the section (empty = always).
@@ -38,12 +39,7 @@ export function Sidebar() {
         className="flex items-center gap-2"
         style={{ padding: "1.05rem 1rem", borderBottom: "1px solid var(--border)" }}
       >
-        <div
-          className="flex items-center justify-center"
-          style={{ width: 26, height: 26, borderRadius: 7, background: "var(--primary)", color: "var(--primary-fg)", fontWeight: 700, fontSize: 12 }}
-        >
-          db
-        </div>
+        <Logo size={26} />
         <div>
           <div className="font-semibold text-sm">Fleetdock</div>
           <div className="muted" style={{ fontSize: 11 }}>MariaDB control plane</div>

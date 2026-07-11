@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { ApiError, api } from "@/lib/api";
 import { setToken } from "@/lib/auth";
 import { ErrorText, Field } from "@/components/ui";
+import { Logo } from "@/components/logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -36,12 +37,7 @@ export default function LoginPage() {
     >
       <div className="card" style={{ width: "100%", maxWidth: "22rem", padding: "1.75rem" }}>
         <div className="flex items-center gap-2" style={{ marginBottom: "1.25rem" }}>
-          <div
-            className="flex items-center justify-center"
-            style={{ width: 28, height: 28, borderRadius: 8, background: "var(--primary)", color: "var(--primary-fg)", fontWeight: 700, fontSize: 13 }}
-          >
-            db
-          </div>
+          <Logo size={28} />
           <div>
             <div className="font-semibold">Fleetdock</div>
             <div className="muted text-sm">Sign in to continue</div>
