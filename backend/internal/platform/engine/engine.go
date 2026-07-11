@@ -1,7 +1,7 @@
 // Package engine abstracts database-engine-specific operations behind a
 // small interface so the control plane and agent stay engine-agnostic.
-// MariaDB is the only registered engine in the MVP; adding postgres/mysql
-// means implementing Client and registering it here.
+// MariaDB/MySQL and PostgreSQL register Client implementations; live
+// administration (Admin) is implemented per engine in *_admin.go.
 package engine
 
 import (

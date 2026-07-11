@@ -81,7 +81,7 @@ What ships in **v0.1.0** and what we are building next. For release mechanics se
 | Audit log export (CSV/JSON) | todo | |
 | Replica / HA topology modeling | todo | |
 | More notification channels | todo | PagerDuty, Discord, … |
-| Engine parity (MySQL/Postgres vs MariaDB admin) | todo | |
+| Engine parity (MySQL/Postgres vs MariaDB admin) | done | Postgres live admin shipped |
 | Environment profile templates | todo | staging vs prod `.env` examples |
 
 ---

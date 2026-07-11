@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-var _ Admin = (*MariaDB)(nil)
+var _ Admin = (*MariaDB)(nil) // serves both mariadb and mysql engines
 
 // quoteAccount renders 'user'@'host' with single quotes escaped.
 func quoteAccount(user, host string) string {
@@ -348,13 +348,6 @@ func (m *MariaDB) TableRows(ctx context.Context, p ConnParams, database, table s
 	return page, rows.Err()
 }
 
-// validTableName rejects table identifiers that could break backtick quoting.
-// Table names allow more characters than database names, so this is looser than
-// identRe but still closes the quoting hazards.
-func validTableName(table string) bool {
-	return table != "" && len(table) <= 64 && !strings.ContainsAny(table, "`'\"\\\n\r\x00")
-}
-
 // TableSchema returns a table's columns, indexes and CREATE DDL.
 func (m *MariaDB) TableSchema(ctx context.Context, p ConnParams, database, table string) (*TableSchema, error) {
 	if !identRe.MatchString(database) {
@@ -447,52 +440,6 @@ func (m *MariaDB) TableSchema(ctx context.Context, p ConnParams, database, table
 	return out, nil
 }
 
-// readOnlyLeadingKeywords are the statement verbs treated as read-only. Anything
-// else requires write permission. Even a misclassified read (e.g. a CTE that
-// hides a write) is still run inside a READ ONLY transaction, so the engine
-// rejects it regardless.
-var readOnlyLeadingKeywords = map[string]bool{
-	"SELECT": true, "SHOW": true, "DESCRIBE": true, "DESC": true,
-	"EXPLAIN": true, "WITH": true, "ANALYZE": true,
-}
-
-// leadingKeyword extracts the first SQL keyword, skipping leading whitespace,
-// line (`-- `, `#`) and block (`/* */`) comments and opening parentheses.
-func leadingKeyword(sqlText string) string {
-	s := sqlText
-	for {
-		s = strings.TrimLeft(s, " \t\r\n(")
-		switch {
-		case strings.HasPrefix(s, "--"), strings.HasPrefix(s, "#"):
-			if i := strings.IndexAny(s, "\r\n"); i >= 0 {
-				s = s[i+1:]
-				continue
-			}
-			return ""
-		case strings.HasPrefix(s, "/*"):
-			if i := strings.Index(s, "*/"); i >= 0 {
-				s = s[i+2:]
-				continue
-			}
-			return ""
-		}
-		break
-	}
-	i := 0
-	for i < len(s) && (isWordByte(s[i])) {
-		i++
-	}
-	return strings.ToUpper(s[:i])
-}
-
-func isWordByte(b byte) bool {
-	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
-}
-
-func isReadOnlyStmt(sqlText string) bool {
-	return readOnlyLeadingKeywords[leadingKeyword(sqlText)]
-}
-
 // Query runs a single ad-hoc statement against the connection's default schema.
 func (m *MariaDB) Query(ctx context.Context, p ConnParams, database, sqlText string, limit int, allowWrite bool) (*QueryResult, error) {
 	if !identRe.MatchString(database) {
@@ -567,34 +514,6 @@ func (m *MariaDB) Query(ctx context.Context, p ConnParams, database, sqlText str
 	res.DurationMS = time.Since(start).Milliseconds()
 	return res, nil
 }
-
-// scanStringRow scans the current row into stringified values, truncating each
-// value to maxLen runes (maxLen <= 0 disables truncation). nil = SQL NULL.
-func scanStringRow(rows *sql.Rows, n, maxLen int) ([]*string, error) {
-	raw := make([]sql.RawBytes, n)
-	ptrs := make([]any, n)
-	for i := range raw {
-		ptrs[i] = &raw[i]
-	}
-	if err := rows.Scan(ptrs...); err != nil {
-		return nil, err
-	}
-	row := make([]*string, n)
-	for i, b := range raw {
-		if b == nil {
-			continue
-		}
-		s := string(b)
-		if maxLen > 0 && len(s) > maxLen {
-			s = s[:maxLen] + "…"
-		}
-		row[i] = &s
-	}
-	return row, nil
-}
-
-// maxExportRows caps a CSV export so a runaway query cannot stream forever.
-const maxExportRows = 1_000_000
 
 // ExportCSV streams a whole table or a read-only query to w as CSV.
 func (m *MariaDB) ExportCSV(ctx context.Context, p ConnParams, database, table, query string, w io.Writer, onStart func()) (int64, error) {

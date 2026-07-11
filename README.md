@@ -171,11 +171,11 @@ Backend (Go):
   the current password). Suspended accounts cannot log in and existing
   sessions/tokens stop working immediately.
 - **Live DB administration** — database accounts and grants managed straight
-  from the dashboard: list/create/drop MariaDB users, view SHOW GRANTS,
-  grant/revoke schema privileges (allowlisted catalog at
-  `GET /v1/db-privileges`); plus table listing and a paginated data browser
-  per database. Executed synchronously by the control plane: external
-  instances are reached at their host, managed instances at their server's
+  from the dashboard for **MariaDB, MySQL, and PostgreSQL**: list/create/drop
+  users (MariaDB `user@host`, PostgreSQL roles), view grants, grant/revoke
+  schema privileges (allowlisted catalog at `GET /v1/db-privileges`); plus
+  table listing, paginated data browser, SQL console, and CSV export per
+  database. Executed synchronously by the control plane: external instances are reached at their host, managed instances at their server's
   address (reported automatically by the agent on enroll/heartbeat). The
   instance DB port must be reachable from the control plane — for LAN/VM dev,
   ensure published ports on the server are open to the host running Fleetdock.

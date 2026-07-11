@@ -2,6 +2,26 @@ package engine
 
 import "testing"
 
+func TestAdminForMariaDB(t *testing.T) {
+	admin, err := AdminFor("mariadb")
+	if err != nil {
+		t.Fatalf("AdminFor(mariadb): %v", err)
+	}
+	if _, ok := admin.(*MariaDB); !ok {
+		t.Fatalf("expected *MariaDB, got %T", admin)
+	}
+}
+
+func TestAdminForMySQL(t *testing.T) {
+	admin, err := AdminFor("mysql")
+	if err != nil {
+		t.Fatalf("AdminFor(mysql): %v", err)
+	}
+	if _, ok := admin.(*MariaDB); !ok {
+		t.Fatalf("expected *MariaDB, got %T", admin)
+	}
+}
+
 func TestIsReadOnlyStmt(t *testing.T) {
 	cases := []struct {
 		name string
