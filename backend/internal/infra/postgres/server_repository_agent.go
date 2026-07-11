@@ -48,11 +48,12 @@ func (r *ServerRepository) Heartbeat(ctx context.Context, id uuid.UUID, info ser
 	_, err := r.pool.Exec(ctx, `
 		UPDATE servers SET status = 'online', last_heartbeat_at = now(),
 			agent_version = $2,
-			mariadb_version = COALESCE($3, mariadb_version),
-			os = COALESCE($4, os),
+			address = COALESCE($3::inet, address),
+			mariadb_version = COALESCE($4, mariadb_version),
+			os = COALESCE($5, os),
 			version = version + 1
 		WHERE id = $1 AND deleted_at IS NULL`,
-		id, info.AgentVersion, info.MariaDBVersion, info.OS)
+		id, info.AgentVersion, info.Address, info.MariaDBVersion, info.OS)
 	if err != nil {
 		return apperr.Internal(fmt.Errorf("heartbeat servers: %w", err))
 	}

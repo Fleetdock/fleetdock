@@ -31,4 +31,8 @@ type Repository interface {
 	Create(ctx context.Context, s *Server) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Server, error)
 	List(ctx context.Context, f ListFilter) (Page, error)
+	Update(ctx context.Context, s *Server) error
+	SoftDelete(ctx context.Context, id uuid.UUID) error
+	// HasActiveInstances reports whether non-deleted instances still reference the server.
+	HasActiveInstances(ctx context.Context, id uuid.UUID) (bool, error)
 }

@@ -10,6 +10,7 @@ package dbadminapp
 import (
 	"context"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -74,10 +75,9 @@ func (s *Service) target(ctx context.Context, instanceID string) (*instancedom.I
 		if err != nil {
 			return nil, nil, engine.ConnParams{}, err
 		}
-		if srv.Address != nil && *srv.Address != "" {
-			host = *srv.Address
-		} else {
-			host = srv.Hostname
+		host, err = managedInstanceHost(srv)
+		if err != nil {
+			return nil, nil, engine.ConnParams{}, err
 		}
 	}
 	if host == "" {
@@ -94,6 +94,24 @@ func (s *Service) target(ctx context.Context, instanceID string) (*instancedom.I
 	}
 	conn.Password = string(pw)
 	return inst, admin, conn, nil
+}
+
+func managedInstanceHost(srv *serverdom.Server) (string, error) {
+	if srv.Address != nil && *srv.Address != "" {
+		return hostOnly(*srv.Address), nil
+	}
+	if srv.Hostname != "" {
+		return "", apperr.Invalid("instance_id",
+			"server has no reachable address; ensure the agent reports its IP (upgrade agent) or set the server address manually")
+	}
+	return "", apperr.Invalid("instance_id", "cannot determine a reachable host for this instance")
+}
+
+func hostOnly(addr string) string {
+	if i := strings.Index(addr, "/"); i >= 0 {
+		return addr[:i]
+	}
+	return addr
 }
 
 // databaseTarget resolves a database plus its instance's admin surface.

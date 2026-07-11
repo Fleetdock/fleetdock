@@ -1,7 +1,7 @@
 #!/bin/sh
 # Fleetdock agent installer
 # Usage:
-#   curl -sSL <control-plane>/install.sh | FLEETDOCK_URL=<control-plane> FLEETDOCK_TOKEN=<registration-token> sh
+#   curl -sSL <control-plane>/install.sh | sudo env FLEETDOCK_URL=<control-plane> FLEETDOCK_TOKEN=<registration-token> sh
 set -eu
 
 FLEETDOCK_URL="${FLEETDOCK_URL:-%s}"

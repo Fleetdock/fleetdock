@@ -81,8 +81,11 @@ In the dashboard: **Servers → Connect server** generates a single-use
 registration token and a ready-to-paste command:
 
 ```bash
-curl -sSL https://your-control-plane/install.sh | FLEETDOCK_URL=https://your-control-plane FLEETDOCK_TOKEN=fleetr_... sh
+curl -sSL https://your-control-plane/install.sh | \
+  sudo env FLEETDOCK_URL=https://your-control-plane FLEETDOCK_TOKEN=fleetr_... sh
 ```
+
+Put `sudo` after the pipe (before `sh`), not before `curl` — the installer must run as root to write systemd units and `/usr/local/bin`.
 
 The script downloads the agent binary **from the control plane itself**
 (cross-compiled into the backend image, `linux/amd64` + `linux/arm64`),
@@ -92,7 +95,13 @@ The agent enrolls, appears as a server within ~30 seconds, then heartbeats
 operations. Servers with no heartbeat for 2 minutes are flipped to `offline`.
 
 Set `FLEETDOCK_PUBLIC_URL` to the URL your servers can reach the API on — it is
-baked into the generated install command.
+baked into the generated install command. For LAN/VM development (e.g. control
+plane on your Mac, agent on a Ubuntu VM), use your host's LAN IP instead of
+`localhost`:
+
+```bash
+FLEETDOCK_PUBLIC_URL=http://192.168.x.x:8080
+```
 
 ## Concepts
 
@@ -167,7 +176,9 @@ Backend (Go):
   `GET /v1/db-privileges`); plus table listing and a paginated data browser
   per database. Executed synchronously by the control plane: external
   instances are reached at their host, managed instances at their server's
-  address — the DB port must be reachable from the control plane.
+  address (reported automatically by the agent on enroll/heartbeat). The
+  instance DB port must be reachable from the control plane — for LAN/VM dev,
+  ensure published ports on the server are open to the host running Fleetdock.
 - **Hardening** — login rate limiting (per client IP), security headers,
   `/healthz` (liveness) and `/readyz` (metadata DB ping) probes, and
   `FLEETDOCK_ENV=production` mode that refuses to boot with insecure default secrets.

@@ -469,6 +469,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Server"
+    patch:
+      tags: [Servers]
+      security: [{bearerAuth: []}]
+      summary: Update server metadata
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Updated server
+    delete:
+      tags: [Servers]
+      security: [{bearerAuth: []}]
+      summary: Delete server
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Deleted
 
   /v1/servers/{id}/metrics:
     get:

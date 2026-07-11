@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,6 +22,8 @@ type fakeService struct {
 	registerFn func(context.Context, serverapp.RegisterInput) (*serverdom.Server, error)
 	getFn      func(context.Context, string) (*serverdom.Server, error)
 	listFn     func(context.Context, serverapp.ListParams) (serverapp.ListResult, error)
+	updateFn   func(context.Context, serverapp.UpdateInput) (*serverdom.Server, error)
+	deleteFn   func(context.Context, string) error
 }
 
 func (f fakeService) Register(ctx context.Context, in serverapp.RegisterInput) (*serverdom.Server, error) {
@@ -32,6 +35,18 @@ func (f fakeService) Get(ctx context.Context, id string) (*serverdom.Server, err
 func (f fakeService) List(ctx context.Context, p serverapp.ListParams) (serverapp.ListResult, error) {
 	return f.listFn(ctx, p)
 }
+func (f fakeService) Update(ctx context.Context, in serverapp.UpdateInput) (*serverdom.Server, error) {
+	if f.updateFn != nil {
+		return f.updateFn(ctx, in)
+	}
+	return nil, apperr.Internal(fmt.Errorf("update not implemented"))
+}
+func (f fakeService) Delete(ctx context.Context, id string) error {
+	if f.deleteFn != nil {
+		return f.deleteFn(ctx, id)
+	}
+	return apperr.Internal(fmt.Errorf("delete not implemented"))
+}
 
 // newTestServer builds a minimal server-routes mux and injects an
 // all-permissions principal so handler tests bypass real authentication.
@@ -41,6 +56,8 @@ func newTestServer(svc ServersService) http.Handler {
 	mux.HandleFunc("POST /v1/servers", requirePerm("server:write", h.Register))
 	mux.HandleFunc("GET /v1/servers", requirePerm("server:read", h.List))
 	mux.HandleFunc("GET /v1/servers/{id}", requirePerm("server:read", h.Get))
+	mux.HandleFunc("PATCH /v1/servers/{id}", requirePerm("server:write", h.Update))
+	mux.HandleFunc("DELETE /v1/servers/{id}", requirePerm("server:write", h.Delete))
 
 	p := authapp.NewPrincipal(uuid.New(), "test@example.com", "server:read", "server:write")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

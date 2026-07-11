@@ -173,6 +173,12 @@ export interface CreateServerInput {
   labels?: Record<string, string>;
 }
 
+export interface UpdateServerInput {
+  name?: string;
+  tags?: string[];
+  labels?: Record<string, string>;
+}
+
 export interface CreateInstanceInput {
   kind?: "managed" | "external";
   server_id?: string;

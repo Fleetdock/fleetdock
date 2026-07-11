@@ -10,6 +10,7 @@ import (
 // HeartbeatInfo is the payload an agent reports on each heartbeat.
 type HeartbeatInfo struct {
 	AgentVersion      string
+	Address           *string
 	MariaDBVersion    *string
 	OS                *string
 	CPUPct            *float64

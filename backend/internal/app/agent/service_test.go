@@ -111,7 +111,14 @@ func (r *fakeServerRepo) GetByAgentTokenHash(_ context.Context, hash string) (*s
 	return r.GetByID(context.Background(), id)
 }
 
-func (r *fakeServerRepo) Heartbeat(_ context.Context, _ uuid.UUID, _ serverdom.HeartbeatInfo) error {
+func (r *fakeServerRepo) Heartbeat(_ context.Context, id uuid.UUID, info serverdom.HeartbeatInfo) error {
+	srv, ok := r.servers[id]
+	if !ok {
+		return apperr.NotFound("server not found")
+	}
+	if info.Address != nil && *info.Address != "" {
+		srv.Address = info.Address
+	}
 	return nil
 }
 
@@ -162,9 +169,11 @@ func TestRegister_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	addr := "192.168.252.2"
 	srv, agentTok, err := svc.Register(context.Background(), RegisterInput{
 		Token:    raw,
 		Hostname: "db1.internal",
+		Address:  &addr,
 	})
 	if err != nil {
 		t.Fatalf("register failed: %v", err)
@@ -172,8 +181,43 @@ func TestRegister_Success(t *testing.T) {
 	if srv == nil || srv.Hostname != "db1.internal" {
 		t.Fatal("expected enrolled server")
 	}
+	if srv.Address == nil || *srv.Address != addr {
+		t.Fatalf("expected address %q, got %v", addr, srv.Address)
+	}
 	if !strings.HasPrefix(agentTok, "fleeta_") {
 		t.Fatalf("expected fleeta_ agent token, got %q", agentTok)
+	}
+}
+
+func TestHeartbeat_UpdatesAddress(t *testing.T) {
+	tokens := newFakeRegTokenRepo()
+	servers := newFakeServerRepo()
+	svc := NewService(servers, tokens)
+
+	_, raw, err := svc.CreateToken(context.Background(), CreateTokenInput{Name: "lab"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _, err := svc.Register(context.Background(), RegisterInput{
+		Token:    raw,
+		Hostname: "db1.internal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := "10.0.0.5"
+	if err := svc.Heartbeat(context.Background(), srv.ID, serverdom.HeartbeatInfo{
+		AgentVersion: "0.1.0",
+		Address:      &addr,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := servers.GetByID(context.Background(), srv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Address == nil || *updated.Address != addr {
+		t.Fatalf("expected address %q, got %v", addr, updated.Address)
 	}
 }
 

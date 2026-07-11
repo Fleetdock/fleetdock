@@ -128,6 +128,55 @@ func (r *ServerRepository) List(ctx context.Context, f serverdom.ListFilter) (se
 	return serverdom.Page{Items: items, Total: total}, nil
 }
 
+func (r *ServerRepository) Update(ctx context.Context, s *serverdom.Server) error {
+	labels, err := json.Marshal(s.Labels)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("marshal labels: %w", err))
+	}
+	const q = `
+		UPDATE servers
+		SET name = $2, labels = $3::jsonb, tags = $4, updated_at = now(), version = version + 1
+		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING updated_at, version`
+	err = r.pool.QueryRow(ctx, q, s.ID, s.Name, string(labels), s.Tags).Scan(&s.UpdatedAt, &s.Version)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.NotFound("server not found")
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return apperr.Conflict("a server with this name already exists")
+		}
+		return apperr.Internal(fmt.Errorf("update server: %w", err))
+	}
+	return nil
+}
+
+func (r *ServerRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE servers SET deleted_at = now(), version = version + 1
+		WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("delete server: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("server not found")
+	}
+	return nil
+}
+
+func (r *ServerRepository) HasActiveInstances(ctx context.Context, id uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM instances WHERE server_id = $1 AND deleted_at IS NULL
+		)`, id).Scan(&exists)
+	if err != nil {
+		return false, apperr.Internal(fmt.Errorf("count server instances: %w", err))
+	}
+	return exists, nil
+}
+
 // rowScanner is satisfied by both pgx.Row and pgx.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error

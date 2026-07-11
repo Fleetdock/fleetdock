@@ -31,6 +31,7 @@ import type {
   TestConnectionResult,
   TriggerBackupInput,
   UpdateDestinationInput,
+  UpdateServerInput,
   ChangePasswordInput,
   CreateUserInput,
   Profile,
@@ -99,6 +100,26 @@ export function useCreateServer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateServerInput) => api.post<Server>("/v1/servers", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["servers"] }),
+  });
+}
+
+export function useUpdateServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: UpdateServerInput & { id: string }) =>
+      api.patch<Server>(`/v1/servers/${id}`, input),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["servers"] });
+      qc.invalidateQueries({ queryKey: ["server", v.id] });
+    },
+  });
+}
+
+export function useDeleteServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/v1/servers/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["servers"] }),
   });
 }

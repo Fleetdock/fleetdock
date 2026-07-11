@@ -86,6 +86,32 @@ func NewServer(name, hostname string, address, osName *string, labels map[string
 	}, nil
 }
 
+// Rename changes the display name after validation.
+func (s *Server) Rename(name string) error {
+	name = strings.TrimSpace(name)
+	if err := validateName(name); err != nil {
+		return err
+	}
+	s.Name = name
+	return nil
+}
+
+// SetTags replaces the tag list.
+func (s *Server) SetTags(tags []string) {
+	if tags == nil {
+		tags = []string{}
+	}
+	s.Tags = tags
+}
+
+// SetLabels replaces the label map.
+func (s *Server) SetLabels(labels map[string]string) {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	s.Labels = labels
+}
+
 func validateName(name string) error {
 	if name == "" {
 		return apperr.Invalid("name", "name is required")

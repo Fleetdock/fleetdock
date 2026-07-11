@@ -110,6 +110,8 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/servers", requirePerm("server:write", d.Servers.Register))
 	mux.HandleFunc("GET /v1/servers", requireAnyPerm("server:read", d.Servers.List))
 	mux.HandleFunc("GET /v1/servers/{id}", requireResourcePerm(rv, "server:read", authz.ResourceServer, "id", d.Servers.Get))
+	mux.HandleFunc("PATCH /v1/servers/{id}", requireResourcePerm(rv, "server:write", authz.ResourceServer, "id", d.Servers.Update))
+	mux.HandleFunc("DELETE /v1/servers/{id}", requireResourcePerm(rv, "server:write", authz.ResourceServer, "id", d.Servers.Delete))
 	mux.HandleFunc("GET /v1/servers/{id}/metrics", requireResourcePerm(rv, "server:read", authz.ResourceServer, "id", d.Overview.ServerMetrics))
 
 	// Agent registration tokens (server connect flow)

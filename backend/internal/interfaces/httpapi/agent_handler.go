@@ -88,6 +88,7 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 type heartbeatRequest struct {
 	AgentVersion      string   `json:"agent_version"`
+	Address           *string  `json:"address"`
 	MariaDBVersion    *string  `json:"mariadb_version"`
 	OS                *string  `json:"os"`
 	CPUPct            *float64 `json:"cpu_pct"`
@@ -109,6 +110,7 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	err := h.agents.Heartbeat(r.Context(), srv.ID, serverdom.HeartbeatInfo{
 		AgentVersion:      req.AgentVersion,
+		Address:           req.Address,
 		MariaDBVersion:    req.MariaDBVersion,
 		OS:                req.OS,
 		CPUPct:            req.CPUPct,

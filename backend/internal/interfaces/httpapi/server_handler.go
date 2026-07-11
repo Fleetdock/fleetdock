@@ -19,6 +19,8 @@ type ServersService interface {
 	Register(ctx context.Context, in serverapp.RegisterInput) (*serverdom.Server, error)
 	Get(ctx context.Context, id string) (*serverdom.Server, error)
 	List(ctx context.Context, p serverapp.ListParams) (serverapp.ListResult, error)
+	Update(ctx context.Context, in serverapp.UpdateInput) (*serverdom.Server, error)
+	Delete(ctx context.Context, id string) error
 }
 
 // ServerHandler exposes server endpoints.
@@ -38,6 +40,12 @@ type registerServerRequest struct {
 	OS       *string           `json:"os"`
 	Labels   map[string]string `json:"labels"`
 	Tags     []string          `json:"tags"`
+}
+
+type updateServerRequest struct {
+	Name   *string            `json:"name"`
+	Tags   *[]string          `json:"tags"`
+	Labels *map[string]string `json:"labels"`
 }
 
 type serverResponse struct {
@@ -119,6 +127,35 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toServerResponse(srv))
+}
+
+// Update handles PATCH /v1/servers/{id}.
+func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
+	var req updateServerRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	srv, err := h.svc.Update(r.Context(), serverapp.UpdateInput{
+		ID:     r.PathValue("id"),
+		Name:   req.Name,
+		Tags:   req.Tags,
+		Labels: req.Labels,
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toServerResponse(srv))
+}
+
+// Delete handles DELETE /v1/servers/{id}.
+func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.Delete(r.Context(), r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // List handles GET /v1/servers.

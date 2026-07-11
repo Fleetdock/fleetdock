@@ -75,7 +75,7 @@ func (h *RegTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		regTokenResponse: toRegTokenResponse(t),
 		Token:            raw,
 		InstallCommand: fmt.Sprintf(
-			"curl -sSL %s/install.sh | FLEETDOCK_URL=%s FLEETDOCK_TOKEN=%s sh",
+			"curl -sSL %s/install.sh | sudo env FLEETDOCK_URL=%s FLEETDOCK_TOKEN=%s sh",
 			h.publicURL, h.publicURL, raw),
 	}
 	writeJSON(w, http.StatusCreated, resp)

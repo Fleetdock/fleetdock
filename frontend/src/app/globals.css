@@ -93,6 +93,24 @@ a { color: inherit; text-decoration: none; }
   .sidebar-link.active { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
 
   .kbd { font-size: .72rem; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: .05rem .35rem; background: var(--panel-2); }
+
+  .sql-editor {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--panel);
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .sql-editor:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  .sql-editor .cm-editor {
+    outline: none;
+  }
+  .sql-editor .cm-editor.cm-focused {
+    outline: none;
+  }
 }
 
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 50; }

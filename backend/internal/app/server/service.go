@@ -23,6 +23,14 @@ type RegisterInput struct {
 	Tags     []string
 }
 
+// UpdateInput is the command to change editable server metadata.
+type UpdateInput struct {
+	ID     string
+	Name   *string
+	Tags   *[]string
+	Labels *map[string]string
+}
+
 // ListParams are the filter + pagination inputs for listing servers.
 type ListParams struct {
 	Status string
@@ -64,6 +72,56 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*serverdom.Se
 		return nil, err
 	}
 	return srv, nil
+}
+
+// Update changes editable metadata on an existing server.
+func (s *Service) Update(ctx context.Context, in UpdateInput) (*serverdom.Server, error) {
+	uid, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, apperr.Invalid("id", "id must be a valid UUID")
+	}
+	if in.Name == nil && in.Tags == nil && in.Labels == nil {
+		return nil, apperr.Invalid("body", "at least one field must be provided")
+	}
+
+	srv, err := s.repo.GetByID(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	if in.Name != nil {
+		if err := srv.Rename(*in.Name); err != nil {
+			return nil, err
+		}
+	}
+	if in.Tags != nil {
+		srv.SetTags(*in.Tags)
+	}
+	if in.Labels != nil {
+		srv.SetLabels(*in.Labels)
+	}
+	if err := s.repo.Update(ctx, srv); err != nil {
+		return nil, err
+	}
+	return srv, nil
+}
+
+// Delete soft-deletes a server. Active instances must be removed first.
+func (s *Service) Delete(ctx context.Context, id string) error {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return apperr.Invalid("id", "id must be a valid UUID")
+	}
+	if _, err := s.repo.GetByID(ctx, uid); err != nil {
+		return err
+	}
+	has, err := s.repo.HasActiveInstances(ctx, uid)
+	if err != nil {
+		return err
+	}
+	if has {
+		return apperr.Conflict("remove all instances on this server before deleting it")
+	}
+	return s.repo.SoftDelete(ctx, uid)
 }
 
 // Get returns a single server by id.

@@ -183,11 +183,14 @@ each database host:
 
 ```bash
 curl -sSL https://dbm.example.com/install.sh | \
-  FLEETDOCK_URL=https://dbm.example.com FLEETDOCK_TOKEN=fleetr_... sh
+  sudo env FLEETDOCK_URL=https://dbm.example.com FLEETDOCK_TOKEN=fleetr_... sh
 ```
 
+Put `sudo` after the pipe (before `sh`), not before `curl` — the installer must run as root.
+
 `FLEETDOCK_PUBLIC_URL` must match the URL servers can reach (no localhost, no
-internal-only DNS names unless every server is on that network).
+internal-only DNS names unless every server is on that network). For LAN/VM dev,
+use your host's LAN IP (e.g. `http://192.168.x.x:8080`).
 
 ## SMTP (optional)
 
@@ -207,9 +210,10 @@ channels still work.
 
 | Symptom | Likely cause |
 |---------|----------------|
+| `error: run as root` on install | `sudo` placed before `curl` instead of before `sh` (after the pipe) |
 | API exits on start | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh` |
 | CORS errors in browser | `FLEETDOCK_CORS_ORIGIN` does not match the dashboard URL |
-| Agent never appears | `FLEETDOCK_PUBLIC_URL` unreachable from the server; firewall blocks 443 |
+| Agent never appears | `FLEETDOCK_PUBLIC_URL` unreachable from the server; `localhost` used from a remote VM; firewall blocks 443 |
 | Frontend calls wrong API | Rebuild frontend after changing `NEXT_PUBLIC_API_URL` |
 | `/readyz` returns 503 | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong |
 

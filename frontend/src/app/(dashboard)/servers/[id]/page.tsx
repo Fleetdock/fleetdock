@@ -1,15 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
 
-import { Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table";
 import { MetricChart, type ChartPoint } from "@/components/chart";
 import { EmptyState, ErrorText, Field, Modal, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useCan, useCreateInstance, useInstances, useProvisionInstance, useServer, useServerMetrics } from "@/lib/hooks";
+import {
+  useCan,
+  useCreateInstance,
+  useDeleteServer,
+  useInstances,
+  useProvisionInstance,
+  useServer,
+  useServerMetrics,
+  useUpdateServer,
+} from "@/lib/hooks";
+import type { Server } from "@/lib/types";
 
 export default function ServerDetailPage() {
   const params = useParams();
@@ -17,6 +27,7 @@ export default function ServerDetailPage() {
   const { data: server, isLoading } = useServer(id);
   const { data: instances } = useInstances(id);
   const [open, setOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const can = useCan();
 
   if (isLoading) {
@@ -26,6 +37,8 @@ export default function ServerDetailPage() {
     return <EmptyState title="Server not found" />;
   }
 
+  const instanceCount = instances?.items.length ?? 0;
+
   return (
     <div>
       <Link href="/servers" className="muted text-sm">← Servers</Link>
@@ -34,11 +47,16 @@ export default function ServerDetailPage() {
           <h1 className="text-xl font-semibold">{server.name}</h1>
           <StatusBadge status={server.status} />
         </div>
-        {can("instance:write") ? (
-          <button className="btn btn-primary" onClick={() => setOpen(true)}>
-            <Plus size={16} /> Add instance
-          </button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {can("server:write") ? (
+            <ServerControls server={server} instanceCount={instanceCount} onRename={() => setRenameOpen(true)} />
+          ) : null}
+          {can("instance:write") ? (
+            <button className="btn btn-primary" onClick={() => setOpen(true)}>
+              <Plus size={16} /> Add instance
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="card" style={{ padding: "1.1rem", marginBottom: "1.25rem" }}>
@@ -69,7 +87,116 @@ export default function ServerDetailPage() {
       />
 
       <AddInstanceModal open={open} onClose={() => setOpen(false)} serverId={id} />
+      <RenameServerModal open={renameOpen} onClose={() => setRenameOpen(false)} server={server} />
     </div>
+  );
+}
+
+function ServerControls({
+  server,
+  instanceCount,
+  onRename,
+}: {
+  server: Server;
+  instanceCount: number;
+  onRename: () => void;
+}) {
+  const router = useRouter();
+  const del = useDeleteServer();
+  const busy = del.isPending;
+
+  async function onDelete() {
+    if (instanceCount > 0) {
+      alert(`Remove all ${instanceCount} instance(s) on this server before deleting it.`);
+      return;
+    }
+    if (!confirm(`Delete server "${server.name}"? The agent on the host will no longer be managed.`)) return;
+    try {
+      await del.mutateAsync(server.id);
+      router.push("/servers");
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Failed to delete server");
+    }
+  }
+
+  return (
+    <>
+      <button className="btn btn-sm" onClick={onRename} aria-label="Rename server">
+        <Pencil size={15} /> Rename
+      </button>
+      <button className="btn btn-sm btn-danger" disabled={busy} onClick={onDelete} aria-label="Delete server">
+        <Trash2 size={15} /> Delete
+      </button>
+    </>
+  );
+}
+
+function RenameServerModal({
+  open,
+  onClose,
+  server,
+}: {
+  open: boolean;
+  onClose: () => void;
+  server: Server;
+}) {
+  const update = useUpdateServer();
+  const [name, setName] = useState(server.name);
+  const [tags, setTags] = useState(server.tags.join(", "));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(server.name);
+    setTags(server.tags.join(", "));
+    setError(null);
+  }, [open, server]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const parsedTags = tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    try {
+      await update.mutateAsync({
+        id: server.id,
+        name: name.trim(),
+        tags: parsedTags,
+      });
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update server");
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Rename server">
+      <form onSubmit={onSubmit}>
+        <Field label="Name">
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="my-server"
+            required
+            pattern="[a-z0-9_-]{2,63}"
+            title="Lowercase letters, digits, hyphens and underscores (2–63 characters)"
+          />
+        </Field>
+        <Field label="Tags (comma-separated)">
+          <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="prod, eu-west" />
+        </Field>
+        <ErrorText message={error ?? undefined} />
+        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={update.isPending}>
+            {update.isPending ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

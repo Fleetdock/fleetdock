@@ -120,6 +120,9 @@ func (a *agent) register(ctx context.Context) error {
 		"os":            osName,
 		"agent_version": version,
 	}
+	if addr := primaryAddress(a.baseURL); addr != "" {
+		body["address"] = addr
+	}
 	var resp struct {
 		ServerID   string `json:"server_id"`
 		ServerName string `json:"server_name"`
@@ -176,6 +179,9 @@ func (a *agent) sendHeartbeat(ctx context.Context) {
 	if used, total, err := diskInfo("/"); err == nil {
 		info["disk_used_bytes"] = used
 		info["disk_total_bytes"] = total
+	}
+	if addr := primaryAddress(a.baseURL); addr != "" {
+		info["address"] = addr
 	}
 	if err := a.post(ctx, "/agent/v1/heartbeat", info, nil, true); err != nil {
 		slog.Warn("heartbeat failed", "error", err.Error())

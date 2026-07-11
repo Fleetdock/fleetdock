@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState, type FormEvent, type KeyboardEvent } from "react";
+import { Suspense, useRef, useState, type FormEvent } from "react";
 
 import { ArrowRightLeft, ChevronRight, Download, KeyRound, Play, Plus, Table2, TerminalSquare, Trash2, X } from "lucide-react";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
@@ -600,13 +601,14 @@ function SchemaView({ databaseId, table }: { databaseId: string; table: string }
 
 function QueryConsole({ databaseId, canWrite }: { databaseId: string; canWrite: boolean }) {
   const run = useRunQuery(databaseId);
+  const editorRef = useRef<SqlEditorHandle>(null);
   const [sql, setSql] = useState("");
   const [ranSql, setRanSql] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function onRun() {
-    const trimmed = sql.trim();
+    const trimmed = editorRef.current?.getQueryToRun() ?? sql.trim();
     if (!trimmed) return;
     setError(null);
     try {
@@ -619,13 +621,6 @@ function QueryConsole({ databaseId, canWrite }: { databaseId: string; canWrite: 
     }
   }
 
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      void onRun();
-    }
-  }
-
   const canExport = Boolean(result && result.columns.length > 0 && ranSql);
 
   return (
@@ -635,23 +630,29 @@ function QueryConsole({ databaseId, canWrite }: { databaseId: string; canWrite: 
           ? "Run SQL against this database. Reads return up to 200 rows; write statements report affected rows."
           : "Run read-only SQL against this database (returns up to 200 rows). You do not have write access."}
       </p>
-      <textarea
-        className="input"
+      <SqlEditor
+        ref={editorRef}
         value={sql}
-        onChange={(e) => setSql(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="SELECT * FROM ... "
-        spellCheck={false}
-        rows={5}
-        style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 13, resize: "vertical", whiteSpace: "pre" }}
+        onChange={setSql}
+        onRun={() => void onRun()}
+        placeholder="SELECT * FROM ..."
+        minHeight="220px"
       />
       <div className="flex items-center justify-between" style={{ marginTop: ".5rem", flexWrap: "wrap", gap: ".5rem" }}>
-        <span className="muted text-sm">Press ⌘/Ctrl + Enter to run.</span>
+        <span className="muted text-sm">
+          <span className="kbd">⌘/Ctrl</span> + <span className="kbd">Enter</span> to run
+          {sql.trim() ? " · selection runs when highlighted" : ""}
+        </span>
         <div className="flex items-center gap-2">
+          {sql.trim() ? (
+            <button className="btn btn-sm" onClick={() => setSql("")} disabled={run.isPending}>
+              Clear
+            </button>
+          ) : null}
           {canExport ? (
             <ExportButton label="Export CSV" run={() => exportQueryCSV(databaseId, ranSql)} />
           ) : null}
-          <button className="btn btn-primary btn-sm" onClick={onRun} disabled={run.isPending || !sql.trim()}>
+          <button className="btn btn-primary btn-sm" onClick={() => void onRun()} disabled={run.isPending || !sql.trim()}>
             {run.isPending ? <Spinner /> : <Play size={15} />} Run
           </button>
         </div>
