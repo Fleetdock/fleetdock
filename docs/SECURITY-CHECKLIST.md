@@ -81,7 +81,7 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 ## Observability and audit
 
 - [ ] Monitor `/healthz` and `/readyz`
-- [ ] Review **Audit log** for unexpected mutating actions
+- [ ] Review **Operations** log for unexpected mutating actions
 - [ ] Configure notification channels for backup failures and server offline events
 - [ ] Ship API JSON logs to a central system; restrict log access (credentials may appear in error messages — avoid logging request bodies)
 

@@ -78,7 +78,7 @@ What ships in **v0.1.0** and what we are building next. For release mechanics se
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Audit log export (CSV/JSON) | todo | |
+| Audit log export (CSV/JSON) | cancelled | Feature removed |
 | Replica / HA topology modeling | todo | |
 | More notification channels | todo | PagerDuty, Discord, … |
 | Engine parity (MySQL/Postgres vs MariaDB admin) | done | Postgres live admin shipped |

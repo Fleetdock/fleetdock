@@ -289,9 +289,6 @@ spec in sync with the routes defined in `router.go`.
 - **Scheduled backups** — cron-scheduled recurring backups per database with a
   retention window; the worker enqueues them and prunes expired backups (object
   + metadata). Managed from the **Schedules** page.
-- **Audit log** — append-only, hash-chained record of every mutating request
-  (actor, action, resource, IP), readable on the **Audit log** page
-  (`GET /v1/audit`).
 - **Notifications & alerts** — email / Slack / webhook channels and alert rules
   on server metrics (CPU, memory %, disk %, connections). Backup failures and
   offline servers notify automatically; the worker evaluates rules and delivers
@@ -344,5 +341,5 @@ the horizon:
 
 - SSO/OIDC login and optional 2FA/MFA
 - Secure external DB access without opening ports (Cloudflare Tunnel / TCP proxy)
-- Composite/HA topologies (replicas), audit-log export
+- Composite/HA topologies (replicas)
 - Expanded integration test coverage

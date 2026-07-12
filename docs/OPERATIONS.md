@@ -13,7 +13,7 @@ The **metadata PostgreSQL database** is the source of truth for:
 - Server and agent enrollment state
 - Instance connection credentials (encrypted)
 - Backup destinations (encrypted S3 keys)
-- Operation/job history and audit log
+- Operation/job history
 
 Losing this database without backups means re-enrolling every server and
 re-entering every external instance credential.
@@ -185,7 +185,6 @@ Prefer the dashboard **Users** page when any admin account still works.
 | Server metrics samples | 7 days | `FLEETDOCK_METRICS_RETENTION` |
 | Soft-deleted databases | 7 days | Built-in recovery window |
 | Backup objects | Per schedule / manual | Destination + schedule retention |
-| Audit log | Indefinite | Export manually if needed |
 
 ## Support and releases
 

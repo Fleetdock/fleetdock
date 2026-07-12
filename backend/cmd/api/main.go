@@ -16,7 +16,6 @@ import (
 	"time"
 
 	agentapp "github.com/TajBrains/fleetdock/backend/internal/app/agent"
-	auditapp "github.com/TajBrains/fleetdock/backend/internal/app/audit"
 	authapp "github.com/TajBrains/fleetdock/backend/internal/app/auth"
 	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
 	backupapp "github.com/TajBrains/fleetdock/backend/internal/app/backup"
@@ -93,7 +92,6 @@ func run() error {
 	backupRepo := postgres.NewBackupRepository(pool)
 	destRepo := postgres.NewBackupDestRepository(pool)
 	scheduleRepo := postgres.NewScheduleRepository(pool)
-	auditRepo := postgres.NewAuditRepository(pool)
 	notifRepo := postgres.NewNotificationRepository(pool)
 	statsRepo := postgres.NewStatsRepository(pool)
 	authzRepo := postgres.NewAuthzRepository(pool)
@@ -118,7 +116,6 @@ func run() error {
 	scheduleSvc := scheduleapp.NewService(scheduleRepo, databaseRepo, destRepo, backupSvc)
 	userSvc := userapp.NewService(userRepo)
 	dbadminSvc := dbadminapp.NewService(instanceRepo, databaseRepo, serverRepo, secretsSvc)
-	auditSvc := auditapp.NewService(auditRepo)
 	summarySvc := summaryapp.NewService(statsRepo)
 	notifSender := notify.New(notify.SMTPConfig{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
@@ -166,13 +163,11 @@ func run() error {
 		Agents:        httpapi.NewAgentHandler(agentSvc, opsSvc),
 		RegTokens:     httpapi.NewRegTokenHandler(agentSvc, cfg.PublicURL),
 		Install:       httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),
-		Audit:         httpapi.NewAuditHandler(auditSvc),
 		Notifications: httpapi.NewNotificationHandler(notifSvc),
 		Overview:      httpapi.NewOverviewHandler(summarySvc, agentSvc),
 		Docs:          httpapi.NewDocsHandler(),
 		Authn:         httpapi.NewAuthenticator(authSvc),
 		Resolver:      resolver,
-		AuditRecorder: auditSvc,
 		CORSOrigin:    cfg.CORSOrigin,
 		Ready:         pool.Ping,
 	})

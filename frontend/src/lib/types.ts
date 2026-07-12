@@ -439,18 +439,6 @@ export interface UpdateScheduleInput {
   enabled: boolean;
 }
 
-// ---- Audit log ----
-export interface AuditEntry {
-  id: number;
-  actor_type: string;
-  actor_id?: string | null;
-  action: string;
-  resource_type: string;
-  resource_id?: string | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
-}
-
 // ---- Notification channels + alert rules ----
 export type ChannelType = "email" | "slack" | "webhook";
 

@@ -62,7 +62,7 @@ func bearerToken(r *http.Request) string {
 
 // requirePerm wraps a handler to require authentication and, if perm is
 // non-empty, that permission at global scope. Use it for non-resource / admin
-// routes (users, roles, tokens, audit, notifications, destinations, schedules).
+// routes (users, roles, tokens, notifications, destinations, schedules).
 func requirePerm(perm string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r.Context())

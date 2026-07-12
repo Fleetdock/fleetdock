@@ -5,10 +5,9 @@ import { useParams } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 
 import { ChevronRight } from "lucide-react";
-import { DataTable } from "@/components/data-table";
 import { EmptyState, Spinner, StatusBadge } from "@/components/ui";
-import { useAudit, useOperation, useOperationLogs } from "@/lib/hooks";
-import type { AuditEntry, Operation, OperationLog } from "@/lib/types";
+import { useOperation, useOperationLogs } from "@/lib/hooks";
+import type { Operation, OperationLog } from "@/lib/types";
 
 const TERMINAL = new Set(["succeeded", "failed", "canceled"]);
 
@@ -26,19 +25,12 @@ const TYPE_LABEL: Record<string, string> = {
   remove_instance: "Remove instance",
 };
 
-// Operation resource_type is singular; map it to the detail route and to the
-// audit log's (plural) resource_type value.
+// Operation resource_type is singular; map it to the detail route.
 const RESOURCE_HREF: Record<string, (id: string) => string> = {
   database: (id) => `/databases/${id}`,
   instance: (id) => `/instances/${id}`,
   server: (id) => `/servers/${id}`,
   backup: () => `/backups`,
-};
-const AUDIT_RESOURCE: Record<string, string> = {
-  database: "databases",
-  instance: "instances",
-  server: "servers",
-  backup: "backups",
 };
 
 export default function OperationDetailPage() {
@@ -101,12 +93,10 @@ export default function OperationDetailPage() {
         <LogViewer logs={logs} follow={running} />
       </section>
 
-      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
         <JsonCard title="Result" value={op.result} />
         <JsonCard title="Parameters" value={op.params} />
       </div>
-
-      {op.resource_id ? <RelatedAudit op={op} /> : null}
     </div>
   );
 }
@@ -201,28 +191,6 @@ function JsonCard({ title, value }: { title: string; value?: Record<string, unkn
   );
 }
 
-function RelatedAudit({ op }: { op: Operation }) {
-  const { data } = useAudit({
-    resource_type: AUDIT_RESOURCE[op.resource_type],
-    resource_id: op.resource_id ?? undefined,
-  });
-  return (
-    <section>
-      <h2 className="font-semibold" style={{ marginBottom: ".6rem" }}>Related audit events</h2>
-      <DataTable<AuditEntry>
-        columns={[
-          { id: "time", header: "Time", className: "muted", render: (e) => new Date(e.created_at).toLocaleString() },
-          { id: "actor", header: "Actor", className: "font-medium", render: (e) => auditActor(e) },
-          { id: "action", header: "Action", render: (e) => <code style={{ fontSize: ".8rem" }}>{e.action}</code> },
-        ]}
-        rows={data?.items ?? []}
-        rowKey={(e) => String(e.id)}
-        emptyTitle="No related audit events"
-      />
-    </section>
-  );
-}
-
 function resourceLink(op: Operation): ReactNode {
   if (!op.resource_id) return <span className="muted">—</span>;
   const label = `${op.resource_type} · ${op.resource_id.slice(0, 8)}`;
@@ -233,12 +201,6 @@ function resourceLink(op: Operation): ReactNode {
       {label} <ChevronRight size={13} />
     </Link>
   );
-}
-
-function auditActor(e: AuditEntry): string {
-  const email = e.metadata?.actor_email;
-  if (typeof email === "string" && email) return email;
-  return e.actor_type;
 }
 
 function fmt(s: string): string {

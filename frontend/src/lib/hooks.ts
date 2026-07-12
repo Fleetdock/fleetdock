@@ -53,7 +53,6 @@ import type {
   Schedule,
   CreateScheduleInput,
   UpdateScheduleInput,
-  AuditEntry,
   NotificationChannel,
   ChannelInput,
   AlertRule,
@@ -849,19 +848,6 @@ export function useDeleteSchedule() {
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/v1/backup-schedules/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
-  });
-}
-
-// ---- Audit log ----
-export function useAudit(params?: { resource_type?: string; resource_id?: string; page?: number }) {
-  const q = new URLSearchParams();
-  if (params?.resource_type) q.set("resource_type", params.resource_type);
-  if (params?.resource_id) q.set("resource_id", params.resource_id);
-  return useQuery({
-    queryKey: ["audit", q.toString(), params?.page ?? 1],
-    queryFn: () => api.get<Paginated<AuditEntry>>(`/v1/audit?${q.toString()}&${pageQS(params?.page)}`),
-    refetchInterval: 10_000,
-    placeholderData: (prev) => prev,
   });
 }
 

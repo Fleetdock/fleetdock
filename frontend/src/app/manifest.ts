@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Fleetdock",
     short_name: "Fleetdock",
-    description: "MariaDB control plane",
+    description: "Database control plane",
     start_url: "/",
     display: "standalone",
     background_color: "#09090b",

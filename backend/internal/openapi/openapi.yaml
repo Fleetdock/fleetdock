@@ -30,7 +30,6 @@ tags:
   - name: Moves
   - name: Destinations
   - name: Schedules
-  - name: Audit
   - name: Notifications
   - name: Tokens
   - name: Agent
@@ -1040,15 +1039,6 @@ paths:
       responses:
         "204":
           description: Deleted
-
-  /v1/audit:
-    get:
-      tags: [Audit]
-      security: [{bearerAuth: []}]
-      summary: Audit log
-      responses:
-        "200":
-          description: Audit entries
 
   /v1/notification-channels:
     get:

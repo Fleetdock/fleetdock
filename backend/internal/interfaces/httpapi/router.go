@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	auditapp "github.com/TajBrains/fleetdock/backend/internal/app/audit"
 	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
 	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
 )
@@ -27,15 +26,12 @@ type RouterDeps struct {
 	Agents        *AgentHandler
 	RegTokens     *RegTokenHandler
 	Install       *InstallHandler
-	Audit         *AuditHandler
 	Notifications *NotificationHandler
 	Overview      *OverviewHandler
 	Docs          *DocsHandler
 	Authn         *Authenticator
 	// Resolver resolves resource scope ancestry for per-resource authorization.
 	Resolver *authzapp.Resolver
-	// AuditRecorder records mutating requests (optional).
-	AuditRecorder *auditapp.Service
 	CORSOrigin    string
 	// Ready reports whether dependencies (the metadata database) are healthy.
 	Ready func(ctx context.Context) error
@@ -190,9 +186,6 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("PATCH /v1/backup-schedules/{id}", requirePerm("schedule:write", d.Schedules.Update))
 	mux.HandleFunc("DELETE /v1/backup-schedules/{id}", requirePerm("schedule:write", d.Schedules.Delete))
 
-	// Audit log
-	mux.HandleFunc("GET /v1/audit", requirePerm("audit:read", d.Audit.List))
-
 	// Notification channels
 	mux.HandleFunc("POST /v1/notification-channels", requirePerm("notification:write", d.Notifications.CreateChannel))
 	mux.HandleFunc("GET /v1/notification-channels", requirePerm("notification:read", d.Notifications.ListChannels))
@@ -212,8 +205,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("DELETE /v1/tokens/{id}", requirePerm("token:write", d.Tokens.Revoke))
 
 	// Middleware order (outermost first):
-	// logging -> recover -> security headers -> CORS -> auth -> audit -> mux.
-	// The audit recorder runs inside auth so the principal is available.
-	handler := d.Authn.Middleware(auditRecorder(d.AuditRecorder, mux))
+	// logging -> recover -> security headers -> CORS -> auth -> mux.
+	handler := d.Authn.Middleware(mux)
 	return requestLogger(recoverer(securityHeaders(cors(d.CORSOrigin, handler))))
 }
