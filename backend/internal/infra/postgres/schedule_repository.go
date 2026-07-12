@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	scheduledom "github.com/TajBrains/fleetdock/backend/internal/domain/schedule"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	scheduledom "github.com/Fleetdock/fleetdock/backend/internal/domain/schedule"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // ScheduleRepository is the Postgres adapter for scheduledom.Repository.

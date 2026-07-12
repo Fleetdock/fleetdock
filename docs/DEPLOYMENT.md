@@ -33,7 +33,7 @@ one-time registration token and polls for operations.
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/TajBrains/fleetdock.git
+git clone https://github.com/Fleetdock/fleetdock.git
 cd Fleetdock
 cp .env.example .env
 ./scripts/generate-secrets.sh >> .env
@@ -41,17 +41,17 @@ cp .env.example .env
 
 Edit `.env` for production:
 
-| Variable | Example | Notes |
-|----------|---------|-------|
-| `FLEETDOCK_ENV` | `production` | Refuses insecure default secrets |
-| `FLEETDOCK_DATABASE_URL` | `postgres://user:pass@db.example.com:5432/fleetdock?sslmode=require` | Use managed Postgres in production |
-| `FLEETDOCK_JWT_SECRET` | *(from generate-secrets)* | Strong random string |
-| `FLEETDOCK_ENCRYPTION_KEY` | *(from generate-secrets)* | Encrypts instance/S3 credentials at rest |
-| `FLEETDOCK_ADMIN_EMAIL` | `admin@yourcompany.com` | Bootstrap admin (first boot only) |
-| `FLEETDOCK_ADMIN_PASSWORD` | *(strong password)* | Change after first login |
-| `FLEETDOCK_PUBLIC_URL` | `https://dbm.example.com` | URL **servers** use to reach the API |
-| `FLEETDOCK_CORS_ORIGIN` | `https://dbm.example.com` | URL **browsers** load the dashboard from |
-| `NEXT_PUBLIC_API_URL` | `https://dbm.example.com` | Baked into the frontend build |
+| Variable                   | Example                                                              | Notes                                    |
+| -------------------------- | -------------------------------------------------------------------- | ---------------------------------------- |
+| `FLEETDOCK_ENV`            | `production`                                                         | Refuses insecure default secrets         |
+| `FLEETDOCK_DATABASE_URL`   | `postgres://user:pass@db.example.com:5432/fleetdock?sslmode=require` | Use managed Postgres in production       |
+| `FLEETDOCK_JWT_SECRET`     | _(from generate-secrets)_                                            | Strong random string                     |
+| `FLEETDOCK_ENCRYPTION_KEY` | _(from generate-secrets)_                                            | Encrypts instance/S3 credentials at rest |
+| `FLEETDOCK_ADMIN_EMAIL`    | `admin@yourcompany.com`                                              | Bootstrap admin (first boot only)        |
+| `FLEETDOCK_ADMIN_PASSWORD` | _(strong password)_                                                  | Change after first login                 |
+| `FLEETDOCK_PUBLIC_URL`     | `https://dbm.example.com`                                            | URL **servers** use to reach the API     |
+| `FLEETDOCK_CORS_ORIGIN`    | `https://dbm.example.com`                                            | URL **browsers** load the dashboard from |
+| `NEXT_PUBLIC_API_URL`      | `https://dbm.example.com`                                            | Baked into the frontend build            |
 
 **Important:** `NEXT_PUBLIC_API_URL` is embedded at **image build time**. Rebuild
 the frontend image whenever this value changes.
@@ -154,10 +154,10 @@ Run Caddy on the host or as a fourth Compose service on ports 80/443.
 
 ### Same-origin vs split origins
 
-| Layout | `FLEETDOCK_CORS_ORIGIN` | `NEXT_PUBLIC_API_URL` | `FLEETDOCK_PUBLIC_URL` |
-|--------|--------------------|-----------------------|---------------------|
+| Layout                  | `FLEETDOCK_CORS_ORIGIN`   | `NEXT_PUBLIC_API_URL`     | `FLEETDOCK_PUBLIC_URL`    |
+| ----------------------- | ------------------------- | ------------------------- | ------------------------- |
 | Same host, path routing | `https://dbm.example.com` | `https://dbm.example.com` | `https://dbm.example.com` |
-| API on subdomain | `https://app.example.com` | `https://api.example.com` | `https://api.example.com` |
+| API on subdomain        | `https://app.example.com` | `https://api.example.com` | `https://api.example.com` |
 
 When the API and dashboard share one origin, CORS is simpler and cookies (if
 added in the future) work without cross-site configuration.
@@ -200,21 +200,21 @@ channels still work.
 
 ## Resource sizing
 
-| Fleet size | Suggested host | Notes |
-|------------|----------------|-------|
-| 1–10 servers | 2 vCPU, 4 GB RAM | Default worker handles external ops |
-| 10–50 servers | 4 vCPU, 8 GB RAM | Monitor Postgres connection pool |
-| 50+ servers | Dedicated DB + API host | Consider splitting metadata DB |
+| Fleet size    | Suggested host          | Notes                               |
+| ------------- | ----------------------- | ----------------------------------- |
+| 1–10 servers  | 2 vCPU, 4 GB RAM        | Default worker handles external ops |
+| 10–50 servers | 4 vCPU, 8 GB RAM        | Monitor Postgres connection pool    |
+| 50+ servers   | Dedicated DB + API host | Consider splitting metadata DB      |
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
-|---------|----------------|
-| `error: run as root` on install | `sudo` placed before `curl` instead of before `sh` (after the pipe) |
-| API exits on start | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh` |
-| CORS errors in browser | `FLEETDOCK_CORS_ORIGIN` does not match the dashboard URL |
-| Agent never appears | `FLEETDOCK_PUBLIC_URL` unreachable from the server; `localhost` used from a remote VM; firewall blocks 443 |
-| Frontend calls wrong API | Rebuild frontend after changing `NEXT_PUBLIC_API_URL` |
-| `/readyz` returns 503 | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong |
+| Symptom                         | Likely cause                                                                                               |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `error: run as root` on install | `sudo` placed before `curl` instead of before `sh` (after the pipe)                                        |
+| API exits on start              | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh`                                |
+| CORS errors in browser          | `FLEETDOCK_CORS_ORIGIN` does not match the dashboard URL                                                   |
+| Agent never appears             | `FLEETDOCK_PUBLIC_URL` unreachable from the server; `localhost` used from a remote VM; firewall blocks 443 |
+| Frontend calls wrong API        | Rebuild frontend after changing `NEXT_PUBLIC_API_URL`                                                      |
+| `/readyz` returns 503           | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong                                                   |
 
 Interactive API docs are available at `https://<your-host>/docs` after deploy.

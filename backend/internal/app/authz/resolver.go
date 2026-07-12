@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 )
 
 // Repository resolves resource lineage from the metadata store.

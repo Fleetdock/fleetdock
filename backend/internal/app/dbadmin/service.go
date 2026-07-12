@@ -15,11 +15,11 @@ import (
 
 	"github.com/google/uuid"
 
-	databasedom "github.com/TajBrains/fleetdock/backend/internal/domain/database"
-	instancedom "github.com/TajBrains/fleetdock/backend/internal/domain/instance"
-	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/engine"
+	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
+	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
+	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 )
 
 // Secrets is the secret store surface this service needs.

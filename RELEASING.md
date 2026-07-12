@@ -19,7 +19,7 @@ Tags use a `v` prefix: `v0.1.0`, `v0.1.1`, `v0.2.0`.
 3. Open a PR if the changelog commit is not on `main` yet
 4. Create and push the tag (see below)
 5. Wait for the **[Release workflow](.github/workflows/release.yml)** to finish on GitHub Actions
-6. Verify the [GitHub Release](https://github.com/TajBrains/fleetdock/releases) and GHCR images
+6. Verify the [GitHub Release](https://github.com/Fleetdock/fleetdock/releases) and GHCR images
 7. Optionally announce (release notes, blog, social)
 
 ## Tag and push

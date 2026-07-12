@@ -5,10 +5,10 @@ import (
 
 	"github.com/google/uuid"
 
-	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
-	moveapp "github.com/TajBrains/fleetdock/backend/internal/app/move"
-	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
+	moveapp "github.com/Fleetdock/fleetdock/backend/internal/app/move"
+	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // MoveHandler exposes the move-database action. A move has no resource of its

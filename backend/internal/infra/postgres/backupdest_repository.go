@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	backupdestdom "github.com/TajBrains/fleetdock/backend/internal/domain/backupdest"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	backupdestdom "github.com/Fleetdock/fleetdock/backend/internal/domain/backupdest"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // BackupDestRepository is the Postgres adapter for backupdestdom.Repository.

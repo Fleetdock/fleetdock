@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	statsdom "github.com/TajBrains/fleetdock/backend/internal/domain/stats"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	statsdom "github.com/Fleetdock/fleetdock/backend/internal/domain/stats"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // StatsRepository is the Postgres adapter for statsdom.Repository.

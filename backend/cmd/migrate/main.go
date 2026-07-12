@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/TajBrains/fleetdock/backend/internal/config"
-	"github.com/TajBrains/fleetdock/backend/internal/infra/postgres"
+	"github.com/Fleetdock/fleetdock/backend/internal/config"
+	"github.com/Fleetdock/fleetdock/backend/internal/infra/postgres"
 )
 
 func main() {

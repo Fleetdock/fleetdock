@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	backupdom "github.com/TajBrains/fleetdock/backend/internal/domain/backup"
-	instancedom "github.com/TajBrains/fleetdock/backend/internal/domain/instance"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	backupdom "github.com/Fleetdock/fleetdock/backend/internal/domain/backup"
+	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 func TestTrigger_InvalidUUIDs(t *testing.T) {

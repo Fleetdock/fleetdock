@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	notificationapp "github.com/TajBrains/fleetdock/backend/internal/app/notification"
-	notifdom "github.com/TajBrains/fleetdock/backend/internal/domain/notification"
+	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
+	notifdom "github.com/Fleetdock/fleetdock/backend/internal/domain/notification"
 )
 
 // NotificationHandler exposes channel + alert-rule endpoints.

@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	authapp "github.com/TajBrains/fleetdock/backend/internal/app/auth"
-	serverapp "github.com/TajBrains/fleetdock/backend/internal/app/server"
-	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
+	serverapp "github.com/Fleetdock/fleetdock/backend/internal/app/server"
+	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // fakeService lets us drive the handler without the application/DB layers.

@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	secretdom "github.com/TajBrains/fleetdock/backend/internal/domain/secret"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/crypto"
+	secretdom "github.com/Fleetdock/fleetdock/backend/internal/domain/secret"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/crypto"
 )
 
 // Service encrypts on write and decrypts on read.

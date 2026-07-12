@@ -12,10 +12,10 @@ import (
 
 	"github.com/google/uuid"
 
-	authapp "github.com/TajBrains/fleetdock/backend/internal/app/auth"
-	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
-	"github.com/TajBrains/fleetdock/backend/internal/openapi"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/auth"
+	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
+	userdom "github.com/Fleetdock/fleetdock/backend/internal/domain/user"
+	"github.com/Fleetdock/fleetdock/backend/internal/openapi"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/auth"
 )
 
 // newSmokeHandler wires public routes and auth login for HTTP smoke tests.

@@ -12,12 +12,12 @@ import (
 
 	"github.com/google/uuid"
 
-	agentapp "github.com/TajBrains/fleetdock/backend/internal/app/agent"
-	notificationapp "github.com/TajBrains/fleetdock/backend/internal/app/notification"
-	operationapp "github.com/TajBrains/fleetdock/backend/internal/app/operation"
-	scheduleapp "github.com/TajBrains/fleetdock/backend/internal/app/schedule"
-	jobdom "github.com/TajBrains/fleetdock/backend/internal/domain/job"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/executor"
+	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
+	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
+	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
+	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
 )
 
 // toJobLogs maps buffered executor log lines to domain log records for a job.

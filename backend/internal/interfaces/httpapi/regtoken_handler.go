@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	agentapp "github.com/TajBrains/fleetdock/backend/internal/app/agent"
-	regtokendom "github.com/TajBrains/fleetdock/backend/internal/domain/regtoken"
+	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	regtokendom "github.com/Fleetdock/fleetdock/backend/internal/domain/regtoken"
 )
 
 // RegTokenHandler manages agent registration tokens (server connect flow).

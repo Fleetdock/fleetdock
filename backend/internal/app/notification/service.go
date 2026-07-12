@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	notifdom "github.com/TajBrains/fleetdock/backend/internal/domain/notification"
-	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/notify"
+	notifdom "github.com/Fleetdock/fleetdock/backend/internal/domain/notification"
+	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/notify"
 )
 
 // MetricsSource provides the latest server health for alert evaluation.

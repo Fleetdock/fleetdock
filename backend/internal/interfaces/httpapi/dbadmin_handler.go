@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	dbadminapp "github.com/TajBrains/fleetdock/backend/internal/app/dbadmin"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/engine"
+	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 )
 
 // DBAdminHandler exposes live database administration: database accounts,

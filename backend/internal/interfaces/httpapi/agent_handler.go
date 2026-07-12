@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
-	agentapp "github.com/TajBrains/fleetdock/backend/internal/app/agent"
-	operationapp "github.com/TajBrains/fleetdock/backend/internal/app/operation"
-	jobdom "github.com/TajBrains/fleetdock/backend/internal/domain/job"
-	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
+	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
+	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // AgentHandler implements the control-plane side of the agent protocol:

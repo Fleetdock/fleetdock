@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // fakeRepo is an in-memory Repository used to test the service in isolation.

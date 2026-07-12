@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/cron"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/cron"
 )
 
 // Schedule is a recurring backup of one database to one destination.

@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
-	regtokendom "github.com/TajBrains/fleetdock/backend/internal/domain/regtoken"
-	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	regtokendom "github.com/Fleetdock/fleetdock/backend/internal/domain/regtoken"
+	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 type fakeRegTokenRepo struct {

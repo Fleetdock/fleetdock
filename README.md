@@ -1,6 +1,6 @@
 # Fleetdock
 
-[![CI](https://github.com/TajBrains/fleetdock/actions/workflows/ci.yml/badge.svg)](https://github.com/TajBrains/fleetdock/actions/workflows/ci.yml)
+[![CI](https://github.com/Fleetdock/fleetdock/actions/workflows/ci.yml/badge.svg)](https://github.com/Fleetdock/fleetdock/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](backend/go.mod)
 [![Website](https://img.shields.io/badge/website-fleetdock.dev-0ea5e9)](https://fleetdock.dev)
@@ -21,12 +21,12 @@ SaaS vendor.
 
 > Screenshots: see [docs/screenshots/](docs/screenshots/). Replace placeholders with real captures from a running stack before major launch posts.
 
-| In 60 seconds | |
-|---------------|---|
-| **Install** | `docker compose up --build` (local Postgres included) |
-| **Connect a server** | One `curl … install.sh` command from the dashboard |
-| **Manage** | Instances, databases, backups, users/grants, operations log |
-| **Docs** | [Deploy to production](docs/DEPLOYMENT.md) · [Operations](docs/OPERATIONS.md) · [Security checklist](docs/SECURITY-CHECKLIST.md) · [API `/docs`](http://localhost:8080/docs) |
+| In 60 seconds        |                                                                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Install**          | `docker compose up --build` (local Postgres included)                                                                                                                        |
+| **Connect a server** | One `curl … install.sh` command from the dashboard                                                                                                                           |
+| **Manage**           | Instances, databases, backups, users/grants, operations log                                                                                                                  |
+| **Docs**             | [Deploy to production](docs/DEPLOYMENT.md) · [Operations](docs/OPERATIONS.md) · [Security checklist](docs/SECURITY-CHECKLIST.md) · [API `/docs`](http://localhost:8080/docs) |
 
 This is a monorepo:
 
@@ -111,16 +111,16 @@ FLEETDOCK_PUBLIC_URL=http://192.168.x.x:8080
     server's agent against `127.0.0.1`. A managed instance can either be
     **provisioned** by Fleetdock (the agent launches a MariaDB **Docker
     container** with a generated root password, a named data volume and a
-    published port — Servers → *server* → **Add instance → Provision new**) or
+    published port — Servers → _server_ → **Add instance → Provision new**) or
     **registered** (point at a MariaDB already running on the server).
   - `external`: any reachable database you already host elsewhere — the control
     plane connects to it directly. Add it under
     **Instances → Add instance → External**, then **Import DBs** to pull in
     the existing databases.
-  Provisioned instances can be **started / stopped / restarted** from their
-  detail page; deleting one removes the container (and, if you confirm, its
-  data volume). Provisioning needs Docker on the server — `install.sh`
-  installs it automatically.
+    Provisioned instances can be **started / stopped / restarted** from their
+    detail page; deleting one removes the container (and, if you confirm, its
+    data volume). Provisioning needs Docker on the server — `install.sh`
+    installs it automatically.
 - **Database** — a logical database on an instance. If the instance has admin
   credentials, creating a database physically creates it (via an operation);
   otherwise it's a metadata-only registration.
@@ -228,26 +228,26 @@ npm run dev
 
 Environment variables use the `FLEETDOCK_*` prefix.
 
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `FLEETDOCK_DATABASE_URL` | — | required |
-| `FLEETDOCK_ENV` | `development` | `production` refuses to start with default secrets |
-| `FLEETDOCK_HTTP_ADDR` | `:8080` | |
-| `FLEETDOCK_JWT_SECRET` | dev default | set a strong secret in production |
-| `FLEETDOCK_ENCRYPTION_KEY` | dev default | primary key that encrypts credentials/S3 keys at rest; rotate via `make rotate-keys` (see Security) |
-| `FLEETDOCK_ENCRYPTION_KEY_ID` | `master-1` | id stamped on secrets wrapped by the primary key; use a new id when rotating |
-| `FLEETDOCK_ENCRYPTION_KEYS_OLD` | — | retired keys still needed to decrypt during rotation, as `id=secret,id2=secret2` |
-| `FLEETDOCK_PUBLIC_URL` | `http://localhost:8080` | URL agents/installers use to reach the API |
-| `FLEETDOCK_AGENT_BIN_DIR` | `/opt/fleetdock/agents` | where cross-compiled agent binaries live |
-| `FLEETDOCK_WORKER_ENABLED` | `true` | in-process worker (external-instance ops, offline detection, scheduled backups, retention, alerts, notifications) |
-| `FLEETDOCK_HEARTBEAT_TIMEOUT` | `2m` | no heartbeat for this long ⇒ server `offline` |
-| `FLEETDOCK_METRICS_RETENTION` | `168h` | how long per-heartbeat server metrics history is kept |
-| `FLEETDOCK_SMTP_HOST` | — | SMTP host for email notification channels (empty ⇒ email delivery disabled) |
-| `FLEETDOCK_SMTP_PORT` | `587` | SMTP port |
-| `FLEETDOCK_SMTP_USERNAME` / `FLEETDOCK_SMTP_PASSWORD` | — | SMTP auth (optional) |
-| `FLEETDOCK_SMTP_FROM` | `fleetdock@localhost` | envelope/from address for emails |
-| `FLEETDOCK_ADMIN_EMAIL` / `FLEETDOCK_ADMIN_PASSWORD` | — | first-run bootstrap only; generate with `./scripts/generate-secrets.sh` |
-| `FLEETDOCK_CORS_ORIGIN` | `http://localhost:3000` | frontend origin |
+| Variable                                              | Default                 | Notes                                                                                                             |
+| ----------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `FLEETDOCK_DATABASE_URL`                              | —                       | required                                                                                                          |
+| `FLEETDOCK_ENV`                                       | `development`           | `production` refuses to start with default secrets                                                                |
+| `FLEETDOCK_HTTP_ADDR`                                 | `:8080`                 |                                                                                                                   |
+| `FLEETDOCK_JWT_SECRET`                                | dev default             | set a strong secret in production                                                                                 |
+| `FLEETDOCK_ENCRYPTION_KEY`                            | dev default             | primary key that encrypts credentials/S3 keys at rest; rotate via `make rotate-keys` (see Security)               |
+| `FLEETDOCK_ENCRYPTION_KEY_ID`                         | `master-1`              | id stamped on secrets wrapped by the primary key; use a new id when rotating                                      |
+| `FLEETDOCK_ENCRYPTION_KEYS_OLD`                       | —                       | retired keys still needed to decrypt during rotation, as `id=secret,id2=secret2`                                  |
+| `FLEETDOCK_PUBLIC_URL`                                | `http://localhost:8080` | URL agents/installers use to reach the API                                                                        |
+| `FLEETDOCK_AGENT_BIN_DIR`                             | `/opt/fleetdock/agents` | where cross-compiled agent binaries live                                                                          |
+| `FLEETDOCK_WORKER_ENABLED`                            | `true`                  | in-process worker (external-instance ops, offline detection, scheduled backups, retention, alerts, notifications) |
+| `FLEETDOCK_HEARTBEAT_TIMEOUT`                         | `2m`                    | no heartbeat for this long ⇒ server `offline`                                                                     |
+| `FLEETDOCK_METRICS_RETENTION`                         | `168h`                  | how long per-heartbeat server metrics history is kept                                                             |
+| `FLEETDOCK_SMTP_HOST`                                 | —                       | SMTP host for email notification channels (empty ⇒ email delivery disabled)                                       |
+| `FLEETDOCK_SMTP_PORT`                                 | `587`                   | SMTP port                                                                                                         |
+| `FLEETDOCK_SMTP_USERNAME` / `FLEETDOCK_SMTP_PASSWORD` | —                       | SMTP auth (optional)                                                                                              |
+| `FLEETDOCK_SMTP_FROM`                                 | `fleetdock@localhost`   | envelope/from address for emails                                                                                  |
+| `FLEETDOCK_ADMIN_EMAIL` / `FLEETDOCK_ADMIN_PASSWORD`  | —                       | first-run bootstrap only; generate with `./scripts/generate-secrets.sh`                                           |
+| `FLEETDOCK_CORS_ORIGIN`                               | `http://localhost:3000` | frontend origin                                                                                                   |
 
 ## API documentation
 
@@ -280,6 +280,7 @@ spec in sync with the routes defined in `router.go`.
 
   Rotation requires a new key id — reusing the same id with a different secret
   would leave existing secrets unreadable.
+
 - **Vulnerability reports:** see [SECURITY.md](SECURITY.md).
 
 ## Automation & observability
@@ -288,7 +289,7 @@ spec in sync with the routes defined in `router.go`.
   operation status, and automation summary at a glance (`GET /v1/overview`).
 - **Scheduled backups** — cron-scheduled recurring backups per database with a
   retention window; the worker enqueues them and prunes expired backups (object
-  + metadata). Managed from the **Schedules** page.
+  - metadata). Managed from the **Schedules** page.
 - **Notifications & alerts** — email / Slack / webhook channels and alert rules
   on server metrics (CPU, memory %, disk %, connections). Backup failures and
   offline servers notify automatically; the worker evaluates rules and delivers
@@ -300,12 +301,12 @@ spec in sync with the routes defined in `router.go`.
 ## Move & verify
 
 - **Move database** — a background saga (`backup → restore → verify → optional
-  drop of source`) copies or relocates a database to another instance, across
+drop of source`) copies or relocates a database to another instance, across
   servers. Start it from a database's detail page ("Move"); watch it on the
   **Moves** page. Ticking "drop source" makes it a true move (cutover); leaving
   it unticked makes it a copy.
 - **Restore verification** — every restore verifies the backup artifact's
-  sha256 checksum *before* touching the target, then counts the restored tables
+  sha256 checksum _before_ touching the target, then counts the restored tables
   and reports the count.
 
 ## Production deployment

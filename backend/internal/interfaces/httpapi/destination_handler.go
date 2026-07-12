@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	destinationapp "github.com/TajBrains/fleetdock/backend/internal/app/destination"
-	backupdestdom "github.com/TajBrains/fleetdock/backend/internal/domain/backupdest"
+	destinationapp "github.com/Fleetdock/fleetdock/backend/internal/app/destination"
+	backupdestdom "github.com/Fleetdock/fleetdock/backend/internal/domain/backupdest"
 )
 
 // DestinationHandler exposes backup-destination endpoints.

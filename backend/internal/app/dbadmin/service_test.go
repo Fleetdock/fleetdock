@@ -3,8 +3,8 @@ package dbadminapp
 import (
 	"testing"
 
-	serverdom "github.com/TajBrains/fleetdock/backend/internal/domain/server"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 func TestManagedInstanceHost_PrefersAddress(t *testing.T) {

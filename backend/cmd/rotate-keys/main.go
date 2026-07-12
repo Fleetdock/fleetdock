@@ -24,10 +24,10 @@ import (
 	"os"
 	"time"
 
-	secretsapp "github.com/TajBrains/fleetdock/backend/internal/app/secrets"
-	"github.com/TajBrains/fleetdock/backend/internal/config"
-	"github.com/TajBrains/fleetdock/backend/internal/infra/postgres"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/crypto"
+	secretsapp "github.com/Fleetdock/fleetdock/backend/internal/app/secrets"
+	"github.com/Fleetdock/fleetdock/backend/internal/config"
+	"github.com/Fleetdock/fleetdock/backend/internal/infra/postgres"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/crypto"
 )
 
 func main() {

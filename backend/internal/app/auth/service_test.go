@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
-	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
-	tokendom "github.com/TajBrains/fleetdock/backend/internal/domain/token"
-	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/auth"
+	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
+	tokendom "github.com/Fleetdock/fleetdock/backend/internal/domain/token"
+	userdom "github.com/Fleetdock/fleetdock/backend/internal/domain/user"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/auth"
 )
 
 type fakeUserRepo struct {

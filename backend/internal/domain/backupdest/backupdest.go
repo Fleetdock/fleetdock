@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // Provider identifies the storage flavour (drives endpoint defaults).

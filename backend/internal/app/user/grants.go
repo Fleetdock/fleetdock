@@ -5,8 +5,8 @@ import (
 
 	"github.com/google/uuid"
 
-	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	userdom "github.com/Fleetdock/fleetdock/backend/internal/domain/user"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // Scope types for role grants.

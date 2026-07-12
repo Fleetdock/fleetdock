@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/TajBrains/fleetdock/backend/internal/openapi"
+	"github.com/Fleetdock/fleetdock/backend/internal/openapi"
 )
 
 // DocsHandler serves the OpenAPI spec and a self-contained Redoc docs page.

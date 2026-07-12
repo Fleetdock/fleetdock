@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	regtokendom "github.com/TajBrains/fleetdock/backend/internal/domain/regtoken"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	regtokendom "github.com/Fleetdock/fleetdock/backend/internal/domain/regtoken"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // RegTokenRepository is the Postgres adapter for regtokendom.Repository.

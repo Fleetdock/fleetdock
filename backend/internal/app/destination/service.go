@@ -8,10 +8,10 @@ import (
 
 	"github.com/google/uuid"
 
-	backupdestdom "github.com/TajBrains/fleetdock/backend/internal/domain/backupdest"
-	secretdom "github.com/TajBrains/fleetdock/backend/internal/domain/secret"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/storage"
+	backupdestdom "github.com/Fleetdock/fleetdock/backend/internal/domain/backupdest"
+	secretdom "github.com/Fleetdock/fleetdock/backend/internal/domain/secret"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/storage"
 )
 
 // Secrets is the secret store surface this service needs.

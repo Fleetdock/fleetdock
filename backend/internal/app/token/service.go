@@ -8,10 +8,10 @@ import (
 
 	"github.com/google/uuid"
 
-	tokendom "github.com/TajBrains/fleetdock/backend/internal/domain/token"
-	userdom "github.com/TajBrains/fleetdock/backend/internal/domain/user"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/auth"
+	tokendom "github.com/Fleetdock/fleetdock/backend/internal/domain/token"
+	userdom "github.com/Fleetdock/fleetdock/backend/internal/domain/user"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/auth"
 )
 
 // Service implements API-token management.

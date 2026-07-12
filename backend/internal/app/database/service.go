@@ -6,12 +6,12 @@ import (
 
 	"github.com/google/uuid"
 
-	operationapp "github.com/TajBrains/fleetdock/backend/internal/app/operation"
-	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
-	databasedom "github.com/TajBrains/fleetdock/backend/internal/domain/database"
-	instancedom "github.com/TajBrains/fleetdock/backend/internal/domain/instance"
-	jobdom "github.com/TajBrains/fleetdock/backend/internal/domain/job"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
+	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
+	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
+	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
+	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // CreateInput is the command to register/create a database on an instance.

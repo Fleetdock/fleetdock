@@ -29,7 +29,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/TajBrains/fleetdock/backend/internal/platform/executor"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
 )
 
 const version = "0.1.0"

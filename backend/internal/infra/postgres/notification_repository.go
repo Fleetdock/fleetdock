@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	notifdom "github.com/TajBrains/fleetdock/backend/internal/domain/notification"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	notifdom "github.com/Fleetdock/fleetdock/backend/internal/domain/notification"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // NotificationRepository is the Postgres adapter for notifdom.Repository.

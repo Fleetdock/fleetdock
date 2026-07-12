@@ -3,7 +3,7 @@ package httpapi
 import (
 	"context"
 
-	authapp "github.com/TajBrains/fleetdock/backend/internal/app/auth"
+	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
 )
 
 type ctxKey int

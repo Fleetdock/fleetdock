@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rebrand to Fleetdock** — product rename; website [fleetdock.dev](https://fleetdock.dev)
 - Environment prefix `FLEETDOCK_*`
 - Agent binary/service paths, API token prefixes (`fleetd_`, `fleetr_`, `fleeta_`)
-- Go module `github.com/TajBrains/fleetdock/backend`
+- Go module `github.com/Fleetdock/fleetdock/backend`
 - GHCR images `fleetdock-backend` / `fleetdock-frontend`
 
 ### Added
@@ -60,5 +60,5 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/TajBrains/fleetdock/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/TajBrains/fleetdock/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.1.0

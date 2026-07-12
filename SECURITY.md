@@ -14,7 +14,7 @@ Security fixes are applied to the latest release on the `main` branch.
 
 Instead, use one of the following channels:
 
-1. **GitHub Security Advisories** (preferred): open a [private vulnerability report](https://github.com/TajBrains/fleetdock/security/advisories/new) on this repository.
+1. **GitHub Security Advisories** (preferred): open a [private vulnerability report](https://github.com/Fleetdock/fleetdock/security/advisories/new) on this repository.
 2. **Email**: contact the maintainers at `security@tajbrains.com` with a detailed description.
 
 Include as much of the following as you can:
@@ -27,11 +27,11 @@ Include as much of the following as you can:
 
 ## Response Timeline
 
-| Stage              | Target        |
-| ------------------ | ------------- |
-| Initial response   | 3 business days |
-| Triage complete    | 7 business days |
-| Fix or mitigation  | 30 days (severity-dependent) |
+| Stage             | Target                       |
+| ----------------- | ---------------------------- |
+| Initial response  | 3 business days              |
+| Triage complete   | 7 business days              |
+| Fix or mitigation | 30 days (severity-dependent) |
 
 We will acknowledge receipt, keep you informed of progress, and credit reporters in the advisory unless you prefer to remain anonymous.
 

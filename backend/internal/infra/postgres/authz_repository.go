@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // AuthzRepository resolves resource lineage for scoped authorization.

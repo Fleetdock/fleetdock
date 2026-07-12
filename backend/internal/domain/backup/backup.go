@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 )
 
 // Status is the lifecycle state of a backup.

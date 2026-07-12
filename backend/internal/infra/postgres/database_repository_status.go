@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	databasedom "github.com/TajBrains/fleetdock/backend/internal/domain/database"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // SetStatus transitions a database's lifecycle status (used by the

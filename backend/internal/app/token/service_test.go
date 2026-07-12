@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	tokendom "github.com/TajBrains/fleetdock/backend/internal/domain/token"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	tokendom "github.com/Fleetdock/fleetdock/backend/internal/domain/token"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 type fakeTokenRepo struct {

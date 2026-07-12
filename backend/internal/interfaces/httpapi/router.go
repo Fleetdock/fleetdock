@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	authzapp "github.com/TajBrains/fleetdock/backend/internal/app/authz"
-	authz "github.com/TajBrains/fleetdock/backend/internal/domain/authz"
+	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
+	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 )
 
 // RouterDeps are the handlers and middleware the router wires together.

@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	secretdom "github.com/TajBrains/fleetdock/backend/internal/domain/secret"
-	"github.com/TajBrains/fleetdock/backend/internal/platform/apperr"
+	secretdom "github.com/Fleetdock/fleetdock/backend/internal/domain/secret"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // SecretRepository is the Postgres adapter for secretdom.Repository.
