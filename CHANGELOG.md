@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [ROADMAP.md](ROADMAP.md) rewritten with post-v0.1.0 backlog (removed completed phase sections)
 - README: GHCR quick-start, removed AI-generated screenshot placeholder
+- Login rate limiting derives client IP from the transport peer by default; set `FLEETDOCK_TRUST_PROXY_HEADERS=true` when the API runs behind a trusted reverse proxy that sets `X-Forwarded-For`
+
+### Security
+
+- JWT sessions carry a per-user token epoch; password change or reset bumps the epoch and invalidates outstanding browser sessions (API tokens are unaffected)
+- Notification webhook and Slack delivery use SSRF-resistant outbound HTTP — loopback, link-local, and cloud metadata addresses are blocked
+- MariaDB user password handling in DB admin escapes special characters correctly
 
 ## [0.1.0] - 2026-07-10
 
