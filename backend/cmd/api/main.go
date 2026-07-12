@@ -50,7 +50,6 @@ func main() {
 	}
 }
 
-
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -148,28 +147,29 @@ func run() error {
 
 	// HTTP layer.
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Auth:          httpapi.NewAuthHandler(authSvc),
-		Servers:       httpapi.NewServerHandler(serverSvc),
-		Instances:     httpapi.NewInstanceHandler(instanceSvc, resolver),
-		Databases:     httpapi.NewDatabaseHandler(databaseSvc, resolver),
-		Tokens:        httpapi.NewTokenHandler(tokenSvc),
-		Users:         httpapi.NewUserHandler(userSvc),
-		Operations:    httpapi.NewOperationHandler(opsSvc),
-		Backups:       httpapi.NewBackupHandler(backupSvc, resolver),
-		Schedules:     httpapi.NewScheduleHandler(scheduleSvc),
-		Moves:         httpapi.NewMoveHandler(moveSvc, resolver),
-		Destinations:  httpapi.NewDestinationHandler(destSvc),
-		DBAdmin:       httpapi.NewDBAdminHandler(dbadminSvc),
-		Agents:        httpapi.NewAgentHandler(agentSvc, opsSvc),
-		RegTokens:     httpapi.NewRegTokenHandler(agentSvc, cfg.PublicURL),
-		Install:       httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),
-		Notifications: httpapi.NewNotificationHandler(notifSvc),
-		Overview:      httpapi.NewOverviewHandler(summarySvc, agentSvc),
-		Docs:          httpapi.NewDocsHandler(),
-		Authn:         httpapi.NewAuthenticator(authSvc),
-		Resolver:      resolver,
-		CORSOrigin:    cfg.CORSOrigin,
-		Ready:         pool.Ping,
+		Auth:              httpapi.NewAuthHandler(authSvc),
+		Servers:           httpapi.NewServerHandler(serverSvc),
+		Instances:         httpapi.NewInstanceHandler(instanceSvc, resolver),
+		Databases:         httpapi.NewDatabaseHandler(databaseSvc, resolver),
+		Tokens:            httpapi.NewTokenHandler(tokenSvc),
+		Users:             httpapi.NewUserHandler(userSvc),
+		Operations:        httpapi.NewOperationHandler(opsSvc),
+		Backups:           httpapi.NewBackupHandler(backupSvc, resolver),
+		Schedules:         httpapi.NewScheduleHandler(scheduleSvc),
+		Moves:             httpapi.NewMoveHandler(moveSvc, resolver),
+		Destinations:      httpapi.NewDestinationHandler(destSvc),
+		DBAdmin:           httpapi.NewDBAdminHandler(dbadminSvc),
+		Agents:            httpapi.NewAgentHandler(agentSvc, opsSvc),
+		RegTokens:         httpapi.NewRegTokenHandler(agentSvc, cfg.PublicURL),
+		Install:           httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),
+		Notifications:     httpapi.NewNotificationHandler(notifSvc),
+		Overview:          httpapi.NewOverviewHandler(summarySvc, agentSvc),
+		Docs:              httpapi.NewDocsHandler(),
+		Authn:             httpapi.NewAuthenticator(authSvc),
+		Resolver:          resolver,
+		CORSOrigin:        cfg.CORSOrigin,
+		TrustProxyHeaders: cfg.TrustProxyHeaders,
+		Ready:             pool.Ping,
 	})
 
 	srv := &http.Server{

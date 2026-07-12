@@ -29,6 +29,12 @@ type Config struct {
 	// CORS origin for the web frontend
 	CORSOrigin string
 
+	// TrustProxyHeaders makes the API derive the client IP from the
+	// X-Forwarded-For header (used for login rate limiting). Enable it only
+	// when the API sits behind a trusted reverse proxy that sets the header;
+	// otherwise clients could spoof it to evade rate limiting.
+	TrustProxyHeaders bool
+
 	// EncryptionKey protects secrets at rest (instance credentials, S3 keys).
 	EncryptionKey string
 	// EncryptionKeyID names the primary key that wraps new data keys.
@@ -135,7 +141,8 @@ func Load() (Config, error) {
 		AdminEmail:    getenv("FLEETDOCK_ADMIN_EMAIL", "admin@example.com"),
 		AdminPassword: getenv("FLEETDOCK_ADMIN_PASSWORD", "admin12345"),
 
-		CORSOrigin: getenv("FLEETDOCK_CORS_ORIGIN", "http://localhost:3000"),
+		CORSOrigin:        getenv("FLEETDOCK_CORS_ORIGIN", "http://localhost:3000"),
+		TrustProxyHeaders: getenvBool("FLEETDOCK_TRUST_PROXY_HEADERS", false),
 
 		EncryptionKey:     getenv("FLEETDOCK_ENCRYPTION_KEY", "dev-insecure-encryption-key"),
 		EncryptionKeyID:   getenv("FLEETDOCK_ENCRYPTION_KEY_ID", "master-1"),

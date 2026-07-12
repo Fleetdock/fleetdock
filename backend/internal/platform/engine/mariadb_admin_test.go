@@ -62,6 +62,28 @@ func TestIsReadOnlyStmt(t *testing.T) {
 	}
 }
 
+func TestEscapeMySQLString(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{"plain", "secret", "secret"},
+		{"single quote doubled", "a'b", "a''b"},
+		{"backslash doubled", `a\b`, `a\\b`},
+		// The injection vector: a backslash followed by a quote. Backslashes
+		// must be escaped first so the trailing quote cannot escape the closing
+		// delimiter of the string literal.
+		{"backslash then quote", `\'`, `\\''`},
+		{"trailing backslash", `pw\`, `pw\\`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := escapeMySQLString(tc.in); got != tc.want {
+				t.Errorf("escapeMySQLString(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidTableName(t *testing.T) {
 	valid := []string{"users", "my_table", "Orders2024", "a b", "tbl-1"}
 	for _, s := range valid {

@@ -17,8 +17,8 @@ import (
 type fakeUserRepo struct {
 	creds  map[string]userdom.Credentials
 	users  map[uuid.UUID]userdom.User
-	perms  map[uuid.UUID][]string        // global permissions
-	grants map[uuid.UUID][]authz.Grant   // scoped grants (overrides perms when set)
+	perms  map[uuid.UUID][]string      // global permissions
+	grants map[uuid.UUID][]authz.Grant // scoped grants (overrides perms when set)
 	count  int
 }
 
@@ -147,7 +147,7 @@ func TestAuthenticate_SuspendedUser(t *testing.T) {
 func TestPrincipal_JWT(t *testing.T) {
 	id := uuid.New()
 	jwt := auth.NewJWT("test-secret", time.Hour)
-	tok, err := jwt.Issue(id.String())
+	tok, err := jwt.Issue(id.String(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,6 +162,24 @@ func TestPrincipal_JWT(t *testing.T) {
 	}
 	if !p.Can("server:read") {
 		t.Fatal("expected server:read permission")
+	}
+}
+
+func TestPrincipal_JWTStaleEpochRejected(t *testing.T) {
+	id := uuid.New()
+	jwt := auth.NewJWT("test-secret", time.Hour)
+	tok, err := jwt.Issue(id.String(), 0) // issued at epoch 0
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := newFakeUserRepo()
+	// The user's epoch has since advanced (e.g. a password reset).
+	users.users[id] = userdom.User{ID: id, Email: "u@example.com", Status: "active", TokenEpoch: 1}
+	users.perms[id] = []string{"server:read"}
+	svc := NewService(users, &fakeTokenRepo{}, jwt)
+
+	if _, err := svc.Principal(context.Background(), tok); apperr.KindOf(err) != apperr.KindUnauthorized {
+		t.Fatalf("expected unauthorized for stale epoch, got %v", apperr.KindOf(err))
 	}
 }
 
@@ -210,7 +228,7 @@ func TestPrincipal_ScopedGrantsCanOn(t *testing.T) {
 	id := uuid.New()
 	serverA := uuid.New()
 	jwt := auth.NewJWT("secret", time.Hour)
-	tok, _ := jwt.Issue(id.String())
+	tok, _ := jwt.Issue(id.String(), 0)
 
 	users := newFakeUserRepo()
 	users.users[id] = userdom.User{ID: id, Email: "u@example.com", Status: "active"}

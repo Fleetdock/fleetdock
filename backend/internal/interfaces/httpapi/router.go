@@ -31,8 +31,11 @@ type RouterDeps struct {
 	Docs          *DocsHandler
 	Authn         *Authenticator
 	// Resolver resolves resource scope ancestry for per-resource authorization.
-	Resolver *authzapp.Resolver
-	CORSOrigin    string
+	Resolver   *authzapp.Resolver
+	CORSOrigin string
+	// TrustProxyHeaders lets the login rate limiter read the client IP from
+	// X-Forwarded-For (set only when behind a trusted reverse proxy).
+	TrustProxyHeaders bool
 	// Ready reports whether dependencies (the metadata database) are healthy.
 	Ready func(ctx context.Context) error
 }
@@ -75,7 +78,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /agent/v1/jobs/{id}/logs", d.Agents.Auth(d.Agents.AppendLogs))
 
 	// Auth (login is rate limited per client IP)
-	limiter := newLoginLimiter(10, time.Minute)
+	limiter := newLoginLimiter(10, time.Minute, d.TrustProxyHeaders)
 	mux.HandleFunc("POST /v1/auth/login", limiter.Middleware(d.Auth.Login))
 	mux.HandleFunc("GET /v1/auth/me", requirePerm("", d.Auth.Me))
 

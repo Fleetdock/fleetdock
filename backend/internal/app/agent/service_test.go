@@ -138,6 +138,18 @@ func (r *fakeServerRepo) PruneHealthHistory(_ context.Context, _ time.Time) (int
 	return 0, nil
 }
 
+func (r *fakeServerRepo) HasActiveInstances(_ context.Context, _ uuid.UUID) (bool, error) {
+	return false, nil
+}
+
+func (r *fakeServerRepo) SoftDelete(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (r *fakeServerRepo) Update(_ context.Context, _ *serverdom.Server) error {
+	return nil
+}
+
 func TestCreateToken_Prefix(t *testing.T) {
 	svc := NewService(newFakeServerRepo(), newFakeRegTokenRepo())
 
