@@ -107,8 +107,6 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
 ) {
   const dark = useIsDark();
   const viewRef = useRef<EditorView | null>(null);
-  const onRunRef = useRef(onRun);
-  onRunRef.current = onRun;
 
   useImperativeHandle(ref, () => ({
     getQueryToRun: () => (viewRef.current ? getQueryToRun(viewRef.current) : value.trim()),
@@ -116,22 +114,23 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
   }));
 
   const extensions = useMemo(() => {
-    const runBinding = {
-      key: "Mod-Enter",
-      run: (view: EditorView) => {
-        viewRef.current = view;
-        onRunRef.current?.();
-        return true;
-      },
-    };
     return [
       sql(),
       lineNumbers(),
       EditorView.lineWrapping,
       placeholder(placeholderText),
-      keymap.of([indentWithTab, runBinding]),
+      keymap.of([
+        indentWithTab,
+        {
+          key: "Mod-Enter",
+          run() {
+            onRun?.();
+            return true;
+          },
+        },
+      ]),
     ];
-  }, [placeholderText]);
+  }, [placeholderText, onRun]);
 
   const themeExtensions = useMemo(
     () => [fleetdockEditorTheme(dark), syntaxTheme(dark)],
