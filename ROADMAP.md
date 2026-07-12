@@ -1,11 +1,26 @@
 # Fleetdock — Roadmap
 
-What ships in **v0.1.0** and what we are building next. For release mechanics see
+What ships in each release and what we are building next. For release mechanics see
 [RELEASING.md](RELEASING.md).
 
+> **v0.3.0** (2026-07-12) — rebrand to Fleetdock, auth/SSRF hardening, release
+> automation polish. Audit log removed to simplify scope.
+>
 > **v0.1.0** (2026-07-10) — initial open-source release: control plane, agent,
-> backups, RBAC, audit log, notifications, live DB admin, production docs, GHCR
-> images. Backend test coverage ~**9%** (strong in a few services, thin on worker/repos).
+> backups, RBAC, notifications, live DB admin, production docs, GHCR images.
+> Backend test coverage ~**9%** (strong in a few services, thin on worker/repos).
+
+---
+
+## Shipped in v0.3.0
+
+- **Rebrand to Fleetdock** — `FLEETDOCK_*` env prefix, GHCR image names, Go module path, API token prefixes
+- **Release automation** — [RELEASING.md](RELEASING.md), `docker-compose.ghcr.yml`, Dependabot, CI coverage artifact
+- **Auth hardening** — JWT token epoch invalidates browser sessions on password change/reset; proxy-aware login rate limiting (`FLEETDOCK_TRUST_PROXY_HEADERS`)
+- **SSRF-resistant webhooks** — notification webhook/Slack delivery blocks loopback, link-local, and cloud metadata targets
+- **MariaDB admin** — password escaping fix for special characters
+- **Audit log removed** — table, permissions, and UI dropped ([migration](backend/internal/infra/postgres/migrations/0009_drop_audit.sql))
+- Docs: [ROADMAP.md](ROADMAP.md) backlog, README GHCR quick-start, [docs/screenshots/README.md](docs/screenshots/README.md)
 
 ---
 
@@ -15,7 +30,7 @@ What ships in **v0.1.0** and what we are building next. For release mechanics se
 - Agent install (`install.sh`), Docker provisioning, move/restore sagas
 - Backups to S3/R2, schedules, retention, destinations
 - RBAC, scoped grants, scoped API tokens, encryption-key rotation
-- Audit log, notifications/alerts, overview + server metrics
+- Notifications/alerts, overview + server metrics
 - Live admin: users, grants, tables, SQL console, schema viewer, CSV export
 - OpenAPI + `/docs`, Docker Compose, CI, smoke tests
 - Production guides: [DEPLOYMENT](docs/DEPLOYMENT.md), [OPERATIONS](docs/OPERATIONS.md), [SECURITY-CHECKLIST](docs/SECURITY-CHECKLIST.md)
@@ -54,11 +69,14 @@ What ships in **v0.1.0** and what we are building next. For release mechanics se
 
 | Task | Status | Notes |
 |------|--------|-------|
+| JWT session invalidation on password change | done | Token epoch in v0.3.0 |
+| SSRF protection for outbound webhooks | done | `netsafe` client in v0.3.0 |
+| Proxy-aware login rate limiting | done | `FLEETDOCK_TRUST_PROXY_HEADERS` in v0.3.0 |
 | httpOnly cookie sessions (replace localStorage JWT) | todo | Reduces XSS blast radius |
 | SSO / OIDC | todo | Enterprise login |
 | 2FA / MFA | todo | Admin accounts |
 | Cloudflare Tunnel / TCP proxy for external DBs | todo | No open DB ports from internet |
-| SQL console write-gating audit | todo | Security review |
+| SQL console write-gating review | todo | Confirm read-only enforcement paths |
 
 ---
 
@@ -68,9 +86,10 @@ What ships in **v0.1.0** and what we are building next. For release mechanics se
 |------|--------|-------|
 | Helm chart / K8s manifests | todo | |
 | Prometheus `/metrics` for control plane | todo | Complement `/healthz` / `/readyz` |
-| Staging upgrade dry-run documented | todo | v0.1.0 → v0.1.1 rehearsal |
+| Staging upgrade dry-run documented | todo | v0.3.0 → v0.3.1 rehearsal |
 | Multi-replica API guidance | todo | Worker is singleton today |
 | Terraform module (single VM) | todo | Optional |
+| Changelog automation | todo | release-please or CI guard; see discussion in CONTRIBUTING |
 
 ---
 
@@ -78,7 +97,7 @@ What ships in **v0.1.0** and what we are building next. For release mechanics se
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Audit log export (CSV/JSON) | cancelled | Feature removed |
+| Audit log export (CSV/JSON) | cancelled | Audit log removed in v0.3.0 |
 | Replica / HA topology modeling | todo | |
 | More notification channels | todo | PagerDuty, Discord, … |
 | Engine parity (MySQL/Postgres vs MariaDB admin) | done | Postgres live admin shipped |
