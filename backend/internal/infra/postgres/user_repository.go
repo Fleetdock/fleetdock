@@ -26,7 +26,7 @@ var _ userdom.Repository = (*UserRepository)(nil)
 
 func (r *UserRepository) GetCredentialsByEmail(ctx context.Context, email string) (userdom.Credentials, error) {
 	const q = `
-		SELECT id, email, name, status, created_at, updated_at, version, password_hash
+		SELECT id, email, name, status, created_at, updated_at, version, token_epoch, password_hash
 		FROM users WHERE email = $1`
 	var (
 		c    userdom.Credentials
@@ -34,7 +34,7 @@ func (r *UserRepository) GetCredentialsByEmail(ctx context.Context, email string
 	)
 	err := r.pool.QueryRow(ctx, q, email).Scan(
 		&c.User.ID, &c.User.Email, &c.User.Name, &c.User.Status,
-		&c.User.CreatedAt, &c.User.UpdatedAt, &c.User.Version, &hash,
+		&c.User.CreatedAt, &c.User.UpdatedAt, &c.User.Version, &c.User.TokenEpoch, &hash,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -51,11 +51,11 @@ func (r *UserRepository) GetCredentialsByEmail(ctx context.Context, email string
 
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (userdom.User, error) {
 	const q = `
-		SELECT id, email, name, status, created_at, updated_at, version
+		SELECT id, email, name, status, created_at, updated_at, version, token_epoch
 		FROM users WHERE id = $1`
 	var u userdom.User
 	err := r.pool.QueryRow(ctx, q, id).Scan(
-		&u.ID, &u.Email, &u.Name, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.Version,
+		&u.ID, &u.Email, &u.Name, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.Version, &u.TokenEpoch,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

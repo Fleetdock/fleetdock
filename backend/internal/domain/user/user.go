@@ -16,4 +16,7 @@ type User struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Version   int
+	// TokenEpoch is embedded in issued JWTs and compared on every request;
+	// bumping it (on password change) invalidates outstanding sessions.
+	TokenEpoch int
 }

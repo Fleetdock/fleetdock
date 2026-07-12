@@ -13,13 +13,26 @@ import (
 
 var _ Admin = (*MariaDB)(nil) // serves both mariadb and mysql engines
 
-// quoteAccount renders 'user'@'host' with single quotes escaped.
+// escapeMySQLString escapes a value for a single-quoted MySQL/MariaDB string
+// literal. Because these engines treat backslash as an escape character inside
+// string literals by default, escaping only the quote is insufficient: a
+// trailing or embedded backslash could consume the closing quote and let the
+// value break out of the literal. Backslashes must be doubled first, then
+// single quotes.
+func escapeMySQLString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "'", "''")
+	return s
+}
+
+// quoteAccount renders 'user'@'host' with the parts escaped. user/host are also
+// validated by validAccountPart (which rejects backslashes and quotes) before
+// reaching here; the escaping is defense in depth.
 func quoteAccount(user, host string) string {
-	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
 	if host == "" {
 		host = "%"
 	}
-	return fmt.Sprintf("'%s'@'%s'", esc(user), esc(host))
+	return fmt.Sprintf("'%s'@'%s'", escapeMySQLString(user), escapeMySQLString(host))
 }
 
 func validAccountPart(s string, max int) bool {
@@ -78,7 +91,7 @@ func (m *MariaDB) CreateDBUser(ctx context.Context, p ConnParams, user, host, pa
 		return err
 	}
 	defer db.Close()
-	pw := strings.ReplaceAll(password, "'", "''")
+	pw := escapeMySQLString(password)
 	_, err = db.ExecContext(ctx, fmt.Sprintf(
 		"CREATE USER %s IDENTIFIED BY '%s'", quoteAccount(user, host), pw))
 	return err

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/smtp"
 	"time"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 )
 
 // SMTPConfig configures outbound email. When Host is empty, email delivery is
@@ -43,9 +45,10 @@ type Sender struct {
 	client *http.Client
 }
 
-// New builds a Sender.
+// New builds a Sender. Webhook/Slack delivery uses an SSRF-guarded HTTP client
+// that refuses to connect to loopback, link-local or metadata addresses.
 func New(smtp SMTPConfig) *Sender {
-	return &Sender{smtp: smtp, client: &http.Client{Timeout: 10 * time.Second}}
+	return &Sender{smtp: smtp, client: netsafe.GuardedClient(10 * time.Second)}
 }
 
 // Deliver sends a message to a single channel.

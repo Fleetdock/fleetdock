@@ -88,10 +88,11 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, id uuid.UUID, name, 
 	return nil
 }
 
-// SetPassword replaces the stored password hash.
+// SetPassword replaces the stored password hash and advances the token epoch,
+// which invalidates any JWT sessions issued before the change.
 func (r *UserRepository) SetPassword(ctx context.Context, id uuid.UUID, hash string) error {
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE users SET password_hash = $2, version = version + 1 WHERE id = $1`, id, hash)
+		`UPDATE users SET password_hash = $2, token_epoch = token_epoch + 1, version = version + 1 WHERE id = $1`, id, hash)
 	if err != nil {
 		return apperr.Internal(fmt.Errorf("set password: %w", err))
 	}

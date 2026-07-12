@@ -157,7 +157,7 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (Log
 	if creds.User.Status != "active" {
 		return LoginResult{}, apperr.Unauthorized("account is suspended")
 	}
-	tok, err := s.jwt.Issue(creds.User.ID.String())
+	tok, err := s.jwt.Issue(creds.User.ID.String(), creds.User.TokenEpoch)
 	if err != nil {
 		return LoginResult{}, apperr.Internal(err)
 	}
@@ -173,6 +173,7 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 
 	var userID uuid.UUID
 	var tokenScopes []string // when non-empty, restrict grants to these permissions
+	jwtEpoch := -1           // >= 0 only for JWT sessions, enforced against the user's current epoch
 
 	if strings.HasPrefix(credential, apiTokenPrefix) {
 		lookup, err := s.tokens.ResolveHash(ctx, auth.HashToken(credential))
@@ -182,7 +183,7 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 		userID = lookup.UserID
 		tokenScopes = lookup.Scopes
 	} else {
-		sub, err := s.jwt.Verify(credential)
+		sub, epoch, err := s.jwt.Verify(credential)
 		if err != nil {
 			return nil, apperr.Unauthorized("invalid or expired session")
 		}
@@ -190,6 +191,7 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 		if err != nil {
 			return nil, apperr.Unauthorized("malformed subject")
 		}
+		jwtEpoch = epoch
 	}
 
 	u, err := s.users.GetByID(ctx, userID)
@@ -198,6 +200,12 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 	}
 	if u.Status != "active" {
 		return nil, apperr.Unauthorized("account is suspended")
+	}
+	// A JWT is invalidated when the user's token epoch advances (e.g. a
+	// password change/reset), forcing re-authentication. API tokens carry no
+	// epoch and are revoked through their own lifecycle instead.
+	if jwtEpoch >= 0 && jwtEpoch != u.TokenEpoch {
+		return nil, apperr.Unauthorized("session expired; sign in again")
 	}
 	grants, err := s.users.GrantsFor(ctx, userID)
 	if err != nil {

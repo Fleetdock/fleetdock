@@ -677,8 +677,8 @@ func (pg *Postgres) ExportCSV(ctx context.Context, p ConnParams, database, table
 		if err != nil {
 			return 0, err
 		}
+		defer conn.Close(ctx)
 		schema, err := pg.tableSchema(ctx, conn, table)
-		conn.Close(ctx)
 		if err != nil {
 			return 0, fmt.Errorf("table %q not found", table)
 		}
