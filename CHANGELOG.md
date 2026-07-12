@@ -7,13 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Rebrand to Fleetdock** — product rename; website [fleetdock.dev](https://fleetdock.dev)
-- Environment prefix `FLEETDOCK_*`
-- Agent binary/service paths, API token prefixes (`fleetd_`, `fleetr_`, `fleeta_`)
-- Go module `github.com/Fleetdock/fleetdock/backend`
-- GHCR images `fleetdock-backend` / `fleetdock-frontend`
+## [0.3.0] - 2026-07-12
 
 ### Added
 
@@ -25,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Rebrand to Fleetdock** — product rename; website [fleetdock.dev](https://fleetdock.dev)
+- Environment prefix `FLEETDOCK_*`
+- Agent binary/service paths, API token prefixes (`fleetd_`, `fleetr_`, `fleeta_`)
+- Go module `github.com/Fleetdock/fleetdock/backend`
+- GHCR images `fleetdock-backend` / `fleetdock-frontend`
 - [ROADMAP.md](ROADMAP.md) rewritten with post-v0.1.0 backlog (removed completed phase sections)
 - README: GHCR quick-start, removed AI-generated screenshot placeholder
 - Login rate limiting derives client IP from the transport peer by default; set `FLEETDOCK_TRUST_PROXY_HEADERS=true` when the API runs behind a trusted reverse proxy that sets `X-Forwarded-For`
@@ -67,5 +66,6 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.3.0
 [0.1.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.1.0
