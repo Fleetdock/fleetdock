@@ -10,11 +10,11 @@ package dbadminapp
 import (
 	"context"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/Fleetdock/fleetdock/backend/internal/app/dbtarget"
 	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
@@ -66,22 +66,9 @@ func (s *Service) target(ctx context.Context, instanceID string) (*instancedom.I
 		return nil, nil, engine.ConnParams{}, apperr.Invalid("engine", err.Error())
 	}
 
-	host := ""
-	switch {
-	case inst.Kind == instancedom.KindExternal && inst.Host != nil:
-		host = *inst.Host
-	case inst.ServerID != nil:
-		srv, err := s.servers.GetByID(ctx, *inst.ServerID)
-		if err != nil {
-			return nil, nil, engine.ConnParams{}, err
-		}
-		host, err = managedInstanceHost(srv)
-		if err != nil {
-			return nil, nil, engine.ConnParams{}, err
-		}
-	}
-	if host == "" {
-		return nil, nil, engine.ConnParams{}, apperr.Invalid("instance_id", "cannot determine a reachable host for this instance")
+	host, err := dbtarget.Host(ctx, s.servers, inst, "instance_id")
+	if err != nil {
+		return nil, nil, engine.ConnParams{}, err
 	}
 
 	conn := engine.ConnParams{Host: host, Port: inst.Port}
@@ -94,24 +81,6 @@ func (s *Service) target(ctx context.Context, instanceID string) (*instancedom.I
 	}
 	conn.Password = string(pw)
 	return inst, admin, conn, nil
-}
-
-func managedInstanceHost(srv *serverdom.Server) (string, error) {
-	if srv.Address != nil && *srv.Address != "" {
-		return hostOnly(*srv.Address), nil
-	}
-	if srv.Hostname != "" {
-		return "", apperr.Invalid("instance_id",
-			"server has no reachable address; ensure the agent reports its IP (upgrade agent) or set the server address manually")
-	}
-	return "", apperr.Invalid("instance_id", "cannot determine a reachable host for this instance")
-}
-
-func hostOnly(addr string) string {
-	if i := strings.Index(addr, "/"); i >= 0 {
-		return addr[:i]
-	}
-	return addr
 }
 
 // databaseTarget resolves a database plus its instance's admin surface.
@@ -131,18 +100,6 @@ func (s *Service) databaseTarget(ctx context.Context, databaseID string) (*datab
 	return db, admin, conn, nil
 }
 
-func wrap(err error) error {
-	if err == nil {
-		return nil
-	}
-	if apperr.KindOf(err) != apperr.KindInternal {
-		return err
-	}
-	// Engine/network errors are user-actionable here (bad grants, unreachable
-	// host, ...), so surface the message instead of a blank 500.
-	return apperr.Invalid("instance", err.Error())
-}
-
 // ---- Instance-level: users & grants ----
 
 // ListDBUsers lists database accounts on an instance.
@@ -154,7 +111,7 @@ func (s *Service) ListDBUsers(ctx context.Context, instanceID string) ([]engine.
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	users, err := admin.ListDBUsers(cctx, conn)
-	return users, wrap(err)
+	return users, apperr.FromEngine(err, "instance")
 }
 
 // CreateDBUser creates a database account.
@@ -165,7 +122,7 @@ func (s *Service) CreateDBUser(ctx context.Context, instanceID, user, host, pass
 	}
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	return wrap(admin.CreateDBUser(cctx, conn, user, host, password))
+	return apperr.FromEngine(admin.CreateDBUser(cctx, conn, user, host, password), "instance")
 }
 
 // DropDBUser removes a database account.
@@ -176,7 +133,7 @@ func (s *Service) DropDBUser(ctx context.Context, instanceID, user, host string)
 	}
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	return wrap(admin.DropDBUser(cctx, conn, user, host))
+	return apperr.FromEngine(admin.DropDBUser(cctx, conn, user, host), "instance")
 }
 
 // UserGrants returns SHOW GRANTS output for an account.
@@ -188,7 +145,7 @@ func (s *Service) UserGrants(ctx context.Context, instanceID, user, host string)
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	grants, err := admin.UserGrants(cctx, conn, user, host)
-	return grants, wrap(err)
+	return grants, apperr.FromEngine(err, "instance")
 }
 
 // Grant grants schema privileges to an account.
@@ -199,7 +156,7 @@ func (s *Service) Grant(ctx context.Context, instanceID, user, host, database st
 	}
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	return wrap(admin.Grant(cctx, conn, user, host, database, privileges))
+	return apperr.FromEngine(admin.Grant(cctx, conn, user, host, database, privileges), "instance")
 }
 
 // Revoke removes an account's schema privileges.
@@ -210,7 +167,7 @@ func (s *Service) Revoke(ctx context.Context, instanceID, user, host, database s
 	}
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	return wrap(admin.Revoke(cctx, conn, user, host, database))
+	return apperr.FromEngine(admin.Revoke(cctx, conn, user, host, database), "instance")
 }
 
 // ---- Database-level: grants, tables, data ----
@@ -224,7 +181,7 @@ func (s *Service) SchemaGrants(ctx context.Context, databaseID string) ([]engine
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	grants, err := admin.SchemaGrants(cctx, conn, db.Name)
-	return grants, wrap(err)
+	return grants, apperr.FromEngine(err, "instance")
 }
 
 // GrantOnDatabase grants privileges on this database to an account.
@@ -235,7 +192,7 @@ func (s *Service) GrantOnDatabase(ctx context.Context, databaseID, user, host st
 	}
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	return wrap(admin.Grant(cctx, conn, user, host, db.Name, privileges))
+	return apperr.FromEngine(admin.Grant(cctx, conn, user, host, db.Name, privileges), "instance")
 }
 
 // RevokeOnDatabase revokes an account's privileges on this database.
@@ -246,7 +203,7 @@ func (s *Service) RevokeOnDatabase(ctx context.Context, databaseID, user, host s
 	}
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	return wrap(admin.Revoke(cctx, conn, user, host, db.Name))
+	return apperr.FromEngine(admin.Revoke(cctx, conn, user, host, db.Name), "instance")
 }
 
 // ListTables lists tables in a database.
@@ -258,7 +215,7 @@ func (s *Service) ListTables(ctx context.Context, databaseID string) ([]engine.T
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	tables, err := admin.ListTables(cctx, conn, db.Name)
-	return tables, wrap(err)
+	return tables, apperr.FromEngine(err, "instance")
 }
 
 // TableRows returns one page of table data.
@@ -270,7 +227,7 @@ func (s *Service) TableRows(ctx context.Context, databaseID, table string, limit
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	page, err := admin.TableRows(cctx, conn, db.Name, table, limit, offset)
-	return page, wrap(err)
+	return page, apperr.FromEngine(err, "instance")
 }
 
 // ListDBUsersForDatabase lists instance accounts (for the grant form on the
@@ -284,7 +241,7 @@ func (s *Service) ListDBUsersForDatabase(ctx context.Context, databaseID string)
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	users, err := admin.ListDBUsers(cctx, conn)
-	return users, wrap(err)
+	return users, apperr.FromEngine(err, "instance")
 }
 
 // TableSchema returns a table's columns, indexes and CREATE DDL.
@@ -296,7 +253,7 @@ func (s *Service) TableSchema(ctx context.Context, databaseID, table string) (*e
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	schema, err := admin.TableSchema(cctx, conn, db.Name, table)
-	return schema, wrap(err)
+	return schema, apperr.FromEngine(err, "instance")
 }
 
 // Query runs an ad-hoc console statement against the database. Writes are only
@@ -310,7 +267,7 @@ func (s *Service) Query(ctx context.Context, databaseID, sql string, limit int, 
 	cctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 	res, err := admin.Query(cctx, conn, db.Name, sql, limit, allowWrite)
-	return res, wrap(err)
+	return res, apperr.FromEngine(err, "instance")
 }
 
 // ExportTableCSV streams a whole table to w as CSV. onStart is invoked once the
@@ -323,7 +280,7 @@ func (s *Service) ExportTableCSV(ctx context.Context, databaseID, table string, 
 	cctx, cancel := context.WithTimeout(ctx, exportTimeout)
 	defer cancel()
 	n, err := admin.ExportCSV(cctx, conn, db.Name, table, "", w, onStart)
-	return n, wrap(err)
+	return n, apperr.FromEngine(err, "instance")
 }
 
 // ExportQueryCSV streams a read-only query's result to w as CSV.
@@ -335,5 +292,5 @@ func (s *Service) ExportQueryCSV(ctx context.Context, databaseID, sql string, w 
 	cctx, cancel := context.WithTimeout(ctx, exportTimeout)
 	defer cancel()
 	n, err := admin.ExportCSV(cctx, conn, db.Name, "", sql, w, onStart)
-	return n, wrap(err)
+	return n, apperr.FromEngine(err, "instance")
 }

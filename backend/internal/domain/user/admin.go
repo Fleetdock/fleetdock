@@ -48,9 +48,10 @@ var PermissionCatalog = []string{
 	"backup:read", "backup:write",
 	"destination:read", "destination:write",
 	"schedule:read", "schedule:write",
-  "notification:read", "notification:write",
-  "user:read", "user:write",
+	"notification:read", "notification:write",
+	"user:read", "user:write",
 	"token:read", "token:write",
+	"audit:read",
 }
 
 // AdminRepository extends the persistence port with account-management

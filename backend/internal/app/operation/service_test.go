@@ -12,8 +12,10 @@ import (
 )
 
 type fakeJobRepo struct {
-	items map[uuid.UUID]*jobdom.Job
-	logs  map[uuid.UUID][]jobdom.JobLog
+	items       map[uuid.UUID]*jobdom.Job
+	logs        map[uuid.UUID][]jobdom.JobLog
+	claimNext   *jobdom.Job // when set, ClaimNext returns this job once
+	claimCalled bool
 }
 
 func newFakeJobRepo() *fakeJobRepo {
@@ -45,7 +47,13 @@ func (r *fakeJobRepo) List(_ context.Context, _ jobdom.ListFilter) (jobdom.Page,
 }
 
 func (r *fakeJobRepo) ClaimNext(_ context.Context, _ *uuid.UUID) (*jobdom.Job, error) {
-	return nil, apperr.NotFound("none")
+	if r.claimNext != nil && !r.claimCalled {
+		r.claimCalled = true
+		j := r.claimNext
+		j.Status = jobdom.StatusRunning
+		return j, nil
+	}
+	return nil, nil
 }
 
 func (r *fakeJobRepo) Complete(_ context.Context, _ uuid.UUID, _ jobdom.Status, _ json.RawMessage, _ *string) error {
@@ -128,5 +136,48 @@ func TestList_ClampLimit(t *testing.T) {
 	}
 	if res.Limit != 100 {
 		t.Fatalf("expected limit clamped to 100, got %d", res.Limit)
+	}
+}
+
+func TestBuildPayload_ReconcileGateway(t *testing.T) {
+	svc := NewService(newFakeJobRepo(), nil, nil, nil, nil, nil)
+	j := &jobdom.Job{
+		ID:     uuid.New(),
+		Type:   jobdom.TypeReconcileGateway,
+		Params: json.RawMessage(`{}`),
+	}
+	payload, err := svc.buildPayload(context.Background(), j)
+	if err != nil {
+		t.Fatalf("expected no error for reconcile_gateway with empty params, got %v", err)
+	}
+	if payload == nil {
+		t.Fatal("expected empty payload, got nil")
+	}
+}
+
+func TestClaim_ReconcileGateway(t *testing.T) {
+	repo := newFakeJobRepo()
+	dbID := uuid.New()
+	j := &jobdom.Job{
+		ID:           uuid.New(),
+		Type:         jobdom.TypeReconcileGateway,
+		ResourceType: "database",
+		ResourceID:   &dbID,
+		Status:       jobdom.StatusPending,
+		Params:       json.RawMessage(`{}`),
+	}
+	repo.claimNext = j
+	// instances/databases/secrets are nil — claim must succeed without them
+	svc := NewService(repo, nil, nil, nil, nil, nil)
+
+	claimed, payload, err := svc.Claim(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("claim reconcile_gateway: %v", err)
+	}
+	if claimed == nil || claimed.ID != j.ID {
+		t.Fatal("expected claimed reconcile_gateway job")
+	}
+	if payload == nil {
+		t.Fatal("expected empty payload")
 	}
 }

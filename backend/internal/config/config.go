@@ -6,8 +6,11 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/gateway"
 )
 
 // Config holds all runtime configuration for the API service.
@@ -67,6 +70,25 @@ type Config struct {
 	// Env is the deployment environment ("development" or "production").
 	// In production the server refuses to start with insecure defaults.
 	Env string
+
+	// Gateway configures external database access via HAProxy.
+	GatewayEnabled    bool
+	GatewayPublicHost string
+	GatewayPortStart  int
+	GatewayPortEnd    int
+	GatewayConfigPath string
+	// GatewayMasterSock is the master CLI socket used to trigger reloads.
+	GatewayMasterSock string
+	// GatewayAdminSock is the stats socket used to read backend health and the
+	// number of connections rejected by endpoint allowlists.
+	GatewayAdminSock string
+	// GatewayDiagPort serves a plaintext endpoint reporting the source address
+	// HAProxy observes, so users can discover the address to allowlist. Zero
+	// disables it.
+	GatewayDiagPort int
+	// GatewaySourceIPMode is "direct" or "proxy-protocol". Behind an L4 load
+	// balancer, only proxy-protocol yields real client addresses.
+	GatewaySourceIPMode string
 }
 
 // IsProduction reports whether the server runs in production mode.
@@ -160,9 +182,45 @@ func Load() (Config, error) {
 		SMTPFrom:     getenv("FLEETDOCK_SMTP_FROM", "fleetdock@localhost"),
 
 		Env: getenv("FLEETDOCK_ENV", "development"),
+
+		GatewayEnabled:      getenvBool("FLEETDOCK_GATEWAY_ENABLED", false),
+		GatewayPublicHost:   getenv("FLEETDOCK_GATEWAY_PUBLIC_HOST", "gateway.localhost"),
+		GatewayPortStart:    getenvInt("FLEETDOCK_GATEWAY_PORT_RANGE_START", 15432),
+		GatewayPortEnd:      getenvInt("FLEETDOCK_GATEWAY_PORT_RANGE_END", 15481),
+		GatewayConfigPath:   getenv("FLEETDOCK_GATEWAY_CONFIG_PATH", "/var/lib/fleetdock/gateway/haproxy.cfg"),
+		GatewayMasterSock:   getenv("FLEETDOCK_GATEWAY_MASTER_SOCKET", "/var/lib/fleetdock/gateway/haproxy-master.sock"),
+		GatewayAdminSock:    getenv("FLEETDOCK_GATEWAY_ADMIN_SOCKET", "/var/lib/fleetdock/gateway/haproxy-admin.sock"),
+		GatewayDiagPort:     getenvInt("FLEETDOCK_GATEWAY_DIAG_PORT", 15431),
+		GatewaySourceIPMode: getenv("FLEETDOCK_GATEWAY_SOURCE_IP_MODE", gateway.SourceIPDirect),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: FLEETDOCK_DATABASE_URL is required")
+	}
+	if cfg.GatewayEnabled {
+		if cfg.GatewayPublicHost == "" {
+			return Config{}, fmt.Errorf("config: FLEETDOCK_GATEWAY_PUBLIC_HOST is required when gateway is enabled")
+		}
+		if cfg.GatewayPortStart < 1 || cfg.GatewayPortEnd > 65535 || cfg.GatewayPortStart > cfg.GatewayPortEnd {
+			return Config{}, fmt.Errorf("config: invalid gateway port range")
+		}
+		if cfg.GatewayConfigPath == "" {
+			return Config{}, fmt.Errorf("config: FLEETDOCK_GATEWAY_CONFIG_PATH is required when gateway is enabled")
+		}
+		// Without the master socket a generated config is written and never
+		// applied, so endpoints would look healthy while nothing is listening.
+		if cfg.GatewayMasterSock == "" {
+			return Config{}, fmt.Errorf("config: FLEETDOCK_GATEWAY_MASTER_SOCKET is required when gateway is enabled")
+		}
+		if cfg.GatewaySourceIPMode != gateway.SourceIPDirect && cfg.GatewaySourceIPMode != gateway.SourceIPProxyProtocol {
+			return Config{}, fmt.Errorf("config: FLEETDOCK_GATEWAY_SOURCE_IP_MODE must be %q or %q",
+				gateway.SourceIPDirect, gateway.SourceIPProxyProtocol)
+		}
+		if cfg.GatewayDiagPort != 0 &&
+			cfg.GatewayDiagPort >= cfg.GatewayPortStart && cfg.GatewayDiagPort <= cfg.GatewayPortEnd {
+			return Config{}, fmt.Errorf(
+				"config: FLEETDOCK_GATEWAY_DIAG_PORT (%d) must fall outside the endpoint port range %d-%d",
+				cfg.GatewayDiagPort, cfg.GatewayPortStart, cfg.GatewayPortEnd)
+		}
 	}
 	return cfg, nil
 }
@@ -186,6 +244,15 @@ func getenvDuration(key string, def time.Duration) time.Duration {
 func getenvBool(key string, def bool) bool {
 	if v := os.Getenv(key); v != "" {
 		return v == "1" || strings.EqualFold(v, "true")
+	}
+	return def
+}
+
+func getenvInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return def
 }

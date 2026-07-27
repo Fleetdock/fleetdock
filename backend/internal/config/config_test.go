@@ -7,11 +7,11 @@ import (
 
 func TestValidateSecrets_ProductionRejectsDefaults(t *testing.T) {
 	cfg := Config{
-		Env:            "production",
-		JWTSecret:      "dev-insecure-change-me",
-		EncryptionKey:  "dev-insecure-encryption-key",
-		AdminPassword:  "admin12345",
-		DatabaseURL:    "postgres://localhost/db",
+		Env:           "production",
+		JWTSecret:     "dev-insecure-change-me",
+		EncryptionKey: "dev-insecure-encryption-key",
+		AdminPassword: "admin12345",
+		DatabaseURL:   "postgres://localhost/db",
 	}
 
 	err := cfg.ValidateSecrets(nil)
@@ -25,11 +25,11 @@ func TestValidateSecrets_ProductionRejectsDefaults(t *testing.T) {
 
 func TestValidateSecrets_ProductionAcceptsStrongSecrets(t *testing.T) {
 	cfg := Config{
-		Env:            "production",
-		JWTSecret:      "a-unique-production-jwt-secret",
-		EncryptionKey:  "a-unique-production-encryption-key",
-		AdminPassword:  "not-the-default-password",
-		DatabaseURL:    "postgres://localhost/db",
+		Env:           "production",
+		JWTSecret:     "a-unique-production-jwt-secret",
+		EncryptionKey: "a-unique-production-encryption-key",
+		AdminPassword: "not-the-default-password",
+		DatabaseURL:   "postgres://localhost/db",
 	}
 
 	if err := cfg.ValidateSecrets(nil); err != nil {
@@ -39,11 +39,11 @@ func TestValidateSecrets_ProductionAcceptsStrongSecrets(t *testing.T) {
 
 func TestValidateSecrets_DevelopmentWarnsOnDefaults(t *testing.T) {
 	cfg := Config{
-		Env:            "development",
-		JWTSecret:      "dev-insecure-change-me",
-		EncryptionKey:  "dev-insecure-encryption-key",
-		AdminPassword:  "admin12345",
-		DatabaseURL:    "postgres://localhost/db",
+		Env:           "development",
+		JWTSecret:     "dev-insecure-change-me",
+		EncryptionKey: "dev-insecure-encryption-key",
+		AdminPassword: "admin12345",
+		DatabaseURL:   "postgres://localhost/db",
 	}
 
 	var warned []string

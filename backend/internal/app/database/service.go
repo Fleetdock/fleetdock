@@ -49,15 +49,33 @@ const (
 
 // Service implements database use cases.
 type Service struct {
-	repo      databasedom.Repository
-	instances instancedom.Repository
-	ops       *operationapp.Service
+	repo        databasedom.Repository
+	instances   instancedom.Repository
+	ops         *operationapp.Service
+	endpoints   EndpointCleanup
+	credentials CredentialCleanup
+}
+
+// EndpointCleanup tears down public endpoints when a database is deleted.
+type EndpointCleanup interface {
+	CleanupDatabase(ctx context.Context, databaseID uuid.UUID, actor *uuid.UUID) error
+}
+
+// CredentialCleanup revokes application credentials when a database is deleted.
+type CredentialCleanup interface {
+	RevokeAllForDatabase(ctx context.Context, databaseID uuid.UUID, actor *uuid.UUID) error
 }
 
 // NewService wires the service.
 func NewService(repo databasedom.Repository, instances instancedom.Repository, ops *operationapp.Service) *Service {
 	return &Service{repo: repo, instances: instances, ops: ops}
 }
+
+// SetEndpointCleanup attaches endpoint cleanup for database deletion.
+func (s *Service) SetEndpointCleanup(c EndpointCleanup) { s.endpoints = c }
+
+// SetCredentialCleanup attaches credential cleanup for database deletion.
+func (s *Service) SetCredentialCleanup(c CredentialCleanup) { s.credentials = c }
 
 // Create validates input and persists a new database record. When the
 // instance has admin credentials, the database is physically created through
@@ -190,6 +208,12 @@ func (s *Service) Delete(ctx context.Context, id string, dropPhysical bool, crea
 			}, createdBy); err != nil {
 			return err
 		}
+	}
+	if s.endpoints != nil {
+		_ = s.endpoints.CleanupDatabase(ctx, uid, createdBy)
+	}
+	if s.credentials != nil {
+		_ = s.credentials.RevokeAllForDatabase(ctx, uid, createdBy)
 	}
 	return s.repo.SoftDelete(ctx, uid)
 }

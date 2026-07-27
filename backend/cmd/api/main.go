@@ -16,12 +16,15 @@ import (
 	"time"
 
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	backupapp "github.com/Fleetdock/fleetdock/backend/internal/app/backup"
 	databaseapp "github.com/Fleetdock/fleetdock/backend/internal/app/database"
 	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
+	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
 	destinationapp "github.com/Fleetdock/fleetdock/backend/internal/app/destination"
+	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
 	instanceapp "github.com/Fleetdock/fleetdock/backend/internal/app/instance"
 	moveapp "github.com/Fleetdock/fleetdock/backend/internal/app/move"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
@@ -94,6 +97,9 @@ func run() error {
 	notifRepo := postgres.NewNotificationRepository(pool)
 	statsRepo := postgres.NewStatsRepository(pool)
 	authzRepo := postgres.NewAuthzRepository(pool)
+	endpointRepo := postgres.NewEndpointRepository(pool)
+	credentialRepo := postgres.NewDBCredentialRepository(pool)
+	auditRepo := postgres.NewAuditRepository(pool)
 
 	// Use cases (application services).
 	jwt := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
@@ -106,9 +112,25 @@ func run() error {
 		return err
 	}
 	secretsSvc := secretsapp.NewService(secretRepo, encryptor)
+	auditSvc := auditapp.NewService(auditRepo)
 	opsSvc := operationapp.NewService(jobRepo, instanceRepo, databaseRepo, backupRepo, destRepo, secretsSvc)
+	endpointSvc := endpointapp.NewService(endpointRepo, databaseRepo, instanceRepo, serverRepo, opsSvc, auditSvc, endpointapp.GatewayConfig{
+		Enabled:      cfg.GatewayEnabled,
+		PublicHost:   cfg.GatewayPublicHost,
+		PortStart:    cfg.GatewayPortStart,
+		PortEnd:      cfg.GatewayPortEnd,
+		ConfigPath:   cfg.GatewayConfigPath,
+		MasterSock:   cfg.GatewayMasterSock,
+		AdminSock:    cfg.GatewayAdminSock,
+		DiagPort:     cfg.GatewayDiagPort,
+		SourceIPMode: cfg.GatewaySourceIPMode,
+	})
+	opsSvc.SetGatewayReconciler(endpointSvc)
 	instanceSvc := instanceapp.NewService(instanceRepo, databaseRepo, secretsSvc, opsSvc)
 	databaseSvc := databaseapp.NewService(databaseRepo, instanceRepo, opsSvc)
+	databaseSvc.SetEndpointCleanup(endpointSvc)
+	credentialSvc := dbcredentialapp.NewService(credentialRepo, databaseRepo, instanceRepo, serverRepo, endpointRepo, secretsSvc, auditSvc)
+	databaseSvc.SetCredentialCleanup(credentialSvc)
 	agentSvc := agentapp.NewService(serverRepo, regTokenRepo)
 	destSvc := destinationapp.NewService(destRepo, secretsSvc)
 	backupSvc := backupapp.NewService(backupRepo, databaseRepo, instanceRepo, destRepo, opsSvc)
@@ -122,7 +144,7 @@ func run() error {
 	})
 	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc)
 	opsSvc.SetNotifier(notifSvc)
-	moveSvc := moveapp.NewService(databaseRepo, instanceRepo, backupSvc, databaseSvc)
+	moveSvc := moveapp.NewService(databaseRepo, instanceRepo, backupSvc, databaseSvc, endpointSvc)
 	opsSvc.SetMover(moveSvc)
 
 	// One-time admin bootstrap.
@@ -140,6 +162,8 @@ func run() error {
 			Agents:           agentSvc,
 			Schedules:        scheduleSvc,
 			Notifications:    notifSvc,
+			Endpoints:        endpointSvc,
+			Credentials:      credentialSvc,
 			HeartbeatTimeout: cfg.HeartbeatTimeout,
 			MetricsRetention: cfg.MetricsRetention,
 		}).Run(ctx)
@@ -159,6 +183,8 @@ func run() error {
 		Moves:             httpapi.NewMoveHandler(moveSvc, resolver),
 		Destinations:      httpapi.NewDestinationHandler(destSvc),
 		DBAdmin:           httpapi.NewDBAdminHandler(dbadminSvc),
+		Connectivity:      httpapi.NewConnectivityHandler(endpointSvc),
+		DBCredentials:     httpapi.NewDBCredentialHandler(credentialSvc),
 		Agents:            httpapi.NewAgentHandler(agentSvc, opsSvc),
 		RegTokens:         httpapi.NewRegTokenHandler(agentSvc, cfg.PublicURL),
 		Install:           httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),

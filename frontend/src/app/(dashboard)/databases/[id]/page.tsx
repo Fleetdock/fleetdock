@@ -6,6 +6,7 @@ import { Suspense, useRef, useState, type FormEvent } from "react";
 
 import { ArrowRightLeft, ChevronRight, Download, KeyRound, Play, Plus, Table2, TerminalSquare, Trash2, X } from "lucide-react";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
+import { ConnectivitySection, CredentialsSection } from "@/components/connectivity";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
 import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
@@ -13,7 +14,7 @@ import { ApiError } from "@/lib/api";
 import {
   exportQueryCSV,
   exportTableCSV,
-  useCan,
+  useCanOn,
   useDatabase,
   useDatabaseDBUsers,
   useDBPrivileges,
@@ -59,9 +60,13 @@ function DatabaseDetail() {
   const id = String(params.id);
   const { data: db, isLoading } = useDatabase(id);
   const { data: instance } = useInstance(db?.instance_id ?? "");
-  const can = useCan();
-  const canWrite = can("database:write");
-  const canMove = can("backup:write");
+  // The API authorizes these routes per-resource (requireResourcePerm), so a
+  // user holding only a database- or server-scoped grant must not see the UI
+  // disabled for writes the server would accept.
+  const canOn = useCanOn();
+  const scope = { databaseId: id, serverId: instance?.server_id };
+  const canWrite = canOn("database:write", scope);
+  const canMove = canOn("backup:write", scope);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
 
@@ -127,6 +132,9 @@ function DatabaseDetail() {
           <Detail label="Created" value={new Date(db.created_at).toLocaleString()} />
         </dl>
       </div>
+
+      <ConnectivitySection databaseId={id} canWrite={canWrite} />
+      <CredentialsSection databaseId={id} canWrite={canWrite} />
 
       <div className="flex items-center gap-2" style={{ marginBottom: ".9rem" }}>
         <button
