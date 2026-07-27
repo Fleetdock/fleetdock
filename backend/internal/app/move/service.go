@@ -14,6 +14,7 @@ import (
 
 	backupapp "github.com/Fleetdock/fleetdock/backend/internal/app/backup"
 	databaseapp "github.com/Fleetdock/fleetdock/backend/internal/app/database"
+	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
 	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
@@ -27,12 +28,13 @@ type Service struct {
 	instances instancedom.Repository
 	backups   *backupapp.Service
 	dbService *databaseapp.Service
+	endpoints *endpointapp.Service
 }
 
 // NewService wires the move service.
 func NewService(databases databasedom.Repository, instances instancedom.Repository,
-	backups *backupapp.Service, dbService *databaseapp.Service) *Service {
-	return &Service{databases: databases, instances: instances, backups: backups, dbService: dbService}
+	backups *backupapp.Service, dbService *databaseapp.Service, endpoints *endpointapp.Service) *Service {
+	return &Service{databases: databases, instances: instances, backups: backups, dbService: dbService, endpoints: endpoints}
 }
 
 // StartInput is the command to move a database.
@@ -144,6 +146,12 @@ func (s *Service) OnRestoreComplete(ctx context.Context, job *jobdom.Job, ok boo
 	if db, e := databasedom.NewDatabase(tgtInstID, p.Database, charset, collation,
 		map[string]string{"moved": "true"}, nil); e == nil {
 		_ = s.databases.Create(ctx, db) // conflicts (already tracked) are fine
+		if s.endpoints != nil {
+			tgt, err := s.instances.GetByID(ctx, tgtInstID)
+			if err == nil {
+				_ = s.endpoints.TransferOnMove(ctx, srcID, db.ID, tgt, job.CreatedBy)
+			}
+		}
 	}
 
 	// Cutover: optionally drop the source now that the copy is verified.

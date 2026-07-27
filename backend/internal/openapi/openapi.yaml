@@ -19,21 +19,24 @@ tags:
   - name: Auth
   - name: Profile
   - name: Users
+  - name: Tokens
   - name: Overview
   - name: Servers
   - name: AgentTokens
+    x-displayName: Agent tokens
   - name: Instances
   - name: Databases
   - name: DBAdmin
+    x-displayName: Database admin
   - name: Operations
   - name: Backups
-  - name: Moves
   - name: Destinations
   - name: Schedules
+  - name: Moves
   - name: Notifications
-  - name: Tokens
   - name: Agent
   - name: Install
+  - name: Docs
 
 components:
   securitySchemes:
@@ -682,6 +685,96 @@ paths:
       responses:
         "200":
           description: Unlocked
+
+  /v1/databases/{id}/connectivity:
+    get:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Get database connectivity
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Connectivity
+
+  /v1/databases/{id}/public-access:
+    post:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Enable public database access
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Accepted
+    patch:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Update public access allowlist
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Accepted
+    delete:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Disable public database access
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Accepted
+
+  /v1/databases/{id}/credentials:
+    get:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: List application credentials
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Credentials
+    post:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Create application credential
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "201":
+          description: Created
+
+  /v1/databases/{id}/credentials/{credentialId}/rotate:
+    post:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Rotate application credential
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: credentialId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Rotated
+
+  /v1/databases/{id}/credentials/{credentialId}:
+    delete:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Revoke application credential
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: credentialId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "204":
+          description: Revoked
 
   /v1/instances/{id}/db-users:
     get:

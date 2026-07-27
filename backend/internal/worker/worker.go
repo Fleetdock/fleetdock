@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
+	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
@@ -35,6 +37,8 @@ type Deps struct {
 	Agents           *agentapp.Service
 	Schedules        *scheduleapp.Service
 	Notifications    *notificationapp.Service
+	Endpoints        *endpointapp.Service
+	Credentials      *dbcredentialapp.Service
 	HeartbeatTimeout time.Duration
 	MetricsRetention time.Duration
 }
@@ -126,6 +130,22 @@ func (w *Worker) housekeeping(ctx context.Context) {
 			slog.Info("pruned health history", "count", n)
 		}
 	}
+
+	// Gateway reconciliation drift recovery.
+	if w.deps.Endpoints != nil {
+		if err := w.deps.Endpoints.Reconcile(ctx); err != nil {
+			slog.Error("gateway reconcile", "error", err.Error())
+		}
+	}
+
+	// Expire application credentials.
+	if w.deps.Credentials != nil {
+		if n, err := w.deps.Credentials.ExpireDue(ctx); err != nil {
+			slog.Error("expire credentials", "error", err.Error())
+		} else if n > 0 {
+			slog.Info("expired credentials", "count", n)
+		}
+	}
 }
 
 // runOne claims and executes a single job; it reports whether one was found.
@@ -142,6 +162,22 @@ func (w *Worker) runOne(ctx context.Context) bool {
 	slog.Info("executing operation", "id", job.ID, "type", job.Type)
 	execCtx, cancel := context.WithTimeout(ctx, 2*time.Hour)
 	defer cancel()
+
+	if job.Type == jobdom.TypeReconcileGateway {
+		var err error
+		if w.deps.Endpoints != nil {
+			err = w.deps.Endpoints.Reconcile(execCtx)
+		}
+		if err != nil {
+			msg := err.Error()
+			_ = w.deps.Ops.Complete(ctx, job.ID, jobdom.StatusFailed, nil, &msg)
+			slog.Warn("operation failed", "id", job.ID, "type", job.Type, "error", msg)
+			return true
+		}
+		_ = w.deps.Ops.Complete(ctx, job.ID, jobdom.StatusSucceeded, nil, nil)
+		slog.Info("operation succeeded", "id", job.ID, "type", job.Type)
+		return true
+	}
 
 	// In-process executor: flush each line straight to the DB (threshold 1) so
 	// the detail page tails logs live. Flush errors are logged, never fatal.

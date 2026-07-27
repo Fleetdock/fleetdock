@@ -60,6 +60,62 @@ export interface Database {
   version: number;
 }
 
+export interface EndpointView {
+  id: string;
+  status: string;
+  host: string;
+  port: number;
+  protocol: string;
+  tls_mode: string;
+  tls_status: string;
+  allowed_cidrs?: string[];
+  last_error?: string | null;
+  /** Connections HAProxy rejected because the source was not in allowed_cidrs. */
+  denied_connections: number;
+  sessions_total: number;
+}
+
+export interface GatewayInfo {
+  enabled: boolean;
+  public_host?: string;
+  /** Port serving the source-IP diagnostic. Absent or 0 when disabled. */
+  diag_port?: number;
+  source_ip_mode?: string;
+}
+
+export interface Connectivity {
+  private: EndpointView;
+  public?: EndpointView | null;
+  gateway: GatewayInfo;
+}
+
+export interface DatabaseCredential {
+  id: string;
+  name: string;
+  username: string;
+  access_level: string;
+  account_host: string;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  created_at: string;
+}
+
+export interface CredentialCreateResult {
+  credential: DatabaseCredential;
+  /** Shown once, on create and rotate. Never retrievable afterwards. */
+  password: string;
+  connection_url: string;
+  /** Ready-to-paste command for the engine's own CLI. */
+  cli_command?: string;
+  fields: {
+    host: string;
+    port: number;
+    user: string;
+    database: string;
+    ssl_mode?: string;
+  };
+}
+
 export interface Operation {
   id: string;
   type: string;

@@ -84,7 +84,16 @@ func (pg *Postgres) CreateDBUser(ctx context.Context, p ConnParams, user, host, 
 	return err
 }
 
-// DropDBUser removes a login role. The host parameter is ignored.
+// DropDBUser revokes a login role's access and removes it where possible.
+// The host parameter is ignored.
+//
+// Postgres refuses to DROP a role that still holds privileges or owns objects
+// in any database, and those grants live in the application database rather
+// than in "postgres". Revocation therefore happens in two steps: first make the
+// role unusable (NOLOGIN plus terminating its sessions), which is the part that
+// must not fail silently, then try to remove the role itself. A role that
+// cannot be dropped because it still owns objects is leftover state, not
+// lingering access — so that step is best-effort.
 func (pg *Postgres) DropDBUser(ctx context.Context, p ConnParams, user, host string) error {
 	if !validPGRole(user) {
 		return fmt.Errorf("invalid role name")
@@ -94,8 +103,29 @@ func (pg *Postgres) DropDBUser(ctx context.Context, p ConnParams, user, host str
 		return err
 	}
 	defer conn.Close(ctx)
-	_, err = conn.Exec(ctx, "DROP ROLE IF EXISTS "+quotePGIdent(user))
-	return err
+
+	ident := quotePGIdent(user)
+	var exists bool
+	if err := conn.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)", user).Scan(&exists); err != nil {
+		return fmt.Errorf("check role: %w", err)
+	}
+	if !exists {
+		return nil
+	}
+
+	if _, err := conn.Exec(ctx, "ALTER ROLE "+ident+" NOLOGIN"); err != nil {
+		return fmt.Errorf("disable role login: %w", err)
+	}
+	// Existing sessions keep working after NOLOGIN, so close them too.
+	if _, err := conn.Exec(ctx,
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1 AND pid <> pg_backend_pid()",
+		user); err != nil {
+		return fmt.Errorf("terminate role sessions: %w", err)
+	}
+
+	// Access is already revoked; failing here leaves an unusable role behind.
+	_, _ = conn.Exec(ctx, "DROP ROLE IF EXISTS "+ident)
+	return nil
 }
 
 // UserGrants returns human-readable grant lines for a role.

@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Copy } from "lucide-react";
 
 export function Modal({
   open,
@@ -151,5 +152,168 @@ export function ErrorText({ message }: { message?: string }) {
     <p className="text-sm" style={{ color: "var(--danger)", marginTop: ".25rem" }}>
       {message}
     </p>
+  );
+}
+
+/**
+ * Detail renders one label/value row. Shared by the database overview and the
+ * connectivity cards, which previously carried two copies of this markup.
+ */
+export function Detail({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+  return (
+    <div className="flex gap-3 text-sm" style={{ marginBottom: ".25rem" }}>
+      <span className="muted" style={{ minWidth: "8rem", flexShrink: 0 }}>
+        {label}
+      </span>
+      <span style={mono ? { fontFamily: "ui-monospace, monospace", wordBreak: "break-all" } : undefined}>{value}</span>
+    </div>
+  );
+}
+
+/**
+ * copyText copies to the clipboard and reports whether it worked.
+ *
+ * navigator.clipboard is undefined on plain-HTTP non-localhost origins, which
+ * is the normal Fleetdock deployment, so the async API alone silently fails
+ * while the UI claims success. Falls back to a hidden textarea + execCommand.
+ */
+export async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Permission denied or the document is not focused; try the fallback.
+  }
+
+  try {
+    const el = document.createElement("textarea");
+    el.value = value;
+    el.setAttribute("readonly", "");
+    el.style.position = "fixed";
+    el.style.opacity = "0";
+    document.body.appendChild(el);
+    el.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(el);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** CopyButton copies a value and reflects whether the copy actually succeeded. */
+export function CopyButton({
+  value,
+  label = "Copy",
+  className = "btn btn-sm",
+}: {
+  value: string;
+  label?: string;
+  className?: string;
+}) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function onClick() {
+    const ok = await copyText(value);
+    setState(ok ? "copied" : "failed");
+    setTimeout(() => setState("idle"), 2000);
+  }
+
+  return (
+    <button type="button" className={className} onClick={onClick}>
+      <Copy size={14} /> {state === "copied" ? "Copied" : state === "failed" ? "Press ⌘C" : label}
+    </button>
+  );
+}
+
+/**
+ * SecretReveal shows values that exist exactly once. Used for API tokens,
+ * enrollment commands, and database credentials.
+ */
+export function SecretReveal({
+  open,
+  onClose,
+  title,
+  hint,
+  items,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  hint?: string;
+  items: { label: string; value: string; copyable?: boolean }[];
+}) {
+  const visible = items.filter((i) => i.value);
+  return (
+    <Modal open={open} onClose={onClose} title={title}>
+      <p className="text-sm muted" style={{ marginBottom: ".75rem" }}>
+        {hint ?? "Copy these values now — they will not be shown again."}
+      </p>
+      {visible.map((item) => (
+        <div key={item.label} style={{ marginBottom: ".85rem" }}>
+          <div className="muted text-sm" style={{ marginBottom: ".25rem" }}>
+            {item.label}
+          </div>
+          <div
+            className="card"
+            style={{
+              padding: ".6rem",
+              fontFamily: "ui-monospace, monospace",
+              fontSize: ".75rem",
+              wordBreak: "break-all",
+            }}
+          >
+            {item.value}
+          </div>
+          {item.copyable === false ? null : (
+            <div style={{ marginTop: ".35rem" }}>
+              <CopyButton value={item.value} label={`Copy ${item.label.toLowerCase()}`} />
+            </div>
+          )}
+        </div>
+      ))}
+      <button className="btn btn-primary" style={{ marginTop: ".25rem" }} onClick={onClose}>
+        Done
+      </button>
+    </Modal>
+  );
+}
+
+/** ConfirmModal replaces window.confirm for destructive actions. */
+export function ConfirmModal({
+  open,
+  title,
+  message,
+  confirmLabel = "Confirm",
+  danger,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal open={open} onClose={onCancel} title={title}>
+      <div className="text-sm" style={{ marginBottom: "1rem" }}>
+        {message}
+      </div>
+      <div className="flex gap-2">
+        <button className={danger ? "btn btn-danger" : "btn btn-primary"} disabled={busy} onClick={onConfirm}>
+          {busy ? "Working…" : confirmLabel}
+        </button>
+        <button className="btn" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
   );
 }

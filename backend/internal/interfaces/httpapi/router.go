@@ -23,6 +23,8 @@ type RouterDeps struct {
 	Moves         *MoveHandler
 	Destinations  *DestinationHandler
 	DBAdmin       *DBAdminHandler
+	Connectivity  *ConnectivityHandler
+	DBCredentials *DBCredentialHandler
 	Agents        *AgentHandler
 	RegTokens     *RegTokenHandler
 	Install       *InstallHandler
@@ -138,6 +140,16 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/databases/{id}/lock", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Databases.Lock))
 	mux.HandleFunc("POST /v1/databases/{id}/unlock", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Databases.Unlock))
 	mux.HandleFunc("DELETE /v1/databases/{id}", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Databases.Delete))
+
+	// Database connectivity + application credentials.
+	mux.HandleFunc("GET /v1/databases/{id}/connectivity", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.Connectivity.GetConnectivity))
+	mux.HandleFunc("POST /v1/databases/{id}/public-access", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Connectivity.EnablePublicAccess))
+	mux.HandleFunc("PATCH /v1/databases/{id}/public-access", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Connectivity.UpdateAllowedCIDRs))
+	mux.HandleFunc("DELETE /v1/databases/{id}/public-access", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Connectivity.DisablePublicAccess))
+	mux.HandleFunc("GET /v1/databases/{id}/credentials", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBCredentials.List))
+	mux.HandleFunc("POST /v1/databases/{id}/credentials", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBCredentials.Create))
+	mux.HandleFunc("POST /v1/databases/{id}/credentials/{credentialId}/rotate", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBCredentials.Rotate))
+	mux.HandleFunc("DELETE /v1/databases/{id}/credentials/{credentialId}", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBCredentials.Revoke))
 
 	// Live DB administration: accounts + grants (instance scope)
 	mux.HandleFunc("GET /v1/instances/{id}/db-users", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.ListDBUsers))

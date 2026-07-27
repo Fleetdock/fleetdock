@@ -49,6 +49,11 @@ type Mover interface {
 	OnRestoreComplete(ctx context.Context, job *jobdom.Job, ok bool, result json.RawMessage)
 }
 
+// GatewayReconciler runs gateway reconciliation jobs (optional).
+type GatewayReconciler interface {
+	Reconcile(ctx context.Context) error
+}
+
 // Service implements the operations engine.
 type Service struct {
 	jobs      jobdom.Repository
@@ -59,6 +64,7 @@ type Service struct {
 	secrets   SecretsReader
 	notifier  EventEmitter
 	mover     Mover
+	gateway   GatewayReconciler
 }
 
 // NewService wires the operations engine.
@@ -72,6 +78,9 @@ func (s *Service) SetNotifier(n EventEmitter) { s.notifier = n }
 
 // SetMover attaches the move-database saga hook (optional).
 func (s *Service) SetMover(m Mover) { s.mover = m }
+
+// SetGatewayReconciler attaches the gateway reconciler (optional).
+func (s *Service) SetGatewayReconciler(g GatewayReconciler) { s.gateway = g }
 
 // Params is the stored (non-sensitive) parameter set of an operation.
 type Params struct {
@@ -94,6 +103,7 @@ type Params struct {
 	MoveTargetDatabase   string `json:"move_target_database,omitempty"`    // backup leg only
 	MoveSourceDatabaseID string `json:"move_source_database_id,omitempty"` // both legs; marks a move
 	MoveDropSource       bool   `json:"move_drop_source,omitempty"`        // both legs
+	EndpointID           string `json:"endpoint_id,omitempty"`
 }
 
 // isProvisionType reports whether a job type is a container lifecycle op.
@@ -104,6 +114,13 @@ func isProvisionType(t jobdom.Type) bool {
 		return true
 	}
 	return false
+}
+
+// isPayloadlessType reports whether a job needs no executor payload (no
+// instance credentials or connection). Gateway reconcile is handled by the
+// worker calling Endpoints.Reconcile directly.
+func isPayloadlessType(t jobdom.Type) bool {
+	return t == jobdom.TypeReconcileGateway
 }
 
 // Create records a new pending operation.
@@ -225,6 +242,9 @@ func (s *Service) Claim(ctx context.Context, serverID *uuid.UUID) (*jobdom.Job, 
 	if err != nil || j == nil {
 		return nil, nil, err
 	}
+	if isPayloadlessType(j.Type) {
+		return j, &executor.Payload{}, nil
+	}
 	payload, err := s.buildPayload(ctx, j)
 	if err != nil {
 		msg := err.Error()
@@ -246,6 +266,9 @@ func payloadBackupID(j *jobdom.Job) string {
 }
 
 func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Payload, error) {
+	if isPayloadlessType(j.Type) {
+		return &executor.Payload{}, nil
+	}
 	var p Params
 	if err := json.Unmarshal(j.Params, &p); err != nil {
 		return nil, fmt.Errorf("parse params: %w", err)
@@ -452,6 +475,8 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 		}
 	case jobdom.TypeDeleteDatabase:
 		// Metadata is already soft-deleted when the job was enqueued.
+	case jobdom.TypeReconcileGateway:
+		// Side effects handled by the worker calling GatewayReconciler directly.
 	case jobdom.TypeProvisionInstance, jobdom.TypeStartInstance, jobdom.TypeStopInstance,
 		jobdom.TypeRestartInstance, jobdom.TypeRemoveInstance:
 		s.completeProvision(ctx, j, ok, result, errMsg)

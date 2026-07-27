@@ -15,7 +15,11 @@ services:
     profiles: ["dev-postgres"]
 
   backend:
-    depends_on: !reset {}
+    # Drops only the bundled-postgres dependency; the gateway ordering must
+    # survive, or the API starts before HAProxy can accept a config reload.
+    depends_on:
+      gateway:
+        condition: service_healthy
     environment:
       FLEETDOCK_ENV: production
     ports: !reset []

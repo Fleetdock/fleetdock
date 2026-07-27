@@ -16,10 +16,14 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
 # alpine (not distroless): the control plane shells out to mariadb-dump /
 # mariadb and pg_dump / psql for backups and restores of *external* instances.
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates mariadb-client postgresql-client \
- && adduser -D -H app
+RUN apk add --no-cache ca-certificates mariadb-client postgresql-client su-exec \
+ && addgroup -g 1000 fleetdock \
+ && adduser -D -H -u 1000 -G fleetdock app \
+ && mkdir -p /var/lib/fleetdock/gateway \
+ && chown app:fleetdock /var/lib/fleetdock/gateway \
+ && chmod 775 /var/lib/fleetdock/gateway
 COPY --from=build /out/api /api
 COPY --from=build /out/agents /opt/fleetdock/agents
+COPY --chmod=0755 docker-entrypoint.sh /docker-entrypoint.sh
 EXPOSE 8080
-USER app
-ENTRYPOINT ["/api"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

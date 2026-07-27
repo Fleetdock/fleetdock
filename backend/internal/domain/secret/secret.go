@@ -14,6 +14,7 @@ type Kind string
 const (
 	KindMariaDBRoot  Kind = "mariadb_root"
 	KindMariaDBUser  Kind = "mariadb_user"
+	KindPostgresUser Kind = "postgres_user"
 	KindS3Credential Kind = "s3_credential"
 	KindAgentEnroll  Kind = "agent_enrollment"
 	KindOther        Kind = "other"

@@ -17,8 +17,12 @@ import type {
   CreateServerInput,
   CreateTokenInput,
   CreatedAgentToken,
+  Connectivity,
+  CredentialCreateResult,
   Database,
+  DatabaseCredential,
   Destination,
+  EndpointView,
   ImportDatabasesResult,
   Instance,
   Me,
@@ -787,6 +791,92 @@ export function useDatabase(id: string) {
     queryKey: ["database", id],
     queryFn: () => api.get<Database>(`/v1/databases/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+export function useConnectivity(databaseId: string) {
+  return useQuery({
+    queryKey: ["connectivity", databaseId],
+    queryFn: () => api.get<Connectivity>(`/v1/databases/${databaseId}/connectivity`),
+    enabled: Boolean(databaseId),
+    retry: false,
+    // Poll quickly while the gateway is converging, then back off. A settled
+    // endpoint does not need to be re-fetched every 10s forever.
+    refetchInterval: (query) => {
+      const status = query.state.data?.public?.status;
+      if (!status || status === "disabled") return false;
+      return status === "active" ? 30_000 : 4_000;
+    },
+  });
+}
+
+// Enable/disable/update all enqueue a reconcile job, so the operations list
+// must refresh alongside connectivity.
+function invalidateConnectivity(qc: ReturnType<typeof useQueryClient>, databaseId: string) {
+  void qc.invalidateQueries({ queryKey: ["connectivity", databaseId] });
+  void qc.invalidateQueries({ queryKey: ["operations"] });
+}
+
+export function useEnablePublicAccess(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { allowed_cidrs: string[]; tls_mode?: string }) =>
+      api.post<{ endpoint: EndpointView; operation_id: string }>(`/v1/databases/${databaseId}/public-access`, body),
+    onSuccess: () => invalidateConnectivity(qc, databaseId),
+  });
+}
+
+export function useDisablePublicAccess(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del<{ operation_id: string }>(`/v1/databases/${databaseId}/public-access`),
+    onSuccess: () => invalidateConnectivity(qc, databaseId),
+  });
+}
+
+// Changing the allowlist in place keeps the assigned port. Disabling and
+// re-enabling would allocate a different one and break every existing client.
+export function useUpdateAllowedCIDRs(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { allowed_cidrs: string[] }) =>
+      api.patch<{ operation_id: string }>(`/v1/databases/${databaseId}/public-access`, body),
+    onSuccess: () => invalidateConnectivity(qc, databaseId),
+  });
+}
+
+export function useDatabaseCredentials(databaseId: string) {
+  return useQuery({
+    queryKey: ["credentials", databaseId],
+    queryFn: () => api.get<{ items: DatabaseCredential[] }>(`/v1/databases/${databaseId}/credentials`),
+    enabled: Boolean(databaseId),
+    retry: false,
+  });
+}
+
+export function useCreateCredential(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; access_level: string; use_public?: boolean; username?: string }) =>
+      api.post<CredentialCreateResult>(`/v1/databases/${databaseId}/credentials`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["credentials", databaseId] }),
+  });
+}
+
+export function useRotateCredential(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (credentialId: string) =>
+      api.post<CredentialCreateResult>(`/v1/databases/${databaseId}/credentials/${credentialId}/rotate`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["credentials", databaseId] }),
+  });
+}
+
+export function useRevokeCredential(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (credentialId: string) => api.del<void>(`/v1/databases/${databaseId}/credentials/${credentialId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["credentials", databaseId] }),
   });
 }
 

@@ -12,9 +12,9 @@ import (
 
 // fakeRepo is an in-memory Repository used to test the service in isolation.
 type fakeRepo struct {
-	items      map[uuid.UUID]*serverdom.Server
-	names      map[string]bool
-	instances  map[uuid.UUID]bool
+	items     map[uuid.UUID]*serverdom.Server
+	names     map[string]bool
+	instances map[uuid.UUID]bool
 }
 
 func newFakeRepo() *fakeRepo {

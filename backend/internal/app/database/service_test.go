@@ -85,7 +85,9 @@ func (r *fakeInstanceRepo) GetByID(_ context.Context, id uuid.UUID) (*instancedo
 func (r *fakeInstanceRepo) List(_ context.Context, _ instancedom.ListFilter) (instancedom.Page, error) {
 	return instancedom.Page{}, nil
 }
-func (r *fakeInstanceRepo) SetRootSecretRef(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (r *fakeInstanceRepo) SetRootSecretRef(_ context.Context, _ uuid.UUID, _ string) error {
+	return nil
+}
 func (r *fakeInstanceRepo) SetStatus(_ context.Context, _ uuid.UUID, _ instancedom.Status) error {
 	return nil
 }
