@@ -76,7 +76,7 @@ func Generate(routes []Route, opts Options) string {
 	if opts.AdminSocket != "" {
 		// Read by ShowStat to report per-endpoint backend health and the number
 		// of connections the allowlist rejected.
-		b.WriteString(fmt.Sprintf("  stats socket %s mode 660 level admin expose-fd listeners\n", opts.AdminSocket))
+		fmt.Fprintf(&b, "  stats socket %s mode 660 level admin expose-fd listeners\n", opts.AdminSocket)
 		b.WriteString("  stats timeout 30s\n")
 	}
 	b.WriteString("\n")
@@ -92,7 +92,7 @@ func Generate(routes []Route, opts Options) string {
 	// HAProxy -c exits 2 when a config has no listeners. Always keep the health
 	// frontend so empty public-route sets still validate and stay reloadable.
 	b.WriteString("frontend fe_gateway_health\n")
-	b.WriteString(fmt.Sprintf("  bind *:%d\n", healthPort))
+	fmt.Fprintf(&b, "  bind *:%d\n", healthPort)
 	b.WriteString("  mode http\n")
 	b.WriteString("  http-request return status 200\n")
 	b.WriteString("\n")
@@ -102,7 +102,7 @@ func Generate(routes []Route, opts Options) string {
 	// difference between a working allowlist and one that rejects everyone.
 	if opts.DiagPort > 0 {
 		b.WriteString("frontend fe_gateway_whoami\n")
-		b.WriteString(fmt.Sprintf("  bind *:%d\n", opts.DiagPort))
+		fmt.Fprintf(&b, "  bind *:%d\n", opts.DiagPort)
 		b.WriteString("  mode http\n")
 		b.WriteString(`  http-request return status 200 content-type "text/plain" lf-string "%[src]\n"` + "\n")
 		b.WriteString("\n")
@@ -122,8 +122,8 @@ func Generate(routes []Route, opts Options) string {
 
 		frontend := fmt.Sprintf("fe_%d", r.ListenPort)
 		backend := fmt.Sprintf("be_%d", r.ListenPort)
-		b.WriteString(fmt.Sprintf("frontend %s\n", frontend))
-		b.WriteString(fmt.Sprintf("  bind *:%d%s\n", r.ListenPort, bindSuffix))
+		fmt.Fprintf(&b, "frontend %s\n", frontend)
+		fmt.Fprintf(&b, "  bind *:%d%s\n", r.ListenPort, bindSuffix)
 		b.WriteString("  mode tcp\n")
 		switch {
 		case len(r.AllowedCIDRs) == 0:
@@ -136,17 +136,17 @@ func Generate(routes []Route, opts Options) string {
 		default:
 			aclName := fmt.Sprintf("allow_%d", r.ListenPort)
 			for i, cidr := range r.AllowedCIDRs {
-				b.WriteString(fmt.Sprintf("  acl %s_%d src %s\n", aclName, i, cidr))
+				fmt.Fprintf(&b, "  acl %s_%d src %s\n", aclName, i, cidr)
 			}
 			conds := make([]string, len(r.AllowedCIDRs))
 			for i := range r.AllowedCIDRs {
 				conds[i] = fmt.Sprintf("%s_%d", aclName, i)
 			}
-			b.WriteString(fmt.Sprintf("  tcp-request connection reject unless %s\n", strings.Join(conds, " or ")))
+			fmt.Fprintf(&b, "  tcp-request connection reject unless %s\n", strings.Join(conds, " or "))
 		}
-		b.WriteString(fmt.Sprintf("  default_backend %s\n\n", backend))
+		fmt.Fprintf(&b, "  default_backend %s\n\n", backend)
 
-		b.WriteString(fmt.Sprintf("backend %s\n", backend))
+		fmt.Fprintf(&b, "backend %s\n", backend)
 		b.WriteString("  mode tcp\n")
 		// maxconn belongs on the server line: HAProxy ignores it as a bare
 		// backend directive ("has no frontend capability").
@@ -154,7 +154,7 @@ func Generate(routes []Route, opts Options) string {
 		if r.MaxConn != nil && *r.MaxConn > 0 {
 			serverOpts = fmt.Sprintf(" maxconn %d", *r.MaxConn)
 		}
-		b.WriteString(fmt.Sprintf("  server srv1 %s:%d check%s\n\n", r.BackendHost, r.BackendPort, serverOpts))
+		fmt.Fprintf(&b, "  server srv1 %s:%d check%s\n\n", r.BackendHost, r.BackendPort, serverOpts)
 	}
 	return b.String()
 }
