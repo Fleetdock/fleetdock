@@ -65,11 +65,13 @@ Day-2 operations use the `fleetdock` command it installs:
 
 ```bash
 fleetdock status          # container health and readiness
+fleetdock credentials     # dashboard URL and admin login
 fleetdock logs            # tail everything
 fleetdock update          # pull a new release and restart
 fleetdock doctor          # diagnose DNS, certificates, reachability
 fleetdock domain new.example.com
 fleetdock gateway enable  # external database access (opt-in)
+fleetdock delete          # remove everything from this host
 ```
 
 **One domain is all you need.** The Go binary serves the API and the dashboard

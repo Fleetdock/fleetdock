@@ -458,15 +458,36 @@ cat <<EOF
     Dashboard   ${PUBLIC_URL}
     Email       ${FLEETDOCK_ADMIN_EMAIL}
 EOF
-if [ -n "${ADMIN_PASSWORD:-}" ]; then
+# The bootstrap admin is only created while the users table is empty, so against
+# a pre-existing database the generated password is written to .env and never
+# applied. Printing it regardless would hand over a credential that cannot log
+# in. The API logs the account it creates, so use that as the signal.
+BOOTSTRAPPED=""
+if docker compose --project-directory "$FLEETDOCK_DIR" --env-file "${FLEETDOCK_DIR}/.env" \
+     logs fleetdock 2>/dev/null | grep -q "bootstrapped admin account"; then
+  BOOTSTRAPPED=1
+fi
+
+if [ -n "${ADMIN_PASSWORD:-}" ] && [ -n "$BOOTSTRAPPED" ]; then
   cat <<EOF
     Password    ${ADMIN_PASSWORD}
+EOF
+elif [ -n "${ADMIN_PASSWORD:-}" ]; then
+  cat <<EOF
 
-  This password is shown once. It is also in ${FLEETDOCK_DIR}/.env.
+  The database already had an account, so no admin was created and the generated
+  password was not applied. Sign in with your existing credentials.
 EOF
 else
-  echo "    Password    unchanged"
+  cat <<EOF
+    Password    unchanged by this upgrade
+EOF
 fi
+cat <<EOF
+
+  Retrieve these any time with:  fleetdock credentials
+  They are stored in ${FLEETDOCK_DIR}/.env
+EOF
 cat <<EOF
 
   Manage it with:  fleetdock status | logs | update | doctor

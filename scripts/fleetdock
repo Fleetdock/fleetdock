@@ -27,7 +27,30 @@ setenv() {
 }
 
 need_root() {
+  # A macOS install lives under $HOME and drives Docker Desktop as the invoking
+  # user, so there is nothing to elevate for.
+  [ "$(uname -s)" = "Darwin" ] && return 0
   [ "$(id -u)" = "0" ] || { echo "error: this needs root (try sudo)" >&2; exit 1; }
+}
+
+# compose_project resolves the project name the stack runs under, which is what
+# labels its volumes.
+compose_project() {
+  if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
+    echo "$COMPOSE_PROJECT_NAME"
+  else
+    grep -m1 '^name:' "${FLEETDOCK_DIR}/docker-compose.yml" 2>/dev/null \
+      | awk '{print $2}' | grep . || echo fleetdock
+  fi
+}
+
+# cli_path finds the installed CLI. install.sh writes it to /usr/local/bin when
+# writable and ~/.local/bin otherwise, so neither location can be assumed.
+cli_path() {
+  for p in /usr/local/bin/fleetdock "${HOME}/.local/bin/fleetdock"; do
+    [ -f "$p" ] && { echo "$p"; return; }
+  done
+  command -v fleetdock 2>/dev/null || true
 }
 
 usage() {
@@ -35,6 +58,7 @@ usage() {
 Usage: fleetdock <command>
 
   status                Container health and the control plane's readiness
+  credentials           Dashboard URL and the bootstrap admin login
   logs [service] [-f]   Tail logs (default: everything)
   start | stop | restart [service]
   update [--tag <tag>]  Pull and restart on a new image tag
@@ -46,7 +70,9 @@ Usage: fleetdock <command>
   shell                 A shell inside the control-plane container
   doctor                Diagnose a broken install
   backup-config         Archive .env and docker-compose.yml
-  uninstall [--purge]   Stop everything; --purge also deletes all data
+  uninstall             Stop and remove containers, keeping data and config
+  delete [--yes]        Remove everything from this host: containers, volumes,
+                        images, config and this command. Irreversible.
   version
 EOF
 }
@@ -65,6 +91,41 @@ case "$cmd" in
       echo "control plane: NOT ready — try: fleetdock logs fleetdock"
     fi
     echo "image tag:     $(getenv FLEETDOCK_RELEASE_TAG)"
+    ;;
+
+  credentials)
+    email="$(getenv FLEETDOCK_ADMIN_EMAIL)"
+    echo "Dashboard  $(getenv FLEETDOCK_PUBLIC_URL)"
+    echo "Email      ${email}"
+    echo "Password   $(getenv FLEETDOCK_ADMIN_PASSWORD)"
+    echo
+    # Deliberately not inferred from container logs: `docker compose logs` only
+    # covers the current container, so any restart would make a real bootstrap
+    # look like it never happened. State the condition instead, and check
+    # whether the account exists where that is cheap to do.
+    cat <<'EOT'
+This is the bootstrap password recorded at install time. It works only if
+Fleetdock created this account — the users table has to have been empty on
+first boot — and the password has not been changed since.
+EOT
+    # Only meaningful when the bundled Postgres actually holds the metadata. The
+    # service runs regardless, so with a hosted database (FLEETDOCK_DATABASE_URL
+    # pointing elsewhere) querying it would report on the wrong database
+    # entirely and claim the account does not exist.
+    db_url="$(getenv FLEETDOCK_DATABASE_URL)"
+    case "${db_url}" in
+      ""|*@postgres:*)
+        if dc ps --services 2>/dev/null | grep -qx postgres; then
+          n="$(dc exec -T postgres psql -U fleetdock -d fleetdock -tAc \
+                "select count(*) from users where email = '${email}';" 2>/dev/null | tr -d '[:space:]')"
+          case "$n" in
+            0) echo; echo "No account with that email exists — sign in with the one that does." ;;
+            [1-9]*) echo; echo "An account with that email exists." ;;
+          esac
+        fi
+        ;;
+      *) echo; echo "Metadata is on an external database; not checked." ;;
+    esac
     ;;
 
   logs) dc logs --tail 200 "$@" ;;
@@ -233,18 +294,98 @@ EOF
 
   uninstall)
     need_root
-    if [ "${1:-}" = "--purge" ]; then
-      printf 'This deletes the metadata database and all certificates. Type YES to confirm: '
-      read -r confirm < /dev/tty
-      [ "$confirm" = "YES" ] || { echo "Aborted."; exit 1; }
-      dc --profile gateway down -v
-      rm -rf "$FLEETDOCK_DIR"
-      rm -f /usr/local/bin/fleetdock
-      echo "Removed."
+    case "${1:-}" in
+      --purge) set -- delete ${2:+"$2"}; exec "$0" "$@" ;;
+    esac
+    dc --profile gateway down
+    echo "Stopped. Data and configuration kept in ${FLEETDOCK_DIR}."
+    echo "Start again with 'fleetdock start', or remove everything with 'fleetdock delete'."
+    ;;
+
+  delete)
+    need_root
+    project="$(compose_project)"
+    cli="$(cli_path)"
+    db_url="$(getenv FLEETDOCK_DATABASE_URL)"
+    images="$(dc config --images 2>/dev/null | sort -u || true)"
+    volumes="$(docker volume ls -q --filter "label=com.docker.compose.project=${project}" 2>/dev/null || true)"
+
+    echo "This permanently removes Fleetdock from this host:"
+    echo
+    echo "  Containers   $(dc ps -a --format '{{.Name}}' 2>/dev/null | tr '\n' ' ')"
+    [ -n "$volumes" ] && echo "  Volumes      $(echo "$volumes" | tr '\n' ' ')"
+    [ -n "$images" ]  && echo "  Images       $(echo "$images" | tr '\n' ' ')"
+    if [ -e "${FLEETDOCK_DIR}/.git" ] || [ -d "${FLEETDOCK_DIR}/backend" ] || \
+       [ -f "${FLEETDOCK_DIR}/Dockerfile" ] || [ "${FLEETDOCK_DIR}" = "${HOME}" ]; then
+      echo "  Directory    ${FLEETDOCK_DIR}  (KEPT — looks like a source checkout, not an install)"
     else
-      dc --profile gateway down
-      echo "Stopped. Data kept in ${FLEETDOCK_DIR}; 'fleetdock uninstall --purge' deletes it."
+      echo "  Directory    ${FLEETDOCK_DIR}"
     fi
+    [ -n "$cli" ] && echo "  Command      ${cli}"
+    echo
+    # The encryption key is the part that cannot be recovered. Losing it while
+    # keeping a database backup elsewhere leaves that backup permanently
+    # unreadable, so this warning is not boilerplate.
+    cat <<EOT
+IRREVERSIBLE: ${FLEETDOCK_DIR}/.env holds FLEETDOCK_ENCRYPTION_KEY, the only key
+that can decrypt stored database and object-store credentials. Any backup of the
+metadata database becomes unreadable without it. Run 'fleetdock backup-config'
+first if you might ever rebuild this install.
+EOT
+    case "${db_url}" in
+      ""|*@postgres:*) ;;
+      *) echo
+         echo "Metadata is on an external database. The data there is NOT deleted —"
+         echo "drop it with your provider if you want it gone." ;;
+    esac
+    cat <<'EOT'
+
+Agents on managed servers are not touched. Remove each one on its own host:
+
+  sudo systemctl disable --now fleetdock-agent
+  sudo rm -rf /etc/fleetdock-agent /var/lib/fleetdock-agent \
+              /usr/local/bin/fleetdock-agent /etc/systemd/system/fleetdock-agent.service
+EOT
+    echo
+    if [ "${1:-}" != "--yes" ]; then
+      printf 'Type DELETE to confirm: '
+      # Read from the terminal when there is one — `curl … | sh` leaves stdin
+      # bound to the script. With neither, refuse rather than assume consent.
+      if [ -r /dev/tty ] && { : >/dev/tty; } 2>/dev/null; then
+        read -r confirm < /dev/tty
+      elif [ -t 0 ]; then
+        read -r confirm
+      else
+        echo; echo "Not a terminal — re-run with --yes to confirm non-interactively." >&2
+        exit 1
+      fi
+      [ "$confirm" = "DELETE" ] || { echo "Aborted."; exit 1; }
+    fi
+
+    echo "==> Removing containers, networks and volumes"
+    dc --profile gateway down -v --remove-orphans 2>&1 | sed 's/^/    /' || true
+
+    if [ -n "$images" ]; then
+      echo "==> Removing images"
+      # shellcheck disable=SC2086
+      echo "$images" | xargs -r docker rmi >/dev/null 2>&1 || true
+    fi
+
+    # An install directory holds .env and docker-compose.yml and nothing else.
+    # If FLEETDOCK_DIR was pointed at a source checkout or a home directory,
+    # rm -rf would take the lot, so leave anything that is clearly not ours.
+    if [ -e "${FLEETDOCK_DIR}/.git" ] || [ -d "${FLEETDOCK_DIR}/backend" ] || \
+       [ -f "${FLEETDOCK_DIR}/Dockerfile" ] || [ "${FLEETDOCK_DIR}" = "${HOME}" ]; then
+      echo "==> Leaving ${FLEETDOCK_DIR} alone — it looks like a source checkout, not an install"
+      echo "    Delete .env and docker-compose.yml by hand if you meant to."
+    else
+      echo "==> Removing ${FLEETDOCK_DIR}"
+      rm -rf "$FLEETDOCK_DIR"
+    fi
+
+    echo "Fleetdock removed."
+    # Last, so nothing else needs to read this script afterwards.
+    [ -n "$cli" ] && rm -f "$cli"
     ;;
 
   version)

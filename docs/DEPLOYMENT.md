@@ -82,13 +82,15 @@ when the main record cannot carry raw TCP — most often a Cloudflare-proxied
 
 ```bash
 fleetdock status                  # container health and readiness
+fleetdock credentials             # dashboard URL and admin login
 fleetdock logs [service] -f
 fleetdock update [--tag v0.2.0]   # pull and restart
 fleetdock domain new.example.com  # move to a new hostname
 fleetdock gateway enable|disable  # external database access
 fleetdock doctor                  # DNS, certificates, reachability, disk
 fleetdock backup-config           # archive .env — keep this off-host
-fleetdock uninstall [--purge]
+fleetdock uninstall               # stop and remove containers, keep data
+fleetdock delete                  # remove everything from this host
 ```
 
 ## Running it yourself
@@ -114,6 +116,32 @@ Published image (multi-arch, `linux/amd64` + `linux/arm64`):
 ```text
 ghcr.io/fleetdock/fleetdock:<tag>
 ```
+
+### Removing an install
+
+```bash
+fleetdock uninstall    # stop and remove containers; data and config stay
+fleetdock delete       # containers, volumes, images, config and the CLI itself
+```
+
+`delete` lists exactly what it will remove and requires typing `DELETE`
+(`--yes` skips the prompt for automation). Two things it does **not** do, both
+stated at the prompt:
+
+- **Agents on managed servers are untouched.** Remove each on its own host with
+  `systemctl disable --now fleetdock-agent` and deleting
+  `/etc/fleetdock-agent`, `/var/lib/fleetdock-agent`, the binary and the unit.
+- **An external metadata database is not dropped.** Only local volumes go; data
+  in Neon, RDS or similar is your provider's to delete.
+
+<!-- prettier-ignore -->
+> **`FLEETDOCK_ENCRYPTION_KEY` dies with `.env`.** It is the only key that can
+> decrypt stored database and object-store credentials, so any surviving backup
+> of the metadata database becomes permanently unreadable. Run
+> `fleetdock backup-config` first if there is any chance you will rebuild.
+
+Images still in use by other containers are left alone — Docker refuses to
+remove them — so deleting one install cannot break another.
 
 ## Installing from a checkout (forks, air-gapped, testing)
 
@@ -264,6 +292,8 @@ channels still work.
 | API exits on start                | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh`                                |
 | Agent never appears               | `FLEETDOCK_PUBLIC_URL` unreachable from the server; `localhost` used from a remote VM; firewall blocks 443 |
 | Dashboard 503, API fine           | The dashboard child is restarting. `fleetdock logs fleetdock` — it recovers on its own                     |
+| Lost the admin password           | `fleetdock credentials`. It is also `FLEETDOCK_ADMIN_PASSWORD` in `.env`                                   |
+| Printed password does not work    | The bootstrap only runs while the users table is empty. Against an existing database it was never applied — sign in with the account that already existed. `fleetdock credentials` says which case you are in |
 | `/readyz` returns 503             | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong                                                   |
 | Database endpoints unreachable    | Gateway hostname behind a proxying CDN, or the port range not open in the host firewall                    |
 
