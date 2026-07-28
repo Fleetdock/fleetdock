@@ -34,7 +34,7 @@ func applyReadonly(ctx context.Context, admin Admin, p ConnParams, user, host, d
 	case *MariaDB:
 		return a.grantMySQLProfile(ctx, p, user, host, database, []string{"SELECT", "SHOW VIEW"})
 	case *Postgres:
-		return a.grantPostgresReadonly(ctx, p, user, database)
+		return a.applyPGProfile(ctx, p, user, database, ProfileReadonly)
 	default:
 		return fmt.Errorf("engine does not support profiles")
 	}
@@ -49,7 +49,7 @@ func applyReadwrite(ctx context.Context, admin Admin, p ConnParams, user, host, 
 			"CREATE ROUTINE", "ALTER ROUTINE", "TRIGGER", "REFERENCES",
 		})
 	case *Postgres:
-		return a.grantPostgresReadwrite(ctx, p, user, database)
+		return a.applyPGProfile(ctx, p, user, database, ProfileReadWrite)
 	default:
 		return fmt.Errorf("engine does not support profiles")
 	}
@@ -60,7 +60,7 @@ func applyAdmin(ctx context.Context, admin Admin, p ConnParams, user, host, data
 	case *MariaDB:
 		return a.grantMySQLProfile(ctx, p, user, host, database, []string{"ALL PRIVILEGES"})
 	case *Postgres:
-		return a.grantPostgresAdmin(ctx, p, user, database)
+		return a.applyPGProfile(ctx, p, user, database, ProfileAdmin)
 	default:
 		return fmt.Errorf("engine does not support profiles")
 	}
@@ -73,61 +73,52 @@ func (m *MariaDB) grantMySQLProfile(ctx context.Context, p ConnParams, user, hos
 	return nil
 }
 
-func (pg *Postgres) grantPostgresReadonly(ctx context.Context, p ConnParams, user, database string) error {
-	if !identRe.MatchString(database) {
-		return fmt.Errorf("invalid database name")
-	}
-	conn, err := pg.connect(ctx, p, database)
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
-	role := quotePGIdent(user)
-	db := quotePGIdent(database)
-	stmts := []string{
-		fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s", db, role),
-		fmt.Sprintf("GRANT USAGE ON SCHEMA public TO %s", role),
-		fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s", role),
-		fmt.Sprintf("GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO %s", role),
-		fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %s", role),
-		fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO %s", role),
-	}
-	for _, s := range stmts {
-		if _, err := conn.Exec(ctx, s); err != nil {
-			return err
-		}
-	}
-	return nil
+// pgProfileGrants is one profile expressed at PostgreSQL's four grant scopes.
+type pgProfileGrants struct {
+	database  string // privileges on the database itself
+	schema    string // privileges on each schema
+	tables    string // privileges on existing and future tables
+	sequences string // privileges on existing and future sequences
 }
 
-func (pg *Postgres) grantPostgresReadwrite(ctx context.Context, p ConnParams, user, database string) error {
-	if !identRe.MatchString(database) {
-		return fmt.Errorf("invalid database name")
-	}
-	conn, err := pg.connect(ctx, p, database)
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
-	role := quotePGIdent(user)
-	db := quotePGIdent(database)
-	stmts := []string{
-		fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s", db, role),
-		fmt.Sprintf("GRANT USAGE, CREATE ON SCHEMA public TO %s", role),
-		fmt.Sprintf("GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO %s", role),
-		fmt.Sprintf("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %s", role),
-		fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLES TO %s", role),
-		fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %s", role),
-	}
-	for _, s := range stmts {
-		if _, err := conn.Exec(ctx, s); err != nil {
-			return err
-		}
-	}
-	return nil
+var pgProfiles = map[AccessProfile]pgProfileGrants{
+	ProfileReadonly: {
+		database:  "CONNECT",
+		schema:    "USAGE",
+		tables:    "SELECT",
+		sequences: "SELECT",
+	},
+	ProfileReadWrite: {
+		database:  "CONNECT",
+		schema:    "USAGE, CREATE",
+		tables:    "SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER",
+		sequences: "USAGE, SELECT, UPDATE",
+	},
+	ProfileAdmin: {
+		database:  "ALL PRIVILEGES",
+		schema:    "ALL PRIVILEGES",
+		tables:    "ALL PRIVILEGES",
+		sequences: "ALL PRIVILEGES",
+	},
 }
 
-func (pg *Postgres) grantPostgresAdmin(ctx context.Context, p ConnParams, user, database string) error {
+// applyPGProfile grants a profile across every schema in the database, not just
+// public. A PostgreSQL database can hold many schemas, and a credential that
+// only reaches public is silently useless against a database organised any
+// other way.
+//
+// Two limits are inherent to PostgreSQL and worth knowing: the grant is a
+// snapshot, so a schema created afterwards is not covered (there is no "all
+// future schemas" default privilege), and ALTER DEFAULT PRIVILEGES only applies
+// to objects later created by the role running these statements.
+func (pg *Postgres) applyPGProfile(ctx context.Context, p ConnParams, user, database string, profile AccessProfile) error {
+	g, ok := pgProfiles[profile]
+	if !ok {
+		return fmt.Errorf("unsupported access profile %q", profile)
+	}
+	if !validPGRole(user) {
+		return fmt.Errorf("invalid role name")
+	}
 	if !identRe.MatchString(database) {
 		return fmt.Errorf("invalid database name")
 	}
@@ -136,19 +127,32 @@ func (pg *Postgres) grantPostgresAdmin(ctx context.Context, p ConnParams, user, 
 		return err
 	}
 	defer conn.Close(ctx)
+
 	role := quotePGIdent(user)
-	db := quotePGIdent(database)
-	stmts := []string{
-		fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s", db, role),
-		fmt.Sprintf("GRANT ALL PRIVILEGES ON SCHEMA public TO %s", role),
-		fmt.Sprintf("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO %s", role),
-		fmt.Sprintf("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO %s", role),
-		fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO %s", role),
-		fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO %s", role),
+	if _, err := conn.Exec(ctx, fmt.Sprintf("GRANT %s ON DATABASE %s TO %s",
+		g.database, quotePGIdent(database), role)); err != nil {
+		return err
 	}
-	for _, s := range stmts {
-		if _, err := conn.Exec(ctx, s); err != nil {
-			return err
+
+	schemas, err := pg.userSchemas(ctx, conn)
+	if err != nil {
+		return err
+	}
+	for _, schema := range schemas {
+		s := quotePGIdent(schema)
+		stmts := []string{
+			fmt.Sprintf("GRANT %s ON SCHEMA %s TO %s", g.schema, s, role),
+			fmt.Sprintf("GRANT %s ON ALL TABLES IN SCHEMA %s TO %s", g.tables, s, role),
+			fmt.Sprintf("GRANT %s ON ALL SEQUENCES IN SCHEMA %s TO %s", g.sequences, s, role),
+			fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT %s ON TABLES TO %s", s, g.tables, role),
+			fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT %s ON SEQUENCES TO %s", s, g.sequences, role),
+		}
+		for _, stmt := range stmts {
+			if _, err := conn.Exec(ctx, stmt); err != nil {
+				// Name the schema: "permission denied" on a schema owned by
+				// another role is the likely cause and is otherwise opaque.
+				return fmt.Errorf("granting %s on schema %q: %w", profile, schema, err)
+			}
 		}
 	}
 	return nil

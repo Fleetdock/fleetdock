@@ -53,6 +53,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **PostgreSQL credentials now reach every schema.** Access profiles, custom
+  grants and revokes were hardcoded to `public`, so a credential issued against
+  a database whose tables live in another schema was silently powerless — and a
+  revoke left privileges behind if any had been granted elsewhere by hand. All
+  three paths now enumerate the database's schemas. Two PostgreSQL limits
+  remain: the grant is a snapshot (a schema created later is not covered), and
+  `ALTER DEFAULT PRIVILEGES` only affects objects created by the granting role.
+- **Table browsing distinguishes schemas.** `ListTables` returns the schema
+  alongside the name, and browse/export accept `schema.table`. Previously
+  `public.orders` and `sales.orders` were both shown as `orders` and opening
+  either one resolved to whichever the catalogue returned first. Grant listings
+  report per-schema privileges instead of `public` only.
 - `/_next/static/*` assets are no longer served with `Cache-Control: no-store`.
   The API's no-store now applies only to API responses.
 - Wrong-method API calls keep returning `405` rather than falling through to the

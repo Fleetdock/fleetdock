@@ -22,6 +22,30 @@ func quotePGIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
+// resolveTable maps a browse identifier to a concrete (schema, table) pair.
+// The identifier is normally "schema.table" — the form ListTables hands the
+// dashboard — but a bare table name is still accepted for older links, in which
+// case it resolves through the catalogue with public preferred. Because a table
+// name may itself contain a dot, the qualified reading is only used when it
+// actually matches an existing table.
+func (pg *Postgres) resolveTable(ctx context.Context, conn *pgx.Conn, name string) (schema, table string, err error) {
+	if s, t, ok := strings.Cut(name, "."); ok && s != "" && t != "" {
+		var found bool
+		if qerr := conn.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM information_schema.tables
+				WHERE table_schema = $1 AND table_name = $2
+			)`, s, t).Scan(&found); qerr == nil && found {
+			return s, t, nil
+		}
+	}
+	s, terr := pg.tableSchema(ctx, conn, name)
+	if terr != nil {
+		return "", "", fmt.Errorf("table %q not found", name)
+	}
+	return s, name, nil
+}
+
 func (pg *Postgres) tableSchema(ctx context.Context, conn *pgx.Conn, table string) (string, error) {
 	var schema string
 	err := conn.QueryRow(ctx, `
@@ -35,6 +59,32 @@ func (pg *Postgres) tableSchema(ctx context.Context, conn *pgx.Conn, table strin
 
 func qualifiedTable(schema, table string) string {
 	return quotePGIdent(schema) + "." + quotePGIdent(table)
+}
+
+// userSchemas returns the non-system schemas of the connected database, public
+// first. PostgreSQL nests schemas inside a database, so anything that grants,
+// revokes or reports privileges has to walk all of them: a database whose
+// tables live in "sales" looks empty if only public is considered.
+func (pg *Postgres) userSchemas(ctx context.Context, conn *pgx.Conn) ([]string, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT nspname FROM pg_namespace
+		WHERE nspname NOT IN ('pg_catalog', 'information_schema')
+		  AND nspname NOT LIKE 'pg\_toast%'
+		  AND nspname NOT LIKE 'pg\_temp%'
+		ORDER BY CASE WHEN nspname = 'public' THEN 0 ELSE 1 END, nspname`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // ListDBUsers returns login roles (PostgreSQL has no user@host model).
@@ -166,26 +216,35 @@ func (pg *Postgres) UserGrants(ctx context.Context, p ConnParams, user, host str
 		}
 	}
 
+	// Report every schema, not just public — a role's real access to a
+	// multi-schema database is invisible otherwise.
 	schemaRows, err := conn.Query(ctx, `
-		SELECT privilege_type FROM information_schema.schema_privileges
-		WHERE grantee = $1 AND schema_name = 'public'
-		ORDER BY privilege_type`, user)
+		SELECT schema_name, privilege_type FROM information_schema.schema_privileges
+		WHERE grantee = $1
+		  AND schema_name NOT IN ('pg_catalog', 'information_schema')
+		  AND schema_name NOT LIKE 'pg\_toast%'
+		  AND schema_name NOT LIKE 'pg\_temp%'
+		ORDER BY CASE WHEN schema_name = 'public' THEN 0 ELSE 1 END, schema_name, privilege_type`, user)
 	if err == nil {
 		defer schemaRows.Close()
-		var privs []string
+		bySchema := map[string][]string{}
+		var order []string
 		for schemaRows.Next() {
-			var priv string
-			if err := schemaRows.Scan(&priv); err != nil {
+			var schema, priv string
+			if err := schemaRows.Scan(&schema, &priv); err != nil {
 				return nil, err
 			}
-			privs = append(privs, priv)
+			if _, ok := bySchema[schema]; !ok {
+				order = append(order, schema)
+			}
+			bySchema[schema] = append(bySchema[schema], priv)
 		}
 		if err := schemaRows.Err(); err != nil {
 			return nil, err
 		}
-		if len(privs) > 0 {
-			out = append(out, fmt.Sprintf("GRANT %s ON SCHEMA public TO %s",
-				strings.Join(privs, ", "), quotePGIdent(user)))
+		for _, schema := range order {
+			out = append(out, fmt.Sprintf("GRANT %s ON SCHEMA %s TO %s",
+				strings.Join(bySchema[schema], ", "), quotePGIdent(schema), quotePGIdent(user)))
 		}
 	}
 
@@ -223,7 +282,8 @@ func (pg *Postgres) UserGrants(ctx context.Context, p ConnParams, user, host str
 	return out, nil
 }
 
-// SchemaGrants returns per-role privileges on the connected database and public schema.
+// SchemaGrants returns per-role privileges on the connected database and all of
+// its non-system schemas.
 func (pg *Postgres) SchemaGrants(ctx context.Context, p ConnParams, database string) ([]SchemaGrant, error) {
 	if !identRe.MatchString(database) {
 		return nil, fmt.Errorf("invalid database name")
@@ -244,11 +304,15 @@ func (pg *Postgres) SchemaGrants(ctx context.Context, p ConnParams, database str
 			UNION ALL
 			SELECT grantee, privilege_type
 			FROM information_schema.schema_privileges
-			WHERE schema_name = 'public'
+			WHERE schema_name NOT IN ('pg_catalog', 'information_schema')
+			  AND schema_name NOT LIKE 'pg\_toast%'
+			  AND schema_name NOT LIKE 'pg\_temp%'
 			UNION ALL
 			SELECT grantee, privilege_type
 			FROM information_schema.table_privileges
-			WHERE table_schema = 'public'
+			WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+			  AND table_schema NOT LIKE 'pg\_toast%'
+			  AND table_schema NOT LIKE 'pg\_temp%'
 		) g
 		ORDER BY role_name, privilege_type`)
 	if err != nil {
@@ -304,16 +368,21 @@ func (pg *Postgres) Grant(ctx context.Context, p ConnParams, user, host, databas
 	if err != nil {
 		return err
 	}
-	stmts := postgresGrantStmts(database, user, privs)
-	if len(stmts) == 0 {
-		return fmt.Errorf("no applicable PostgreSQL privileges in request")
-	}
 
 	conn, err := pg.connect(ctx, p, database)
 	if err != nil {
 		return err
 	}
 	defer conn.Close(ctx)
+
+	schemas, err := pg.userSchemas(ctx, conn)
+	if err != nil {
+		return err
+	}
+	stmts := postgresGrantStmts(database, user, privs, schemas)
+	if len(stmts) == 0 {
+		return fmt.Errorf("no applicable PostgreSQL privileges in request")
+	}
 
 	for _, stmt := range stmts {
 		if _, err := conn.Exec(ctx, stmt); err != nil {
@@ -337,23 +406,37 @@ func (pg *Postgres) Revoke(ctx context.Context, p ConnParams, user, host, databa
 	}
 	defer conn.Close(ctx)
 
-	role := quotePGIdent(user)
-	stmts := []string{
-		"REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM " + role,
-		"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM " + role,
-		"REVOKE ALL PRIVILEGES ON SCHEMA public FROM " + role,
-		fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", quoteIdent(database), role),
+	// Revoke has to cover every schema the grant path could have touched,
+	// otherwise a revoked credential keeps working against a non-public schema.
+	schemas, err := pg.userSchemas(ctx, conn)
+	if err != nil {
+		return err
 	}
+	role := quotePGIdent(user)
+	var stmts []string
+	for _, schema := range schemas {
+		s := quotePGIdent(schema)
+		stmts = append(stmts,
+			fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s REVOKE ALL PRIVILEGES ON TABLES FROM %s", s, role),
+			fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s REVOKE ALL PRIVILEGES ON SEQUENCES FROM %s", s, role),
+			fmt.Sprintf("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA %s FROM %s", s, role),
+			fmt.Sprintf("REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA %s FROM %s", s, role),
+			fmt.Sprintf("REVOKE ALL PRIVILEGES ON SCHEMA %s FROM %s", s, role),
+		)
+	}
+	stmts = append(stmts,
+		fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", quoteIdent(database), role))
 	for _, stmt := range stmts {
 		if _, err := conn.Exec(ctx, stmt); err != nil {
-			return err
+			return fmt.Errorf("revoking from %s: %w", user, err)
 		}
 	}
 	return nil
 }
 
-// postgresGrantStmts translates the shared privilege allowlist into PostgreSQL GRANTs.
-func postgresGrantStmts(database, role string, privs []string) []string {
+// postgresGrantStmts translates the shared privilege allowlist into PostgreSQL
+// GRANTs, applied to every schema in the database.
+func postgresGrantStmts(database, role string, privs, schemas []string) []string {
 	qRole := quotePGIdent(role)
 	qDB := quoteIdent(database)
 
@@ -393,13 +476,18 @@ func postgresGrantStmts(database, role string, privs []string) []string {
 	if len(tablePrivs) > 0 {
 		schemaPrivs["USAGE"] = struct{}{}
 	}
-	if len(schemaPrivs) > 0 {
-		stmts = append(stmts, fmt.Sprintf("GRANT %s ON SCHEMA public TO %s",
-			joinSet(schemaPrivs), qRole))
-	}
-	if len(tablePrivs) > 0 {
-		stmts = append(stmts, fmt.Sprintf("GRANT %s ON ALL TABLES IN SCHEMA public TO %s",
-			joinSet(tablePrivs), qRole))
+	for _, schema := range schemas {
+		s := quotePGIdent(schema)
+		if len(schemaPrivs) > 0 {
+			stmts = append(stmts, fmt.Sprintf("GRANT %s ON SCHEMA %s TO %s",
+				joinSet(schemaPrivs), s, qRole))
+		}
+		if len(tablePrivs) > 0 {
+			stmts = append(stmts, fmt.Sprintf("GRANT %s ON ALL TABLES IN SCHEMA %s TO %s",
+				joinSet(tablePrivs), s, qRole))
+			stmts = append(stmts, fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT %s ON TABLES TO %s",
+				s, joinSet(tablePrivs), qRole))
+		}
 	}
 	return stmts
 }
@@ -425,7 +513,8 @@ func (pg *Postgres) ListTables(ctx context.Context, p ConnParams, database strin
 	defer conn.Close(ctx)
 
 	rows, err := conn.Query(ctx, `
-		SELECT c.relname,
+		SELECT n.nspname,
+		       c.relname,
 		       COALESCE(s.n_live_tup, 0),
 		       COALESCE(pg_relation_size(c.oid), 0),
 		       COALESCE(pg_indexes_size(c.oid), 0),
@@ -434,8 +523,10 @@ func (pg *Postgres) ListTables(ctx context.Context, p ConnParams, database strin
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
 		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+		  AND n.nspname NOT LIKE 'pg\_toast%'
+		  AND n.nspname NOT LIKE 'pg\_temp%'
 		  AND c.relkind = 'r'
-		ORDER BY c.relname`)
+		ORDER BY CASE WHEN n.nspname = 'public' THEN 0 ELSE 1 END, n.nspname, c.relname`)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +535,7 @@ func (pg *Postgres) ListTables(ctx context.Context, p ConnParams, database strin
 	var out []TableInfo
 	for rows.Next() {
 		var t TableInfo
-		if err := rows.Scan(&t.Name, &t.RowCount, &t.DataBytes, &t.IndexBytes, &t.Comment); err != nil {
+		if err := rows.Scan(&t.Schema, &t.Name, &t.RowCount, &t.DataBytes, &t.IndexBytes, &t.Comment); err != nil {
 			return nil, err
 		}
 		t.Engine = "postgres"
@@ -474,9 +565,9 @@ func (pg *Postgres) TableRows(ctx context.Context, p ConnParams, database, table
 	}
 	defer conn.Close(ctx)
 
-	schema, err := pg.tableSchema(ctx, conn, table)
+	schema, table, err := pg.resolveTable(ctx, conn, table)
 	if err != nil {
-		return nil, fmt.Errorf("table %q not found", table)
+		return nil, err
 	}
 
 	var total int64
@@ -529,12 +620,14 @@ func (pg *Postgres) TableSchema(ctx context.Context, p ConnParams, database, tab
 	}
 	defer conn.Close(ctx)
 
-	schema, err := pg.tableSchema(ctx, conn, table)
+	schema, table, err := pg.resolveTable(ctx, conn, table)
 	if err != nil {
-		return nil, fmt.Errorf("table %q not found", table)
+		return nil, err
 	}
 
-	out := &TableSchema{Table: table, Columns: []ColumnInfo{}, Indexes: []IndexInfo{}}
+	// Report the qualified name so the caller can tell public.orders from
+	// sales.orders.
+	out := &TableSchema{Table: schema + "." + table, Columns: []ColumnInfo{}, Indexes: []IndexInfo{}}
 
 	colRows, err := conn.Query(ctx, `
 		SELECT column_name, data_type, is_nullable, column_default,
@@ -708,11 +801,11 @@ func (pg *Postgres) ExportCSV(ctx context.Context, p ConnParams, database, table
 			return 0, err
 		}
 		defer conn.Close(ctx)
-		schema, err := pg.tableSchema(ctx, conn, table)
-		if err != nil {
-			return 0, fmt.Errorf("table %q not found", table)
+		schema, name, rerr := pg.resolveTable(ctx, conn, table)
+		if rerr != nil {
+			return 0, rerr
 		}
-		sqlText = "SELECT * FROM " + qualifiedTable(schema, table)
+		sqlText = "SELECT * FROM " + qualifiedTable(schema, name)
 	case strings.TrimSpace(query) != "":
 		sqlText = strings.TrimSpace(query)
 		if !isReadOnlyStmt(sqlText) {
