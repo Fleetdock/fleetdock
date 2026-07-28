@@ -115,6 +115,41 @@ Published image (multi-arch, `linux/amd64` + `linux/arm64`):
 ghcr.io/tajbrains/fleetdock:<tag>
 ```
 
+## Installing from a checkout (forks, air-gapped, testing)
+
+By default `install.sh` fetches `docker-compose.yml` and the `fleetdock` CLI from
+the published repository and pulls the released image. Neither is available if
+the repository is private, the release is not cut yet, or the host has no route
+to GitHub. `--source` and `--build` cover those cases:
+
+```bash
+sudo sh install.sh --source /path/to/fleetdock --build --domain db.example.com
+```
+
+- `--source <path|url>` takes `docker-compose.yml` and `scripts/fleetdock` from a
+  local checkout (or any base URL) instead of the published repo.
+- `--build` builds the application image from that checkout rather than pulling
+  it. It tags the image exactly as `docker-compose.yml` expects, so Compose finds
+  it locally and never reaches for the registry.
+
+### Trying it in a VM
+
+A throwaway VM is the only honest way to test the installer, since it installs
+Docker and binds 80/443. With [Multipass](https://multipass.run):
+
+```bash
+multipass launch --name fd --cpus 2 --memory 4G --disk 20G
+multipass mount /path/to/fleetdock fd:/src
+multipass exec fd -- sudo sh /src/scripts/install.sh --source /src --build --no-tls
+```
+
+`--no-tls` matters here: a VM on a private address cannot complete an ACME
+challenge, so asking for a certificate only produces a slow failure. Reach the
+dashboard at `http://<vm-ip>` — `multipass info fd` prints the address.
+
+To test certificate issuance you need a host the internet can reach on 80/443
+and a DNS record pointing at it; that is the one thing a local VM cannot cover.
+
 ## Bring your own reverse proxy
 
 Drop the bundled `caddy` service and point your own proxy at `fleetdock:8080`.

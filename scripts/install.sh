@@ -14,6 +14,12 @@
 set -eu
 
 FLEETDOCK_REPO="${FLEETDOCK_REPO:-tajbrains/fleetdock}"
+# Where docker-compose.yml and the fleetdock CLI come from. Defaults to the
+# published repo, but may point at a local checkout — which is what makes this
+# installable from a fork, from an air-gapped mirror, or in a test VM before
+# anything has been published.
+FLEETDOCK_SOURCE="${FLEETDOCK_SOURCE:-}"
+BUILD_LOCALLY=""
 FLEETDOCK_DIR="${FLEETDOCK_DIR:-/opt/fleetdock}"
 FLEETDOCK_RELEASE_TAG="${FLEETDOCK_RELEASE_TAG:-latest}"
 FLEETDOCK_DOMAIN="${FLEETDOCK_DOMAIN:-}"
@@ -43,6 +49,10 @@ Usage: install.sh [options]
   --with-gateway      Also start the external database access gateway. Adds a
                       50-port range; off by default.
   --no-tls            Serve plain HTTP on the host's IP. No certificate.
+  --source <path|url> Take docker-compose.yml and the fleetdock CLI from here
+                      instead of the published repo. A local checkout works.
+  --build             Build the application image from --source instead of
+                      pulling it. Requires --source to be a checkout.
   -h, --help          This message.
 
 Every option also reads from the matching FLEETDOCK_* environment variable, so
@@ -58,10 +68,20 @@ while [ $# -gt 0 ]; do
     --tag) FLEETDOCK_RELEASE_TAG="${2:?--tag needs a value}"; shift 2 ;;
     --with-gateway) WITH_GATEWAY=1; shift ;;
     --no-tls) NO_TLS=1; shift ;;
+    --source) FLEETDOCK_SOURCE="${2:?--source needs a value}"; shift 2 ;;
+    --build) BUILD_LOCALLY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
 done
+
+# Validate before doing anything expensive — installing Docker takes minutes and
+# should not happen only to fail on a bad flag combination.
+if [ -n "$BUILD_LOCALLY" ]; then
+  [ -n "$FLEETDOCK_SOURCE" ] || die "--build requires --source pointing at a Fleetdock checkout"
+  [ -d "$FLEETDOCK_SOURCE" ] || die "--source '$FLEETDOCK_SOURCE' is not a directory; --build needs a local checkout"
+  [ -f "${FLEETDOCK_SOURCE}/Dockerfile" ] || die "no Dockerfile in '$FLEETDOCK_SOURCE' — is it a Fleetdock checkout?"
+fi
 
 # --- platform checks ----------------------------------------------------------
 
@@ -84,8 +104,10 @@ if [ "$(id -u)" != "0" ]; then
       --admin-email "$FLEETDOCK_ADMIN_EMAIL" \
       --dir "$FLEETDOCK_DIR" \
       --tag "$FLEETDOCK_RELEASE_TAG" \
+      ${FLEETDOCK_SOURCE:+--source "$FLEETDOCK_SOURCE"} \
       ${WITH_GATEWAY:+--with-gateway} \
-      ${NO_TLS:+--no-tls}
+      ${NO_TLS:+--no-tls} \
+      ${BUILD_LOCALLY:+--build}
   fi
   cat >&2 <<'EOF'
 error: this installer must run as root.
@@ -232,12 +254,31 @@ rand_b64() {
 mkdir -p "$FLEETDOCK_DIR"
 cd "$FLEETDOCK_DIR"
 
-step "Fetching stack definition"
 if [ "$FLEETDOCK_RELEASE_TAG" != "latest" ]; then
   COMPOSE_REF="$FLEETDOCK_RELEASE_TAG"
 fi
-download "https://raw.githubusercontent.com/${FLEETDOCK_REPO}/${COMPOSE_REF}/docker-compose.yml" \
-  "${FLEETDOCK_DIR}/docker-compose.yml"
+[ -n "$FLEETDOCK_SOURCE" ] || \
+  FLEETDOCK_SOURCE="https://raw.githubusercontent.com/${FLEETDOCK_REPO}/${COMPOSE_REF}"
+
+# get_asset copies a repo-relative file from FLEETDOCK_SOURCE, which is either a
+# local checkout or a base URL.
+get_asset() {
+  # $1 = path within the repo, $2 = destination
+  if [ -d "$FLEETDOCK_SOURCE" ]; then
+    [ -f "${FLEETDOCK_SOURCE}/$1" ] || die "${FLEETDOCK_SOURCE}/$1 not found — is --source a Fleetdock checkout?"
+    cp "${FLEETDOCK_SOURCE}/$1" "$2"
+  else
+    download "${FLEETDOCK_SOURCE}/$1" "$2" || die "could not fetch ${FLEETDOCK_SOURCE}/$1
+
+If the repository is private or the release is not published yet, install from a
+local checkout instead:
+
+  sudo sh install.sh --source /path/to/fleetdock --build"
+  fi
+}
+
+step "Fetching stack definition"
+get_asset docker-compose.yml "${FLEETDOCK_DIR}/docker-compose.yml"
 
 if [ -z "$UPGRADE" ]; then
   step "Generating secrets"
@@ -293,14 +334,23 @@ fi
 # --- helper CLI ---------------------------------------------------------------
 
 step "Installing the fleetdock command"
-download "https://raw.githubusercontent.com/${FLEETDOCK_REPO}/${COMPOSE_REF}/scripts/fleetdock" \
-  /usr/local/bin/fleetdock
+get_asset scripts/fleetdock /usr/local/bin/fleetdock
 chmod 755 /usr/local/bin/fleetdock
 
 # --- start --------------------------------------------------------------------
 
-step "Pulling images"
-docker compose --project-directory "$FLEETDOCK_DIR" --env-file "${FLEETDOCK_DIR}/.env" pull -q
+if [ -n "$BUILD_LOCALLY" ]; then
+  # Image name must match what docker-compose.yml references, so compose finds
+  # it locally and never reaches for the registry.
+  step "Building the image from ${FLEETDOCK_SOURCE} (this takes a few minutes)"
+  docker build -t "ghcr.io/tajbrains/fleetdock:${FLEETDOCK_RELEASE_TAG}" "$FLEETDOCK_SOURCE"
+else
+  step "Pulling images"
+  docker compose --project-directory "$FLEETDOCK_DIR" --env-file "${FLEETDOCK_DIR}/.env" pull -q \
+    || die "could not pull images. If no release has been published yet, build from a checkout instead:
+
+  sudo sh install.sh --source /path/to/fleetdock --build"
+fi
 
 step "Starting Fleetdock"
 docker compose --project-directory "$FLEETDOCK_DIR" --env-file "${FLEETDOCK_DIR}/.env" up -d
