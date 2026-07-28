@@ -56,12 +56,22 @@ export default function DatabasesPage() {
         header: "Name",
         className: "font-medium",
         render: (d) => (
-          <Link
-            href={`/databases/${d.id}`}
-            style={{ textDecoration: "underline" }}
-          >
-            {d.name}
-          </Link>
+          <span className="flex items-center gap-2">
+            <Link
+              href={`/databases/${d.id}`}
+              style={{ textDecoration: "underline" }}
+            >
+              {d.name}
+            </Link>
+            {d.system ? (
+              <span
+                className="badge badge-gray"
+                title="Engine-owned database — browsable and backup-able, not removable"
+              >
+                system
+              </span>
+            ) : null}
+          </span>
         ),
       },
       {
@@ -121,13 +131,15 @@ export default function DatabasesPage() {
                     <Lock size={15} /> Lock
                   </button>
                 )}
-                <button
-                  className="btn btn-sm btn-danger"
-                  onClick={() => setDeleteTarget(d)}
-                  aria-label="Delete"
-                >
-                  <Trash2 size={15} />
-                </button>
+                {d.system ? null : (
+                  <button
+                    className="btn btn-sm btn-danger"
+                    onClick={() => setDeleteTarget(d)}
+                    aria-label="Delete"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </>
             ) : null}
           </div>

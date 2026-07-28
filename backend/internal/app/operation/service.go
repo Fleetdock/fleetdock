@@ -550,12 +550,19 @@ func (s *Service) importDiscovered(ctx context.Context, p Params, result json.Ra
 	if err := json.Unmarshal(result, &res); err != nil {
 		return
 	}
+	// Agents older than the system-database change do not set the flag, so
+	// re-derive it from the engine catalogue rather than trusting the payload.
+	engineName := ""
+	if inst, err := s.instances.GetByID(ctx, iid); err == nil {
+		engineName = string(inst.Engine)
+	}
 	for _, d := range res.Databases {
 		db, err := databasedom.NewDatabase(iid, d.Name, d.Charset, d.Collation,
 			map[string]string{"imported": "true"}, nil)
 		if err != nil {
 			continue
 		}
+		db.System = d.System || engine.IsSystemDatabase(engineName, d.Name)
 		_ = s.databases.Create(ctx, db) // conflicts (already tracked) are fine
 	}
 }

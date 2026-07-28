@@ -357,6 +357,7 @@ func (s *Service) ImportDatabases(ctx context.Context, id string, createdBy *uui
 			if derr != nil {
 				continue
 			}
+			db.System = d.System
 			if cerr := s.databases.Create(ctx, db); cerr == nil {
 				imported++
 			}

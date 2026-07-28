@@ -58,7 +58,10 @@ func (pg *Postgres) Ping(ctx context.Context, p ConnParams) (string, error) {
 	return "PostgreSQL " + version, nil
 }
 
-// ListDatabases returns non-template, non-maintenance databases.
+// ListDatabases returns non-template databases. The maintenance database
+// ("postgres") is included but flagged System so it can be browsed and backed
+// up without becoming droppable — the control plane connects to it for every
+// create/drop/list operation.
 func (pg *Postgres) ListDatabases(ctx context.Context, p ConnParams) ([]DatabaseInfo, error) {
 	conn, err := pg.connect(ctx, p, "postgres")
 	if err != nil {
@@ -68,7 +71,7 @@ func (pg *Postgres) ListDatabases(ctx context.Context, p ConnParams) ([]Database
 	rows, err := conn.Query(ctx, `
 		SELECT datname, pg_encoding_to_char(encoding), datcollate
 		FROM pg_database
-		WHERE datistemplate = false AND datname <> 'postgres'
+		WHERE datistemplate = false
 		ORDER BY datname`)
 	if err != nil {
 		return nil, err
@@ -80,6 +83,7 @@ func (pg *Postgres) ListDatabases(ctx context.Context, p ConnParams) ([]Database
 		if err := rows.Scan(&d.Name, &d.Charset, &d.Collation); err != nil {
 			return nil, err
 		}
+		d.System = systemDatabase("postgres", d.Name)
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -111,6 +115,9 @@ func (pg *Postgres) CreateDatabase(ctx context.Context, p ConnParams, name, char
 func (pg *Postgres) DropDatabase(ctx context.Context, p ConnParams, name string) error {
 	if !identRe.MatchString(name) {
 		return fmt.Errorf("invalid database name %q", name)
+	}
+	if systemDatabase("postgres", name) {
+		return fmt.Errorf("refusing to drop system database %q", name)
 	}
 	conn, err := pg.connect(ctx, p, "postgres")
 	if err != nil {

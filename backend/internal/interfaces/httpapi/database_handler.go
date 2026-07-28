@@ -40,6 +40,7 @@ type databaseResponse struct {
 	Charset           string            `json:"charset"`
 	Collation         string            `json:"collation"`
 	Status            string            `json:"status"`
+	System            bool              `json:"system"`
 	SizeBytes         int64             `json:"size_bytes"`
 	ActiveConnections int               `json:"active_connections"`
 	LockedAt          *time.Time        `json:"locked_at,omitempty"`
@@ -64,6 +65,7 @@ func toDatabaseResponse(d *databasedom.Database) databaseResponse {
 		Charset:           d.Charset,
 		Collation:         d.Collation,
 		Status:            string(d.Status),
+		System:            d.System,
 		SizeBytes:         d.SizeBytes,
 		ActiveConnections: d.ActiveConnections,
 		LockedAt:          d.LockedAt,

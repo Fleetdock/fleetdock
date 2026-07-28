@@ -34,12 +34,16 @@ func (s Status) Valid() bool {
 
 // Database is the aggregate for a managed logical database.
 type Database struct {
-	ID                uuid.UUID
-	InstanceID        uuid.UUID
-	Name              string
-	Charset           string
-	Collation         string
-	Status            Status
+	ID         uuid.UUID
+	InstanceID uuid.UUID
+	Name       string
+	Charset    string
+	Collation  string
+	Status     Status
+	// System marks an engine-owned database discovered by import (PostgreSQL's
+	// maintenance database, MySQL's mysql/sys). It can be browsed and backed
+	// up, but Delete refuses it.
+	System            bool
 	SizeBytes         int64
 	ActiveConnections int
 	LockedAt          *time.Time

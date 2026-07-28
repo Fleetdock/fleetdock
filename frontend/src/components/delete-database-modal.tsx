@@ -46,6 +46,25 @@ export function DeleteDatabaseModal({
 
   if (!database) return null;
 
+  // System databases are imported so they can be browsed and backed up, but the
+  // control plane depends on them — the delete path refuses them server-side too.
+  if (database.system) {
+    return (
+      <Modal open onClose={close} title={`"${database.name}" is a system database`}>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm">
+            This database belongs to the engine itself. Fleetdock connects to it for
+            administration, so it cannot be dropped or removed from the control plane.
+            You can still browse it and back it up.
+          </p>
+          <div className="flex items-center justify-end" style={{ marginTop: ".25rem" }}>
+            <button type="button" className="btn" onClick={close}>Close</button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal open onClose={close} title={`Remove database "${database.name}"?`}>
       <div className="flex flex-col gap-3">

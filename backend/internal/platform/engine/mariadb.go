@@ -51,7 +51,11 @@ func (m *MariaDB) Ping(ctx context.Context, p ConnParams) (string, error) {
 	return version, nil
 }
 
-// ListDatabases returns non-system databases with charset/collation.
+// ListDatabases returns user databases plus the dumpable system schemas
+// (mysql, sys), which are flagged System so they can be browsed and backed up
+// without becoming droppable. The virtual schemas information_schema and
+// performance_schema are excluded — mysqldump cannot produce a usable dump of
+// them.
 func (m *MariaDB) ListDatabases(ctx context.Context, p ConnParams) ([]DatabaseInfo, error) {
 	db, err := m.open(p)
 	if err != nil {
@@ -61,7 +65,7 @@ func (m *MariaDB) ListDatabases(ctx context.Context, p ConnParams) ([]DatabaseIn
 	rows, err := db.QueryContext(ctx, `
 		SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
 		FROM information_schema.SCHEMATA
-		WHERE SCHEMA_NAME NOT IN ('information_schema','performance_schema','mysql','sys')
+		WHERE SCHEMA_NAME NOT IN ('information_schema','performance_schema')
 		ORDER BY SCHEMA_NAME`)
 	if err != nil {
 		return nil, err
@@ -73,6 +77,7 @@ func (m *MariaDB) ListDatabases(ctx context.Context, p ConnParams) ([]DatabaseIn
 		if err := rows.Scan(&d.Name, &d.Charset, &d.Collation); err != nil {
 			return nil, err
 		}
+		d.System = systemDatabase("mysql", d.Name)
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -106,6 +111,9 @@ func (m *MariaDB) CreateDatabase(ctx context.Context, p ConnParams, name, charse
 func (m *MariaDB) DropDatabase(ctx context.Context, p ConnParams, name string) error {
 	if !identRe.MatchString(name) {
 		return fmt.Errorf("invalid database name %q", name)
+	}
+	if systemDatabase("mysql", name) {
+		return fmt.Errorf("refusing to drop system database %q", name)
 	}
 	db, err := m.open(p)
 	if err != nil {

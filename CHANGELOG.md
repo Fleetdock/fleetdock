@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **System databases are now discovered.** Import registers PostgreSQL's
+  `postgres` maintenance database and MySQL/MariaDB's `mysql` and `sys` schemas
+  alongside user databases, so they can be browsed and backed up. They are
+  flagged `system` in the API and cannot be dropped or un-registered — the
+  control plane connects to them for every admin operation. The purely virtual
+  `information_schema` and `performance_schema` are still skipped, as they
+  cannot be dumped.
 - **One-command install:** `curl -sSL https://fleetdock.dev/install.sh | sh`.
   Installs Docker if missing, generates secrets, starts the stack behind Caddy
   with automatic HTTPS, and prints the dashboard URL and bootstrap password.
