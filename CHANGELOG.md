@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **One image instead of two.** `ghcr.io/tajbrains/fleetdock` contains both the
+- **One image instead of two.** `ghcr.io/fleetdock/fleetdock` contains both the
   control plane and the dashboard. The Go binary is the only listener: it serves
   `/v1`, `/agent`, `/healthz`, `/readyz`, `/docs`, `/openapi.yaml` and
   `/install.sh` in-process and reverse-proxies everything else to a supervised
@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- `ghcr.io/tajbrains/fleetdock-backend` and `-frontend` are no longer published.
+- `ghcr.io/fleetdock/fleetdock-backend` and `-frontend` are no longer published.
 - `docker-compose.prod.yml` and `docker-compose.ghcr.yml`.
 
 ## [0.3.0] - 2026-07-12

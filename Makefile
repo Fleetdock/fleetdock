@@ -16,7 +16,7 @@ GO_RUN   := go run -ldflags="-B gobuildid"
 
 .PHONY: image
 image: ## Build the single application image (control plane + dashboard)
-	docker build -t ghcr.io/tajbrains/fleetdock:dev .
+	docker build -t ghcr.io/fleetdock/fleetdock:dev .
 
 .PHONY: up
 up: ## Build and start the full stack (Caddy + Postgres + Fleetdock)

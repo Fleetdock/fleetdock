@@ -7,15 +7,15 @@ hand.
 
 ## What changed
 
-| Before | Now |
-| --- | --- |
-| `ghcr.io/tajbrains/fleetdock-backend` + `-frontend` | `ghcr.io/tajbrains/fleetdock` (multi-arch) |
-| `docker-compose.yml` + `.prod.yml` + `.ghcr.yml` | one `docker-compose.yml`, plus `docker-compose.build.yml` to build from source |
-| Dashboard on `:3000`, API on `:8080` | both on `/` behind Caddy on 80/443 |
-| `NEXT_PUBLIC_API_URL` baked in at build time | dashboard calls the API on its own origin; nothing baked in |
-| Your own reverse proxy | Caddy bundled, automatic HTTPS |
-| Gateway on by default, 51 published ports | opt-in via `fleetdock gateway enable` |
-| Up to 3 DNS names | 1 |
+| Before                                              | Now                                                                            |
+| --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `ghcr.io/fleetdock/fleetdock-backend` + `-frontend` | `ghcr.io/fleetdock/fleetdock` (multi-arch)                                     |
+| `docker-compose.yml` + `.prod.yml` + `.ghcr.yml`    | one `docker-compose.yml`, plus `docker-compose.build.yml` to build from source |
+| Dashboard on `:3000`, API on `:8080`                | both on `/` behind Caddy on 80/443                                             |
+| `NEXT_PUBLIC_API_URL` baked in at build time        | dashboard calls the API on its own origin; nothing baked in                    |
+| Your own reverse proxy                              | Caddy bundled, automatic HTTPS                                                 |
+| Gateway on by default, 51 published ports           | opt-in via `fleetdock gateway enable`                                          |
+| Up to 3 DNS names                                   | 1                                                                              |
 
 ## Upgrading
 

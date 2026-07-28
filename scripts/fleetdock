@@ -77,7 +77,7 @@ case "$cmd" in
     if [ "${1:-}" = "--tag" ]; then
       setenv FLEETDOCK_RELEASE_TAG "${2:?--tag needs a value}"
     fi
-    repo="${FLEETDOCK_REPO:-tajbrains/fleetdock}"
+    repo="${FLEETDOCK_REPO:-fleetdock/fleetdock}"
     tag="$(getenv FLEETDOCK_RELEASE_TAG)"
     ref="main"
     [ "$tag" != "latest" ] && [ -n "$tag" ] && ref="$tag"

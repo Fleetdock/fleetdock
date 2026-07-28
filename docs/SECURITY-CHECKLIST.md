@@ -92,7 +92,7 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 ## Supply chain
 
 - [ ] Pin image tags in production (`v0.1.0`, not `latest`)
-- [ ] Verify images from `ghcr.io/tajbrains/fleetdock` or build yourself from tagged source
+- [ ] Verify images from `ghcr.io/fleetdock/fleetdock` or build yourself from tagged source
 - [ ] Enable GitHub Dependabot / renovate for the fork
 
 ## Incident response

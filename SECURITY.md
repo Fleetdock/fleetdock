@@ -15,7 +15,7 @@ Security fixes are applied to the latest release on the `main` branch.
 Instead, use one of the following channels:
 
 1. **GitHub Security Advisories** (preferred): open a [private vulnerability report](https://github.com/Fleetdock/fleetdock/security/advisories/new) on this repository.
-2. **Email**: contact the maintainers at `security@tajbrains.com` with a detailed description.
+2. **Email**: contact the maintainers at `security@fleetdock.com` with a detailed description.
 
 Include as much of the following as you can:
 

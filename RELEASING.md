@@ -50,7 +50,7 @@ git push origin v0.1.1
 On every `v*` tag push:
 
 1. Builds and pushes **one** multi-arch image to GHCR (lowercase org name):
-   `ghcr.io/tajbrains/fleetdock` for `linux/amd64` and `linux/arm64`, tagged
+   `ghcr.io/fleetdock/fleetdock` for `linux/amd64` and `linux/arm64`, tagged
    `v<tag>`, `<tag>`, `<major>.<minor>` and `latest`.
 2. Verifies the image boots: node version, dashboard bundle present, agent
    binaries executable.
@@ -84,7 +84,7 @@ cd ../fleetdock-web && npm run sync:install
 
 ```bash
 export TAG=v0.1.1
-docker pull ghcr.io/tajbrains/fleetdock:${TAG}
+docker pull ghcr.io/fleetdock/fleetdock:${TAG}
 
 cd /tmp && mkdir -p fd && cd fd
 cp /path/to/fleetdock/docker-compose.yml .

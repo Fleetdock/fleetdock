@@ -23,7 +23,7 @@ SaaS vendor.
 
 | In 60 seconds        |                                                                                                                                                                              |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Install**          | `curl -sSL https://fleetdock.dev/install.sh \| sh` — one command, one domain                                                                                                  |
+| **Install**          | `curl -sSL https://fleetdock.dev/install.sh \| sh` — one command, one domain                                                                                                 |
 | **Connect a server** | One `curl … install.sh` command from the dashboard                                                                                                                           |
 | **Manage**           | Instances, databases, backups, users/grants, operations log                                                                                                                  |
 | **Docs**             | [Deploy to production](docs/DEPLOYMENT.md) · [Operations](docs/OPERATIONS.md) · [Security checklist](docs/SECURITY-CHECKLIST.md) · [API `/docs`](http://localhost:8080/docs) |
@@ -346,7 +346,7 @@ A single multi-arch image is published to GitHub Container Registry on each
 version tag, containing both the control plane and the dashboard:
 
 ```text
-ghcr.io/tajbrains/fleetdock:<tag>     # linux/amd64, linux/arm64
+ghcr.io/fleetdock/fleetdock:<tag>     # linux/amd64, linux/arm64
 ```
 
 ## Contributing

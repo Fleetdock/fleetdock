@@ -10,4 +10,4 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/tajbrains/fleetdock:dev
+    image: ghcr.io/fleetdock/fleetdock:dev
