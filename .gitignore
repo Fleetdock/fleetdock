@@ -24,4 +24,7 @@ coverage.out
 
 # env
 **/.env
+# Backups of .env hold the encryption key and database credentials.
+**/.env.bak*
+**/.env.*.bak
 **/.env.local

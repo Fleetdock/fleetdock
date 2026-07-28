@@ -132,6 +132,28 @@ sudo sh install.sh --source /path/to/fleetdock --build --domain db.example.com
   it. It tags the image exactly as `docker-compose.yml` expects, so Compose finds
   it locally and never reaches for the registry.
 
+### macOS
+
+macOS is supported for **local evaluation**, not as a deployment target:
+
+```bash
+curl -sSL https://fleetdock.dev/install.sh | sh
+```
+
+It needs Docker Desktop already installed and running — `get.docker.com` is
+Linux-only and Docker Desktop needs a manual first run, so the installer detects
+it and tells you rather than trying. Nothing else differs in kind: it installs
+under `~/.fleetdock`, needs **no root** (Docker Desktop binds 80/443 as your
+user), and serves plain HTTP on `http://localhost`.
+
+Three limits come from macOS rather than from Fleetdock:
+
+| Limit | Why |
+| --- | --- |
+| No TLS | A laptop has no public address for Let's Encrypt to reach |
+| Remote servers cannot enrol | They must reach `FLEETDOCK_PUBLIC_URL`; `localhost` is not routable. Pass your LAN address as `--domain` for agents on the same network |
+| External database access does not work | Docker Desktop NATs inbound connections, so HAProxy sees its VM's address instead of the client's and every CIDR allowlist rejects everyone |
+
 ### Trying it in a VM
 
 A throwaway VM is the only honest way to test the installer, since it installs
