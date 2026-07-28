@@ -35,6 +35,7 @@ usage() {
 Usage: fleetdock <command>
 
   status                Container health and the control plane's readiness
+  credentials           Dashboard URL and the bootstrap admin login
   logs [service] [-f]   Tail logs (default: everything)
   start | stop | restart [service]
   update [--tag <tag>]  Pull and restart on a new image tag
@@ -65,6 +66,41 @@ case "$cmd" in
       echo "control plane: NOT ready — try: fleetdock logs fleetdock"
     fi
     echo "image tag:     $(getenv FLEETDOCK_RELEASE_TAG)"
+    ;;
+
+  credentials)
+    email="$(getenv FLEETDOCK_ADMIN_EMAIL)"
+    echo "Dashboard  $(getenv FLEETDOCK_PUBLIC_URL)"
+    echo "Email      ${email}"
+    echo "Password   $(getenv FLEETDOCK_ADMIN_PASSWORD)"
+    echo
+    # Deliberately not inferred from container logs: `docker compose logs` only
+    # covers the current container, so any restart would make a real bootstrap
+    # look like it never happened. State the condition instead, and check
+    # whether the account exists where that is cheap to do.
+    cat <<'EOT'
+This is the bootstrap password recorded at install time. It works only if
+Fleetdock created this account — the users table has to have been empty on
+first boot — and the password has not been changed since.
+EOT
+    # Only meaningful when the bundled Postgres actually holds the metadata. The
+    # service runs regardless, so with a hosted database (FLEETDOCK_DATABASE_URL
+    # pointing elsewhere) querying it would report on the wrong database
+    # entirely and claim the account does not exist.
+    db_url="$(getenv FLEETDOCK_DATABASE_URL)"
+    case "${db_url}" in
+      ""|*@postgres:*)
+        if dc ps --services 2>/dev/null | grep -qx postgres; then
+          n="$(dc exec -T postgres psql -U fleetdock -d fleetdock -tAc \
+                "select count(*) from users where email = '${email}';" 2>/dev/null | tr -d '[:space:]')"
+          case "$n" in
+            0) echo; echo "No account with that email exists — sign in with the one that does." ;;
+            [1-9]*) echo; echo "An account with that email exists." ;;
+          esac
+        fi
+        ;;
+      *) echo; echo "Metadata is on an external database; not checked." ;;
+    esac
     ;;
 
   logs) dc logs --tail 200 "$@" ;;

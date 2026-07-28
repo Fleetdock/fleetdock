@@ -82,6 +82,7 @@ when the main record cannot carry raw TCP — most often a Cloudflare-proxied
 
 ```bash
 fleetdock status                  # container health and readiness
+fleetdock credentials             # dashboard URL and admin login
 fleetdock logs [service] -f
 fleetdock update [--tag v0.2.0]   # pull and restart
 fleetdock domain new.example.com  # move to a new hostname
@@ -264,6 +265,8 @@ channels still work.
 | API exits on start                | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh`                                |
 | Agent never appears               | `FLEETDOCK_PUBLIC_URL` unreachable from the server; `localhost` used from a remote VM; firewall blocks 443 |
 | Dashboard 503, API fine           | The dashboard child is restarting. `fleetdock logs fleetdock` — it recovers on its own                     |
+| Lost the admin password           | `fleetdock credentials`. It is also `FLEETDOCK_ADMIN_PASSWORD` in `.env`                                   |
+| Printed password does not work    | The bootstrap only runs while the users table is empty. Against an existing database it was never applied — sign in with the account that already existed. `fleetdock credentials` says which case you are in |
 | `/readyz` returns 503             | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong                                                   |
 | Database endpoints unreachable    | Gateway hostname behind a proxying CDN, or the port range not open in the host firewall                    |
 

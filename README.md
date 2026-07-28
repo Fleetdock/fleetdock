@@ -65,6 +65,7 @@ Day-2 operations use the `fleetdock` command it installs:
 
 ```bash
 fleetdock status          # container health and readiness
+fleetdock credentials     # dashboard URL and admin login
 fleetdock logs            # tail everything
 fleetdock update          # pull a new release and restart
 fleetdock doctor          # diagnose DNS, certificates, reachability
