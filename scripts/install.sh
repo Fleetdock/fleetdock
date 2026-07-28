@@ -11,6 +11,10 @@
 # Installs Docker if missing, writes /opt/fleetdock/{docker-compose.yml,.env},
 # starts the stack behind Caddy with automatic HTTPS, and prints the dashboard
 # URL and bootstrap credentials.
+#
+# Linux is the deployment target. macOS is supported for local evaluation: it
+# needs Docker Desktop already running, installs under ~/.fleetdock, needs no
+# root, and serves plain HTTP on localhost.
 set -eu
 
 FLEETDOCK_REPO="${FLEETDOCK_REPO:-fleetdock/fleetdock}"
@@ -44,7 +48,8 @@ Usage: install.sh [options]
                       certificate. Without it, an <ip>.sslip.io name is used so
                       HTTPS still works with no DNS setup.
   --admin-email <e>   Bootstrap admin account (default admin@example.com).
-  --dir <path>        Install directory (default /opt/fleetdock).
+  --dir <path>        Install directory (default /opt/fleetdock; ~/.fleetdock
+                      on macOS).
   --tag <tag>         Image tag to run (default latest).
   --with-gateway      Also start the external database access gateway. Adds a
                       50-port range; off by default.
@@ -55,6 +60,10 @@ Usage: install.sh [options]
                       pulling it. Requires --source to be a checkout.
   -h, --help          This message.
 
+On macOS this installs a local evaluation stack on http://localhost: no TLS, no
+remote agent enrolment, and no external database access. Pass your LAN address as
+--domain to let agents on the same network enrol.
+
 Every option also reads from the matching FLEETDOCK_* environment variable, so
 `curl -sSL … | FLEETDOCK_DOMAIN=db.example.com sh` works too.
 EOF
@@ -64,7 +73,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --domain) FLEETDOCK_DOMAIN="${2:?--domain needs a value}"; shift 2 ;;
     --admin-email) FLEETDOCK_ADMIN_EMAIL="${2:?--admin-email needs a value}"; shift 2 ;;
-    --dir) FLEETDOCK_DIR="${2:?--dir needs a value}"; shift 2 ;;
+    --dir) FLEETDOCK_DIR="${2:?--dir needs a value}"; FLEETDOCK_DIR_SET=1; shift 2 ;;
     --tag) FLEETDOCK_RELEASE_TAG="${2:?--tag needs a value}"; shift 2 ;;
     --with-gateway) WITH_GATEWAY=1; shift ;;
     --no-tls) NO_TLS=1; shift ;;
@@ -85,14 +94,30 @@ fi
 
 # --- platform checks ----------------------------------------------------------
 
-[ "$(uname -s)" = "Linux" ] || die "only Linux is supported. On macOS or Windows, run the stack with docker compose directly: https://github.com/${FLEETDOCK_REPO}#local-development"
+OS="$(uname -s)"
+case "$OS" in
+  Linux) ;;
+  Darwin)
+    # macOS is supported for local evaluation only. A laptop has no public
+    # address, so there is nothing to point DNS at and nothing for Let's Encrypt
+    # to reach; and Docker Desktop NATs inbound connections, which breaks the
+    # gateway's source-IP allowlists. Everything below adapts to that rather
+    # than pretending it is a server install.
+    MACOS=1
+    NO_TLS=1
+    [ -n "${FLEETDOCK_DIR_SET:-}" ] || FLEETDOCK_DIR="${HOME}/.fleetdock"
+    ;;
+  *) die "unsupported platform '$OS'. Fleetdock installs on Linux, and on macOS for local evaluation." ;;
+esac
 
 case "$(uname -m)" in
   x86_64|amd64|aarch64|arm64) ;;
   *) die "unsupported architecture $(uname -m)" ;;
 esac
 
-if [ "$(id -u)" != "0" ]; then
+# Docker Desktop binds privileged ports as the invoking user and everything else
+# lives under $HOME, so the macOS path needs no root at all.
+if [ -z "${MACOS:-}" ] && [ "$(id -u)" != "0" ]; then
   # Re-exec only works when the script is on disk. Under `curl … | sh` the
   # script arrives on stdin and $0 is the shell itself, so there is nothing to
   # re-run — say what to type instead of failing obscurely.
@@ -142,15 +167,24 @@ fetch() {
 
 step "Checking Docker"
 if ! command -v docker >/dev/null 2>&1; then
+  if [ -n "${MACOS:-}" ]; then
+    # get.docker.com is Linux-only, and Docker Desktop is a GUI app that needs a
+    # manual first run, so there is nothing sensible to automate here.
+    die "Docker Desktop is required. Install it, start it, then re-run:
+
+  brew install --cask docker
+
+or download it from https://docker.com/products/docker-desktop"
+  fi
   step "Installing Docker"
   download https://get.docker.com /tmp/get-docker.sh
   sh /tmp/get-docker.sh >/dev/null 2>&1 || die "Docker installation failed; install it manually and re-run"
   rm -f /tmp/get-docker.sh
 fi
-if command -v systemctl >/dev/null 2>&1; then
+if [ -z "${MACOS:-}" ] && command -v systemctl >/dev/null 2>&1; then
   systemctl enable --now docker >/dev/null 2>&1 || true
 fi
-docker info >/dev/null 2>&1 || die "Docker is installed but not running"
+docker info >/dev/null 2>&1 || die "Docker is installed but not running${MACOS:+ — start Docker Desktop and re-run}"
 
 # The compose file uses inline `configs: content:` (Compose 2.23) and
 # `depends_on.required` (2.20). Older versions fail with an opaque YAML error,
@@ -159,7 +193,7 @@ compose_version="$(docker compose version --short 2>/dev/null || echo 0)"
 compose_major="$(echo "$compose_version" | cut -d. -f1)"
 compose_minor="$(echo "$compose_version" | cut -d. -f2)"
 if [ "${compose_major:-0}" -lt 2 ] || { [ "${compose_major:-0}" -eq 2 ] && [ "${compose_minor:-0}" -lt 23 ]; }; then
-  die "Docker Compose >= 2.23 required, found ${compose_version}. Upgrade the compose plugin: https://docs.docker.com/compose/install/linux/"
+  die "Docker Compose >= 2.23 required, found ${compose_version}. Upgrade the compose plugin: https://docs.docker.com/compose/install/"
 fi
 
 # --- existing install ---------------------------------------------------------
@@ -176,6 +210,9 @@ if [ -z "$UPGRADE" ]; then
   port_in_use() {
     if command -v ss >/dev/null 2>&1; then
       ss -ltnH "sport = :$1" 2>/dev/null | grep -q . && return 0
+    elif command -v lsof >/dev/null 2>&1; then
+      # macOS: BSD netstat cannot filter by port, lsof can.
+      lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1 && return 0
     elif command -v netstat >/dev/null 2>&1; then
       netstat -ltn 2>/dev/null | grep -qE "[:.]$1[[:space:]]" && return 0
     fi
@@ -194,6 +231,8 @@ detect_ip() {
   ip="$(fetch https://api.ipify.org || true)"
   [ -n "${ip:-}" ] || ip="$(fetch https://ifconfig.me/ip || true)"
   [ -n "${ip:-}" ] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  # macOS has no `hostname -I`; fall back to the primary interface address.
+  [ -n "${ip:-}" ] || ip="$(ipconfig getifaddr en0 2>/dev/null || true)"
   echo "${ip:-}"
 }
 
@@ -202,6 +241,11 @@ if [ -z "$UPGRADE" ]; then
 
   if [ -n "$FLEETDOCK_DOMAIN" ]; then
     :
+  elif [ -n "${MACOS:-}" ]; then
+    # A laptop is not reachable from the internet, so there is no name worth
+    # deriving. localhost is honest about what this install can serve. To let
+    # agents on the same LAN reach it, pass the Mac's LAN address as --domain.
+    FLEETDOCK_DOMAIN="localhost"
   elif [ -n "$NO_TLS" ] || [ -z "$PUBLIC_IP" ]; then
     [ -n "$PUBLIC_IP" ] || die "could not determine this host's IP address; pass --domain"
     FLEETDOCK_DOMAIN="$PUBLIC_IP"
@@ -217,7 +261,9 @@ if [ -z "$UPGRADE" ]; then
   if [ -n "$NO_TLS" ]; then
     SITE_ADDRESS="http://${FLEETDOCK_DOMAIN}"
     PUBLIC_URL="http://${FLEETDOCK_DOMAIN}"
-    warn "serving plain HTTP. Session tokens will cross the network in the clear — use --domain with a real hostname for TLS."
+    if [ -z "${MACOS:-}" ]; then
+      warn "serving plain HTTP. Session tokens will cross the network in the clear — use --domain with a real hostname for TLS."
+    fi
   else
     SITE_ADDRESS="$FLEETDOCK_DOMAIN"
     PUBLIC_URL="https://${FLEETDOCK_DOMAIN}"
@@ -334,8 +380,26 @@ fi
 # --- helper CLI ---------------------------------------------------------------
 
 step "Installing the fleetdock command"
-get_asset scripts/fleetdock /usr/local/bin/fleetdock
-chmod 755 /usr/local/bin/fleetdock
+# /usr/local/bin needs root on macOS, and the macOS path deliberately does not
+# ask for it. Fall back to a user bin and say so rather than failing.
+CLI_DIR=/usr/local/bin
+CLI_NOTE=""
+if [ ! -w "$CLI_DIR" ]; then
+  CLI_DIR="${HOME}/.local/bin"
+  mkdir -p "$CLI_DIR"
+  case ":${PATH}:" in
+    *":${CLI_DIR}:"*) ;;
+    *) CLI_NOTE="${CLI_DIR} is not on your PATH — add it, or call ${CLI_DIR}/fleetdock directly." ;;
+  esac
+fi
+# Bake the real install directory into the copy, so `fleetdock` finds it after
+# --dir or a macOS install under $HOME. Substituting on the way out avoids
+# sed -i, which differs between GNU and BSD.
+get_asset scripts/fleetdock "${FLEETDOCK_DIR}/.fleetdock-cli"
+sed "s|^FLEETDOCK_DIR=.*|FLEETDOCK_DIR=\"\${FLEETDOCK_DIR:-${FLEETDOCK_DIR}}\"|" \
+  "${FLEETDOCK_DIR}/.fleetdock-cli" > "${CLI_DIR}/fleetdock"
+rm -f "${FLEETDOCK_DIR}/.fleetdock-cli"
+chmod 755 "${CLI_DIR}/fleetdock"
 
 # --- start --------------------------------------------------------------------
 
@@ -407,5 +471,22 @@ cat <<EOF
 
   Manage it with:  fleetdock status | logs | update | doctor
   Connect a server: Servers -> Connect server in the dashboard.
-
 EOF
+[ -n "${CLI_NOTE:-}" ] && printf '\n  %s\n' "$CLI_NOTE"
+if [ -n "${MACOS:-}" ]; then
+  cat <<EOF
+
+  This is a local evaluation install. Three limits come from macOS, not from
+  Fleetdock:
+
+    - No TLS. Docker Desktop has no public address for Let's Encrypt to reach.
+    - Servers elsewhere cannot enrol: they need to reach ${PUBLIC_URL}. For
+      agents on your LAN, reinstall with --domain <your-mac's-LAN-IP>.
+    - External database access does not work. Docker Desktop NATs inbound
+      connections, so the gateway sees its VM's address instead of the client's
+      and every CIDR allowlist rejects everyone.
+
+  For a real deployment, run the same command on a Linux host.
+EOF
+fi
+echo

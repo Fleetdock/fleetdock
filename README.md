@@ -77,6 +77,11 @@ on the same origin and the same port, so there is no separate API hostname and
 nothing about your domain is baked into any image. The external-access gateway
 speaks raw TCP on its own ports and reuses the same hostname.
 
+**On macOS**, the same command installs a local evaluation stack on
+`http://localhost` — Docker Desktop must already be running, and it needs no
+root. No TLS, no remote agent enrolment, and no external database access; see
+[DEPLOYMENT.md](docs/DEPLOYMENT.md#macos).
+
 **Hosted Postgres:** point `FLEETDOCK_DATABASE_URL` at any PostgreSQL 14+ with
 `sslmode=require` and scale the bundled one away:
 `docker compose up -d --scale postgres=0`.
