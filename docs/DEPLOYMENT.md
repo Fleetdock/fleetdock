@@ -43,14 +43,14 @@ operations.
 curl -sSL https://fleetdock.dev/install.sh | sh -s -- --domain db.example.com
 ```
 
-| Option | Effect |
-| --- | --- |
-| `--domain <host>` | Dashboard hostname; gets an automatic Let's Encrypt certificate |
-| `--admin-email <e>` | Bootstrap admin account |
-| `--dir <path>` | Install directory (default `/opt/fleetdock`) |
-| `--tag <tag>` | Image tag to run (default `latest`) |
-| `--with-gateway` | Also start external database access |
-| `--no-tls` | Plain HTTP on the host IP; no certificate |
+| Option              | Effect                                                          |
+| ------------------- | --------------------------------------------------------------- |
+| `--domain <host>`   | Dashboard hostname; gets an automatic Let's Encrypt certificate |
+| `--admin-email <e>` | Bootstrap admin account                                         |
+| `--dir <path>`      | Install directory (default `/opt/fleetdock`)                    |
+| `--tag <tag>`       | Image tag to run (default `latest`)                             |
+| `--with-gateway`    | Also start external database access                             |
+| `--no-tls`          | Plain HTTP on the host IP; no certificate                       |
 
 It installs Docker if missing, writes `/opt/fleetdock/{docker-compose.yml,.env}`,
 starts the stack, and prints the dashboard URL and bootstrap password.
@@ -62,11 +62,11 @@ Re-running it upgrades in place. **It never regenerates `.env`** — rotating
 
 Three variables name a host, and all three can be the same name:
 
-| Variable | What reads it |
-| --- | --- |
-| `FLEETDOCK_PUBLIC_URL` | Agents, and the generated `install.sh` command |
-| `FLEETDOCK_CORS_ORIGIN` | The API's CORS allowlist — unused on a same-origin install |
-| `FLEETDOCK_GATEWAY_PUBLIC_HOST` | Baked into generated database connection URLs |
+| Variable                        | What reads it                                              |
+| ------------------------------- | ---------------------------------------------------------- |
+| `FLEETDOCK_PUBLIC_URL`          | Agents, and the generated `install.sh` command             |
+| `FLEETDOCK_CORS_ORIGIN`         | The API's CORS allowlist — unused on a same-origin install |
+| `FLEETDOCK_GATEWAY_PUBLIC_HOST` | Baked into generated database connection URLs              |
 
 `install.sh` derives all of them from `FLEETDOCK_DOMAIN`, and `fleetdock domain`
 keeps them in step afterwards.
@@ -112,7 +112,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 Published image (multi-arch, `linux/amd64` + `linux/arm64`):
 
 ```text
-ghcr.io/tajbrains/fleetdock:<tag>
+ghcr.io/fleetdock/fleetdock:<tag>
 ```
 
 ## Installing from a checkout (forks, air-gapped, testing)
@@ -177,7 +177,7 @@ server {
 ```
 
 Keep `FLEETDOCK_TRUST_PROXY_HEADERS=true` only while the API is reachable
-*solely* through the proxy. If port 8080 is also exposed, a client can spoof
+_solely_ through the proxy. If port 8080 is also exposed, a client can spoof
 `X-Forwarded-For` and evade the login rate limiter.
 
 ### Split origins
@@ -233,17 +233,17 @@ channels still work.
 
 ## Troubleshooting
 
-| Symptom                         | Likely cause                                                                                               |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `error: run as root` on install | `sudo` placed before `curl` instead of before `sh` (after the pipe)                                        |
-| Install aborts on port 80/443   | nginx or apache already bound there. Stop it and re-run                                                    |
-| Install aborts on Compose version | Plugin older than 2.23. Upgrade it: https://docs.docker.com/compose/install/linux/                       |
-| No certificate issued           | DNS does not point at this host yet. `fleetdock doctor` compares them                                      |
-| API exits on start              | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh`                                |
-| Agent never appears             | `FLEETDOCK_PUBLIC_URL` unreachable from the server; `localhost` used from a remote VM; firewall blocks 443 |
-| Dashboard 503, API fine         | The dashboard child is restarting. `fleetdock logs fleetdock` — it recovers on its own                     |
-| `/readyz` returns 503           | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong                                                   |
-| Database endpoints unreachable  | Gateway hostname behind a proxying CDN, or the port range not open in the host firewall                    |
+| Symptom                           | Likely cause                                                                                               |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `error: run as root` on install   | `sudo` placed before `curl` instead of before `sh` (after the pipe)                                        |
+| Install aborts on port 80/443     | nginx or apache already bound there. Stop it and re-run                                                    |
+| Install aborts on Compose version | Plugin older than 2.23. Upgrade it: https://docs.docker.com/compose/install/linux/                         |
+| No certificate issued             | DNS does not point at this host yet. `fleetdock doctor` compares them                                      |
+| API exits on start                | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh`                                |
+| Agent never appears               | `FLEETDOCK_PUBLIC_URL` unreachable from the server; `localhost` used from a remote VM; firewall blocks 443 |
+| Dashboard 503, API fine           | The dashboard child is restarting. `fleetdock logs fleetdock` — it recovers on its own                     |
+| `/readyz` returns 503             | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong                                                   |
+| Database endpoints unreachable    | Gateway hostname behind a proxying CDN, or the port range not open in the host firewall                    |
 
 Start with `fleetdock doctor`; it checks versions, container health, DNS,
 reachability and disk in one pass.

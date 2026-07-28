@@ -13,7 +13,7 @@
 # URL and bootstrap credentials.
 set -eu
 
-FLEETDOCK_REPO="${FLEETDOCK_REPO:-tajbrains/fleetdock}"
+FLEETDOCK_REPO="${FLEETDOCK_REPO:-fleetdock/fleetdock}"
 # Where docker-compose.yml and the fleetdock CLI come from. Defaults to the
 # published repo, but may point at a local checkout — which is what makes this
 # installable from a fork, from an air-gapped mirror, or in a test VM before
@@ -343,7 +343,7 @@ if [ -n "$BUILD_LOCALLY" ]; then
   # Image name must match what docker-compose.yml references, so compose finds
   # it locally and never reaches for the registry.
   step "Building the image from ${FLEETDOCK_SOURCE} (this takes a few minutes)"
-  docker build -t "ghcr.io/tajbrains/fleetdock:${FLEETDOCK_RELEASE_TAG}" "$FLEETDOCK_SOURCE"
+  docker build -t "ghcr.io/fleetdock/fleetdock:${FLEETDOCK_RELEASE_TAG}" "$FLEETDOCK_SOURCE"
 else
   step "Pulling images"
   docker compose --project-directory "$FLEETDOCK_DIR" --env-file "${FLEETDOCK_DIR}/.env" pull -q \
