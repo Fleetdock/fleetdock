@@ -109,14 +109,22 @@ function DatabaseDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">{db.name}</h1>
           <StatusBadge status={db.status} />
+          {db.system ? (
+            <span
+              className="badge badge-gray"
+              title="Engine-owned database — browsable and backup-able, not removable"
+            >
+              system
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {canMove ? (
+          {canMove && !db.system ? (
             <button className="btn btn-sm" onClick={() => setMoveOpen(true)}>
               <ArrowRightLeft size={15} /> Move
             </button>
           ) : null}
-          {canWrite ? (
+          {canWrite && !db.system ? (
             <button className="btn btn-sm btn-danger" onClick={() => setDeleteOpen(true)}>
               <Trash2 size={15} /> Remove
             </button>

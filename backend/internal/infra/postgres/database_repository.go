@@ -29,7 +29,7 @@ var _ databasedom.Repository = (*DatabaseRepository)(nil)
 
 // Note: "collation" is quoted because it is a reserved word in PostgreSQL.
 const databaseColumns = `
-	id, instance_id, name, charset, "collation", status, size_bytes, active_connections,
+	id, instance_id, name, charset, "collation", status, system, size_bytes, active_connections,
 	locked_at, locked_by, labels, tags, created_at, updated_at, version, deleted_at`
 
 func (r *DatabaseRepository) Create(ctx context.Context, d *databasedom.Database) error {
@@ -38,11 +38,11 @@ func (r *DatabaseRepository) Create(ctx context.Context, d *databasedom.Database
 		return apperr.Internal(fmt.Errorf("marshal labels: %w", err))
 	}
 	const q = `
-		INSERT INTO databases (id, instance_id, name, charset, "collation", status, labels, tags)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+		INSERT INTO databases (id, instance_id, name, charset, "collation", status, system, labels, tags)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
 		RETURNING created_at, updated_at, version`
 	err = r.pool.QueryRow(ctx, q,
-		d.ID, d.InstanceID, d.Name, d.Charset, d.Collation, string(d.Status), string(labels), d.Tags,
+		d.ID, d.InstanceID, d.Name, d.Charset, d.Collation, string(d.Status), d.System, string(labels), d.Tags,
 	).Scan(&d.CreatedAt, &d.UpdatedAt, &d.Version)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -184,7 +184,7 @@ func scanDatabase(row rowScanner) (*databasedom.Database, error) {
 		status    string
 	)
 	if err := row.Scan(
-		&d.ID, &d.InstanceID, &d.Name, &d.Charset, &d.Collation, &status, &d.SizeBytes, &d.ActiveConnections,
+		&d.ID, &d.InstanceID, &d.Name, &d.Charset, &d.Collation, &status, &d.System, &d.SizeBytes, &d.ActiveConnections,
 		&d.LockedAt, &d.LockedBy, &labelsRaw, &d.Tags, &d.CreatedAt, &d.UpdatedAt, &d.Version, &d.DeletedAt,
 	); err != nil {
 		return nil, err
@@ -200,7 +200,7 @@ func scanDatabaseWithTotal(row rowScanner) (*databasedom.Database, int, error) {
 		total     int
 	)
 	if err := row.Scan(
-		&d.ID, &d.InstanceID, &d.Name, &d.Charset, &d.Collation, &status, &d.SizeBytes, &d.ActiveConnections,
+		&d.ID, &d.InstanceID, &d.Name, &d.Charset, &d.Collation, &status, &d.System, &d.SizeBytes, &d.ActiveConnections,
 		&d.LockedAt, &d.LockedBy, &labelsRaw, &d.Tags, &d.CreatedAt, &d.UpdatedAt, &d.Version, &d.DeletedAt, &total,
 	); err != nil {
 		return nil, 0, err

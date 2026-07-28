@@ -49,6 +49,8 @@ export interface Database {
   charset: string;
   collation: string;
   status: string;
+  /** Engine-owned database (postgres, mysql, sys): browsable and backup-able, never deletable. */
+  system: boolean;
   size_bytes: number;
   active_connections: number;
   locked_at?: string | null;

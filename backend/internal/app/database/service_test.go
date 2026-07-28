@@ -179,3 +179,65 @@ func TestDelete_RequiresCredentialsForPhysicalDrop(t *testing.T) {
 		t.Fatalf("expected invalid drop without credentials, got %v", apperr.KindOf(err))
 	}
 }
+
+// System databases are imported so they can be browsed and backed up, but
+// neither dropping them nor un-registering them is allowed.
+func TestDelete_RefusesSystemDatabase(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		engine instancedom.Engine
+		db     string
+		flag   bool
+	}{
+		{"postgres maintenance db, flagged", instancedom.EnginePostgres, "postgres", true},
+		{"postgres maintenance db, flag missing", instancedom.EnginePostgres, "postgres", false},
+		{"mysql catalogue", instancedom.EngineMySQL, "mysql", true},
+		{"mariadb sys schema", instancedom.EngineMariaDB, "sys", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			iid := uuid.New()
+			dbID := uuid.New()
+			repo := newFakeDatabaseRepo()
+			repo.items[dbID] = &databasedom.Database{
+				ID: dbID, InstanceID: iid, Name: tc.db,
+				Status: databasedom.StatusActive, System: tc.flag,
+			}
+			instances := &fakeInstanceRepo{
+				items: map[uuid.UUID]*instancedom.Instance{
+					iid: {ID: iid, Kind: instancedom.KindExternal, Engine: tc.engine},
+				},
+			}
+			svc := NewService(repo, instances, nil)
+
+			for _, drop := range []bool{false, true} {
+				err := svc.Delete(context.Background(), dbID.String(), drop, nil)
+				if apperr.KindOf(err) != apperr.KindInvalid {
+					t.Fatalf("drop=%v: expected invalid, got %v", drop, apperr.KindOf(err))
+				}
+			}
+			if repo.items[dbID].DeletedAt != nil {
+				t.Fatal("system database was soft-deleted")
+			}
+		})
+	}
+}
+
+// A user database on the same instance must stay deletable.
+func TestDelete_AllowsUserDatabase(t *testing.T) {
+	iid := uuid.New()
+	dbID := uuid.New()
+	repo := newFakeDatabaseRepo()
+	repo.items[dbID] = &databasedom.Database{
+		ID: dbID, InstanceID: iid, Name: "dev", Status: databasedom.StatusActive,
+	}
+	instances := &fakeInstanceRepo{
+		items: map[uuid.UUID]*instancedom.Instance{
+			iid: {ID: iid, Kind: instancedom.KindExternal, Engine: instancedom.EnginePostgres},
+		},
+	}
+	svc := NewService(repo, instances, nil)
+
+	if err := svc.Delete(context.Background(), dbID.String(), false, nil); err != nil {
+		t.Fatalf("expected user database to be deletable, got %v", err)
+	}
+}

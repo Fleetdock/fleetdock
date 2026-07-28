@@ -12,6 +12,7 @@ import (
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 )
 
 // CreateInput is the command to register/create a database on an instance.
@@ -179,6 +180,9 @@ func (s *Service) Unlock(ctx context.Context, id string) (*databasedom.Database,
 // Delete soft-deletes a database. When dropPhysical is true and the instance
 // has admin credentials, a delete_database operation is enqueued to run
 // DROP DATABASE on the instance before the control-plane record is removed.
+// System databases (the PostgreSQL maintenance database, MySQL's mysql/sys)
+// are refused outright: dropping one breaks the instance, and un-registering
+// one only hides a row that the next import re-creates.
 func (s *Service) Delete(ctx context.Context, id string, dropPhysical bool, createdBy *uuid.UUID) error {
 	uid, err := uuid.Parse(id)
 	if err != nil {
@@ -191,6 +195,10 @@ func (s *Service) Delete(ctx context.Context, id string, dropPhysical bool, crea
 	inst, err := s.instances.GetByID(ctx, db.InstanceID)
 	if err != nil {
 		return err
+	}
+	if db.System || engine.IsSystemDatabase(string(inst.Engine), db.Name) {
+		return apperr.Invalid("id",
+			"\""+db.Name+"\" is a system database and cannot be deleted; it can still be browsed and backed up")
 	}
 	if dropPhysical {
 		if !inst.HasCredentials() {
