@@ -293,6 +293,8 @@ func (m *MariaDB) ListTables(ctx context.Context, p ConnParams, database string)
 		if err := rows.Scan(&t.Name, &t.Engine, &t.RowCount, &t.DataBytes, &t.IndexBytes, &t.Comment); err != nil {
 			return nil, err
 		}
+		// In MySQL/MariaDB a schema is a database, so the two always match.
+		t.Schema = database
 		out = append(out, t)
 	}
 	return out, rows.Err()

@@ -392,6 +392,8 @@ export interface SchemaGrant {
 
 export interface TableInfo {
   name: string;
+  /** Namespace holding the table. PostgreSQL: the schema; MySQL/MariaDB: the database. */
+  schema: string;
   engine: string;
   row_count: number;
   data_bytes: number;

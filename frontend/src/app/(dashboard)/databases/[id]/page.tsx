@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useRef, useState, type FormEvent } from "react";
+import { Suspense, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { ArrowRightLeft, ChevronRight, Download, KeyRound, Play, Plus, Table2, TerminalSquare, Trash2, X } from "lucide-react";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
@@ -298,8 +298,8 @@ function Detail({ label, value, link }: { label: string; value: string; link?: s
 // ---- Tables list ----
 
 function compareTables(a: TableInfo, b: TableInfo, key: string) {
-  if (key === "name" || key === "engine") {
-    return a[key].localeCompare(b[key]);
+  if (key === "name" || key === "engine" || key === "schema") {
+    return (a[key] ?? "").localeCompare(b[key] ?? "");
   }
   return (a[key as "row_count" | "data_bytes" | "index_bytes"] as number)
     - (b[key as "row_count" | "data_bytes" | "index_bytes"] as number);
@@ -308,14 +308,31 @@ function compareTables(a: TableInfo, b: TableInfo, key: string) {
 function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (table: string) => void }) {
   const { data, isLoading, error } = useTables(databaseId);
   const [search, setSearch] = useState("");
+
+  // A PostgreSQL database can spread its tables over several schemas, in which
+  // case a bare table name is ambiguous: show the schema and address tables as
+  // "schema.table". MySQL/MariaDB always report a single schema (the database),
+  // so the column stays hidden and names stay bare.
+  const schemas = useMemo(
+    () => new Set((data?.items ?? []).map((t) => t.schema).filter(Boolean)),
+    [data],
+  );
+  const multiSchema = schemas.size > 1;
+  const qualify = (t: TableInfo) => (multiSchema ? `${t.schema}.${t.name}` : t.name);
+
   const table = useDataTable({
     items: data?.items,
-    search: { query: search, match: (t, q) => t.name.toLowerCase().includes(q) },
+    search: {
+      query: search,
+      match: (t, q) =>
+        t.name.toLowerCase().includes(q) ||
+        (multiSchema && qualify(t).toLowerCase().includes(q)),
+    },
     sort: {
       key: "name",
       dir: "asc",
       compare: compareTables,
-      defaultDir: (key) => (key === "name" || key === "engine" ? "asc" : "desc"),
+      defaultDir: (key) => (key === "name" || key === "engine" || key === "schema" ? "asc" : "desc"),
     },
   });
 
@@ -334,6 +351,18 @@ function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (ta
             </>
           ),
         },
+        ...(multiSchema
+          ? [
+              {
+                id: "schema",
+                header: "Schema",
+                sortable: true,
+                sortKey: "schema",
+                className: "muted",
+                render: (t: TableInfo) => t.schema,
+              } satisfies DataTableColumn<TableInfo>,
+            ]
+          : []),
         { id: "engine", header: "Engine", sortable: true, sortKey: "engine", className: "muted", render: (t) => t.engine },
         {
           id: "row_count",
@@ -364,14 +393,14 @@ function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (ta
           header: "",
           align: "right",
           render: (t) => (
-            <button className="btn btn-ghost btn-sm" onClick={() => onOpen(t.name)}>
+            <button className="btn btn-ghost btn-sm" onClick={() => onOpen(qualify(t))}>
               Browse <ChevronRight size={15} />
             </button>
           ),
         },
       ]}
       rows={table.rows}
-      rowKey={(t) => t.name}
+      rowKey={(t) => `${t.schema}.${t.name}`}
       isLoading={isLoading}
       loadingLabel="Connecting to instance…"
       error={error ? (error as ApiError).message : undefined}

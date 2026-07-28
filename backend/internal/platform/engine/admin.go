@@ -20,7 +20,11 @@ type SchemaGrant struct {
 
 // TableInfo describes a table within a database.
 type TableInfo struct {
-	Name       string `json:"name"`
+	Name string `json:"name"`
+	// Schema is the namespace the table lives in. PostgreSQL databases hold
+	// many schemas, so Name alone is ambiguous; MariaDB/MySQL report the
+	// database name here, since there schema and database are the same thing.
+	Schema     string `json:"schema"`
 	Engine     string `json:"engine"`
 	RowCount   int64  `json:"row_count"` // estimate for InnoDB
 	DataBytes  int64  `json:"data_bytes"`
