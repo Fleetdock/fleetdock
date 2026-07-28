@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **One-command install:** `curl -sSL https://fleetdock.dev/install.sh | sh`.
+  Installs Docker if missing, generates secrets, starts the stack behind Caddy
+  with automatic HTTPS, and prints the dashboard URL and bootstrap password.
+  Without `--domain` it uses an `<ip>.sslip.io` name so TLS works with no DNS
+  setup.
+- **`fleetdock` CLI** for day-2 operations: `status`, `logs`, `update`,
+  `domain`, `gateway enable|disable`, `config`, `psql`, `doctor`,
+  `backup-config`, `uninstall`.
+- **Caddy is bundled** as a compose service on 80/443 with automatic Let's
+  Encrypt. TLS is no longer a manual step.
+- Published images are now **multi-arch** (`linux/amd64`, `linux/arm64`).
+  Previous releases were amd64-only and could not run on ARM hosts.
+- [docs/MIGRATION-single-image.md](docs/MIGRATION-single-image.md).
+
+### Changed
+
+- **One image instead of two.** `ghcr.io/tajbrains/fleetdock` contains both the
+  control plane and the dashboard. The Go binary is the only listener: it serves
+  `/v1`, `/agent`, `/healthz`, `/readyz`, `/docs`, `/openapi.yaml` and
+  `/install.sh` in-process and reverse-proxies everything else to a supervised
+  Next.js process on loopback.
+- **One domain instead of up to three.** `FLEETDOCK_DOMAIN` drives
+  `FLEETDOCK_PUBLIC_URL`, `FLEETDOCK_CORS_ORIGIN` and
+  `FLEETDOCK_GATEWAY_PUBLIC_HOST`. The dashboard and API share an origin; the
+  gateway reuses the same hostname because it speaks raw TCP on its own ports.
+- **The dashboard no longer bakes in an API URL.** `NEXT_PUBLIC_API_URL` is
+  optional and only for split-origin deployments. Published images previously
+  hardcoded `https://fleetdock.dev`, which made them unusable by anyone else.
+- **One compose file.** `docker-compose.yml` is production-shaped, has no bind
+  mounts, and is complete on its own; `docker-compose.build.yml` builds from
+  source. Requires Docker Compose 2.23+.
+- **External database access is opt-in.** The gateway sits behind a `gateway`
+  compose profile, so a default install publishes 80/443 instead of 51 ports.
+- The metadata `postgres` service can be scaled to zero for hosted PostgreSQL.
+
+### Fixed
+
+- `/_next/static/*` assets are no longer served with `Cache-Control: no-store`.
+  The API's no-store now applies only to API responses.
+- Wrong-method API calls keep returning `405` rather than falling through to the
+  dashboard's HTML 404.
+- Release images are tagged both `v<version>` and `<version>`; the documented
+  `FLEETDOCK_RELEASE_TAG=v0.1.0` previously matched nothing in GHCR.
+- Added a repository `.dockerignore`; build contexts no longer include
+  `frontend/node_modules` and `.next`.
+
+### Removed
+
+- `ghcr.io/tajbrains/fleetdock-backend` and `-frontend` are no longer published.
+- `docker-compose.prod.yml` and `docker-compose.ghcr.yml`.
+
 ## [0.3.0] - 2026-07-12
 
 ### Added

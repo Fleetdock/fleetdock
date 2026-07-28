@@ -43,10 +43,11 @@ What ships in each release and what we are building next. For release mechanics 
 | Task | Status | Notes |
 |------|--------|-------|
 | Real README screenshots | todo | Replace placeholder; see [docs/screenshots/README.md](docs/screenshots/README.md) |
-| GHCR packages public | todo | Maintainer: GitHub Packages → change visibility |
-| `NEXT_PUBLIC_API_URL` repo variable | todo | Set before release if not localhost; see RELEASING.md |
-| GHCR quick-start in README | done | `docker-compose.ghcr.yml` |
-| End-to-end install.sh verification | todo | Fresh VM + document friction |
+| GHCR package public | todo | Maintainer: GitHub Packages → `fleetdock` → change visibility |
+| One-command install in README | done | `curl -sSL https://fleetdock.dev/install.sh \| sh` |
+| Publish install.sh to fleetdock.dev | todo | `cd fleetdock-web && npm run sync:install`, then deploy |
+| End-to-end install.sh verification | todo | Fresh Linux VM with real DNS: certificate issuance, agent enrolment, re-run upgrade path |
+| `fleetdock reset-admin-password` | todo | Needs a new `backend/cmd/reset-password` binary |
 
 ---
 

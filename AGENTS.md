@@ -29,13 +29,18 @@ caveats for this environment.
   `cp .env.example .env && ./scripts/generate-secrets.sh >> .env`, then change
   `FLEETDOCK_DATABASE_URL` host from `@postgres:5432` (Docker service name) to
   `@localhost:5432` for local, non-Docker dev.
-- `frontend/.env.local` = `cp frontend/.env.local.example frontend/.env.local`.
+- `frontend/.env.local` is optional — the dashboard calls the API on its own
+  origin, and `next dev` proxies the API paths to `:8080` for you.
 
 ### Running
 - `make dev` loads root `.env` and runs API + Next.js with hot reload.
 - Dashboard: http://localhost:3000 — log in as `admin@example.com` with the
   `FLEETDOCK_ADMIN_PASSWORD` value from `.env` (the API bootstraps this admin on
   first boot when the users table is empty).
+- Browser requests go to `/v1/...` on port 3000 and are rewritten to the Go API
+  (see `rewrites()` in `frontend/next.config.mjs`). In production the same paths
+  are served by the Go binary directly — same origin either way. Never
+  re-introduce a build-time API host.
 - `/healthz` is an unauthenticated liveness check; `/readyz` is an unauthenticated
   readiness check (metadata DB ping).
 

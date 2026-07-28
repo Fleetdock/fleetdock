@@ -3,7 +3,9 @@
 
 BACKEND  := backend
 FRONTEND := frontend
-COMPOSE  := docker compose
+# The base file pulls the published image; the overlay builds it from this
+# checkout, which is what a contributor wants.
+COMPOSE  := docker compose -f docker-compose.yml -f docker-compose.build.yml
 # macOS 15+ (especially Tahoe 26) requires LC_UUID in Mach-O binaries; Go <1.24
 # omits it unless -B gobuildid is passed (see golang/go#68678).
 GO_RUN   := go run -ldflags="-B gobuildid"
@@ -12,8 +14,12 @@ GO_RUN   := go run -ldflags="-B gobuildid"
 
 ## ----- Full stack (Docker) -----
 
+.PHONY: image
+image: ## Build the single application image (control plane + dashboard)
+	docker build -t ghcr.io/tajbrains/fleetdock:dev .
+
 .PHONY: up
-up: ## Build and start the full stack (Postgres + API + web)
+up: ## Build and start the full stack (Caddy + Postgres + Fleetdock)
 	$(COMPOSE) up --build
 
 .PHONY: up-d
@@ -80,15 +86,11 @@ frontend-dev: ## Run the frontend dev server
 frontend-build: ## Production build of the frontend
 	cd $(FRONTEND) && npm run build
 
-.PHONY: frontend-start
-frontend-start: ## Start the built frontend
-	cd $(FRONTEND) && npm run start
-
 ## ----- Local development -----
 
 .PHONY: dev
 dev: ## Run API + Next.js dev servers (hot reload; Ctrl+C stops both)
-	@echo "Starting backend http://localhost:8080 and frontend http://localhost:3000 (Ctrl+C to stop)…"
+	@echo "Open http://localhost:3000 — the dev server proxies /v1 and /agent to the API on :8080 (Ctrl+C to stop)…"
 	@trap 'kill 0' INT TERM EXIT; \
 	set -a; [ -f .env ] && . ./.env; set +a; \
 	(cd $(BACKEND) && $(GO_RUN) ./cmd/api) & \

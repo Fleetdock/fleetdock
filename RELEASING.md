@@ -49,47 +49,56 @@ git push origin v0.1.1
 
 On every `v*` tag push:
 
-1. Builds and pushes Docker images to GHCR (lowercase org name):
-   - `ghcr.io/tajbrains/fleetdock-backend:<tag>` and `:latest`
-   - `ghcr.io/tajbrains/fleetdock-frontend:<tag>` and `:latest`
-2. Cross-compiles Linux agent binaries (`amd64`, `arm64`) and API binary (`amd64`)
-3. Creates a GitHub Release with tarballs and `SHA256SUMS`
-4. Attaches changelog section for that version as release notes (when present in CHANGELOG.md)
+1. Builds and pushes **one** multi-arch image to GHCR (lowercase org name):
+   `ghcr.io/tajbrains/fleetdock` for `linux/amd64` and `linux/arm64`, tagged
+   `v<tag>`, `<tag>`, `<major>.<minor>` and `latest`.
+2. Verifies the image boots: node version, dashboard bundle present, agent
+   binaries executable.
+3. Cross-compiles Linux agent binaries (`amd64`, `arm64`) and the API binary (`amd64`)
+4. Creates a GitHub Release with tarballs, `SHA256SUMS`, and the installer
+   artefacts (`install.sh`, `fleetdock`, `docker-compose.yml`) so a release can
+   be installed from a pinned tag
+5. Attaches the changelog section for that version as release notes (when present in CHANGELOG.md)
 
-## Frontend build URL
-
-The frontend image bakes in `NEXT_PUBLIC_API_URL` at **build time**.
-
-Set a GitHub repository variable before tagging if the default `http://localhost:8080` is wrong for your users:
-
-```bash
-gh variable set NEXT_PUBLIC_API_URL --body "https://dbm.example.com"
-```
-
-Re-tag or cut a new patch release after changing this variable so the frontend image is rebuilt.
+Nothing deployment-specific is baked into the image. There is no
+`NEXT_PUBLIC_API_URL` build argument any more: the dashboard calls the API on
+whatever origin serves it, so one image works for every self-hoster.
 
 ## GHCR visibility
 
 Packages are private by default. To allow unauthenticated `docker pull`:
 
-1. GitHub → **Packages** → `fleetdock-backend` / `fleetdock-frontend`
+1. GitHub → **Packages** → `fleetdock`
 2. **Package settings** → **Change visibility** → Public
+
+## Publishing the installer
+
+`https://fleetdock.dev/install.sh` is served from `fleetdock-web/public/install.sh`.
+Refresh it from the canonical copy in this repo before deploying the site:
+
+```bash
+cd ../fleetdock-web && npm run sync:install
+```
 
 ## Smoke-test a release
 
 ```bash
 export TAG=v0.1.1
-docker pull ghcr.io/tajbrains/fleetdock-backend:${TAG}
-docker pull ghcr.io/tajbrains/fleetdock-frontend:${TAG}
+docker pull ghcr.io/tajbrains/fleetdock:${TAG}
 
-# Or use the GHCR compose overlay:
-FLEETDOCK_RELEASE_TAG=${TAG} docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+cd /tmp && mkdir -p fd && cd fd
+cp /path/to/fleetdock/docker-compose.yml .
+cp /path/to/fleetdock/.env.example .env
+/path/to/fleetdock/scripts/generate-secrets.sh >> .env
+FLEETDOCK_RELEASE_TAG=${TAG} docker compose up -d
 
-curl -fsS http://localhost:8080/healthz
-curl -fsS http://localhost:8080/readyz
+curl -fsS http://localhost/healthz
+curl -fsS http://localhost/readyz
 ```
 
-Sign in at http://localhost:3000 with bootstrap credentials from `.env`.
+Sign in at `http://localhost` with the bootstrap credentials from `.env`. On a
+real host, prefer the actual install path:
+`curl -sSL https://fleetdock.dev/install.sh | sh -s -- --tag ${TAG}`.
 
 ## Hotfix workflow
 

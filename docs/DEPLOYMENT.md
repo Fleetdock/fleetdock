@@ -1,7 +1,8 @@
 # Production deployment
 
-This guide covers deploying Fleetdock on a single host with Docker Compose,
-TLS termination, and the environment variables you must set for production.
+`curl -sSL https://fleetdock.dev/install.sh | sh` covers almost every case. This
+guide is for understanding what it does, and for the deployments it does not
+cover.
 
 For day-2 operations (backups, upgrades, key rotation), see [OPERATIONS.md](OPERATIONS.md).
 For a security checklist before exposing the control plane, see
@@ -10,157 +11,146 @@ For a security checklist before exposing the control plane, see
 ## Architecture
 
 ```text
-Browser ──HTTPS──► reverse proxy (Caddy / nginx / Traefik)
-                        ├── /        → frontend :3000
-                        └── /api/*   → backend  :8080   (or same-origin /)
-Managed servers ──HTTPS──► FLEETDOCK_PUBLIC_URL (install.sh + agent API)
+Browser ──HTTPS──► Caddy :443 ──► fleetdock :8080
+                                    ├── /v1, /agent, /healthz, /readyz,
+                                    │   /docs, /openapi.yaml, /install.sh
+                                    │       served in-process (Go)
+                                    └── everything else
+                                            proxied to the bundled dashboard
+                                            (a node child on 127.0.0.1:3000)
+
+Managed servers ──HTTPS──► the same host (install.sh + agent API)
+External DB clients ──TCP──► the same host :15432-15481 (optional gateway)
 ```
 
-The control plane stores metadata (users, servers, credentials, jobs) in
-**PostgreSQL**. Managed database servers run the **agent**, which enrolls via a
-one-time registration token and polls for operations.
+One image, one port, one domain. The control plane stores metadata (users,
+servers, credentials, jobs) in **PostgreSQL**. Managed database servers run the
+**agent**, which enrolls via a one-time registration token and polls for
+operations.
 
 ## Prerequisites
 
-- A Linux VM or bare-metal host (2 vCPU, 4 GB RAM is enough for small fleets)
-- Docker Engine 24+ and Docker Compose v2
-- A domain name with DNS pointing at the host
-- TLS certificate (Let's Encrypt via Caddy is the easiest path)
-- Outbound internet from the host (agent install script, optional S3 backups)
+- A Linux host (2 vCPU, 4 GB RAM is enough for small fleets), x86_64 or arm64
+- Docker Engine 24+ and **Docker Compose v2.23+**
+- Ports 80 and 443 free
+- A domain pointed at the host — optional; without one the installer uses an
+  `<ip>.sslip.io` name that still gets a real certificate
+- Outbound internet (image pulls, ACME, agent install script)
 
-## Option A — Docker Compose (recommended)
-
-### 1. Clone and configure
+## The one-command install
 
 ```bash
-git clone https://github.com/Fleetdock/fleetdock.git
-cd Fleetdock
+curl -sSL https://fleetdock.dev/install.sh | sh -s -- --domain db.example.com
+```
+
+| Option | Effect |
+| --- | --- |
+| `--domain <host>` | Dashboard hostname; gets an automatic Let's Encrypt certificate |
+| `--admin-email <e>` | Bootstrap admin account |
+| `--dir <path>` | Install directory (default `/opt/fleetdock`) |
+| `--tag <tag>` | Image tag to run (default `latest`) |
+| `--with-gateway` | Also start external database access |
+| `--no-tls` | Plain HTTP on the host IP; no certificate |
+
+It installs Docker if missing, writes `/opt/fleetdock/{docker-compose.yml,.env}`,
+starts the stack, and prints the dashboard URL and bootstrap password.
+
+Re-running it upgrades in place. **It never regenerates `.env`** — rotating
+`FLEETDOCK_ENCRYPTION_KEY` would make every stored credential unreadable.
+
+## One domain, and why
+
+Three variables name a host, and all three can be the same name:
+
+| Variable | What reads it |
+| --- | --- |
+| `FLEETDOCK_PUBLIC_URL` | Agents, and the generated `install.sh` command |
+| `FLEETDOCK_CORS_ORIGIN` | The API's CORS allowlist — unused on a same-origin install |
+| `FLEETDOCK_GATEWAY_PUBLIC_HOST` | Baked into generated database connection URLs |
+
+`install.sh` derives all of them from `FLEETDOCK_DOMAIN`, and `fleetdock domain`
+keeps them in step afterwards.
+
+The dashboard and the API share an origin because the Go binary serves both, so
+there is no API subdomain and nothing about your hostname is compiled into the
+dashboard bundle. The gateway needs a **separate** record in exactly one case:
+when the main record cannot carry raw TCP — most often a Cloudflare-proxied
+("orange cloud") record, which passes 80/443 only. Point a grey-clouded
+`gw.example.com` at the host and set `FLEETDOCK_GATEWAY_PUBLIC_HOST` to it.
+
+## Managing an install
+
+```bash
+fleetdock status                  # container health and readiness
+fleetdock logs [service] -f
+fleetdock update [--tag v0.2.0]   # pull and restart
+fleetdock domain new.example.com  # move to a new hostname
+fleetdock gateway enable|disable  # external database access
+fleetdock doctor                  # DNS, certificates, reachability, disk
+fleetdock backup-config           # archive .env — keep this off-host
+fleetdock uninstall [--purge]
+```
+
+## Running it yourself
+
+The stack is one self-contained `docker-compose.yml` with no bind mounts, so it
+works from any directory next to a `.env`:
+
+```bash
 cp .env.example .env
 ./scripts/generate-secrets.sh >> .env
+# set FLEETDOCK_DOMAIN / FLEETDOCK_SITE_ADDRESS / FLEETDOCK_PUBLIC_URL
+docker compose up -d
 ```
 
-Edit `.env` for production:
-
-| Variable                   | Example                                                              | Notes                                    |
-| -------------------------- | -------------------------------------------------------------------- | ---------------------------------------- |
-| `FLEETDOCK_ENV`            | `production`                                                         | Refuses insecure default secrets         |
-| `FLEETDOCK_DATABASE_URL`   | `postgres://user:pass@db.example.com:5432/fleetdock?sslmode=require` | Use managed Postgres in production       |
-| `FLEETDOCK_JWT_SECRET`     | _(from generate-secrets)_                                            | Strong random string                     |
-| `FLEETDOCK_ENCRYPTION_KEY` | _(from generate-secrets)_                                            | Encrypts instance/S3 credentials at rest |
-| `FLEETDOCK_ADMIN_EMAIL`    | `admin@yourcompany.com`                                              | Bootstrap admin (first boot only)        |
-| `FLEETDOCK_ADMIN_PASSWORD` | _(strong password)_                                                  | Change after first login                 |
-| `FLEETDOCK_PUBLIC_URL`     | `https://dbm.example.com`                                            | URL **servers** use to reach the API     |
-| `FLEETDOCK_CORS_ORIGIN`    | `https://dbm.example.com`                                            | URL **browsers** load the dashboard from |
-| `NEXT_PUBLIC_API_URL`      | `https://dbm.example.com`                                            | Baked into the frontend build            |
-
-**Important:** `NEXT_PUBLIC_API_URL` is embedded at **image build time**. Rebuild
-the frontend image whenever this value changes.
-
-### 2. Use the production Compose overlay
-
-`docker-compose.prod.yml` sets `FLEETDOCK_ENV=production` and expects you to supply
-secrets via `.env`. It does **not** start a local Postgres container — point
-`FLEETDOCK_DATABASE_URL` at your managed database.
+To build the image from a checkout instead of pulling it, add the overlay:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
-For a quick lab deploy with the bundled Postgres container, omit the prod
-overlay and only set `FLEETDOCK_ENV=production` plus strong secrets in `.env`.
-
-### 3. Verify
-
-```bash
-curl -fsS https://dbm.example.com/healthz    # {"status":"ok"}
-curl -fsS https://dbm.example.com/readyz     # {"status":"ready"} (after DB is up)
-```
-
-Open the dashboard, sign in with the bootstrap admin, and change the password
-on the **Profile** page.
-
-## Option B — Pre-built images (GitHub Container Registry)
-
-After a release is tagged (`v0.1.0`, etc.), images are published to GHCR:
+Published image (multi-arch, `linux/amd64` + `linux/arm64`):
 
 ```text
-ghcr.io/tajbrains/fleetdock-backend:<tag>
-ghcr.io/tajbrains/fleetdock-frontend:<tag>
+ghcr.io/tajbrains/fleetdock:<tag>
 ```
 
-Example `docker-compose.override.yml` snippet:
+## Bring your own reverse proxy
 
-```yaml
-services:
-  backend:
-    image: ghcr.io/tajbrains/fleetdock-backend:v0.1.0
-    build: !reset null
-  frontend:
-    image: ghcr.io/tajbrains/fleetdock-frontend:v0.1.0
-    build: !reset null
-```
-
-Or use the provided overlay:
-
-```bash
-export FLEETDOCK_RELEASE_TAG=v0.1.0
-docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
-```
-
-Replace `tajbrains` with the GitHub org or user that owns the fork if you build
-your own images.
-
-## TLS and reverse proxy
-
-### Caddy (simplest)
-
-`deploy/Caddyfile.example`:
+Drop the bundled `caddy` service and point your own proxy at `fleetdock:8080`.
+There is no path splitting to replicate — the Go binary owns that:
 
 ```caddyfile
-dbm.example.com {
-    encode gzip
+db.example.com {
+	encode zstd gzip
+	reverse_proxy fleetdock:8080
+}
+```
 
-    # API routes (adjust if you mount the API under a sub-path)
-    handle /healthz* {
-        reverse_proxy backend:8080
-    }
-    handle /readyz* {
-        reverse_proxy backend:8080
-    }
-    handle /v1/* {
-        reverse_proxy backend:8080
-    }
-    handle /agent/* {
-        reverse_proxy backend:8080
-    }
-    handle /install.sh {
-        reverse_proxy backend:8080
-    }
-    handle /openapi.yaml {
-        reverse_proxy backend:8080
-    }
-    handle /docs* {
-        reverse_proxy backend:8080
-    }
+nginx equivalent:
 
-    # Dashboard (everything else)
-    handle {
-        reverse_proxy frontend:3000
+```nginx
+server {
+    server_name db.example.com;
+    location / {
+        proxy_pass http://fleetdock:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-Run Caddy on the host or as a fourth Compose service on ports 80/443.
+Keep `FLEETDOCK_TRUST_PROXY_HEADERS=true` only while the API is reachable
+*solely* through the proxy. If port 8080 is also exposed, a client can spoof
+`X-Forwarded-For` and evade the login rate limiter.
 
-### Same-origin vs split origins
+### Split origins
 
-| Layout                  | `FLEETDOCK_CORS_ORIGIN`   | `NEXT_PUBLIC_API_URL`     | `FLEETDOCK_PUBLIC_URL`    |
-| ----------------------- | ------------------------- | ------------------------- | ------------------------- |
-| Same host, path routing | `https://dbm.example.com` | `https://dbm.example.com` | `https://dbm.example.com` |
-| API on subdomain        | `https://app.example.com` | `https://api.example.com` | `https://api.example.com` |
-
-When the API and dashboard share one origin, CORS is simpler and cookies (if
-added in the future) work without cross-site configuration.
+Serving the dashboard and API from different hostnames is still possible but is
+no longer the smooth path: `NEXT_PUBLIC_API_URL` is inlined by `next build`, so
+you must set it as a build arg and build your own image, then set
+`FLEETDOCK_CORS_ORIGIN` to the dashboard's origin.
 
 ## Hosted PostgreSQL
 
@@ -211,10 +201,16 @@ channels still work.
 | Symptom                         | Likely cause                                                                                               |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `error: run as root` on install | `sudo` placed before `curl` instead of before `sh` (after the pipe)                                        |
+| Install aborts on port 80/443   | nginx or apache already bound there. Stop it and re-run                                                    |
+| Install aborts on Compose version | Plugin older than 2.23. Upgrade it: https://docs.docker.com/compose/install/linux/                       |
+| No certificate issued           | DNS does not point at this host yet. `fleetdock doctor` compares them                                      |
 | API exits on start              | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh`                                |
-| CORS errors in browser          | `FLEETDOCK_CORS_ORIGIN` does not match the dashboard URL                                                   |
 | Agent never appears             | `FLEETDOCK_PUBLIC_URL` unreachable from the server; `localhost` used from a remote VM; firewall blocks 443 |
-| Frontend calls wrong API        | Rebuild frontend after changing `NEXT_PUBLIC_API_URL`                                                      |
+| Dashboard 503, API fine         | The dashboard child is restarting. `fleetdock logs fleetdock` — it recovers on its own                     |
 | `/readyz` returns 503           | Metadata database down or `FLEETDOCK_DATABASE_URL` wrong                                                   |
+| Database endpoints unreachable  | Gateway hostname behind a proxying CDN, or the port range not open in the host firewall                    |
+
+Start with `fleetdock doctor`; it checks versions, container health, DNS,
+reachability and disk in one pass.
 
 Interactive API docs are available at `https://<your-host>/docs` after deploy.

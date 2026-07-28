@@ -1,34 +1,27 @@
-# Example Caddy v2 config for Fleetdock.
-# Copy to your host and adjust the domain name.
+# Only needed if you replace the bundled `caddy` service with your own proxy.
+# The stack's own Caddyfile lives inline in docker-compose.yml.
 #
-# Assumes docker compose service names `frontend` and `backend` on a shared network.
+# There is no path splitting to replicate: the Go binary serves /v1, /agent,
+# /healthz, /readyz, /docs, /openapi.yaml and /install.sh in-process and proxies
+# everything else to the bundled dashboard. One upstream is the whole config.
 
-dbm.example.com {
-	encode gzip
-
-	handle /healthz* {
-		reverse_proxy backend:8080
-	}
-	handle /readyz* {
-		reverse_proxy backend:8080
-	}
-	handle /v1/* {
-		reverse_proxy backend:8080
-	}
-	handle /agent/* {
-		reverse_proxy backend:8080
-	}
-	handle /install.sh {
-		reverse_proxy backend:8080
-	}
-	handle /openapi.yaml {
-		reverse_proxy backend:8080
-	}
-	handle /docs* {
-		reverse_proxy backend:8080
-	}
-
-	handle {
-		reverse_proxy frontend:3000
-	}
+db.example.com {
+	encode zstd gzip
+	reverse_proxy fleetdock:8080
 }
+
+# nginx equivalent:
+#
+# server {
+#     server_name db.example.com;
+#     location / {
+#         proxy_pass http://fleetdock:8080;
+#         proxy_set_header Host              $host;
+#         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+# }
+#
+# Keep FLEETDOCK_TRUST_PROXY_HEADERS=true only while the API is reachable solely
+# through the proxy. If port 8080 is also exposed, a client can spoof
+# X-Forwarded-For and evade the login rate limiter.

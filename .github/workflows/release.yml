@@ -17,22 +17,36 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Image names (GHCR requires lowercase)
+      - name: Image name (GHCR requires lowercase)
         id: images
         run: |
           owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          echo "backend=ghcr.io/${owner}/fleetdock-backend" >> "$GITHUB_OUTPUT"
-          echo "frontend=ghcr.io/${owner}/fleetdock-frontend" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${owner}/fleetdock" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
           cache-dependency-path: backend/go.sum
 
-      - name: Parse version
-        id: version
-        run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      # Emits both v-prefixed and bare tags, so the FLEETDOCK_RELEASE_TAG in the
+      # docs works either way. The old hand-rolled ${GITHUB_REF_NAME#v} pushed
+      # only the bare form while the docs said to use the v-prefixed one.
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ steps.images.outputs.image }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
 
+      # Needed for the arm64 runtime layer. Both build stages cross-compile from
+      # the native platform, so only that thin layer is emulated.
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
@@ -41,36 +55,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare env for frontend build arg
+      # One image containing the control plane and the dashboard. No
+      # NEXT_PUBLIC_API_URL build arg: the dashboard is same-origin with
+      # whatever host serves it, so this image works unmodified for every
+      # self-hoster rather than being pinned to fleetdock.dev.
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      # Cheap guards for the two ways this image silently breaks: a node too old
+      # for Next, and a dashboard bundle that did not get copied.
+      - name: Verify image
         run: |
-          cp .env.example .env
-          ./scripts/generate-secrets.sh >> .env
-
-      - name: Build and push backend
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          push: true
-          tags: |
-            ${{ steps.images.outputs.backend }}:${{ steps.version.outputs.tag }}
-            ${{ steps.images.outputs.backend }}:latest
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.version=${{ github.ref_name }}
-
-      - name: Build and push frontend
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          push: true
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'https://fleetdock.dev' }}
-          tags: |
-            ${{ steps.images.outputs.frontend }}:${{ steps.version.outputs.tag }}
-            ${{ steps.images.outputs.frontend }}:latest
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+          IMG="${{ steps.images.outputs.image }}:latest"
+          docker pull "$IMG"
+          docker run --rm --entrypoint node "$IMG" --version
+          docker run --rm --entrypoint sh "$IMG" -c 'test -f /opt/fleetdock/ui/server.js'
+          docker run --rm --entrypoint sh "$IMG" -c 'test -d /opt/fleetdock/ui/.next/static'
+          docker run --rm --entrypoint sh "$IMG" -c 'test -x /opt/fleetdock/agents/fleetdock-agent-linux-amd64'
 
       - name: Build release archives
         working-directory: backend
@@ -101,6 +113,11 @@ jobs:
             echo "Release ${{ github.ref_name }}" > release-notes.md
           fi
 
+      # install.sh and docker-compose.yml are attached so a release can be
+      # installed from a pinned tag, not just from the tip of main.
+      - name: Checksum installer artefacts
+        run: sha256sum scripts/install.sh scripts/fleetdock docker-compose.yml > INSTALLER-SHA256SUMS
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -110,3 +127,7 @@ jobs:
             fleetdock-agents-${{ github.ref_name }}.tar.gz
             fleetdock-api-${{ github.ref_name }}.tar.gz
             dist/SHA256SUMS
+            scripts/install.sh
+            scripts/fleetdock
+            docker-compose.yml
+            INSTALLER-SHA256SUMS
