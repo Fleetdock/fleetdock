@@ -1,0 +1,13 @@
+# Build the application image from this checkout instead of pulling it.
+#
+#   cp .env.example .env && ./scripts/generate-secrets.sh >> .env
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
+#
+# Everything else — Caddy, Postgres, the optional gateway — comes from
+# docker-compose.yml unchanged.
+services:
+  fleetdock:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/tajbrains/fleetdock:dev

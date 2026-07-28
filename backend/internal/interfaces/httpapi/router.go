@@ -40,6 +40,10 @@ type RouterDeps struct {
 	TrustProxyHeaders bool
 	// Ready reports whether dependencies (the metadata database) are healthy.
 	Ready func(ctx context.Context) error
+	// UI, when non-nil, serves every path the API does not own: the bundled
+	// dashboard, reverse-proxied to a co-resident Node process. Nil keeps the
+	// API-only behaviour, where unknown paths 404.
+	UI http.Handler
 }
 
 // NewRouter builds the HTTP handler tree with authentication, RBAC, CORS,
@@ -220,7 +224,15 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("DELETE /v1/tokens/{id}", requirePerm("token:write", d.Tokens.Revoke))
 
 	// Middleware order (outermost first):
-	// logging -> recover -> security headers -> CORS -> auth -> mux.
-	handler := d.Authn.Middleware(mux)
-	return requestLogger(recoverer(securityHeaders(cors(d.CORSOrigin, handler))))
+	// logging -> recover -> [UI split] -> security headers -> CORS -> auth -> mux.
+	//
+	// CORS and the API's Cache-Control: no-store stay strictly inside the API
+	// branch. The dashboard is served from this same origin so it needs no
+	// preflight handling, and Next's own immutable caching for /_next/static
+	// must survive — see uiproxy.Handler for the headers it does get.
+	api := securityHeaders(cors(d.CORSOrigin, d.Authn.Middleware(mux)))
+	if d.UI == nil {
+		return requestLogger(recoverer(api))
+	}
+	return requestLogger(recoverer(splitUI(api, d.UI)))
 }

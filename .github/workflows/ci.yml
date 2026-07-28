@@ -68,20 +68,59 @@ jobs:
       - name: typecheck
         run: npm run typecheck
 
+      # Deliberately no NEXT_PUBLIC_API_URL: the dashboard must build without
+      # one and call the API on its own origin. This is the standing guard
+      # against re-introducing a build-time-baked API host.
       - name: build
         run: npm run build
-        env:
-          NEXT_PUBLIC_API_URL: http://localhost:8080
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -s sh scripts/install.sh scripts/fleetdock \
+            backend/docker-entrypoint.sh \
+            backend/internal/interfaces/httpapi/install_script.sh
 
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: prepare env
-        run: |
-          cp .env.example .env
-          ./scripts/generate-secrets.sh >> .env
+      # No secrets needed to build any more: nothing deployment-specific is
+      # baked into the image.
+      - name: build image
+        run: docker build -t fleetdock:ci .
 
-      - name: build images
-        run: docker compose build
+      - name: verify image
+        run: |
+          docker run --rm --entrypoint node fleetdock:ci --version
+          docker run --rm --entrypoint sh fleetdock:ci -c 'test -f /opt/fleetdock/ui/server.js'
+          docker run --rm --entrypoint sh fleetdock:ci -c 'test -d /opt/fleetdock/ui/.next/static'
+
+      - name: validate compose
+        run: |
+          docker compose --env-file /dev/null config >/dev/null
+          docker compose --env-file /dev/null --profile gateway config >/dev/null
+        env:
+          FLEETDOCK_SITE_ADDRESS: http://localhost
+          FLEETDOCK_PUBLIC_URL: http://localhost
+          FLEETDOCK_JWT_SECRET: ci
+          FLEETDOCK_ENCRYPTION_KEY: ci
+          FLEETDOCK_ADMIN_PASSWORD: ci
+
+  cross-build:
+    # Catches arm64 breakage before a tag is cut, when it would otherwise only
+    # surface during a release.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - name: build both architectures
+        run: docker buildx build --platform linux/amd64,linux/arm64 .

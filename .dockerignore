@@ -1,0 +1,28 @@
+# Patterns are anchored with a leading slash on purpose. An unanchored `docs`
+# or `*.md` would also strip files under backend/, and *.yaml must never be
+# ignored at all: backend/internal/openapi/openapi.yaml is go:embed-ed.
+/.git
+/.github
+/.claude
+/.cursor
+/docs
+/deploy
+/dist
+/scripts
+
+**/node_modules
+/frontend/.next
+/frontend/out
+/frontend/next-env.d.ts
+/frontend/*.tsbuildinfo
+/backend/bin
+
+**/*.test
+**/coverage.out
+**/.DS_Store
+
+/.env
+/.env.*
+!/.env.example
+/*.md
+/docker-compose*.yml

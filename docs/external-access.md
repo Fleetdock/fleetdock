@@ -12,14 +12,38 @@ The API never proxies database connections. Desired state lives in `database_end
 
 The gateway container must be able to reach `server.address:port`. This is the same requirement as live database administration and backups of external instances.
 
-## Enable the gateway (docker compose)
+## Enable the gateway
 
-1. Set in `.env`:
-   - `FLEETDOCK_GATEWAY_ENABLED=true` (already the default in compose)
-   - `FLEETDOCK_GATEWAY_PUBLIC_HOST=gateway.example.com` — DNS must resolve this to your gateway host
-   - `FLEETDOCK_GATEWAY_PORT_RANGE_START=15432` / `FLEETDOCK_GATEWAY_PORT_RANGE_END=15481`
-2. `docker compose up` starts the `gateway` (HAProxy) service and shares `/var/lib/fleetdock/gateway` with the API.
-3. On the database page → **Connectivity** → **Enable public access**, with the networks allowed to connect.
+External access is **off by default** — enabling it publishes a 50-port range on
+the host, which most installs never need.
+
+```bash
+fleetdock gateway enable
+```
+
+That sets `FLEETDOCK_GATEWAY_ENABLED=true`, activates the `gateway` compose
+profile (HAProxy plus its one-shot init, sharing `/var/lib/fleetdock/gateway`
+with the control plane), and prints the port range to open in your firewall.
+Then, on the database page → **Connectivity** → **Enable public access**, with
+the networks allowed to connect.
+
+By hand, the equivalent is `FLEETDOCK_GATEWAY_ENABLED=true` in `.env` plus
+`docker compose --profile gateway up -d`.
+
+### Hostname
+
+`FLEETDOCK_GATEWAY_PUBLIC_HOST` defaults to your main `FLEETDOCK_DOMAIN`. The
+gateway speaks raw TCP on its own ports — no vhost, no SNI, no TLS termination —
+so it needs no DNS record of its own.
+
+Set it separately in one case: when the main record cannot carry raw TCP. The
+usual culprit is a **Cloudflare-proxied ("orange cloud") record**, which forwards
+80/443 only, so every database endpoint on that name is unreachable. Point a
+grey-clouded `gw.example.com` at the host and set the variable to it.
+
+The hostname is copied into each endpoint when public access is enabled, so
+changing it later does not rewrite connection URLs already handed out — see
+`fleetdock domain`.
 
 The published port range and the allocator range come from the same variables. If you widen one, widen the other — otherwise endpoints get ports that nothing forwards, and only external clients notice.
 
@@ -106,4 +130,4 @@ HAProxy uses TCP passthrough; it does not terminate TLS. Clients negotiate TLS w
 
 ## Production
 
-Use `docker-compose.prod.yml` with an external reverse proxy for the dashboard and API. Publish the gateway port range on the gateway host and point `gateway.example.com` at it. On Linux, `network_mode: host` for the gateway service both avoids publishing a large port range and preserves real client addresses.
+Open the gateway port range in the host firewall — the control plane cannot verify reachability from outside, so this is the step that most often gets missed. On Linux, `network_mode: host` for the gateway service both avoids publishing a large port range and preserves real client addresses.

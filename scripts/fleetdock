@@ -1,0 +1,257 @@
+#!/bin/sh
+# Day-2 operations for a Fleetdock install created by install.sh.
+# Installed to /usr/local/bin/fleetdock.
+set -eu
+
+FLEETDOCK_DIR="${FLEETDOCK_DIR:-/opt/fleetdock}"
+ENV_FILE="${FLEETDOCK_DIR}/.env"
+
+[ -f "$ENV_FILE" ] || {
+  printf 'error: no Fleetdock install at %s. Set FLEETDOCK_DIR, or install with:\n  curl -sSL https://fleetdock.dev/install.sh | sh\n' "$FLEETDOCK_DIR" >&2
+  exit 1
+}
+
+dc() {
+  docker compose --project-directory "$FLEETDOCK_DIR" --env-file "$ENV_FILE" "$@"
+}
+
+getenv() { grep "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true; }
+
+setenv() {
+  # $1 = key, $2 = value. Adds the key if it is not there yet.
+  if grep -q "^$1=" "$ENV_FILE"; then
+    sed -i "s|^$1=.*|$1=$2|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+  fi
+}
+
+need_root() {
+  [ "$(id -u)" = "0" ] || { echo "error: this needs root (try sudo)" >&2; exit 1; }
+}
+
+usage() {
+  cat <<'EOF'
+Usage: fleetdock <command>
+
+  status                Container health and the control plane's readiness
+  logs [service] [-f]   Tail logs (default: everything)
+  start | stop | restart [service]
+  update [--tag <tag>]  Pull and restart on a new image tag
+  domain <hostname>     Move the dashboard to a new hostname
+  gateway enable|disable  External database access (adds/removes a port range)
+  config get <KEY> | set <KEY> <VALUE>
+  env [--reveal]        Show configuration; secrets redacted unless --reveal
+  psql                  A psql shell on the metadata database
+  shell                 A shell inside the control-plane container
+  doctor                Diagnose a broken install
+  backup-config         Archive .env and docker-compose.yml
+  uninstall [--purge]   Stop everything; --purge also deletes all data
+  version
+EOF
+}
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift || true
+
+case "$cmd" in
+  status)
+    dc ps
+    echo
+    url="$(getenv FLEETDOCK_PUBLIC_URL)"
+    if dc exec -T fleetdock wget -qO- http://127.0.0.1:8080/readyz 2>/dev/null | grep -q ready; then
+      echo "control plane: ready at ${url}"
+    else
+      echo "control plane: NOT ready — try: fleetdock logs fleetdock"
+    fi
+    echo "image tag:     $(getenv FLEETDOCK_RELEASE_TAG)"
+    ;;
+
+  logs) dc logs --tail 200 "$@" ;;
+  start) dc up -d "$@" ;;
+  stop) dc stop "$@" ;;
+  restart) dc restart "$@" ;;
+
+  update)
+    need_root
+    if [ "${1:-}" = "--tag" ]; then
+      setenv FLEETDOCK_RELEASE_TAG "${2:?--tag needs a value}"
+    fi
+    repo="${FLEETDOCK_REPO:-tajbrains/fleetdock}"
+    tag="$(getenv FLEETDOCK_RELEASE_TAG)"
+    ref="main"
+    [ "$tag" != "latest" ] && [ -n "$tag" ] && ref="$tag"
+    echo "==> Refreshing stack definition (${ref})"
+    curl -fsSL "https://raw.githubusercontent.com/${repo}/${ref}/docker-compose.yml" \
+      -o "${FLEETDOCK_DIR}/docker-compose.yml"
+    echo "==> Pulling images"
+    dc pull -q
+    echo "==> Restarting"
+    dc up -d
+    docker image prune -f >/dev/null 2>&1 || true
+    echo "Updated. Check with: fleetdock status"
+    ;;
+
+  domain)
+    need_root
+    new="${1:?usage: fleetdock domain <hostname>}"
+    old="$(getenv FLEETDOCK_DOMAIN)"
+    case "$new" in
+      http://*) scheme=http; host="${new#http://}" ;;
+      https://*) scheme=https; host="${new#https://}" ;;
+      *) scheme=https; host="$new" ;;
+    esac
+    url="${scheme}://${host}"
+    setenv FLEETDOCK_DOMAIN "$host"
+    setenv FLEETDOCK_SITE_ADDRESS "$([ "$scheme" = http ] && echo "$url" || echo "$host")"
+    setenv FLEETDOCK_PUBLIC_URL "$url"
+    setenv FLEETDOCK_CORS_ORIGIN "$url"
+    dc up -d
+    cat <<EOF
+
+Dashboard moved to ${url}.
+
+Two things do NOT move automatically:
+
+  1. Agents already enrolled still point at ${old}. The control plane cannot
+     re-point them remotely. On each managed server:
+
+       sudo sed -i 's|^FLEETDOCK_URL=.*|FLEETDOCK_URL=${url}|' \\
+         /etc/fleetdock-agent/agent.env && sudo systemctl restart fleetdock-agent
+
+     Until then, keep ${old} resolving to this host.
+
+  2. Database endpoints that already have public access keep the hostname they
+     were issued with. They keep working while ${old} resolves here. To adopt
+     the new name in issued connection URLs:
+
+       fleetdock psql -c "UPDATE database_endpoints SET external_host='${host}' WHERE external_host='${old}';"
+
+EOF
+    ;;
+
+  gateway)
+    need_root
+    case "${1:-}" in
+      enable)
+        setenv FLEETDOCK_GATEWAY_ENABLED true
+        setenv COMPOSE_PROFILES gateway
+        dc --profile gateway up -d
+        start="$(getenv FLEETDOCK_GATEWAY_PORT_RANGE_START)"; start="${start:-15432}"
+        end="$(getenv FLEETDOCK_GATEWAY_PORT_RANGE_END)"; end="${end:-15481}"
+        host="$(getenv FLEETDOCK_GATEWAY_PUBLIC_HOST)"; host="${host:-$(getenv FLEETDOCK_DOMAIN)}"
+        cat <<EOF
+
+External database access enabled on ${host}, ports ${start}-${end}.
+Open that range in the host firewall, then enable public access per database
+from its Connectivity panel.
+
+If ${host} sits behind a CDN proxy (Cloudflare's orange cloud), only 80/443
+reach this host and database endpoints will not work. Point a grey-clouded
+record here instead and set FLEETDOCK_GATEWAY_PUBLIC_HOST to it.
+EOF
+        ;;
+      disable)
+        setenv FLEETDOCK_GATEWAY_ENABLED false
+        setenv COMPOSE_PROFILES ""
+        dc --profile gateway stop gateway gateway-init 2>/dev/null || true
+        dc --profile gateway rm -f gateway gateway-init 2>/dev/null || true
+        dc up -d
+        echo "External database access disabled. Existing endpoints stop accepting connections."
+        ;;
+      *) echo "usage: fleetdock gateway enable|disable" >&2; exit 1 ;;
+    esac
+    ;;
+
+  config)
+    case "${1:-}" in
+      get) getenv "${2:?usage: fleetdock config get <KEY>}" ;;
+      set)
+        need_root
+        key="${2:?usage: fleetdock config set <KEY> <VALUE>}"
+        val="${3?usage: fleetdock config set <KEY> <VALUE>}"
+        if [ "$key" = "FLEETDOCK_ENCRYPTION_KEY" ] && [ "${FLEETDOCK_I_UNDERSTAND:-}" != "1" ]; then
+          echo "error: changing FLEETDOCK_ENCRYPTION_KEY makes every stored credential unreadable." >&2
+          echo "Rotate properly instead (see docs/OPERATIONS.md), or set FLEETDOCK_I_UNDERSTAND=1." >&2
+          exit 1
+        fi
+        setenv "$key" "$val"
+        dc up -d
+        ;;
+      *) echo "usage: fleetdock config get|set <KEY> [VALUE]" >&2; exit 1 ;;
+    esac
+    ;;
+
+  env)
+    if [ "${1:-}" = "--reveal" ]; then
+      cat "$ENV_FILE"
+    else
+      sed -E 's/^(FLEETDOCK_(JWT_SECRET|ENCRYPTION_KEY|ADMIN_PASSWORD|SMTP_PASSWORD))=.*/\1=<redacted>/' "$ENV_FILE"
+    fi
+    ;;
+
+  psql) dc exec postgres psql -U fleetdock fleetdock "$@" ;;
+  shell) dc exec fleetdock sh ;;
+
+  doctor)
+    echo "== versions =="
+    docker --version
+    docker compose version --short
+    echo
+    echo "== containers =="
+    dc ps
+    echo
+    domain="$(getenv FLEETDOCK_DOMAIN)"
+    url="$(getenv FLEETDOCK_PUBLIC_URL)"
+    echo "== dns =="
+    echo "configured domain: ${domain}"
+    resolved="$(getent hosts "$domain" 2>/dev/null | awk '{print $1}' | head -1 || true)"
+    public="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+    echo "resolves to:       ${resolved:-<unresolved>}"
+    echo "this host:         ${public:-<unknown>}"
+    if [ -n "$resolved" ] && [ -n "$public" ] && [ "$resolved" != "$public" ]; then
+      echo "  MISMATCH — certificate issuance will keep failing"
+    fi
+    echo
+    echo "== reachability =="
+    code="$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 10 "${url}/readyz" 2>/dev/null || echo failed)"
+    echo "${url}/readyz -> ${code}"
+    echo
+    echo "== disk =="
+    df -h "$FLEETDOCK_DIR" | tail -1
+    ;;
+
+  backup-config)
+    need_root
+    out="${FLEETDOCK_DIR}/fleetdock-config-$(date +%Y%m%d-%H%M%S).tar.gz"
+    tar -czf "$out" -C "$FLEETDOCK_DIR" .env docker-compose.yml
+    chmod 600 "$out"
+    echo "Wrote ${out}"
+    echo "This holds FLEETDOCK_ENCRYPTION_KEY — the only thing that can decrypt stored"
+    echo "credentials. Keep it somewhere safe and off this host."
+    ;;
+
+  uninstall)
+    need_root
+    if [ "${1:-}" = "--purge" ]; then
+      printf 'This deletes the metadata database and all certificates. Type YES to confirm: '
+      read -r confirm < /dev/tty
+      [ "$confirm" = "YES" ] || { echo "Aborted."; exit 1; }
+      dc --profile gateway down -v
+      rm -rf "$FLEETDOCK_DIR"
+      rm -f /usr/local/bin/fleetdock
+      echo "Removed."
+    else
+      dc --profile gateway down
+      echo "Stopped. Data kept in ${FLEETDOCK_DIR}; 'fleetdock uninstall --purge' deletes it."
+    fi
+    ;;
+
+  version)
+    echo "image tag: $(getenv FLEETDOCK_RELEASE_TAG)"
+    dc images fleetdock 2>/dev/null | tail -n +2 || true
+    ;;
+
+  ""|-h|--help|help) usage ;;
+  *) echo "unknown command: $cmd" >&2; usage >&2; exit 1 ;;
+esac

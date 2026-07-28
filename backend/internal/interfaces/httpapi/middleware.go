@@ -3,6 +3,7 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,9 +33,23 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap exposes the wrapped writer to http.ResponseController, which is how
+// httputil.ReverseProxy reaches Flush and Hijack. Embedding the interface does
+// not promote those methods, so without this the dashboard's streamed responses
+// would be buffered whole and protocol upgrades would fail outright.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // requestLogger assigns a request id and logs one structured line per request.
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Dashboard assets are hashed and immutable, and a single page load
+		// pulls dozens of them. Logging each one buries the API traffic that
+		// operators actually read these logs for.
+		if strings.HasPrefix(r.URL.Path, "/_next/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		start := time.Now()
 		rid := uuid.NewString()
 		w.Header().Set("X-Request-ID", rid)

@@ -41,6 +41,7 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/auth"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/crypto"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/notify"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/uiproxy"
 	"github.com/Fleetdock/fleetdock/backend/internal/worker"
 )
 
@@ -169,6 +170,25 @@ func run() error {
 		}).Run(ctx)
 	}
 
+	// Bundled dashboard: a supervised node child on loopback, fronted by this
+	// process so the whole control plane is one image, one port, one domain.
+	// Absent in dev and in the bare-binary release artifact, where ui is nil
+	// and unknown paths keep returning 404.
+	ui, err := uiproxy.New(uiproxy.Config{
+		Dir:            cfg.UIDir,
+		NodeBin:        cfg.UINodeBin,
+		Port:           cfg.UIPort,
+		StartupTimeout: cfg.UIStartupTimeout,
+	})
+	if err != nil {
+		return err
+	}
+	var uiHandler http.Handler
+	if ui != nil {
+		ui.Start(ctx)
+		uiHandler = ui.Handler()
+	}
+
 	// HTTP layer.
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Auth:              httpapi.NewAuthHandler(authSvc),
@@ -196,6 +216,7 @@ func run() error {
 		CORSOrigin:        cfg.CORSOrigin,
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
 		Ready:             pool.Ping,
+		UI:                uiHandler,
 	})
 
 	srv := &http.Server{
@@ -223,5 +244,14 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+
+	shutdownErr := srv.Shutdown(shutdownCtx)
+	if ui != nil {
+		// After srv.Shutdown, so in-flight proxied requests finish before their
+		// upstream disappears.
+		if err := ui.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("dashboard did not exit cleanly", "error", err.Error())
+		}
+	}
+	return shutdownErr
 }

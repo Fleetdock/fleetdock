@@ -52,20 +52,26 @@ Stop the API during restore to avoid concurrent writes.
 
 ## Upgrading Fleetdock
 
+### Installed with install.sh
+
+```bash
+fleetdock update              # latest
+fleetdock update --tag v0.2.0 # a specific release
+```
+
 ### Compose (build from source)
 
 ```bash
 git fetch origin
 git checkout v0.2.0   # or main for latest
-docker compose pull   # if using GHCR images
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
 Migrations run automatically on API start (`FLEETDOCK_RUN_MIGRATIONS=true`, the
 default). To apply migrations without serving traffic:
 
 ```bash
-docker compose run --rm backend /api   # or: make backend-migrate locally
+docker compose run --rm fleetdock /api   # or: make backend-migrate locally
 ```
 
 Set `FLEETDOCK_RUN_MIGRATIONS=false` only if you run migrations as a separate job.
@@ -110,11 +116,11 @@ export FLEETDOCK_ENCRYPTION_KEY_ID="master-2"
 
 ```bash
 make rotate-keys
-# or inside the backend container:
-docker compose exec backend /api  # not applicable — use migrate binary
+# or inside the control-plane container:
+docker compose exec fleetdock /api  # not applicable — use migrate binary
 docker compose run --rm -e FLEETDOCK_DATABASE_URL -e FLEETDOCK_ENCRYPTION_KEY \
   -e FLEETDOCK_ENCRYPTION_KEY_ID -e FLEETDOCK_ENCRYPTION_KEYS_OLD \
-  backend sh -c 'go run ./cmd/rotate-keys'  # if Go toolchain in image
+  fleetdock sh -c 'go run ./cmd/rotate-keys'  # if Go toolchain in image
 ```
 
 The production image contains only the compiled API. Run rotation from a checkout

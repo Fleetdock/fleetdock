@@ -1,6 +1,16 @@
 import { clearToken, getToken } from "./auth";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+// Same origin by default: one process serves both the dashboard and the API on
+// one port and one domain, so a relative path is correct in every supported
+// deployment and nothing about the host is baked into the build. In `next dev`
+// the API paths are proxied by the rewrites in next.config.mjs, so this holds
+// there too.
+//
+// NEXT_PUBLIC_API_URL remains an escape hatch for split-origin setups, where it
+// must be a full origin (https://api.example.com). Setting it still requires
+// rebuilding the bundle — Next inlines NEXT_PUBLIC_* at build time.
+const configuredOrigin = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, "");
+export const API_URL = configuredOrigin || "";
 
 export class ApiError extends Error {
   status: number;

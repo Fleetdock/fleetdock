@@ -1,14 +1,104 @@
-# Full Fleetdock stack: Postgres + Go API + Next.js frontend.
+# Fleetdock — one image, one domain, one command.
 #
-# Configuration is read from a git-ignored `.env` file in this directory
-# (see .env.example). Then:
-#   cp .env.example .env
-#   ./scripts/generate-secrets.sh >> .env
-#   docker compose up --build
-# Open http://localhost:3000 and sign in with the bootstrap admin.
+#   curl -sSL https://fleetdock.dev/install.sh | sh
+#
+# Self-contained on purpose: no bind mounts and no repo checkout, so this file
+# plus a .env beside it is a complete install. To build from source instead:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
+#
+# Requires Docker Compose >= 2.23 (inline `configs: content:` and
+# `depends_on.required`).
 name: fleetdock
 
 services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      # A bare hostname ("db.example.com") gets an automatic Let's Encrypt
+      # certificate. An explicit "http://203.0.113.10" serves plain HTTP and
+      # skips ACME entirely — install.sh writes that form when there is no DNS
+      # name to work with.
+      FLEETDOCK_SITE_ADDRESS: ${FLEETDOCK_SITE_ADDRESS:?run install.sh, or set FLEETDOCK_SITE_ADDRESS in .env}
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - caddy_data:/data # issued certificates — must persist
+      - caddy_config:/config
+    depends_on:
+      fleetdock:
+        condition: service_healthy
+
+  fleetdock:
+    image: ghcr.io/tajbrains/fleetdock:${FLEETDOCK_RELEASE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      FLEETDOCK_HTTP_ADDR: ":8080"
+      FLEETDOCK_DATABASE_URL: ${FLEETDOCK_DATABASE_URL:-postgres://fleetdock:fleetdock@postgres:5432/fleetdock?sslmode=disable}
+      FLEETDOCK_ENV: ${FLEETDOCK_ENV:-production}
+      FLEETDOCK_JWT_SECRET: ${FLEETDOCK_JWT_SECRET:?set FLEETDOCK_JWT_SECRET in .env}
+      FLEETDOCK_ENCRYPTION_KEY: ${FLEETDOCK_ENCRYPTION_KEY:?set FLEETDOCK_ENCRYPTION_KEY in .env}
+      FLEETDOCK_ADMIN_EMAIL: ${FLEETDOCK_ADMIN_EMAIL:-admin@example.com}
+      FLEETDOCK_ADMIN_PASSWORD: ${FLEETDOCK_ADMIN_PASSWORD:?set FLEETDOCK_ADMIN_PASSWORD in .env}
+      # Derived from FLEETDOCK_DOMAIN by install.sh and written to .env
+      # explicitly, so `docker compose config` shows exactly what agents will be
+      # told to connect to.
+      FLEETDOCK_PUBLIC_URL: ${FLEETDOCK_PUBLIC_URL:?set FLEETDOCK_PUBLIC_URL in .env}
+      FLEETDOCK_CORS_ORIGIN: ${FLEETDOCK_CORS_ORIGIN:-${FLEETDOCK_PUBLIC_URL}}
+      # Caddy is the only ingress and always sets X-Forwarded-For. Without this
+      # every login attempt on the internet shares one rate-limit bucket.
+      FLEETDOCK_TRUST_PROXY_HEADERS: "true"
+      FLEETDOCK_WORKER_ENABLED: ${FLEETDOCK_WORKER_ENABLED:-true}
+      FLEETDOCK_HEARTBEAT_TIMEOUT: ${FLEETDOCK_HEARTBEAT_TIMEOUT:-2m}
+      FLEETDOCK_METRICS_RETENTION: ${FLEETDOCK_METRICS_RETENTION:-168h}
+      # External database access is opt-in: the gateway lives behind the
+      # "gateway" profile, so a default install publishes 80/443 only, not a
+      # 50-port range. Enable with `fleetdock gateway enable`.
+      FLEETDOCK_GATEWAY_ENABLED: ${FLEETDOCK_GATEWAY_ENABLED:-false}
+      # Defaults to the main domain — the gateway speaks raw TCP on its own
+      # ports, so it needs no vhost, no SNI and no DNS record of its own.
+      # Override it if the main record is proxied by a CDN (Cloudflare's orange
+      # cloud passes 80/443 only, which would kill every database endpoint).
+      FLEETDOCK_GATEWAY_PUBLIC_HOST: ${FLEETDOCK_GATEWAY_PUBLIC_HOST:-${FLEETDOCK_DOMAIN:-localhost}}
+      FLEETDOCK_GATEWAY_PORT_RANGE_START: ${FLEETDOCK_GATEWAY_PORT_RANGE_START:-15432}
+      FLEETDOCK_GATEWAY_PORT_RANGE_END: ${FLEETDOCK_GATEWAY_PORT_RANGE_END:-15481}
+      FLEETDOCK_GATEWAY_DIAG_PORT: ${FLEETDOCK_GATEWAY_DIAG_PORT:-15431}
+      FLEETDOCK_GATEWAY_SOURCE_IP_MODE: ${FLEETDOCK_GATEWAY_SOURCE_IP_MODE:-direct}
+      FLEETDOCK_GATEWAY_CONFIG_PATH: /var/lib/fleetdock/gateway/haproxy.cfg
+      FLEETDOCK_GATEWAY_MASTER_SOCKET: /var/lib/fleetdock/gateway/haproxy-master.sock
+      FLEETDOCK_GATEWAY_ADMIN_SOCKET: /var/lib/fleetdock/gateway/haproxy-admin.sock
+      FLEETDOCK_SMTP_HOST: ${FLEETDOCK_SMTP_HOST:-}
+      FLEETDOCK_SMTP_PORT: ${FLEETDOCK_SMTP_PORT:-587}
+      FLEETDOCK_SMTP_USERNAME: ${FLEETDOCK_SMTP_USERNAME:-}
+      FLEETDOCK_SMTP_PASSWORD: ${FLEETDOCK_SMTP_PASSWORD:-}
+      FLEETDOCK_SMTP_FROM: ${FLEETDOCK_SMTP_FROM:-fleetdock@localhost}
+    volumes:
+      - gateway_data:/var/lib/fleetdock/gateway
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+        # required:false so a managed-Postgres install can scale it to zero.
+        required: false
+      gateway:
+        # required:false is mandatory here, not optional: without it Compose
+        # refuses to start at all whenever the "gateway" profile is inactive.
+        # Dropping the hard dependency is safe — the worker re-runs gateway
+        # reconciliation on its periodic tick, so a late or absent HAProxy
+        # self-heals rather than wedging.
+        condition: service_healthy
+        required: false
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -24,79 +114,46 @@ services:
       timeout: 5s
       retries: 5
 
-  backend:
-    build: ./backend
-    restart: unless-stopped
-    environment:
-      FLEETDOCK_HTTP_ADDR: ":8080"
-      FLEETDOCK_DATABASE_URL: ${FLEETDOCK_DATABASE_URL:-postgres://fleetdock:fleetdock@postgres:5432/fleetdock?sslmode=disable}
-      FLEETDOCK_ENV: ${FLEETDOCK_ENV:-development}
-      FLEETDOCK_JWT_SECRET: ${FLEETDOCK_JWT_SECRET:?set FLEETDOCK_JWT_SECRET in .env}
-      FLEETDOCK_ADMIN_EMAIL: ${FLEETDOCK_ADMIN_EMAIL:-admin@example.com}
-      FLEETDOCK_ADMIN_PASSWORD: ${FLEETDOCK_ADMIN_PASSWORD:?set FLEETDOCK_ADMIN_PASSWORD in .env}
-      FLEETDOCK_CORS_ORIGIN: ${FLEETDOCK_CORS_ORIGIN:-http://localhost:3000}
-      FLEETDOCK_ENCRYPTION_KEY: ${FLEETDOCK_ENCRYPTION_KEY:?set FLEETDOCK_ENCRYPTION_KEY in .env}
-      FLEETDOCK_PUBLIC_URL: ${FLEETDOCK_PUBLIC_URL:-http://localhost:8080}
-      FLEETDOCK_TRUST_PROXY_HEADERS: ${FLEETDOCK_TRUST_PROXY_HEADERS:-false}
-      FLEETDOCK_WORKER_ENABLED: ${FLEETDOCK_WORKER_ENABLED:-true}
-      FLEETDOCK_HEARTBEAT_TIMEOUT: ${FLEETDOCK_HEARTBEAT_TIMEOUT:-2m}
-      FLEETDOCK_METRICS_RETENTION: ${FLEETDOCK_METRICS_RETENTION:-168h}
-      # The compose stack ships a gateway container, so public access is
-      # available by default here. A bare binary has no gateway, which is why
-      # config.go defaults this to false instead.
-      FLEETDOCK_GATEWAY_ENABLED: ${FLEETDOCK_GATEWAY_ENABLED:-true}
-      FLEETDOCK_GATEWAY_PUBLIC_HOST: ${FLEETDOCK_GATEWAY_PUBLIC_HOST:-gateway.localhost}
-      FLEETDOCK_GATEWAY_PORT_RANGE_START: ${FLEETDOCK_GATEWAY_PORT_RANGE_START:-15432}
-      FLEETDOCK_GATEWAY_PORT_RANGE_END: ${FLEETDOCK_GATEWAY_PORT_RANGE_END:-15481}
-      FLEETDOCK_GATEWAY_DIAG_PORT: ${FLEETDOCK_GATEWAY_DIAG_PORT:-15431}
-      FLEETDOCK_GATEWAY_SOURCE_IP_MODE: ${FLEETDOCK_GATEWAY_SOURCE_IP_MODE:-direct}
-      FLEETDOCK_GATEWAY_CONFIG_PATH: ${FLEETDOCK_GATEWAY_CONFIG_PATH:-/var/lib/fleetdock/gateway/haproxy.cfg}
-      FLEETDOCK_GATEWAY_MASTER_SOCKET: ${FLEETDOCK_GATEWAY_MASTER_SOCKET:-/var/lib/fleetdock/gateway/haproxy-master.sock}
-      FLEETDOCK_GATEWAY_ADMIN_SOCKET: ${FLEETDOCK_GATEWAY_ADMIN_SOCKET:-/var/lib/fleetdock/gateway/haproxy-admin.sock}
-      FLEETDOCK_SMTP_HOST: ${FLEETDOCK_SMTP_HOST:-}
-      FLEETDOCK_SMTP_PORT: ${FLEETDOCK_SMTP_PORT:-587}
-      FLEETDOCK_SMTP_USERNAME: ${FLEETDOCK_SMTP_USERNAME:-}
-      FLEETDOCK_SMTP_PASSWORD: ${FLEETDOCK_SMTP_PASSWORD:-}
-      FLEETDOCK_SMTP_FROM: ${FLEETDOCK_SMTP_FROM:-fleetdock@localhost}
-    volumes:
-      - gateway_data:/var/lib/fleetdock/gateway
-    ports:
-      - "8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      gateway:
-        # service_started only means the container was created; the API would
-        # try to reload a gateway that has not bound its socket yet.
-        condition: service_healthy
-
   gateway-init:
-    image: alpine:3.20
+    image: alpine:3.22
+    profiles: ["gateway"]
+    restart: "no"
     volumes:
       - gateway_data:/var/lib/fleetdock/gateway
-      - ./deploy/haproxy-bootstrap.cfg:/bootstrap/haproxy.cfg:ro
+    configs:
+      - source: haproxy_bootstrap
+        target: /bootstrap/haproxy.cfg
     command:
       - sh
       - -c
       - |
         mkdir -p /var/lib/fleetdock/gateway
-        if [ ! -f /var/lib/fleetdock/gateway/haproxy.cfg ]; then
-          cp /bootstrap/haproxy.cfg /var/lib/fleetdock/gateway/haproxy.cfg
-        fi
+        [ -f /var/lib/fleetdock/gateway/haproxy.cfg ] \
+          || cp /bootstrap/haproxy.cfg /var/lib/fleetdock/gateway/haproxy.cfg
         chown -R 1000:1000 /var/lib/fleetdock/gateway
         chmod 775 /var/lib/fleetdock/gateway
-    restart: "no"
 
   gateway:
     image: haproxy:3.0-alpine
+    profiles: ["gateway"]
     restart: unless-stopped
-    # Must match the uid the API runs as (backend/Dockerfile): both write to
-    # the shared volume, and the API connects to HAProxy's sockets.
+    # Must match the uid the control plane runs as: both write the shared
+    # volume, and the control plane connects to HAProxy's sockets.
     user: "1000:1000"
     depends_on:
       gateway-init:
         condition: service_completed_successfully
-    command: ["haproxy", "-W", "-f", "/var/lib/fleetdock/gateway/haproxy.cfg", "-S", "/var/lib/fleetdock/gateway/haproxy-master.sock", "-p", "/var/lib/fleetdock/gateway/haproxy.pid"]
+    command:
+      [
+        "haproxy",
+        "-W",
+        "-f",
+        "/var/lib/fleetdock/gateway/haproxy.cfg",
+        "-S",
+        "/var/lib/fleetdock/gateway/haproxy-master.sock",
+        "-p",
+        "/var/lib/fleetdock/gateway/haproxy.pid",
+      ]
     volumes:
       - gateway_data:/var/lib/fleetdock/gateway
     ports:
@@ -113,17 +170,53 @@ services:
       retries: 5
       start_period: 5s
 
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
+configs:
+  caddyfile:
+    # $$ escapes Compose interpolation so Caddy receives its own {$VAR}
+    # placeholders. A single $ would be substituted here, leaving Caddy a
+    # literal {db.example.com} and a parse error.
+    #
+    # No global `email` option on purpose. Caddy registers an ACME account
+    # without one, and an empty argument to `email` is a parse error that takes
+    # the whole proxy down — which is what happens the moment the variable is
+    # present but blank, as Compose passes it. Expiry notices are not worth that
+    # failure mode; renewal is automatic regardless.
+    content: |
+      {$$FLEETDOCK_SITE_ADDRESS} {
+      	encode zstd gzip
+      	# No path splitting: the Go binary is the single front door. It serves
+      	# /v1, /agent, /healthz, /readyz, /docs, /openapi.yaml and /install.sh
+      	# in-process and proxies everything else to the bundled dashboard.
+      	reverse_proxy fleetdock:8080
+      }
+
+  haproxy_bootstrap:
+    # Seeded into the gateway volume on first start only; the control plane
+    # rewrites haproxy.cfg and reloads whenever endpoints change. Keep in sync
+    # with Generate() in backend/internal/platform/gateway/gateway.go and with
+    # deploy/haproxy-bootstrap.cfg.
+    content: |
+      global
+        log stdout format raw local0
+        maxconn 50000
+        stats socket /var/lib/fleetdock/gateway/haproxy-admin.sock mode 660 level admin expose-fd listeners
+        stats timeout 30s
+
+      defaults
+        mode tcp
+        log global
+        option tcplog
+        timeout connect 10s
+        timeout client  1h
+        timeout server  1h
+
+      frontend fe_gateway_health
+        bind *:8404
+        mode http
+        http-request return status 200
 
 volumes:
   postgres_data:
   gateway_data:
+  caddy_data:
+  caddy_config:

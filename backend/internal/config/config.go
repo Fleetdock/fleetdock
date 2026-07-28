@@ -50,6 +50,19 @@ type Config struct {
 	PublicURL string
 	// AgentBinDir holds cross-compiled agent binaries served to installers.
 	AgentBinDir string
+
+	// UIDir is the Next.js standalone bundle of the dashboard, which this
+	// process runs as a child and fronts on the same port. Empty — the default,
+	// and the case for a bare binary or a dev run — means no dashboard is
+	// bundled and unknown paths keep returning 404. The container image sets it.
+	UIDir string
+	// UIPort is the loopback port the dashboard binds. Never published.
+	UIPort int
+	// UINodeBin is the node executable used to run the dashboard.
+	UINodeBin string
+	// UIStartupTimeout bounds the wait for the dashboard's first listen before
+	// the API starts serving anyway (with 503s on dashboard paths).
+	UIStartupTimeout time.Duration
 	// WorkerEnabled runs the in-process operations worker (external
 	// instances, offline detection).
 	WorkerEnabled bool
@@ -171,6 +184,12 @@ func Load() (Config, error) {
 		EncryptionKeysOld: parseKeyList(os.Getenv("FLEETDOCK_ENCRYPTION_KEYS_OLD")),
 		PublicURL:         getenv("FLEETDOCK_PUBLIC_URL", "http://localhost:8080"),
 		AgentBinDir:       getenv("FLEETDOCK_AGENT_BIN_DIR", "/opt/fleetdock/agents"),
+
+		UIDir:            os.Getenv("FLEETDOCK_UI_DIR"),
+		UIPort:           getenvInt("FLEETDOCK_UI_PORT", 3000),
+		UINodeBin:        getenv("FLEETDOCK_UI_NODE_BIN", "node"),
+		UIStartupTimeout: getenvDuration("FLEETDOCK_UI_STARTUP_TIMEOUT", 45*time.Second),
+
 		WorkerEnabled:     getenvBool("FLEETDOCK_WORKER_ENABLED", true),
 		HeartbeatTimeout:  getenvDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", 2*time.Minute),
 		MetricsRetention:  getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
