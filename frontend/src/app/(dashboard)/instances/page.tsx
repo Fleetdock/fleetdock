@@ -266,6 +266,15 @@ export default function InstancesPage() {
   );
 }
 
+const ENGINE_DEFAULTS: Record<
+  string,
+  { version: string; port: string; adminUser: string }
+> = {
+  mariadb: { version: "11.4", port: "3306", adminUser: "root" },
+  mysql: { version: "8.4", port: "3306", adminUser: "root" },
+  postgres: { version: "16", port: "5432", adminUser: "postgres" },
+};
+
 function AddInstanceModal({
   open,
   onClose,
@@ -280,6 +289,7 @@ function AddInstanceModal({
   const [serverId, setServerId] = useState("");
   const [host, setHost] = useState("");
   const [name, setName] = useState("");
+  const [engine, setEngine] = useState("mariadb");
   const [version, setVersion] = useState("11.4");
   const [port, setPort] = useState("3306");
   const [username, setUsername] = useState("");
@@ -294,6 +304,15 @@ function AddInstanceModal({
     setError(null);
   }
 
+  function onEngineChange(next: string) {
+    setEngine(next);
+    const d = ENGINE_DEFAULTS[next];
+    if (d) {
+      setVersion(d.version);
+      setPort(d.port);
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -303,7 +322,7 @@ function AddInstanceModal({
         server_id: kind === "managed" ? serverId : undefined,
         host: kind === "external" ? host : undefined,
         name,
-        engine: "mariadb",
+        engine,
         engine_version: version,
         port: Number(port),
         username: username || undefined,
@@ -364,15 +383,31 @@ function AddInstanceModal({
             />
           </Field>
         )}
-        <Field label="Name">
-          <input
-            className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="primary"
-            required
-          />
-        </Field>
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}
+        >
+          <Field label="Name">
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="primary"
+              required
+            />
+          </Field>
+          <Field label="Engine">
+            <select
+              className="input"
+              value={engine}
+              onChange={(e) => onEngineChange(e.target.value)}
+            >
+              <option value="mariadb">MariaDB</option>
+              <option value="mysql">MySQL</option>
+              <option value="postgres">PostgreSQL</option>
+            </select>
+          </Field>
+        </div>
         <div
           className="grid"
           style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}
@@ -382,7 +417,7 @@ function AddInstanceModal({
               className="input"
               value={version}
               onChange={(e) => setVersion(e.target.value)}
-              placeholder="11.4"
+              placeholder={ENGINE_DEFAULTS[engine]?.version ?? "11.4"}
               required
             />
           </Field>
@@ -405,7 +440,7 @@ function AddInstanceModal({
               className="input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="root"
+              placeholder={ENGINE_DEFAULTS[engine]?.adminUser ?? "root"}
               autoComplete="off"
             />
           </Field>
