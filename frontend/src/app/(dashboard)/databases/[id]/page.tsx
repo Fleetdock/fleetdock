@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useRef, useState, type FormEvent } from "react";
 
-import { ArrowRightLeft, ChevronRight, Download, KeyRound, Play, Plus, Table2, TerminalSquare, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, ChevronRight, Download, Folder, KeyRound, Play, Plus, Table2, TerminalSquare, Trash2, X } from "lucide-react";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import { ConnectivitySection, CredentialsSection } from "@/components/connectivity";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
@@ -71,12 +71,13 @@ function DatabaseDetail() {
   const [moveOpen, setMoveOpen] = useState(false);
 
   // View state lives in the URL so the browser back button steps
-  // data browser -> tables list -> databases list.
+  // data browser -> tables list -> schema list -> databases list.
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
   const tabParam = sp.get("tab");
   const tab = tabParam === "users" ? "users" : tabParam === "query" ? "query" : "tables";
+  const schema = sp.get("schema");
   const table = sp.get("table");
   const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
 
@@ -147,19 +148,19 @@ function DatabaseDetail() {
       <div className="flex items-center gap-2" style={{ marginBottom: ".9rem" }}>
         <button
           className={`btn btn-sm${tab === "tables" ? " btn-primary" : ""}`}
-          onClick={() => navigate({ tab: null, table: null, page: null })}
+          onClick={() => navigate({ tab: null, schema: null, table: null, page: null })}
         >
           Tables
         </button>
         <button
           className={`btn btn-sm${tab === "query" ? " btn-primary" : ""}`}
-          onClick={() => navigate({ tab: "query", table: null, page: null })}
+          onClick={() => navigate({ tab: "query", schema: null, table: null, page: null })}
         >
           <TerminalSquare size={15} /> SQL console
         </button>
         <button
           className={`btn btn-sm${tab === "users" ? " btn-primary" : ""}`}
-          onClick={() => navigate({ tab: "users", table: null, page: null })}
+          onClick={() => navigate({ tab: "users", schema: null, table: null, page: null })}
         >
           Users & grants
         </button>
@@ -183,7 +184,13 @@ function DatabaseDetail() {
           onClose={() => navigate({ table: null, page: null })}
         />
       ) : (
-        <TablesSection databaseId={id} onOpen={(t) => navigate({ table: t, page: null })} />
+        <TablesBrowser
+          databaseId={id}
+          schema={schema}
+          onOpenSchema={(s) => navigate({ schema: s, table: null, page: null })}
+          onCloseSchema={() => navigate({ schema: null, table: null, page: null })}
+          onOpenTable={(t) => navigate({ table: t, page: null })}
+        />
       )}
       <DeleteDatabaseModal
         database={deleteOpen ? db : null}
@@ -305,34 +312,210 @@ function compareTables(a: TableInfo, b: TableInfo, key: string) {
     - (b[key as "row_count" | "data_bytes" | "index_bytes"] as number);
 }
 
-function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (table: string) => void }) {
+type SchemaSummary = {
+  name: string;
+  tables: number;
+  row_count: number;
+  data_bytes: number;
+  index_bytes: number;
+};
+
+function compareSchemas(a: SchemaSummary, b: SchemaSummary, key: string) {
+  if (key === "name") return a.name.localeCompare(b.name);
+  return (a[key as "tables" | "row_count" | "data_bytes" | "index_bytes"]
+    - b[key as "tables" | "row_count" | "data_bytes" | "index_bytes"]);
+}
+
+// TablesBrowser owns the table list for the whole tab. A PostgreSQL database
+// can spread its tables over several schemas, and a flat list mixes them into
+// an ambiguous pile — same table name, different schema. When there is more
+// than one schema the browser inserts a schema-picking step; when there is only
+// one (always the case on MySQL/MariaDB, where a schema *is* a database) it
+// goes straight to the tables and nothing about the old flow changes.
+function TablesBrowser({
+  databaseId,
+  schema,
+  onOpenSchema,
+  onCloseSchema,
+  onOpenTable,
+}: {
+  databaseId: string;
+  schema: string | null;
+  onOpenSchema: (schema: string) => void;
+  onCloseSchema: () => void;
+  onOpenTable: (table: string) => void;
+}) {
   const { data, isLoading, error } = useTables(databaseId);
+  const items = useMemo(() => data?.items ?? [], [data]);
+
+  const schemas = useMemo(() => {
+    const by = new Map<string, SchemaSummary>();
+    for (const t of items) {
+      const name = t.schema || "";
+      let s = by.get(name);
+      if (!s) {
+        s = { name, tables: 0, row_count: 0, data_bytes: 0, index_bytes: 0 };
+        by.set(name, s);
+      }
+      s.tables += 1;
+      s.row_count += t.row_count;
+      s.data_bytes += t.data_bytes;
+      s.index_bytes += t.index_bytes;
+    }
+    return [...by.values()];
+  }, [items]);
+
+  const multiSchema = schemas.length > 1;
+
+  if (multiSchema && !schema) {
+    return (
+      <SchemaList
+        schemas={schemas}
+        isLoading={isLoading}
+        error={error ? (error as ApiError).message : undefined}
+        onOpen={onOpenSchema}
+      />
+    );
+  }
+
+  return (
+    <TablesSection
+      items={multiSchema ? items.filter((t) => t.schema === schema) : items}
+      isLoading={isLoading}
+      error={error ? (error as ApiError).message : undefined}
+      schema={multiSchema ? schema : null}
+      onCloseSchema={onCloseSchema}
+      onOpen={onOpenTable}
+    />
+  );
+}
+
+function SchemaList({
+  schemas,
+  isLoading,
+  error,
+  onOpen,
+}: {
+  schemas: SchemaSummary[];
+  isLoading: boolean;
+  error?: string;
+  onOpen: (schema: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const table = useDataTable({
+    items: schemas,
+    search: { query: search, match: (s, q) => s.name.toLowerCase().includes(q) },
+    sort: {
+      key: "name",
+      dir: "asc",
+      compare: compareSchemas,
+      defaultDir: (key) => (key === "name" ? "asc" : "desc"),
+    },
+  });
+
+  return (
+    <DataTable<SchemaSummary>
+      columns={[
+        {
+          id: "name",
+          header: "Schema",
+          sortable: true,
+          sortKey: "name",
+          className: "font-medium flex items-center gap-2",
+          render: (s) => (
+            <>
+              <Folder size={15} /> {s.name}
+            </>
+          ),
+        },
+        {
+          id: "tables",
+          header: "Tables",
+          sortable: true,
+          sortKey: "tables",
+          className: "muted",
+          render: (s) => s.tables.toLocaleString(),
+        },
+        {
+          id: "row_count",
+          header: "Rows (est.)",
+          sortable: true,
+          sortKey: "row_count",
+          className: "muted",
+          render: (s) => s.row_count.toLocaleString(),
+        },
+        {
+          id: "data_bytes",
+          header: "Size",
+          sortable: true,
+          sortKey: "data_bytes",
+          className: "muted",
+          render: (s) => formatBytes(s.data_bytes + s.index_bytes),
+        },
+        {
+          id: "actions",
+          header: "",
+          align: "right",
+          render: (s) => (
+            <button className="btn btn-ghost btn-sm" onClick={() => onOpen(s.name)}>
+              Open <ChevronRight size={15} />
+            </button>
+          ),
+        },
+      ]}
+      rows={table.rows}
+      rowKey={(s) => s.name}
+      isLoading={isLoading}
+      loadingLabel="Connecting to instance…"
+      error={error}
+      errorTitle="Could not reach the instance"
+      emptyTitle="No schemas"
+      emptyHint="This database has no tables yet."
+      emptySearchTitle="No schemas match your search"
+      emptySearchHint="Try a different name or clear the search."
+      search={{
+        value: search,
+        onChange: (v) => {
+          setSearch(v);
+          table.setPage(1);
+        },
+        placeholder: "Search schemas…",
+      }}
+      sort={{ key: table.sortKey, dir: table.sortDir, onSort: table.setSort }}
+      pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
+    />
+  );
+}
+
+function TablesSection({
+  items,
+  isLoading,
+  error,
+  schema,
+  onCloseSchema,
+  onOpen,
+}: {
+  items: TableInfo[];
+  isLoading: boolean;
+  error?: string;
+  schema: string | null;
+  onCloseSchema: () => void;
+  onOpen: (table: string) => void;
+}) {
   const [search, setSearch] = useState("");
 
-  // A PostgreSQL database can spread its tables over several schemas, in which
-  // case a bare table name is ambiguous: show the schema and address tables as
-  // "schema.table". MySQL/MariaDB always report a single schema (the database),
-  // so the column stays hidden and names stay bare.
-  const schemas = useMemo(
-    () => new Set((data?.items ?? []).map((t) => t.schema).filter(Boolean)),
-    [data],
-  );
-  const multiSchema = schemas.size > 1;
-  const qualify = (t: TableInfo) => (multiSchema ? `${t.schema}.${t.name}` : t.name);
+  // Inside a schema the name is unambiguous on screen, but the browse and
+  // export APIs still need the qualified form to resolve it.
+  const qualify = (t: TableInfo) => (schema ? `${t.schema}.${t.name}` : t.name);
 
   const table = useDataTable({
-    items: data?.items,
-    search: {
-      query: search,
-      match: (t, q) =>
-        t.name.toLowerCase().includes(q) ||
-        (multiSchema && qualify(t).toLowerCase().includes(q)),
-    },
+    items,
+    search: { query: search, match: (t, q) => t.name.toLowerCase().includes(q) },
     sort: {
       key: "name",
       dir: "asc",
       compare: compareTables,
-      defaultDir: (key) => (key === "name" || key === "engine" || key === "schema" ? "asc" : "desc"),
+      defaultDir: (key) => (key === "name" || key === "engine" ? "asc" : "desc"),
     },
   });
 
@@ -351,18 +534,6 @@ function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (ta
             </>
           ),
         },
-        ...(multiSchema
-          ? [
-              {
-                id: "schema",
-                header: "Schema",
-                sortable: true,
-                sortKey: "schema",
-                className: "muted",
-                render: (t: TableInfo) => t.schema,
-              } satisfies DataTableColumn<TableInfo>,
-            ]
-          : []),
         { id: "engine", header: "Engine", sortable: true, sortKey: "engine", className: "muted", render: (t) => t.engine },
         {
           id: "row_count",
@@ -403,19 +574,35 @@ function TablesSection({ databaseId, onOpen }: { databaseId: string; onOpen: (ta
       rowKey={(t) => `${t.schema}.${t.name}`}
       isLoading={isLoading}
       loadingLabel="Connecting to instance…"
-      error={error ? (error as ApiError).message : undefined}
+      error={error}
       errorTitle="Could not reach the instance"
       emptyTitle="No tables"
-      emptyHint="This database has no base tables yet."
+      emptyHint={
+        schema
+          ? `Schema "${schema}" has no base tables.`
+          : "This database has no base tables yet."
+      }
       emptySearchTitle="No tables match your search"
       emptySearchHint="Try a different name or clear the search."
+      toolbar={
+        schema ? (
+          <div className="flex items-center gap-2">
+            <button className="btn btn-sm" onClick={onCloseSchema}>
+              <X size={15} /> All schemas
+            </button>
+            <span className="muted text-sm flex items-center gap-1">
+              <Folder size={14} /> {schema}
+            </span>
+          </div>
+        ) : undefined
+      }
       search={{
         value: search,
         onChange: (v) => {
           setSearch(v);
           table.setPage(1);
         },
-        placeholder: "Search tables…",
+        placeholder: schema ? `Search tables in ${schema}…` : "Search tables…",
       }}
       sort={{ key: table.sortKey, dir: table.sortDir, onSort: table.setSort }}
       pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
