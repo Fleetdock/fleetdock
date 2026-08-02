@@ -31,7 +31,7 @@ jobs:
       # Emits both v-prefixed and bare tags, so the FLEETDOCK_RELEASE_TAG in the
       # docs works either way. The old hand-rolled ${GITHUB_REF_NAME#v} pushed
       # only the bare form while the docs said to use the v-prefixed one.
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ steps.images.outputs.image }}
