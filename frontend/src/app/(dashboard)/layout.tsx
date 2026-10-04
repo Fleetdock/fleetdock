@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { CommandPalette } from "@/components/command-palette";
@@ -18,6 +18,7 @@ function OperationToasts() {
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const closeNav = useCallback(() => setNavOpen(false), []);
@@ -42,7 +43,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <Sidebar open={navOpen} onClose={closeNav} />
       <div className="flex flex-col" style={{ flex: 1, minWidth: 0 }}>
         <Topbar onOpenNav={() => setNavOpen(true)} />
-        <main id="main" className="app-main" tabIndex={-1}>
+        <main
+          id="main"
+          // The Data Browser is a full-bleed workspace with its own scrolling panes.
+          className={pathname === "/data" ? "app-main app-main-wide" : "app-main"}
+          tabIndex={-1}
+        >
           {children}
         </main>
       </div>

@@ -4,6 +4,7 @@ const SECTIONS = [
   ["Overview", "/dashboard", "Overview"],
   ["Servers", "/servers", "Servers"],
   ["Databases", "/databases", "Databases"],
+  ["Data browser", "/data", "Data browser"],
   ["Backups", "/backups", "Backup history"],
   ["Activity", "/activity", "Activity"],
   ["Access", "/access/users", "Users"],

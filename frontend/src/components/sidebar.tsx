@@ -18,7 +18,7 @@ export function useVisibleSections(): NavSection[] {
 }
 
 /**
- * Sidebar lists the seven sections. On wide screens it is always visible; on
+ * Sidebar lists the eight sections. On wide screens it is always visible; on
  * mid-size screens it shrinks to an icon rail; on phones it is a drawer opened
  * from the topbar and closed by navigating, tapping outside or Esc.
  */

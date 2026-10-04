@@ -6,6 +6,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  Table2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,7 +39,7 @@ export type NavSection = {
 const backupRead: Requirement[] = [{ perm: "backup:read", scoped: true }];
 
 /**
- * NAV is the whole dashboard structure: seven sections, each a set of pages.
+ * NAV is the whole dashboard structure: eight sections, each a set of pages.
  * The sidebar, section tabs, breadcrumbs and command palette all derive from it.
  */
 export const NAV: NavSection[] = [
@@ -70,6 +71,20 @@ export const NAV: NavSection[] = [
           { perm: "instance:read", scoped: true },
         ],
         keywords: "database servers instances mysql mariadb postgres tables sql console",
+      },
+    ],
+  },
+  {
+    label: "Data browser",
+    Icon: Table2,
+    href: "/data",
+    match: ["/data"],
+    pages: [
+      {
+        href: "/data",
+        label: "Data browser",
+        requires: [{ perm: "database:read", scoped: true }],
+        keywords: "tables rows views browse grid edit data sql query",
       },
     ],
   },

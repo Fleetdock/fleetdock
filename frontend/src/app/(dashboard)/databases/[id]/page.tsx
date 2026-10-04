@@ -26,7 +26,7 @@ import { formatBytes as formatBytesOr } from "@/lib/format";
 
 import { useCanOn, useDatabase } from "@/lib/hooks";
 
-import { ArrowRightLeft, FileUp, TerminalSquare, Trash2 } from "lucide-react";
+import { ArrowRightLeft, FileUp, Table2, Trash2 } from "lucide-react";
 
 const formatBytes = (n: number) => formatBytesOr(n, "0 B");
 
@@ -126,6 +126,14 @@ function DatabaseDetail() {
         }
         actions={
           <>
+          {hasCreds ? (
+            <Link
+              className="btn btn-sm btn-primary"
+              href={`/data?db=${encodeURIComponent(id)}${table ? `&table=${encodeURIComponent(table)}` : ""}`}
+            >
+              <Table2 size={15} /> Open in Data Browser
+            </Link>
+          ) : null}
           {canMove && !db.system ? (
             <button className="btn btn-sm" onClick={() => setMoveOpen(true)}>
               <ArrowRightLeft size={15} /> Copy / move

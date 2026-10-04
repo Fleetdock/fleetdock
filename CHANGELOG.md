@@ -52,6 +52,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Data Browser** (`/data`, `g t`). A workspace for working with data like
+  a desktop database manager: pick a database, find its tables and views in
+  a searchable sidebar (grouped by schema), and open each one in its own tab.
+  A single click previews a table, a double click keeps it open; tabs can be
+  reordered, closed in bulk and are restored on the next visit with their
+  filters, sort, page and column widths. The grid has sticky headers,
+  resizable columns, multi-column sort, keyboard navigation, copying as
+  TSV/JSON/INSERT, a value panel for long and JSON values, and one-click jumps
+  along foreign keys. Edits are made in place — change cells, add, duplicate
+  and delete rows — and stay pending, highlighted, until saved with
+  Ctrl+S; the SQL can be reviewed first, and rows that fail stay on screen
+  with the reason. SQL console tabs and the structure editor live in the
+  same workspace.
+
 - **Automatic discovery.** Every minute Fleetdock checks each database server
   it can log in to and keeps its database list in sync: new databases appear
   on their own (labelled `discovered`), databases dropped outside Fleetdock

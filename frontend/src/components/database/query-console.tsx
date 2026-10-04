@@ -41,13 +41,16 @@ type Panel = "none" | "history" | "saved";
 export function QueryConsole({
   databaseId,
   canWrite,
+  initialSql = "",
 }: {
   databaseId: string;
   canWrite: boolean;
+  /** Text the editor starts with (a Data Browser "New query on this table"). */
+  initialSql?: string;
 }) {
   const run = useRunQuery(databaseId);
   const editorRef = useRef<SqlEditorHandle>(null);
-  const [sql, setSql] = useState("");
+  const [sql, setSql] = useState(initialSql);
   const [ranSql, setRanSql] = useState("");
   const [output, setOutput] = useState<QueryOutput | null>(null);
   const [error, setError] = useState<string | null>(null);

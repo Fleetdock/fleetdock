@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback } from "react";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, download } from "../api";
@@ -31,6 +33,7 @@ import type {
   TableSchema,
   RunQueryInput,
 } from "../types";
+import type { Mutation, MutationResult } from "../data-browser/pending";
 import { pageQS } from "./core";
 
 // ---- Databases ----
@@ -444,6 +447,36 @@ export function useRowMutations(databaseId: string, table: string) {
     onSuccess: invalidate,
   });
   return { insert, update, remove, importCSV };
+}
+
+// useApplyRowChanges sends a Data Browser tab's pending edits through the row
+// endpoints, one row at a time (each in its own transaction server-side), and
+// reports every outcome so failures can stay on screen. The table is
+// refreshed once at the end rather than after every row.
+export function useApplyRowChanges(databaseId: string, table: string) {
+  const qc = useQueryClient();
+  return useCallback(
+    async (mutations: Mutation[]): Promise<MutationResult[]> => {
+      const path = rowsPath(databaseId, table);
+      const results: MutationResult[] = [];
+      for (const m of mutations) {
+        try {
+          if (m.kind === "delete") await api.post<void>(`${path}/delete`, { key: m.key });
+          else if (m.kind === "update") await api.patch<void>(path, { key: m.key, values: m.values });
+          else await api.post<void>(path, { values: m.values });
+          results.push({ kind: m.kind, id: m.id, ok: true });
+        } catch (err) {
+          results.push({ kind: m.kind, id: m.id, ok: false, error: err instanceof Error ? err.message : "Failed" });
+        }
+      }
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["browse-rows", databaseId, table] }),
+        qc.invalidateQueries({ queryKey: ["tables", databaseId] }),
+      ]);
+      return results;
+    },
+    [qc, databaseId, table],
+  );
 }
 
 // ---- Structure ----
