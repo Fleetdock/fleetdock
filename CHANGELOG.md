@@ -7,6 +7,178 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Least-privilege console roles.** The SQL console, table browser, CSV
+  export, data editing and structure editing no longer run as the instance's
+  admin (root) account. Each database gets a Fleetdock-managed read-only role
+  (`fleetdock_ro_<id>`) and read-write role (`fleetdock_rw_<id>`), created on
+  first use and confined by the engine to that one database: other databases,
+  `mysql.user` / `pg_authid`, server files (`LOAD_FILE`, `INTO OUTFILE`,
+  `pg_read_file`), account management and global settings are out of reach.
+  PostgreSQL read roles default to read-only transactions. Roles are dropped
+  with their database. Verified by integration tests against MariaDB 11.4,
+  MySQL 8.4 and PostgreSQL 16.
+- **System databases** (`mysql`, `sys`, `postgres`) can only be opened in the
+  console/browser by users with `instance:write`.
+- **SSRF guard for database hosts.** Instance hosts (and addresses reported by
+  agents) are checked at save time and again at dial time: loopback,
+  link-local, cloud-metadata addresses and the control plane's own metadata
+  database are refused. Loopback is allowed in development
+  (`FLEETDOCK_ALLOW_LOOPBACK_DB_HOSTS`). Connection errors are reported
+  generically so instance forms cannot be used as a port scanner.
+- **Changing an instance's host now requires re-entering its password**, so a
+  stored admin password is never sent to a new host.
+- **TLS for instance connections**: per-instance `tls_mode` (`disable`,
+  `prefer` — the default, `require`, `verify-full`). MySQL/MariaDB connections
+  previously used no TLS at all.
+- PostgreSQL passwords are sent as **SCRAM-SHA-256 verifiers**, never as
+  plaintext that could reach server logs.
+- **Server-side statement timeouts** on interactive sessions
+  (`max_statement_time` / `max_execution_time` / `statement_timeout`), so an
+  abandoned query is killed on the server, plus a result-size cap.
+- Locked or migrating databases refuse writes from the console and editors.
+- `EXPLAIN ANALYZE` / `ANALYZE` are classified as writes.
+- Content-Security-Policy on the dashboard and API, HSTS in the bundled Caddy.
+- `POST /v1/auth/logout` ends every browser session of the user (token epoch);
+  the dashboard calls it on sign-out.
+- Login takes the same time for unknown and known emails.
+- Production refuses JWT secrets / encryption keys shorter than 16 characters
+  (and warns below 32).
+- SQL file imports run as the database's read-write role, never as root.
+- New installs generate a random password for the bundled metadata Postgres.
+- Dependencies: Next.js 16.3.8 (critical advisory), Go 1.26 toolchain
+  (Go 1.25 is end-of-life), `golang.org/x/crypto`, `klauspost/compress`.
+
+### Added
+
+- **Automatic discovery.** Every minute Fleetdock checks each database server
+  it can log in to and keeps its database list in sync: new databases appear
+  on their own (labelled `discovered`), databases dropped outside Fleetdock
+  are marked **not found on server** after about three minutes (and raise a
+  `database.missing` notification), and come back to active when they
+  reappear. Nothing is ever deleted. Database servers on a machine that
+  Fleetdock can't reach directly ask that machine's agent instead (at most
+  hourly). `POST /v1/instances/{id}/probe` ("Check now") checks one server
+  immediately. Migration `0019` adds the `missing` status, `last_seen_at`
+  and `missing_since`.
+- **Overview that says what needs attention**: offline servers, unreachable
+  database servers, failed backups and backup checks, scheduled databases
+  with no backup in 7 days, missing databases and failed tasks — each
+  linking to the problem, filtered by what the user may see. A **Get
+  started** checklist guides new installs (connect a database server, add
+  backup storage, schedule backups, set up alerts). `GET /v1/overview`
+  gains `setup` and `attention`.
+- **Command palette** (Ctrl/⌘ K or `/`): jump to any page, server, database
+  server or database. Shortcuts: `g` + letter for sections, `?` for help.
+- Running-task indicator in the top bar; task toasts name what they ran on
+  ("Backup · orders finished") with a link.
+- **Backups tab on every database**: its schedule, next backup, history and
+  "Back up now". The Backups page searches by database or server name.
+- Operations, backups and schedules in the API carry display names
+  (`resource_name`, `database_name`, `instance_name`); `GET /v1/backups`
+  takes `search`.
+- End-to-end browser tests (`frontend/e2e`, `npm run e2e`) against a running
+  install, including a discovery round trip against a real PostgreSQL.
+- `docs/glossary.md`: the words the dashboard uses, and what the code calls
+  them.
+
+- **Data editing**: filtered/sorted/searchable data browser with stable
+  ordering; insert, edit and delete rows by primary key (or NOT NULL unique
+  key) — each change must hit exactly one row or nothing is written; CSV
+  import (all or nothing).
+- **Structure management** without SQL: create table, add/modify/rename/drop
+  columns (keeping existing defaults), foreign keys, indexes, rename, truncate
+  and drop (type-to-confirm); lists of views, functions, procedures, triggers,
+  sequences and events; PostgreSQL DDL now includes constraints, defaults and
+  identity.
+- **Monitoring**: live sessions with cancel / terminate, server status
+  counters and configuration per instance.
+- **Instance health probe**: every minute the worker checks each instance and
+  records health, version and latency, and fills database size and connection
+  counts (previously never populated).
+- **SQL console**: multi-statement scripts on one session (quotes, comments,
+  dollar quotes and `DELIMITER` understood), confirmation before anything
+  writes, cancel, per-user history and saved queries.
+- **Backups**: download (presigned link), delete, and verification by test
+  restore into a scratch database, with the result shown per backup.
+- **SQL file import** (`.sql` / `.sql.gz`, up to 2 GB).
+- Set a database account's password from the instance page.
+- `PATCH /v1/instances/{id}`: edit name, host, port, TLS mode and credentials.
+- CLI: `fleetdock backup-db`, `fleetdock reset-admin-password`; `fleetdock
+  update` takes a metadata backup first and refuses to continue without one.
+- `api reset-password <email>` subcommand (used by the CLI).
+- CI: engine integration tests, migration idempotency, a compose boot smoke
+  test and frontend unit tests; releases run the test suite first.
+
+### Changed
+
+- **Dashboard redesign.** Seven sections instead of twelve flat pages:
+  Overview, Servers, Databases, Backups (history, schedules, storage),
+  Activity, Access (users, roles, API tokens) and Settings (notifications,
+  profile). Old addresses redirect permanently (`/operations` → `/activity`,
+  `/destinations` → `/backups/storage`, `/users` → `/access/users`, …).
+- **Databases and database servers in one place**: databases are grouped by
+  server, with a flat "All databases" view and search. One **Connect a
+  database server** wizard replaces the separate "Add instance" forms
+  (create a new one, use one on my server, or connect to one anywhere) and
+  shows the databases it finds.
+- **"Test connection" and "Import DBs" are gone from the dashboard** —
+  discovery does both on its own. The `test-connection` and
+  `import-databases` endpoints still work and are marked deprecated.
+- Works on phones and tablets: the sidebar becomes a drawer (or an icon rail
+  on mid-size screens), tables scroll inside their card, forms stack.
+- Plain language throughout (database server, backup storage, activity,
+  "Check backup", encryption…), relative times with the exact time on hover,
+  readable cron schedules ("Every day at 02:00 UTC"), and help hints on
+  technical fields.
+- Every destructive action asks in an accessible dialog (no more browser
+  `confirm()` / `alert()`), errors and results appear as toasts, dialogs
+  trap focus and close with Esc, and form labels are linked to their fields.
+- A user granted access to single databases sees the plain database list
+  instead of an error.
+
+- **`POST /v1/databases/{id}/query` returns `{results: [...], error?}`** (one
+  result per statement) instead of a single result object.
+- The database detail page is split into components; the "Move" action is now
+  "Copy / move" and also covers renaming.
+- With several API replicas, housekeeping (schedules, retention, alerts,
+  probes) runs on one replica at a time (advisory lock), and migrations
+  serialise.
+- Docker image has a `HEALTHCHECK`.
+
+### Fixed
+
+- Choosing "Custom…" in the backup schedule form did nothing.
+- The connect wizard lost its result screen when the first database server
+  was added.
+- Searches treated `%` and `_` in the search text as wildcards.
+
+- Backups of PostgreSQL and MySQL databases were recorded as `mariadb-dump`.
+- Restoring a PostgreSQL ≤ 16 database from a dump made by pg_dump 17 (the
+  image's client) failed on `SET transaction_timeout`; that line is now
+  dropped during restore.
+- "Test" on a backup destination reported success for a bucket that does not
+  exist.
+- Failed dump/restore operations showed a client warning instead of the error.
+- PostgreSQL restores could report success after a partial failure
+  (`ON_ERROR_STOP`, single transaction).
+- CSV exports were cut off after 30 seconds.
+- Operations orphaned by a crash or restart stayed `running` forever; they are
+  now failed through the normal completion path.
+- A panic in a background job could take the API down.
+- The `fleetdock` CLI and `install.sh` used GNU-only `sed -i` (broken on
+  macOS) and could corrupt values containing `|` or `&`; re-running the
+  installer no longer resets a pinned release tag to `latest`.
+- Instances that were deleted still showed through their databases.
+- Deleting a provisioned instance's data volume, or dropping a database,
+  now requires typing its name; failed background actions show a toast.
+
+## [0.4.0 – 0.7.1]
+
+These versions were tagged without their own changelog sections; their
+changes are collected here.
+
 ### Added
 
 - **System databases are now discovered.** Import registers PostgreSQL's

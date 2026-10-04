@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 
 import { ArrowDown, ArrowUp, Search } from "lucide-react";
 
-import { EmptyState, Pagination, Spinner } from "@/components/ui";
+import { EmptyState, Pagination, TableSkeleton } from "@/components/ui";
 import type { SortDir } from "@/lib/use-data-table";
 
 export type DataTableColumn<T> = {
@@ -16,6 +16,8 @@ export type DataTableColumn<T> = {
   sortKey?: string;
   align?: "left" | "right";
   className?: string;
+  /** Hide this column on phone-sized screens (secondary details). */
+  hideOnMobile?: boolean;
   render: (row: T) => ReactNode;
 };
 
@@ -31,6 +33,8 @@ export type DataTableProps<T> = {
   emptyHint?: string;
   emptySearchTitle?: string;
   emptySearchHint?: string;
+  /** The next step when there is nothing to show (e.g. a "Connect" button). */
+  emptyAction?: ReactNode;
   search?: {
     value: string;
     onChange: (value: string) => void;
@@ -56,16 +60,18 @@ function SortableHeader({
   activeKey,
   dir,
   onSort,
+  className,
 }: {
   label: string;
   sortKey: string;
   activeKey: string;
   dir: SortDir;
   onSort: (key: string) => void;
+  className?: string;
 }) {
   const active = sortKey === activeKey;
   return (
-    <th>
+    <th className={className} aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}>
       <button
         type="button"
         className="btn btn-ghost btn-sm"
@@ -101,6 +107,7 @@ export function DataTable<T>({
   emptyHint,
   emptySearchTitle,
   emptySearchHint,
+  emptyAction,
   search,
   sort,
   pagination,
@@ -110,8 +117,8 @@ export function DataTable<T>({
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 muted text-sm">
-        <Spinner /> {loadingLabel}
+      <div aria-label={loadingLabel}>
+        <TableSkeleton columns={Math.min(columns.length, 5)} />
       </div>
     );
   }
@@ -133,6 +140,8 @@ export function DataTable<T>({
                 className="input"
                 style={{ paddingLeft: "2rem", width: "100%" }}
                 placeholder={search.placeholder ?? "Search…"}
+                aria-label={search.placeholder ?? "Search"}
+                type="search"
                 value={search.value}
                 onChange={(e) => search.onChange(e.target.value)}
               />
@@ -146,10 +155,11 @@ export function DataTable<T>({
         <EmptyState
           title={searchActive && emptySearchTitle ? emptySearchTitle : emptyTitle}
           hint={searchActive && emptySearchTitle ? emptySearchHint : emptyHint}
+          action={searchActive ? undefined : emptyAction}
         />
       ) : (
         <>
-          <div className="card" style={{ overflow: "hidden" }}>
+          <div className="card table-wrap">
             <table className="table">
               <thead>
                 <tr>
@@ -162,10 +172,12 @@ export function DataTable<T>({
                         activeKey={sort.key}
                         dir={sort.dir}
                         onSort={sort.onSort}
+                        className={col.hideOnMobile ? "hide-sm" : undefined}
                       />
                     ) : (
                       <th
                         key={col.id}
+                        className={col.hideOnMobile ? "hide-sm" : undefined}
                         style={col.align === "right" ? { textAlign: "right" } : undefined}
                       >
                         {col.header}
@@ -180,7 +192,7 @@ export function DataTable<T>({
                     {columns.map((col) => (
                       <td
                         key={col.id}
-                        className={col.className}
+                        className={[col.className, col.hideOnMobile ? "hide-sm" : ""].filter(Boolean).join(" ") || undefined}
                         style={col.align === "right" ? { textAlign: "right" } : undefined}
                       >
                         {col.render(row)}

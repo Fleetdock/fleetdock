@@ -55,9 +55,17 @@ func New(cfg Config) (*Client, error) {
 }
 
 // TestAccess verifies the bucket is reachable with the credentials.
+// A reachable endpoint with valid credentials but no such bucket is a
+// failure: every backup to it would fail on upload.
 func (c *Client) TestAccess(ctx context.Context) error {
-	_, err := c.mc.BucketExists(ctx, c.bucket)
-	return err
+	exists, err := c.mc.BucketExists(ctx, c.bucket)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("bucket %q does not exist (or these credentials cannot see it)", c.bucket)
+	}
+	return nil
 }
 
 // PresignPut returns a URL an agent can HTTP PUT an object to.

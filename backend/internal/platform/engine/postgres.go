@@ -2,12 +2,15 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 )
 
 func init() { Register("postgres", &Postgres{}) }
@@ -32,7 +35,11 @@ func (pg *Postgres) connString(p ConnParams, database string) string {
 		Path:   "/" + database,
 	}
 	q := url.Values{}
-	q.Set("sslmode", "prefer")
+	mode := p.TLSMode
+	if mode == "" {
+		mode = TLSPrefer
+	}
+	q.Set("sslmode", mode)
 	q.Set("connect_timeout", "8")
 	u.RawQuery = q.Encode()
 	return u.String()
@@ -41,7 +48,35 @@ func (pg *Postgres) connString(p ConnParams, database string) string {
 func (pg *Postgres) connect(ctx context.Context, p ConnParams, database string) (*pgx.Conn, error) {
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	return pgx.Connect(cctx, pg.connString(p, database))
+	cfg, err := pgx.ParseConfig(pg.connString(p, database))
+	if err != nil {
+		return nil, err
+	}
+	cfg.DialFunc = netsafe.DialDB
+	if t := p.StatementTimeout; t > 0 {
+		ms := strconv.FormatInt(t.Milliseconds(), 10)
+		cfg.RuntimeParams["statement_timeout"] = ms
+		cfg.RuntimeParams["idle_in_transaction_session_timeout"] = ms
+	}
+	conn, err := pgx.ConnectConfig(cctx, cfg)
+	if err != nil || !p.AssumeOwner {
+		return conn, err
+	}
+	var owner *string
+	if err := conn.QueryRow(cctx, `
+		SELECT r.rolname FROM pg_database d JOIN pg_roles r ON r.oid = d.datdba
+		WHERE d.datname = current_database() AND r.rolname <> current_user
+		  AND pg_has_role(current_user, r.oid, 'MEMBER')`).Scan(&owner); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		_ = conn.Close(ctx)
+		return nil, err
+	}
+	if owner != nil {
+		if _, err := conn.Exec(cctx, "SET ROLE "+quotePGIdent(*owner)); err != nil {
+			_ = conn.Close(ctx)
+			return nil, err
+		}
+	}
+	return conn, nil
 }
 
 // Ping verifies connectivity and returns the server version.
@@ -164,6 +199,10 @@ func (pg *Postgres) RestoreArgs(p ConnParams, database string) ([]string, []stri
 		"--port=" + strconv.Itoa(p.Port),
 		"--username=" + p.User,
 		"--no-password",
+		// Abort on the first error and apply everything in one transaction,
+		// so a partly failed restore never reports success.
+		"--set=ON_ERROR_STOP=1",
+		"--single-transaction",
 		"--dbname=" + database,
 	}, []string{"PGPASSWORD=" + p.Password}
 }

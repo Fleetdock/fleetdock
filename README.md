@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Fleetdock/fleetdock/actions/workflows/ci.yml/badge.svg)](https://github.com/Fleetdock/fleetdock/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](backend/go.mod)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](backend/go.mod)
 [![Website](https://img.shields.io/badge/website-fleetdock.dev-0ea5e9)](https://fleetdock.dev)
 
 An open-source **control plane for your database fleet** — manage servers,
@@ -25,7 +25,7 @@ SaaS vendor.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Install**          | `curl -sSL https://fleetdock.dev/install.sh \| sh` — one command, one domain                                                                                                 |
 | **Connect a server** | One `curl … install.sh` command from the dashboard                                                                                                                           |
-| **Manage**           | Instances, databases, backups, users/grants, operations log                                                                                                                  |
+| **Manage**           | Database servers and their databases (found automatically), backups, users/grants, activity log                                                                              |
 | **Docs**             | [Deploy to production](docs/DEPLOYMENT.md) · [Operations](docs/OPERATIONS.md) · [Security checklist](docs/SECURITY-CHECKLIST.md) · [API `/docs`](http://localhost:8080/docs) |
 
 This is a monorepo:
@@ -67,7 +67,9 @@ Day-2 operations use the `fleetdock` command it installs:
 fleetdock status          # container health and readiness
 fleetdock credentials     # dashboard URL and admin login
 fleetdock logs            # tail everything
-fleetdock update          # pull a new release and restart
+fleetdock update          # back up metadata, pull a new release and restart
+fleetdock backup-db       # pg_dump of the metadata database
+fleetdock reset-admin-password   # locked out? new password, sessions ended
 fleetdock doctor          # diagnose DNS, certificates, reachability
 fleetdock domain new.example.com
 fleetdock gateway enable  # external database access (opt-in)
@@ -131,18 +133,21 @@ FLEETDOCK_PUBLIC_URL=http://192.168.x.x:8080
 
 ## Concepts
 
+The dashboard uses plain words for these; [docs/glossary.md](docs/glossary.md)
+maps them to the names in the code and API.
+
 - **Server** — a host running the agent (connected via install.sh).
-- **Instance** — a database server process. Two kinds:
+- **Instance** (_database server_ in the dashboard) — a database server
+  process. Two kinds:
   - `managed`: runs on one of your servers; operations are executed by that
     server's agent against `127.0.0.1`. A managed instance can either be
     **provisioned** by Fleetdock (the agent launches a MariaDB **Docker
     container** with a generated root password, a named data volume and a
-    published port — Servers → _server_ → **Add instance → Provision new**) or
+    published port — **Databases → Connect database server → Create a new one**) or
     **registered** (point at a MariaDB already running on the server).
   - `external`: any reachable database you already host elsewhere — the control
     plane connects to it directly. Add it under
-    **Instances → Add instance → External**, then **Import DBs** to pull in
-    the existing databases.
+    **Databases → Connect database server → Connect to one anywhere**.
     Provisioned instances can be **started / stopped / restarted** from their
     detail page; deleting one removes the container (and, if you confirm, its
     data volume). Provisioning needs Docker on the server — `install.sh`
@@ -150,11 +155,17 @@ FLEETDOCK_PUBLIC_URL=http://192.168.x.x:8080
 - **Database** — a logical database on an instance. If the instance has admin
   credentials, creating a database physically creates it (via an operation);
   otherwise it's a metadata-only registration.
+- **Discovery** — every minute Fleetdock checks each instance it has
+  credentials for and syncs its database list: new databases appear on their
+  own, ones dropped outside Fleetdock are marked _not found on server_ after
+  about three minutes and return when they reappear. Nothing is deleted.
+  **Check now** on an instance runs the check immediately.
 - **Operation** — every async action (create/drop database, backup, restore,
   import, connection test) is a tracked job with status/progress/error,
-  visible on the Operations page. Managed-instance jobs are claimed by the
+  visible on the **Activity** page. Managed-instance jobs are claimed by the
   agent; external-instance jobs run on the control plane's built-in worker.
-- **Backup destination** — an S3 / Cloudflare R2 / S3-compatible bucket.
+- **Backup destination** (_backup storage_) — an S3 / Cloudflare R2 /
+  S3-compatible bucket.
   Secret keys (and instance passwords) are envelope-encrypted at rest with
   `FLEETDOCK_ENCRYPTION_KEY`.
 - **Backup / Restore** — `mariadb-dump | gzip`, streamed to the bucket via
@@ -196,16 +207,31 @@ Backend (Go):
 - **Profile** — self-service name/email update and password change (requires
   the current password). Suspended accounts cannot log in and existing
   sessions/tokens stop working immediately.
-- **Live DB administration** — database accounts and grants managed straight
-  from the dashboard for **MariaDB, MySQL, and PostgreSQL**: list/create/drop
-  users (MariaDB `user@host`, PostgreSQL roles), view grants, grant/revoke
-  schema privileges (allowlisted catalog at `GET /v1/db-privileges`); plus
-  table listing, paginated data browser, SQL console, and CSV export per
-  database. Executed synchronously by the control plane: external instances are reached at their host, managed instances at their server's
+- **Live DB administration** — for **MariaDB, MySQL, and PostgreSQL**:
+  - accounts and grants: list/create/drop users (MariaDB `user@host`,
+    PostgreSQL roles), set passwords, view grants, grant/revoke schema
+    privileges (allowlisted catalog at `GET /v1/db-privileges`);
+  - data: filtered, sorted, searchable browser; insert/edit/delete rows by
+    primary key (exactly one row or nothing); CSV import and export; SQL file
+    import;
+  - structure without SQL: create/alter/rename/truncate/drop tables, columns,
+    indexes and foreign keys; views, routines, triggers, sequences and events;
+  - SQL console: multi-statement scripts on one session, confirmation before
+    writes, cancel, per-user history and saved queries;
+  - monitoring: live sessions (cancel/terminate), status counters,
+    configuration; a per-minute health probe fills instance health and
+    database sizes and connection counts.
+
+  Everything that touches one database's data runs as a **Fleetdock-managed
+  role confined to that database** (`fleetdock_ro_*` / `fleetdock_rw_*`), never
+  as the instance admin — see [Security](#security). Executed synchronously by
+  the control plane: external instances are reached at their host, managed instances at their server's
   address (reported automatically by the agent on enroll/heartbeat). The
   instance DB port must be reachable from the control plane — for LAN/VM dev,
   ensure published ports on the server are open to the host running Fleetdock.
-- **Hardening** — login rate limiting (per client IP), security headers,
+- **Backups** — also downloadable (presigned link), deletable, and verifiable by
+  a test restore into a scratch database.
+- **Hardening** — login rate limiting (per client IP), security headers and CSP,
   `/healthz` (liveness) and `/readyz` (metadata DB ping) probes, and
   `FLEETDOCK_ENV=production` mode that refuses to boot with insecure default secrets.
 
@@ -218,12 +244,12 @@ a roles page (view every role's permissions, create/edit/delete custom roles
 with a grouped permission picker), and a profile page (edit name/email,
 change password) linked from the topbar. Detail pages: instances (info,
 databases, live DB users with expandable grants, create/drop/grant) and
-databases (info, tables with a paginated row browser, per-database users &
-grants with grant/revoke).
+databases (info, tables with a data browser and row editor, structure editor,
+views/routines, SQL console, per-database users & grants with grant/revoke).
 
 ## Local development (without Docker)
 
-Backend (needs Go 1.25+ and a Postgres):
+Backend (needs Go 1.26+ and a Postgres):
 
 ```bash
 cd backend
@@ -263,7 +289,7 @@ Environment variables use the `FLEETDOCK_*` prefix.
 | `FLEETDOCK_DATABASE_URL`                              | —                       | required                                                                                                          |
 | `FLEETDOCK_ENV`                                       | `development`           | `production` refuses to start with default secrets                                                                |
 | `FLEETDOCK_HTTP_ADDR`                                 | `:8080`                 |                                                                                                                   |
-| `FLEETDOCK_JWT_SECRET`                                | dev default             | set a strong secret in production                                                                                 |
+| `FLEETDOCK_JWT_SECRET`                                | dev default             | set a strong secret in production (min. 16 characters, 32+ recommended)                                           |
 | `FLEETDOCK_ENCRYPTION_KEY`                            | dev default             | primary key that encrypts credentials/S3 keys at rest; rotate via `make rotate-keys` (see Security)               |
 | `FLEETDOCK_ENCRYPTION_KEY_ID`                         | `master-1`              | id stamped on secrets wrapped by the primary key; use a new id when rotating                                      |
 | `FLEETDOCK_ENCRYPTION_KEYS_OLD`                       | —                       | retired keys still needed to decrypt during rotation, as `id=secret,id2=secret2`                                  |
@@ -280,6 +306,8 @@ Environment variables use the `FLEETDOCK_*` prefix.
 | `FLEETDOCK_CORS_ORIGIN`                               | `http://localhost:3000` | only used for split-origin deployments; same-origin installs never hit CORS                                       |
 | `FLEETDOCK_UI_DIR`                                    | —                       | the bundled dashboard. Set by the image; empty means API-only (bare binary, dev)                                  |
 | `FLEETDOCK_UI_PORT`                                   | `3000`                  | loopback port the dashboard binds; never published                                                                |
+| `FLEETDOCK_ALLOW_LOOPBACK_DB_HOSTS`                   | `true` in development, `false` in production | let instances point at loopback addresses (link-local, metadata and the metadata DB are always refused) |
+| `FLEETDOCK_POSTGRES_PASSWORD`                         | `fleetdock`             | compose only: password of the bundled metadata Postgres; `install.sh` generates one for new installs — never change it on an existing volume |
 
 ## API documentation
 
@@ -294,9 +322,23 @@ spec in sync with the routes defined in `router.go`.
 - **Production mode:** set `FLEETDOCK_ENV=production` and provide strong values for
   `FLEETDOCK_JWT_SECRET`, `FLEETDOCK_ENCRYPTION_KEY`, and `FLEETDOCK_ADMIN_PASSWORD`. The API
   refuses to start if defaults are still in use.
-- **JWT storage:** the dashboard stores the session JWT in `localStorage`. This
-  is convenient but exposes the token to XSS — deploy only on trusted networks
-  and keep the frontend dependency supply chain clean.
+- **Least privilege in the database:** the console, browser, exports, data and
+  structure editing and SQL imports connect as per-database roles created by
+  Fleetdock. The engine itself confines them: other databases, account tables,
+  server files and global settings are unreachable whatever SQL is typed.
+  The engine-owned `mysql`/`sys`/`postgres` databases can only be opened by
+  users with `instance:write`. Root credentials are used only for
+  instance-level administration (accounts, grants, create/drop database,
+  monitoring) — keep `instance:write` for administrators.
+- **Network:** instance hosts are checked when saved and when dialled —
+  loopback (in production), link-local, cloud-metadata and the metadata
+  database itself are refused. Choose `tls_mode` per instance; use
+  `verify-full` across untrusted networks.
+- **JWT storage:** the dashboard stores the session JWT in `localStorage`. A
+  Content-Security-Policy confines the dashboard to its own origin, so injected
+  script cannot send the token elsewhere, and signing out revokes all of the
+  user's sessions server-side. Deploy on trusted networks and keep the frontend
+  dependency supply chain clean.
 - **Encryption key rotation:** secrets are envelope-encrypted, so rotating the
   master key only re-wraps each secret's data key — the payload ciphertext is
   never touched. To rotate, keep the old key readable and promote a new key with

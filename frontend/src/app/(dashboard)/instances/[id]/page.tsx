@@ -1,105 +1,369 @@
 "use client";
 
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useErrorToast, useToast } from "@/components/toast";
 
-import { ChevronDown, ChevronRight, Play, Plus, RotateCw, Square, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
+
+import { ChevronDown, ChevronRight, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table";
-import { EmptyState, ErrorText, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import { DeleteInstanceModal } from "@/components/delete-instance-modal";
+import { HealthBadge, InstanceMonitoring } from "@/components/instance-monitoring";
 import {
+  ConfirmModal,
+  EmptyState,
+  Menu,
+  ErrorText,
+  Field,
+  Modal,
+  PageHeader,
+  Pagination,
+  QueryTabs,
+  Spinner,
+  StatusBadge,
+  TableSkeleton,
+  Time,
+} from "@/components/ui";
+import { engineLabel } from "@/lib/engines";
+import { friendlyError } from "@/lib/errors";
+import { ApiError } from "@/lib/api";
+import { formatBytes } from "@/lib/format";
+import {
+  LIST_PAGE_SIZE,
   useCan,
   useClientPage,
   useCreateDBUser,
   useDatabases,
   useDBPrivileges,
   useDBUsers,
-  useDeleteInstance,
   useDropDBUser,
   useGrantOnInstance,
   useInstance,
   useInstanceLifecycle,
+  useProbeInstance,
+  useServers,
+  useSetDBUserPassword,
+  useUpdateInstance,
   useUserGrants,
 } from "@/lib/hooks";
-import type { DBUser, Instance } from "@/lib/types";
+import type { DBUser, Instance, TLSMode, UpdateInstanceInput } from "@/lib/types";
 
 export default function InstanceDetailPage() {
+  return (
+    <Suspense fallback={<TableSkeleton />}>
+      <InstanceDetail />
+    </Suspense>
+  );
+}
+
+/** kindLabel describes, in plain words, how Fleetdock reaches a database server. */
+function kindLabel(i: Instance): string {
+  if (i.provisioned) return "Created by Fleetdock";
+  return i.kind === "external" ? "Connected remotely" : "On your server";
+}
+
+function InstanceDetail() {
   const params = useParams();
   const id = String(params.id);
-  const { data: instance, isLoading } = useInstance(id);
-  const { data: databases } = useDatabases({ instance_id: id });
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const tab = sp.get("tab") ?? "databases";
+  const { data: instance, isLoading, error } = useInstance(id);
+  const { data: servers } = useServers();
+  // Paginated: an instance with more databases than one page used to render a
+  // silently truncated list with no indication there was more.
+  const [dbPage, setDbPage] = useState(1);
+  const { data: databases } = useDatabases({ instance_id: id, page: dbPage });
   const can = useCan();
 
-  if (isLoading) {
-    return <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>;
-  }
+  if (isLoading) return <TableSkeleton />;
   if (!instance) {
-    return <EmptyState title="Instance not found" />;
+    return (
+      <EmptyState
+        title="Database server not found"
+        hint={error ? friendlyError(error) : "It may have been removed."}
+        action={
+          <Link href="/databases" className="btn">
+            Back to databases
+          </Link>
+        }
+      />
+    );
+  }
+
+  const serverName = servers?.items.find((s) => s.id === instance.server_id)?.name;
+  const where =
+    instance.kind === "external"
+      ? `${instance.host}:${instance.port}`
+      : `${serverName ?? "server"}, port ${instance.port}`;
+
+  function selectTab(t: string) {
+    const q = new URLSearchParams(sp.toString());
+    if (t === "databases") q.delete("tab");
+    else q.set("tab", t);
+    router.replace(q.toString() ? `${pathname}?${q}` : pathname);
   }
 
   return (
     <div>
-      <Link href="/instances" className="muted text-sm">← Instances</Link>
-      <div className="flex items-center justify-between" style={{ margin: ".6rem 0 1.1rem" }}>
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">{instance.name}</h1>
-          <span className={`badge ${instance.kind === "external" ? "badge-amber" : "badge-gray"}`}>
-            {instance.kind}
-          </span>
-          {instance.provisioned ? <span className="badge badge-gray">docker</span> : null}
-          <StatusBadge status={instance.status} />
+      <PageHeader
+        breadcrumbs={[{ label: "Databases", href: "/databases" }, { label: instance.name }]}
+        title={instance.name}
+        badges={
+          <>
+            <StatusBadge status={instance.status} />
+            {instance.has_credentials ? <HealthBadge health={instance.health} /> : null}
+          </>
+        }
+        description={`${engineLabel(instance.engine)} ${instance.engine_version} · ${kindLabel(instance)} · ${where}`}
+        actions={can("instance:write") ? <InstanceControls instance={instance} /> : null}
+      />
+
+      {!instance.has_credentials ? (
+        <div className="callout callout-warning" role="status">
+          <strong>Fleetdock can&apos;t log in to this server yet.</strong> Add an admin user and password (Edit) so it
+          can find databases, manage users, take backups and show monitoring.
         </div>
-        {can("instance:write") ? <InstanceControls instance={instance} /> : null}
-      </div>
+      ) : null}
 
       <div className="card" style={{ padding: "1.1rem", marginBottom: "1.25rem" }}>
         <dl className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "1rem" }}>
-          <Detail label="Engine" value={`${instance.engine} ${instance.engine_version}`} />
-          <Detail label="Location" value={instance.kind === "external" ? `${instance.host}:${instance.port}` : `port ${instance.port}`} />
+          <Detail label="Engine" value={`${engineLabel(instance.engine)} ${instance.engine_version}`} />
+          <Detail label="Address" value={where} />
           <Detail label="Admin user" value={instance.username ?? "—"} />
-          <Detail label="Credentials" value={instance.has_credentials ? "configured" : "not configured"} />
-          <Detail label="Registered" value={new Date(instance.created_at).toLocaleString()} />
+          <Detail label="Encryption" value={TLS_LABEL[instance.tls_mode ?? "prefer"]} />
+          <Detail label="Added" value={<Time value={instance.created_at} />} />
+          {instance.has_credentials ? <Detail label="Last checked" value={<LastChecked instance={instance} />} /> : null}
         </dl>
+        {instance.health?.error && instance.health.status !== "healthy" ? (
+          <p className="field-error" style={{ margin: ".8rem 0 0" }}>
+            Last check failed: {instance.health.error}
+          </p>
+        ) : null}
       </div>
 
-      <h2 className="font-semibold" style={{ marginBottom: ".6rem" }}>Databases</h2>
-      <div style={{ marginBottom: "1.25rem" }}>
+      <QueryTabs
+        label="Database server sections"
+        onSelect={selectTab}
+        tabs={[
+          { id: "databases", label: `Databases${databases ? ` (${databases.pagination.total})` : ""}` },
+          { id: "monitoring", label: "Monitoring", hidden: !instance.has_credentials },
+          { id: "users", label: "Database users", hidden: !instance.has_credentials },
+        ]}
+      />
+
+      {tab === "monitoring" && instance.has_credentials ? (
+        <InstanceMonitoring instanceId={id} canKill={can("instance:write")} />
+      ) : tab === "users" && instance.has_credentials ? (
+        <DBUsersSection instanceId={id} canWrite={can("instance:write")} databases={databases?.items ?? []} />
+      ) : (
         <DataTable
           columns={[
-            { id: "name", header: "Name", className: "font-medium", render: (d) => d.name },
-            { id: "charset", header: "Charset", className: "muted", render: (d) => d.charset },
-            { id: "status", header: "Status", render: (d) => <StatusBadge status={d.status} /> },
             {
-              id: "actions",
-              header: "",
-              align: "right",
+              id: "name",
+              header: "Name",
+              className: "font-medium",
               render: (d) => (
-                <Link href={`/databases/${d.id}`} className="btn btn-ghost btn-sm">
-                  Open <ChevronRight size={15} />
-                </Link>
+                <span className="flex items-center gap-2">
+                  <Link href={`/databases/${d.id}`} className="link-plain">
+                    {d.name}
+                  </Link>
+                  {d.system ? <span className="badge badge-gray">system</span> : null}
+                </span>
               ),
             },
+            { id: "status", header: "Status", render: (d) => <StatusBadge status={d.status} /> },
+            { id: "size", header: "Size", align: "right", className: "muted", render: (d) => formatBytes(d.size_bytes) },
+            { id: "conns", header: "Connections", align: "right", className: "muted", hideOnMobile: true, render: (d) => d.active_connections ?? 0 },
+            { id: "charset", header: "Charset", className: "muted", hideOnMobile: true, render: (d) => d.charset },
           ]}
           rows={databases?.items ?? []}
           rowKey={(d) => d.id}
-          emptyTitle="No databases on this instance"
-        />
-      </div>
-
-      {instance.has_credentials ? (
-        <DBUsersSection instanceId={id} canWrite={can("instance:write")} databases={databases?.items ?? []} />
-      ) : (
-        <EmptyState
-          title="Database users unavailable"
-          hint="Add admin credentials to this instance to manage its database users and grants."
+          emptyTitle="No databases found yet"
+          emptyHint={
+            instance.has_credentials
+              ? "Databases on this server appear here automatically within a minute."
+              : "Add an admin login so Fleetdock can see this server's databases."
+          }
+          pagination={{
+            page: dbPage,
+            pageCount: Math.max(1, Math.ceil((databases?.pagination.total ?? 0) / LIST_PAGE_SIZE)),
+            onPage: setDbPage,
+          }}
         />
       )}
     </div>
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+const TLS_LABEL: Record<string, string> = {
+  disable: "Off",
+  prefer: "When available",
+  require: "Always",
+  "verify-full": "Always, verified",
+};
+
+function EditInstanceModal({
+  instance,
+  onClose,
+}: {
+  instance: Instance | null;
+  onClose: () => void;
+}) {
+  const update = useUpdateInstance();
+  const [name, setName] = useState("");
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [clearPassword, setClearPassword] = useState(false);
+  const [tlsMode, setTlsMode] = useState<TLSMode>("prefer");
+  const [error, setError] = useState<string | null>(null);
+
+  // Re-seed the form whenever a different instance is opened.
+  useEffect(() => {
+    if (!instance) return;
+    setName(instance.name);
+    setHost(instance.host ?? "");
+    setPort(String(instance.port));
+    setUsername(instance.username ?? "");
+    setPassword("");
+    setClearPassword(false);
+    setTlsMode(instance.tls_mode ?? "prefer");
+    setError(null);
+  }, [instance]);
+
+  if (!instance) return null;
+
+  const portLocked = instance.provisioned;
+  // The API refuses to send the stored password to a new host; the user has to
+  // re-enter it (or drop it).
+  const hostChanged = instance.kind === "external" && host.trim() !== (instance.host ?? "");
+  const needsPassword = hostChanged && instance.has_credentials && !clearPassword && username !== "";
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!instance) return;
+    setError(null);
+
+    // Send only what actually changed, so an untouched password field never
+    // rotates the stored secret.
+    const input: UpdateInstanceInput & { id: string } = { id: instance.id };
+    if (name !== instance.name) input.name = name;
+    if (instance.kind === "external" && host !== (instance.host ?? "")) input.host = host;
+    if (!portLocked && Number(port) !== instance.port) input.port = Number(port);
+    if (username !== (instance.username ?? "")) input.username = username;
+    if (tlsMode !== (instance.tls_mode ?? "prefer")) input.tls_mode = tlsMode;
+    if (clearPassword) {
+      input.password = "";
+    } else if (password) {
+      input.password = password;
+    }
+
+    try {
+      await update.mutateAsync(input);
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save the changes");
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Edit "${instance.name}"`}>
+      <form onSubmit={onSubmit}>
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+          <Field label="Name">
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          </Field>
+          <Field label="Port" hint={portLocked ? "Fixed: Fleetdock created this server in a container on this port." : undefined}>
+            <input
+              className="input"
+              type="number"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+              disabled={portLocked}
+              required
+            />
+          </Field>
+        </div>
+        <Field label="Encryption" help="How Fleetdock protects its connection to this server. Use “verify” across networks you don’t trust.">
+          <select className="input" value={tlsMode} onChange={(e) => setTlsMode(e.target.value as TLSMode)}>
+            <option value="prefer">Use encryption when available (default)</option>
+            <option value="require">Always encrypt</option>
+            <option value="verify-full">Always encrypt and verify the certificate</option>
+            <option value="disable">Never encrypt</option>
+          </select>
+        </Field>
+        {instance.kind === "external" ? (
+          <Field label="Host" hint="Hostname or IP address Fleetdock can reach.">
+            <input
+              className="input"
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder="db.example.com or 10.0.0.5"
+              required
+            />
+          </Field>
+        ) : null}
+
+        <h3 className="font-semibold text-sm" style={{ margin: "1rem 0 .3rem" }}>
+          Admin credentials
+        </h3>
+        <p className="muted text-sm" style={{ marginTop: 0 }}>
+          Used for provisioning, discovery, backups and live administration. Stored
+          encrypted; the current password is never displayed.
+        </p>
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+          <Field label="Admin username">
+            <input
+              className="input"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder={instance.engine === "postgres" ? "postgres" : "root"}
+              autoComplete="off"
+            />
+          </Field>
+          <Field label={needsPassword ? "Password (required for the new host)" : instance.has_credentials ? "New password" : "Password"}>
+            <input
+              className="input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={needsPassword ? "re-enter the admin password" : instance.has_credentials ? "leave blank to keep current" : ""}
+              disabled={clearPassword}
+              required={needsPassword}
+              autoComplete="new-password"
+            />
+          </Field>
+        </div>
+        {instance.has_credentials ? (
+          <label className="flex items-center gap-2 text-sm" style={{ cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={clearPassword}
+              onChange={(e) => setClearPassword(e.target.checked)}
+            />
+            Remove the stored password (makes this instance metadata-only)
+          </label>
+        ) : null}
+
+        <ErrorText message={error ?? undefined} />
+        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".8rem" }}>
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={update.isPending}>
+            {update.isPending ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt className="muted text-sm">{label}</dt>
@@ -108,46 +372,93 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * LastChecked shows when Fleetdock last reached the server (it checks every
+ * minute on its own) with a button to check — and pick up new databases — now.
+ */
+function LastChecked({ instance }: { instance: Instance }) {
+  const probe = useProbeInstance();
+  const toastError = useErrorToast();
+  return (
+    <span className="flex items-center gap-2">
+      {instance.health ? <Time value={instance.health.checked_at} /> : "not yet"}
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        disabled={probe.isPending}
+        onClick={() => probe.mutate(instance.id, { onError: toastError("Could not check the server") })}
+        title="Check the connection and look for new databases now"
+      >
+        {probe.isPending ? <Spinner /> : <RefreshCw size={14} />} Check now
+      </button>
+    </span>
+  );
+}
+
 function InstanceControls({ instance }: { instance: Instance }) {
   const router = useRouter();
   const lifecycle = useInstanceLifecycle();
-  const del = useDeleteInstance();
-  const busy = lifecycle.isPending || del.isPending;
+  const toastError = useErrorToast();
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirm, setConfirm] = useState<"stop" | "restart" | null>(null);
+  const busy = lifecycle.isPending;
 
-  async function onDelete() {
-    if (instance.provisioned) {
-      if (!confirm(`Remove instance "${instance.name}"? Its Docker container will be stopped and removed.`)) return;
-      const removeVolume = confirm("Also delete the data volume? This permanently destroys the database data. Cancel to keep it.");
-      await del.mutateAsync({ id: instance.id, removeVolume });
-    } else {
-      if (!confirm(`Remove instance "${instance.name}" from the control plane? The database server is not touched.`)) return;
-      await del.mutateAsync({ id: instance.id });
-    }
-    router.push("/instances");
-  }
+  const run = (action: "start" | "stop" | "restart") =>
+    lifecycle.mutate(
+      { id: instance.id, action },
+      { onError: toastError(`Failed to ${action} ${instance.name}`), onSettled: () => setConfirm(null) },
+    );
 
   return (
-    <div className="flex items-center gap-2">
-      {instance.provisioned ? (
-        <>
-          {instance.status === "stopped" ? (
-            <button className="btn btn-sm" disabled={busy} onClick={() => lifecycle.mutate({ id: instance.id, action: "start" })}>
-              <Play size={15} /> Start
-            </button>
-          ) : (
-            <button className="btn btn-sm" disabled={busy} onClick={() => lifecycle.mutate({ id: instance.id, action: "stop" })}>
-              <Square size={15} /> Stop
-            </button>
-          )}
-          <button className="btn btn-sm" disabled={busy} onClick={() => lifecycle.mutate({ id: instance.id, action: "restart" })}>
-            <RotateCw size={15} /> Restart
-          </button>
-        </>
+    <>
+      {instance.provisioned && instance.status === "stopped" ? (
+        <button className="btn" disabled={busy} onClick={() => run("start")}>
+          <Play size={15} /> Start
+        </button>
       ) : null}
-      <button className="btn btn-sm btn-danger" disabled={busy} onClick={onDelete} aria-label="Delete instance">
-        <Trash2 size={15} /> Delete
+      <button className="btn" disabled={busy} onClick={() => setEditOpen(true)}>
+        <KeyRound size={15} /> {instance.has_credentials ? "Edit" : "Add login"}
       </button>
-    </div>
+      <Menu
+        label={`More actions for ${instance.name}`}
+        items={[
+          {
+            label: "Restart",
+            icon: <RotateCw size={15} />,
+            onSelect: () => setConfirm("restart"),
+            hidden: !instance.provisioned || instance.status === "stopped",
+          },
+          {
+            label: "Stop",
+            icon: <Square size={15} />,
+            onSelect: () => setConfirm("stop"),
+            hidden: !instance.provisioned || instance.status === "stopped",
+          },
+          { label: "Remove…", icon: <Trash2 size={15} />, danger: true, onSelect: () => setDeleteOpen(true) },
+        ]}
+      />
+      <ConfirmModal
+        open={confirm !== null}
+        danger={confirm === "stop"}
+        title={confirm === "stop" ? `Stop ${instance.name}?` : `Restart ${instance.name}?`}
+        confirmLabel={confirm === "stop" ? "Stop server" : "Restart server"}
+        busy={busy}
+        message={
+          confirm === "stop"
+            ? "Every application connected to its databases loses its connection until you start it again. No data is deleted."
+            : "Connected applications are disconnected for a few seconds while it restarts."
+        }
+        onConfirm={() => confirm && run(confirm)}
+        onCancel={() => setConfirm(null)}
+      />
+      <EditInstanceModal instance={editOpen ? instance : null} onClose={() => setEditOpen(false)} />
+      <DeleteInstanceModal
+        instance={deleteOpen ? instance : null}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => router.push("/databases")}
+      />
+    </>
   );
 }
 
@@ -166,15 +477,19 @@ function DBUsersSection({
   const [createOpen, setCreateOpen] = useState(false);
   const [grantTarget, setGrantTarget] = useState<DBUser | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const { push } = useToast();
+  const [dropTarget, setDropTarget] = useState<DBUser | null>(null);
+  const [passwordTarget, setPasswordTarget] = useState<DBUser | null>(null);
 
-  async function onDrop(u: DBUser) {
-    if (!confirm(`Drop database user '${u.user}'@'${u.host}'?`)) return;
-    setNotice(null);
+  async function confirmDrop() {
+    if (!dropTarget) return;
+    const target = dropTarget;
+    setDropTarget(null);
     try {
-      await drop.mutateAsync({ instanceId, username: u.user, host: u.host });
+      await drop.mutateAsync({ instanceId, username: target.user, host: target.host });
+      push("success", `Database user ${target.user} removed`);
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : "Failed to drop user");
+      push("error", friendlyError(err, "Failed to remove the database user"));
     }
   }
 
@@ -183,7 +498,7 @@ function DBUsersSection({
       <div className="flex items-center justify-between" style={{ marginBottom: ".6rem" }}>
         <div>
           <h2 className="font-semibold">Database users</h2>
-          <p className="muted text-sm">MariaDB accounts on this instance (live).</p>
+          <p className="muted text-sm">Accounts on this instance (live).</p>
         </div>
         {canWrite ? (
           <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
@@ -192,16 +507,11 @@ function DBUsersSection({
         ) : null}
       </div>
 
-      {notice ? (
-        <div className="card" style={{ padding: ".7rem .9rem", marginBottom: ".9rem" }}>
-          <span className="text-sm">{notice}</span>
-        </div>
-      ) : null}
 
       {isLoading ? (
         <div className="flex items-center gap-2 muted text-sm"><Spinner /> Connecting to instance…</div>
       ) : error ? (
-        <EmptyState title="Could not reach the instance" hint={(error as ApiError).message} />
+        <EmptyState title="Could not reach the database server" hint={(error as ApiError).message} />
       ) : !data || data.items.length === 0 ? (
         <EmptyState title="No database users" />
       ) : (
@@ -228,7 +538,8 @@ function DBUsersSection({
                     onToggle={() => setExpanded(isOpen ? null : key)}
                     canWrite={canWrite}
                     onGrant={() => setGrantTarget(u)}
-                    onDrop={() => onDrop(u)}
+                    onDrop={() => setDropTarget(u)}
+                    onPassword={() => setPasswordTarget(u)}
                   />
                 );
               })}
@@ -242,6 +553,27 @@ function DBUsersSection({
       </div>
 
       <CreateDBUserModal open={createOpen} onClose={() => setCreateOpen(false)} instanceId={instanceId} />
+      <ConfirmModal
+        open={dropTarget !== null}
+        danger
+        title="Drop database user?"
+        confirmLabel="Drop user"
+        confirmText={dropTarget?.user}
+        busy={drop.isPending}
+        message={
+          <p style={{ marginTop: 0 }}>
+            <code>
+              {dropTarget?.user}@{dropTarget?.host}
+            </code>{" "}
+            loses access immediately; applications using it will fail to connect.
+          </p>
+        }
+        onConfirm={() => void confirmDrop()}
+        onCancel={() => setDropTarget(null)}
+      />
+      {passwordTarget ? (
+        <SetPasswordModal instanceId={instanceId} user={passwordTarget} onClose={() => setPasswordTarget(null)} />
+      ) : null}
       <GrantModal
         target={grantTarget}
         onClose={() => setGrantTarget(null)}
@@ -260,6 +592,7 @@ function UserRow({
   canWrite,
   onGrant,
   onDrop,
+  onPassword,
 }: {
   instanceId: string;
   user: DBUser;
@@ -268,6 +601,7 @@ function UserRow({
   canWrite: boolean;
   onGrant: () => void;
   onDrop: () => void;
+  onPassword: () => void;
 }) {
   return (
     <>
@@ -279,6 +613,9 @@ function UserRow({
           <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
               <button className="btn btn-sm" onClick={onGrant}>Grant…</button>
+              <button className="btn btn-sm" onClick={onPassword} aria-label="Set password">
+                <KeyRound size={15} />
+              </button>
               <button className="btn btn-sm btn-danger" onClick={onDrop} aria-label="Drop user">
                 <Trash2 size={15} />
               </button>
@@ -345,7 +682,7 @@ function CreateDBUserModal({
           <Field label="Username">
             <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="app_user" required />
           </Field>
-          <Field label="Host">
+          <Field label="Connect from" help="Where this user may log in from (MySQL/MariaDB). % means anywhere; localhost means only from the server itself.">
             <input className="input" value={host} onChange={(e) => setHost(e.target.value)} placeholder="%" />
           </Field>
         </div>
@@ -439,6 +776,43 @@ function GrantModal({
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={grant.isPending || selected.size === 0}>
             {grant.isPending ? "Granting…" : "Grant"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function SetPasswordModal({ instanceId, user, onClose }: { instanceId: string; user: DBUser; onClose: () => void }) {
+  const setPassword = useSetDBUserPassword();
+  const [password, setPw] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await setPassword.mutateAsync({ instanceId, username: user.user, host: user.host, password });
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to change the password");
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Set password for ${user.user}`}>
+      <form onSubmit={onSubmit}>
+        <Field label="New password">
+          <input className="input" type="password" value={password} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" required minLength={8} />
+        </Field>
+        <p className="text-sm muted">Existing sessions stay connected; new logins need the new password.</p>
+        <ErrorText message={error ?? undefined} />
+        <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
+          <button className="btn btn-primary" type="submit" disabled={setPassword.isPending}>
+            {setPassword.isPending ? "Saving…" : "Set password"}
+          </button>
+          <button className="btn" type="button" onClick={onClose}>
+            Cancel
           </button>
         </div>
       </form>

@@ -49,13 +49,13 @@ export function ConnectivitySection({ databaseId, canWrite }: { databaseId: stri
       {operationId && opRunning ? (
         <div className="card" style={{ padding: ".7rem", marginBottom: ".75rem" }}>
           Applying gateway changes ({op.data?.status}).{" "}
-          <Link href={`/operations/${operationId}`}>View operation</Link>
+          <Link href={`/activity/${operationId}`}>View operation</Link>
         </div>
       ) : null}
       {operationId && op.data?.status === "failed" ? (
         <div style={{ marginBottom: ".75rem" }}>
           <ErrorText message="The gateway update failed." />
-          <Link href={`/operations/${operationId}`}>View operation</Link>
+          <Link href={`/activity/${operationId}`}>View operation</Link>
         </div>
       ) : null}
 

@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
     environment:
       FLEETDOCK_HTTP_ADDR: ":8080"
-      FLEETDOCK_DATABASE_URL: ${FLEETDOCK_DATABASE_URL:-postgres://fleetdock:fleetdock@postgres:5432/fleetdock?sslmode=disable}
+      FLEETDOCK_DATABASE_URL: ${FLEETDOCK_DATABASE_URL:-postgres://fleetdock:${FLEETDOCK_POSTGRES_PASSWORD:-fleetdock}@postgres:5432/fleetdock?sslmode=disable}
       FLEETDOCK_ENV: ${FLEETDOCK_ENV:-production}
       FLEETDOCK_JWT_SECRET: ${FLEETDOCK_JWT_SECRET:?set FLEETDOCK_JWT_SECRET in .env}
       FLEETDOCK_ENCRYPTION_KEY: ${FLEETDOCK_ENCRYPTION_KEY:?set FLEETDOCK_ENCRYPTION_KEY in .env}
@@ -104,7 +104,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: fleetdock
-      POSTGRES_PASSWORD: fleetdock
+      # install.sh generates this for new installs. Installs from before it
+      # existed keep "fleetdock": Postgres only reads it when the volume is
+      # first initialised, so it must not change afterwards.
+      POSTGRES_PASSWORD: ${FLEETDOCK_POSTGRES_PASSWORD:-fleetdock}
       POSTGRES_DB: fleetdock
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -185,6 +188,9 @@ configs:
     content: |
       {$$FLEETDOCK_SITE_ADDRESS} {
       	encode zstd gzip
+      	# Browsers ignore HSTS on plain-http sites, so this is harmless for
+      	# http://localhost and pins HTTPS everywhere else.
+      	header Strict-Transport-Security "max-age=31536000"
       	# No path splitting: the Go binary is the single front door. It serves
       	# /v1, /agent, /healthz, /readyz, /docs, /openapi.yaml and /install.sh
       	# in-process and proxies everything else to the bundled dashboard.

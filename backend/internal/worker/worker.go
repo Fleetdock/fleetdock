@@ -7,7 +7,9 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +19,7 @@ import (
 	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
+	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
@@ -39,9 +42,21 @@ type Deps struct {
 	Notifications    *notificationapp.Service
 	Endpoints        *endpointapp.Service
 	Credentials      *dbcredentialapp.Service
+	Probe            *probeapp.Service
 	HeartbeatTimeout time.Duration
 	MetricsRetention time.Duration
+	// HousekeepingLock, when set, is taken (without waiting) before each
+	// housekeeping pass so only one replica runs schedules, retention and
+	// alerts. ok=false means another replica holds it this round.
+	HousekeepingLock func(ctx context.Context) (release func(), ok bool, err error)
 }
+
+// jobTimeout bounds one control-plane operation; stuckAfter is how long a
+// job may sit in "running" before it is presumed orphaned by a dead process.
+const (
+	jobTimeout = 2 * time.Hour
+	stuckAfter = jobTimeout + 15*time.Minute
+)
 
 // Worker runs the control plane's background loops.
 type Worker struct {
@@ -70,11 +85,33 @@ func (w *Worker) Run(ctx context.Context) {
 			for w.runOne(ctx) {
 			}
 		case <-fast.C:
-			w.evaluateAndDispatch(ctx)
+			w.locked(ctx, w.evaluateAndDispatch)
 		case <-minute.C:
-			w.housekeeping(ctx)
+			w.locked(ctx, w.housekeeping)
 		}
 	}
+}
+
+// locked runs fn under the housekeeping lock (when configured) and never lets
+// a panic in it take the API process down.
+func (w *Worker) locked(ctx context.Context, fn func(context.Context)) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("worker housekeeping panicked", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+		}
+	}()
+	if w.deps.HousekeepingLock != nil {
+		release, ok, err := w.deps.HousekeepingLock(ctx)
+		if err != nil {
+			slog.Error("housekeeping lock", "error", err.Error())
+			return
+		}
+		if !ok {
+			return // another replica is doing it
+		}
+		defer release()
+	}
+	fn(ctx)
 }
 
 // evaluateAndDispatch runs alert evaluation then delivers queued notifications.
@@ -102,6 +139,20 @@ func (w *Worker) housekeeping(ctx context.Context) {
 				w.deps.Notifications.Emit(ctx, "server.offline", "Server offline",
 					"A server stopped sending heartbeats and was marked offline.", "warning", "server", id)
 			}
+		}
+	}
+
+	// Orphaned operations (the process running them died).
+	if n, err := w.deps.Ops.FailStuck(ctx, time.Now().Add(-stuckAfter)); err != nil {
+		slog.Error("fail stuck operations", "error", err.Error())
+	} else if n > 0 {
+		slog.Warn("failed orphaned operations", "count", n)
+	}
+
+	// Instance health + database size/connection probe.
+	if w.deps.Probe != nil {
+		if _, err := w.deps.Probe.ProbeAll(ctx); err != nil {
+			slog.Error("probe instances", "error", err.Error())
 		}
 	}
 
@@ -160,8 +211,17 @@ func (w *Worker) runOne(ctx context.Context) bool {
 	}
 
 	slog.Info("executing operation", "id", job.ID, "type", job.Type)
-	execCtx, cancel := context.WithTimeout(ctx, 2*time.Hour)
+	execCtx, cancel := context.WithTimeout(ctx, jobTimeout)
 	defer cancel()
+
+	// A panic in an executor must fail the job, not crash the API.
+	defer func() {
+		if r := recover(); r != nil {
+			msg := fmt.Sprintf("internal error while executing the operation: %v", r)
+			slog.Error("operation panicked", "id", job.ID, "type", job.Type, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+			_ = w.deps.Ops.Complete(ctx, job.ID, jobdom.StatusFailed, nil, &msg)
+		}
+	}()
 
 	if job.Type == jobdom.TypeReconcileGateway {
 		var err error

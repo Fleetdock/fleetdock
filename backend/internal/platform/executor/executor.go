@@ -5,11 +5,14 @@
 package executor
 
 import (
+	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -251,6 +254,11 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload, sink LogSink
 	}
 	defer gz.Close()
 
+	var stream io.Reader = gz
+	if p.Engine == "postgres" {
+		stream = newPGDumpCompat(gz)
+	}
+
 	binaries, args, env := eng.RestoreArgs(p.Conn, p.Database)
 	bin, err := lookPath(binaries)
 	if err != nil {
@@ -259,7 +267,7 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload, sink LogSink
 	sink.Log("info", "restoring SQL stream")
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), env...)
-	cmd.Stdin = gz
+	cmd.Stdin = stream
 	var stderr strings.Builder
 	tee := newLineSink(sink, "stderr")
 	cmd.Stderr = io.MultiWriter(&stderr, tee)
@@ -323,14 +331,79 @@ func lookPath(candidates []string) (string, error) {
 	return "", fmt.Errorf("none of %v found in PATH (install the mariadb client tools)", candidates)
 }
 
+// firstLine summarises a tool's stderr for an error message: the first line
+// that reports an error, else the last non-warning line. Client tools print
+// warnings (password on the command line, TLS verification) before the real
+// error, and those must not stand in for it.
 func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
+	var lines []string
+	for _, l := range strings.Split(strings.TrimSpace(s), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
 	}
-	// mariadb-dump echoes the password warning; drop it.
-	if strings.Contains(s, "Using a password on the command line") {
-		return "command failed"
+	for _, l := range lines {
+		if strings.Contains(l, "ERROR") || strings.HasPrefix(strings.ToLower(l), "error") {
+			return l
+		}
 	}
-	return s
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := lines[i]
+		if strings.HasPrefix(l, "WARNING") || strings.Contains(l, "Using a password on the command line") {
+			continue
+		}
+		return l
+	}
+	return "command failed"
+}
+
+// pgDumpCompat drops the session settings newer pg_dump versions emit that
+// older servers reject. pg_dump 17 writes "SET transaction_timeout = 0;",
+// which a PostgreSQL 16 or older server refuses as an unknown parameter — and
+// with ON_ERROR_STOP that would abort every restore into such a server. The
+// setting only matters during the restore itself, so dropping it is safe.
+type pgDumpCompat struct {
+	r       *bufio.Reader
+	pending []byte
+}
+
+func newPGDumpCompat(r io.Reader) io.Reader {
+	return &pgDumpCompat{r: bufio.NewReaderSize(r, 64<<10)}
+}
+
+var pgDumpDropLines = [][]byte{
+	[]byte("SET transaction_timeout = 0;"),
+}
+
+func (c *pgDumpCompat) Read(p []byte) (int, error) {
+	for len(c.pending) == 0 {
+		line, err := c.r.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			// A very long line (bulk COPY data): pass it through as is.
+			c.pending = append(c.pending[:0], line...)
+			break
+		}
+		if len(line) > 0 && !droppable(line) {
+			c.pending = append(c.pending[:0], line...)
+		}
+		if err != nil {
+			if len(c.pending) > 0 {
+				break
+			}
+			return 0, err
+		}
+	}
+	n := copy(p, c.pending)
+	c.pending = c.pending[n:]
+	return n, nil
+}
+
+func droppable(line []byte) bool {
+	t := bytes.TrimSpace(line)
+	for _, d := range pgDumpDropLines {
+		if bytes.Equal(t, d) {
+			return true
+		}
+	}
+	return false
 }

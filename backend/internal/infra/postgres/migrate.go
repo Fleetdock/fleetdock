@@ -17,7 +17,16 @@ var migrationFS embed.FS
 // filename order. Each migration runs inside its own transaction together with
 // the bookkeeping insert, so a failure leaves the schema untouched. The
 // embedded .sql files must NOT contain their own BEGIN/COMMIT.
+//
+// Replicas starting together serialise on an advisory lock, so each migration
+// is applied exactly once.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	release, err := lock(ctx, pool, lockKeyMigrations)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	if _, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    text PRIMARY KEY,

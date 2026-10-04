@@ -79,7 +79,7 @@ func (r *ServerRepository) List(ctx context.Context, f serverdom.ListFilter) (se
 		conds = append(conds, fmt.Sprintf("status = $%d", len(args)))
 	}
 	if f.Search != "" {
-		args = append(args, "%"+f.Search+"%")
+		args = append(args, "%"+likeEscape(f.Search)+"%")
 		conds = append(conds, fmt.Sprintf("(name ILIKE $%d OR hostname ILIKE $%d)", len(args), len(args)))
 	}
 	if f.Tag != "" {

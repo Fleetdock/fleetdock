@@ -85,6 +85,9 @@ func (r *fakeInstanceRepo) GetByID(_ context.Context, id uuid.UUID) (*instancedo
 func (r *fakeInstanceRepo) List(_ context.Context, _ instancedom.ListFilter) (instancedom.Page, error) {
 	return instancedom.Page{}, nil
 }
+func (r *fakeInstanceRepo) Update(_ context.Context, _ uuid.UUID, _ instancedom.UpdateFields) error {
+	return nil
+}
 func (r *fakeInstanceRepo) SetRootSecretRef(_ context.Context, _ uuid.UUID, _ string) error {
 	return nil
 }
@@ -240,4 +243,8 @@ func TestDelete_AllowsUserDatabase(t *testing.T) {
 	if err := svc.Delete(context.Background(), dbID.String(), false, nil); err != nil {
 		t.Fatalf("expected user database to be deletable, got %v", err)
 	}
+}
+
+func (r *fakeInstanceRepo) SetHealth(context.Context, uuid.UUID, instancedom.Health) error {
+	return nil
 }

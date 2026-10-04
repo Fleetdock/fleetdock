@@ -1,141 +1,73 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { useState, type FormEvent } from "react";
 
-import { Plus, Upload } from "lucide-react";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
-import { ApiError } from "@/lib/api";
-import {
-  LIST_PAGE_SIZE,
-  useBackups,
-  useCan,
-  useDatabases,
-  useDestinations,
-  useInstances,
-  useRestoreBackup,
-  useTriggerBackup,
-} from "@/lib/hooks";
-import type { Backup } from "@/lib/types";
+import { Plus, Search } from "lucide-react";
 
-function formatBytes(n?: number | null) {
-  if (!n) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let v = n;
-  let u = 0;
-  while (v >= 1024 && u < units.length - 1) {
-    v /= 1024;
-    u++;
-  }
-  return `${v.toFixed(u === 0 ? 0 : 1)} ${units[u]}`;
-}
+import { BackupList } from "@/components/backup/backup-list";
+import { ErrorText, Field, Modal, PageHeader } from "@/components/ui";
+import { friendlyError } from "@/lib/errors";
+import { useCan, useDatabases, useDestinations, useTriggerBackup } from "@/lib/hooks";
 
 export default function BackupsPage() {
-  const [page, setPage] = useState(1);
-  const { data, isLoading, error } = useBackups(undefined, page);
-  const { data: databases } = useDatabases();
-  const { data: destinations } = useDestinations();
-  const [createOpen, setCreateOpen] = useState(false);
-  const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
   const can = useCan();
   const canWrite = can("backup:write");
-
-  const dbName = useMemo(() => {
-    const m = new Map<string, string>();
-    databases?.items.forEach((d) => m.set(d.id, d.name));
-    return m;
-  }, [databases]);
-
-  const destName = useMemo(() => {
-    const m = new Map<string, string>();
-    destinations?.items.forEach((d) => m.set(d.id, d.name));
-    return m;
-  }, [destinations]);
-
-  const columns = useMemo((): DataTableColumn<Backup>[] => {
-    const cols: DataTableColumn<Backup>[] = [
-      {
-        id: "database",
-        header: "Database",
-        className: "font-medium",
-        render: (b) => dbName.get(b.database_id) ?? b.database_id.slice(0, 8),
-      },
-      {
-        id: "destination",
-        header: "Destination",
-        className: "muted",
-        render: (b) => (b.destination_id ? destName.get(b.destination_id) ?? "—" : "—"),
-      },
-      {
-        id: "status",
-        header: "Status",
-        render: (b) => (
-          <>
-            <StatusBadge status={b.status} />
-            {b.error ? (
-              <div className="muted text-sm" style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={b.error}>
-                {b.error}
-              </div>
-            ) : null}
-          </>
-        ),
-      },
-      { id: "size", header: "Size", className: "muted", render: (b) => formatBytes(b.size_bytes) },
-      { id: "created", header: "Created", className: "muted", render: (b) => new Date(b.created_at).toLocaleString() },
-    ];
-    if (canWrite) {
-      cols.push({
-        id: "actions",
-        header: "Actions",
-        align: "right",
-        render: (b) =>
-          b.status === "completed" ? (
-            <button className="btn btn-sm" onClick={() => setRestoreTarget(b)}>
-              <Upload size={15} /> Restore / Move
-            </button>
-          ) : null,
-      });
-    }
-    return cols;
-  }, [canWrite, dbName, destName]);
+  const { data: databases } = useDatabases({ enabled: canWrite });
+  const { data: destinations } = useDestinations(can("destination:read"));
+  const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const noStorage = destinations !== undefined && destinations.items.length === 0;
 
   return (
     <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: "1.1rem" }}>
-        <div>
-          <h1 className="text-xl font-semibold">Backups</h1>
-          <p className="muted text-sm">Database dumps stored in S3 / Cloudflare R2.</p>
-        </div>
-        {canWrite ? (
-          <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-            <Plus size={16} /> New backup
-          </button>
-        ) : null}
-      </div>
-
-      <DataTable<Backup>
-        columns={columns}
-        rows={data?.items ?? []}
-        rowKey={(b) => b.id}
-        isLoading={isLoading}
-        error={error ? (error as ApiError).message : undefined}
-        errorTitle="Could not load backups"
-        emptyTitle="No backups yet"
-        emptyHint="Add a backup destination, then trigger your first backup."
-        pagination={{
-          page,
-          pageCount: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / LIST_PAGE_SIZE)),
-          onPage: setPage,
-        }}
+      <PageHeader
+        title="Backup history"
+        description="Every backup taken of your databases. Restore one, download it, or check that it restores."
+        actions={
+          canWrite ? (
+            <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+              <Plus size={16} /> Back up now
+            </button>
+          ) : null
+        }
       />
-
+      <div className="search-box" style={{ marginBottom: ".9rem" }}>
+        <Search size={16} aria-hidden />
+        <input
+          className="input"
+          type="search"
+          placeholder="Search by database or server…"
+          aria-label="Search backups"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      <BackupList
+        search={search}
+        emptyHint={
+          noStorage
+            ? "Add backup storage first, then back up a database or set up a schedule."
+            : "Back up a database now, or set up a schedule to do it automatically."
+        }
+        emptyAction={
+          noStorage ? (
+            <Link href="/backups/storage" className="btn btn-primary">
+              Add backup storage
+            </Link>
+          ) : (
+            <Link href="/backups/schedules" className="btn">
+              Set up a schedule
+            </Link>
+          )
+        }
+      />
       <NewBackupModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         databases={databases?.items ?? []}
         destinations={destinations?.items ?? []}
       />
-      <RestoreModal backup={restoreTarget} onClose={() => setRestoreTarget(null)} dbName={dbName} />
     </div>
   );
 }
@@ -160,124 +92,75 @@ function NewBackupModal({
     e.preventDefault();
     setError(null);
     try {
-      await trigger.mutateAsync({ database_id: databaseId, destination_id: destinationId });
+      await trigger.mutateAsync({
+        database_id: databaseId,
+        destination_id: destinationId,
+      });
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to start backup");
+      setError(friendlyError(err, "Failed to start the backup"));
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New backup">
+    <Modal open={open} onClose={onClose} title="Back up a database">
       <form onSubmit={onSubmit}>
         <Field label="Database">
-          <select className="input" value={databaseId} onChange={(e) => setDatabaseId(e.target.value)} required>
-            <option value="" disabled>Select a database…</option>
+          <select
+            className="input"
+            value={databaseId}
+            onChange={(e) => setDatabaseId(e.target.value)}
+            required
+          >
+            <option value="" disabled>
+              Select a database…
+            </option>
             {databases.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
             ))}
           </select>
         </Field>
-        <Field label="Destination">
-          <select className="input" value={destinationId} onChange={(e) => setDestinationId(e.target.value)} required>
-            <option value="" disabled>Select a destination…</option>
+        <Field label="Save to">
+          <select
+            className="input"
+            value={destinationId}
+            onChange={(e) => setDestinationId(e.target.value)}
+            required
+          >
+            <option value="" disabled>
+              Select backup storage…
+            </option>
             {destinations.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
             ))}
           </select>
         </Field>
         {destinations.length === 0 ? (
-          <p className="muted text-sm">Add an S3/R2 destination first (Destinations page).</p>
+          <p className="muted text-sm">
+            Add <Link href="/backups/storage" className="link">backup storage</Link> first.
+          </p>
         ) : null}
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={trigger.isPending || destinations.length === 0}>
+        <div
+          className="flex items-center justify-end gap-2"
+          style={{ marginTop: ".5rem" }}
+        >
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={trigger.isPending || destinations.length === 0}
+          >
             {trigger.isPending ? "Starting…" : "Start backup"}
           </button>
         </div>
       </form>
-    </Modal>
-  );
-}
-
-function RestoreModal({
-  backup,
-  onClose,
-  dbName,
-}: {
-  backup: Backup | null;
-  onClose: () => void;
-  dbName: Map<string, string>;
-}) {
-  const restore = useRestoreBackup();
-  const { data: instances } = useInstances();
-  const [targetInstance, setTargetInstance] = useState("");
-  const [targetDatabase, setTargetDatabase] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await restore.mutateAsync({
-        backup_id: backup!.id,
-        target_instance_id: targetInstance || undefined,
-        target_database: targetDatabase || undefined,
-      });
-      setDone(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to start restore");
-    }
-  }
-
-  function close() {
-    setTargetInstance("");
-    setTargetDatabase("");
-    setDone(false);
-    setError(null);
-    onClose();
-  }
-
-  if (!backup) return null;
-  return (
-    <Modal open onClose={close} title={`Restore "${dbName.get(backup.database_id) ?? "database"}"`}>
-      {done ? (
-        <div>
-          <p className="text-sm">Restore started — track it on the Operations page.</p>
-          <div className="flex items-center justify-end" style={{ marginTop: ".8rem" }}>
-            <button className="btn btn-primary" onClick={close}>Done</button>
-          </div>
-        </div>
-      ) : (
-        <form onSubmit={onSubmit}>
-          <p className="muted text-sm" style={{ marginBottom: ".8rem" }}>
-            Restore into the original instance, or pick another instance and/or database name —
-            that&apos;s how you move a database to a different server.
-          </p>
-          <Field label="Target instance (default: original)">
-            <select className="input" value={targetInstance} onChange={(e) => setTargetInstance(e.target.value)}>
-              <option value="">Original instance</option>
-              {instances?.items.filter((i) => i.has_credentials).map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name} ({i.kind === "external" ? `${i.host}:${i.port}` : `port ${i.port}`})
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Target database name (default: original)">
-            <input className="input" value={targetDatabase} onChange={(e) => setTargetDatabase(e.target.value)} placeholder="leave empty to keep the name" />
-          </Field>
-          <ErrorText message={error ?? undefined} />
-          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-            <button type="button" className="btn" onClick={close}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={restore.isPending}>
-              {restore.isPending ? "Starting…" : "Start restore"}
-            </button>
-          </div>
-        </form>
-      )}
     </Modal>
   );
 }

@@ -26,7 +26,14 @@ var _ backupdom.Repository = (*BackupRepository)(nil)
 
 const backupColumns = `
 	id, database_id, job_id, schedule_id, destination_id, type, engine, status, storage_url,
-	size_bytes, checksum, started_at, completed_at, expires_at, error, created_by, created_at, version`
+	size_bytes, checksum, started_at, completed_at, expires_at, error, created_by, created_at, version,
+	verify_status, verified_at, verify_error`
+
+// backupNames resolves a backup's database and database server names for reads.
+const backupNames = `
+	COALESCE((SELECT d.name FROM databases d WHERE d.id = backups.database_id), ''),
+	COALESCE((SELECT i.name FROM databases d JOIN instances i ON i.id = d.instance_id
+	          WHERE d.id = backups.database_id), '')`
 
 func (r *BackupRepository) Create(ctx context.Context, b *backupdom.Backup) error {
 	const q = `
@@ -43,7 +50,7 @@ func (r *BackupRepository) Create(ctx context.Context, b *backupdom.Backup) erro
 }
 
 func (r *BackupRepository) GetByID(ctx context.Context, id uuid.UUID) (*backupdom.Backup, error) {
-	q := `SELECT ` + backupColumns + ` FROM backups WHERE id = $1`
+	q := `SELECT ` + backupColumns + `, ` + backupNames + ` FROM backups WHERE id = $1`
 	b, err := scanBackup(r.pool.QueryRow(ctx, q, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -65,6 +72,12 @@ func (r *BackupRepository) List(ctx context.Context, f backupdom.ListFilter) (ba
 		args = append(args, string(*f.Status))
 		conds = append(conds, fmt.Sprintf("status = $%d", len(args)))
 	}
+	if f.Search != "" {
+		args = append(args, "%"+likeEscape(f.Search)+"%")
+		conds = append(conds, fmt.Sprintf(
+			"database_id IN (SELECT d.id FROM databases d JOIN instances i ON i.id = d.instance_id WHERE d.name ILIKE $%[1]d OR i.name ILIKE $%[1]d)",
+			len(args)))
+	}
 	if f.Scope != nil {
 		args = append(args, idArray(f.Scope.DatabaseIDs))
 		dbPos := len(args)
@@ -80,9 +93,9 @@ func (r *BackupRepository) List(ctx context.Context, f backupdom.ListFilter) (ba
 	offsetPos := len(args)
 
 	q := fmt.Sprintf(
-		`SELECT %s, count(*) OVER() AS total FROM backups WHERE %s
+		`SELECT %s, %s, count(*) OVER() AS total FROM backups WHERE %s
 		 ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
-		backupColumns, join(conds), limitPos, offsetPos)
+		backupColumns, backupNames, join(conds), limitPos, offsetPos)
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -100,7 +113,8 @@ func (r *BackupRepository) List(ctx context.Context, f backupdom.ListFilter) (ba
 		if err := rows.Scan(
 			&b.ID, &b.DatabaseID, &b.JobID, &b.ScheduleID, &b.DestinationID, &b.Type, &b.Engine, &status, &b.StorageURL,
 			&b.SizeBytes, &b.Checksum, &b.StartedAt, &b.CompletedAt, &b.ExpiresAt, &b.Error, &b.CreatedBy, &b.CreatedAt, &b.Version,
-			&total,
+			&b.VerifyStatus, &b.VerifiedAt, &b.VerifyError,
+			&b.DatabaseName, &b.InstanceName, &total,
 		); err != nil {
 			return backupdom.Page{}, apperr.Internal(fmt.Errorf("scan backup: %w", err))
 		}
@@ -144,6 +158,8 @@ func scanBackup(row rowScanner) (*backupdom.Backup, error) {
 	if err := row.Scan(
 		&b.ID, &b.DatabaseID, &b.JobID, &b.ScheduleID, &b.DestinationID, &b.Type, &b.Engine, &status, &b.StorageURL,
 		&b.SizeBytes, &b.Checksum, &b.StartedAt, &b.CompletedAt, &b.ExpiresAt, &b.Error, &b.CreatedBy, &b.CreatedAt, &b.Version,
+		&b.VerifyStatus, &b.VerifiedAt, &b.VerifyError,
+		&b.DatabaseName, &b.InstanceName,
 	); err != nil {
 		return nil, err
 	}
@@ -202,4 +218,24 @@ func (r *BackupRepository) CountByStatusSince(ctx context.Context, since time.Ti
 		out[backupdom.Status(status)] = n
 	}
 	return out, rows.Err()
+}
+
+func (r *BackupRepository) SetVerify(ctx context.Context, id uuid.UUID, status string, errMsg *string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE backups SET verify_status = $2, verify_error = $3,
+			verified_at = CASE WHEN $2 = 'running' THEN verified_at ELSE now() END
+		WHERE id = $1`, id, status, errMsg)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("set backup verification: %w", err))
+	}
+	return nil
+}
+
+func (r *BackupRepository) MarkDeleted(ctx context.Context, id uuid.UUID) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE backups SET status = 'deleted', version = version + 1 WHERE id = $1 AND status IN ('completed','failed','expired')`, id)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("mark backup deleted: %w", err))
+	}
+	return nil
 }

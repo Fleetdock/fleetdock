@@ -29,7 +29,7 @@ The dashboard is at http://localhost:3000 and the API at http://localhost:8080.
 
 ## Development Requirements
 
-- Go 1.25+
+- Go 1.26+
 - Node.js 22+
 - Docker and Docker Compose (for the full stack)
 - `golangci-lint` (for linting; CI installs it automatically)
@@ -57,8 +57,13 @@ Configuration uses the `FLEETDOCK_*` environment prefix.
 ### TypeScript / Frontend
 
 - Run `npm run lint` and `npm run typecheck` in `frontend/`.
-- Use existing UI components from `frontend/src/components/`.
-- Keep API calls in `frontend/src/lib/api.ts`.
+- Use existing UI components from `frontend/src/components/` (`components/ui`
+  has the primitives: `PageHeader`, `Modal`, `Field`, `Menu`, `Time`, …).
+- Data hooks live in `frontend/src/lib/data/<area>.ts` (re-exported from
+  `@/lib/hooks`); the HTTP client is `frontend/src/lib/api.ts`.
+- Write user-facing text with the words in [docs/glossary.md](docs/glossary.md).
+- Pages and sections come from `frontend/src/lib/nav.ts`; moving a page needs
+  an entry in `frontend/src/lib/legacy-redirects.json`.
 
 ## Testing
 
@@ -67,6 +72,11 @@ make test          # go vet + backend unit tests
 make lint          # golangci-lint + ESLint
 make build         # compile backend and frontend
 ```
+
+Frontend unit tests: `npm test` in `frontend/`. Browser tests drive a running
+install — see [frontend/e2e/README.md](frontend/e2e/README.md). Repository
+tests against a real PostgreSQL:
+`FLEETDOCK_IT_POSTGRES=127.0.0.1:5432 go test -tags integration ./internal/infra/postgres/`.
 
 Add tests for new service logic. Focus on validation, state transitions, and error paths.
 

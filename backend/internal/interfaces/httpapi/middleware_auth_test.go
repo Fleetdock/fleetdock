@@ -177,3 +177,5 @@ func TestRequireResourcePerm_ScopeEnforced(t *testing.T) {
 		t.Fatalf("out-of-scope: expected 403, got %d", rec.Code)
 	}
 }
+
+func (r *stubAuthRepo) BumpTokenEpoch(_ context.Context, _ uuid.UUID) error { return nil }

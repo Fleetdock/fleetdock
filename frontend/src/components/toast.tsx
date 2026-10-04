@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   createContext,
   useCallback,
@@ -10,25 +11,28 @@ import {
   type ReactNode,
 } from "react";
 
+import { X } from "lucide-react";
+
 export type ToastKind = "success" | "error" | "info";
 
 interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
+  action?: ToastAction;
+}
+
+/** ToastAction is an optional link shown in the toast, e.g. "View". */
+export interface ToastAction {
+  label: string;
+  href: string;
 }
 
 interface ToastContextValue {
-  push: (kind: ToastKind, message: string) => void;
+  push: (kind: ToastKind, message: string, action?: ToastAction) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
-
-const ACCENT: Record<ToastKind, string> = {
-  success: "var(--success)",
-  error: "var(--danger)",
-  info: "var(--muted)",
-};
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -39,10 +43,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const push = useCallback(
-    (kind: ToastKind, message: string) => {
+    (kind: ToastKind, message: string, action?: ToastAction) => {
       const id = (idRef.current += 1);
-      setToasts((t) => [...t, { id, kind, message }]);
-      setTimeout(() => remove(id), 5000);
+      // Keep at most 4 on screen; errors stay longer so they can be read.
+      setToasts((t) => [...t.slice(-3), { id, kind, message, action }]);
+      setTimeout(() => remove(id), kind === "error" ? 9000 : 5000);
     },
     [remove],
   );
@@ -52,48 +57,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div
-        aria-live="polite"
-        role="status"
-        style={{
-          position: "fixed",
-          bottom: "1rem",
-          right: "1rem",
-          zIndex: 1000,
-          display: "flex",
-          flexDirection: "column",
-          gap: "0.5rem",
-          maxWidth: "24rem",
-        }}
-      >
+      <div className="toasts" aria-live="polite" role="status">
         {toasts.map((t) => (
-          <div
-            key={t.id}
-            onClick={() => remove(t.id)}
-            className="card"
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "0.6rem",
-              padding: "0.7rem 0.85rem",
-              cursor: "pointer",
-              borderLeft: `3px solid ${ACCENT[t.kind]}`,
-              boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
-              fontSize: "0.875rem",
-            }}
-          >
-            <span
-              aria-hidden
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 999,
-                marginTop: 5,
-                flexShrink: 0,
-                background: ACCENT[t.kind],
-              }}
-            />
-            <span>{t.message}</span>
+          <div key={t.id} className={`card toast toast-${t.kind}`}>
+            <span className="toast-dot" aria-hidden />
+            <span style={{ flex: 1 }}>{t.message}</span>
+            {t.action ? (
+              <Link href={t.action.href} className="link" onClick={() => remove(t.id)}>
+                {t.action.label}
+              </Link>
+            ) : null}
+            <button type="button" className="toast-close" aria-label="Dismiss" onClick={() => remove(t.id)}>
+              <X size={14} />
+            </button>
           </div>
         ))}
       </div>
@@ -105,4 +81,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 // components stay usable in isolation.
 export function useToast(): ToastContextValue {
   return useContext(ToastContext) ?? { push: () => {} };
+}
+
+/**
+ * useErrorToast returns an onError callback for fire-and-forget mutations
+ * (`mutation.mutate(vars, { onError: toastError("…") })`), so a failure is
+ * never silent. Mutations awaited with mutateAsync show errors inline instead.
+ */
+export function useErrorToast(): (fallback: string) => (err: unknown) => void {
+  const { push } = useToast();
+  return useCallback(
+    (fallback: string) => (err: unknown) => {
+      const msg = err instanceof Error && err.message && err.message !== "unauthorized" ? err.message : fallback;
+      push("error", msg);
+    },
+    [push],
+  );
 }

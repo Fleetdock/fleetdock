@@ -25,6 +25,10 @@ FLEETDOCK_REPO="${FLEETDOCK_REPO:-fleetdock/fleetdock}"
 FLEETDOCK_SOURCE="${FLEETDOCK_SOURCE:-}"
 BUILD_LOCALLY=""
 FLEETDOCK_DIR="${FLEETDOCK_DIR:-/opt/fleetdock}"
+# TAG_EXPLICIT records whether a tag was asked for (--tag or the environment):
+# re-running the installer to upgrade must not silently move a pinned install
+# back to "latest".
+TAG_EXPLICIT="${FLEETDOCK_RELEASE_TAG:+1}"
 FLEETDOCK_RELEASE_TAG="${FLEETDOCK_RELEASE_TAG:-latest}"
 FLEETDOCK_DOMAIN="${FLEETDOCK_DOMAIN:-}"
 FLEETDOCK_ADMIN_EMAIL="${FLEETDOCK_ADMIN_EMAIL:-admin@example.com}"
@@ -74,7 +78,7 @@ while [ $# -gt 0 ]; do
     --domain) FLEETDOCK_DOMAIN="${2:?--domain needs a value}"; shift 2 ;;
     --admin-email) FLEETDOCK_ADMIN_EMAIL="${2:?--admin-email needs a value}"; shift 2 ;;
     --dir) FLEETDOCK_DIR="${2:?--dir needs a value}"; FLEETDOCK_DIR_SET=1; shift 2 ;;
-    --tag) FLEETDOCK_RELEASE_TAG="${2:?--tag needs a value}"; shift 2 ;;
+    --tag) FLEETDOCK_RELEASE_TAG="${2:?--tag needs a value}"; TAG_EXPLICIT=1; shift 2 ;;
     --with-gateway) WITH_GATEWAY=1; shift ;;
     --no-tls) NO_TLS=1; shift ;;
     --source) FLEETDOCK_SOURCE="${2:?--source needs a value}"; shift 2 ;;
@@ -283,6 +287,11 @@ fi
 
 # --- secrets ------------------------------------------------------------------
 
+rand_hex() {
+  # $1 = bytes of entropy; hex output needs no escaping anywhere.
+  od -An -tx1 -N "$1" /dev/urandom | tr -d ' \n'
+}
+
 rand_b64() {
   # $1 = bytes of entropy
   if command -v openssl >/dev/null 2>&1; then
@@ -331,6 +340,8 @@ if [ -z "$UPGRADE" ]; then
   JWT_SECRET="$(rand_b64 48)"
   ENCRYPTION_KEY="$(rand_b64 32)"
   ADMIN_PASSWORD="$(rand_b64 16 | tr -d '/+=' | cut -c1-20)"
+  # Hex, so it needs no escaping inside the database URL.
+  POSTGRES_PASSWORD="$(rand_hex 24)"
 
   if [ -n "$WITH_GATEWAY" ]; then
     GATEWAY_ENABLED=true
@@ -356,6 +367,9 @@ FLEETDOCK_RELEASE_TAG=${FLEETDOCK_RELEASE_TAG}
 
 FLEETDOCK_JWT_SECRET=${JWT_SECRET}
 FLEETDOCK_ENCRYPTION_KEY=${ENCRYPTION_KEY}
+
+# Password of the bundled metadata Postgres (never published outside Docker).
+FLEETDOCK_POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 FLEETDOCK_ADMIN_EMAIL=${FLEETDOCK_ADMIN_EMAIL}
 FLEETDOCK_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 
@@ -369,11 +383,22 @@ else
   PUBLIC_URL="$(grep '^FLEETDOCK_PUBLIC_URL=' "${FLEETDOCK_DIR}/.env" | cut -d= -f2-)"
   FLEETDOCK_ADMIN_EMAIL="$(grep '^FLEETDOCK_ADMIN_EMAIL=' "${FLEETDOCK_DIR}/.env" | cut -d= -f2-)"
   ADMIN_PASSWORD=""
-  # Keep the requested tag in sync without touching anything else.
-  if grep -q '^FLEETDOCK_RELEASE_TAG=' "${FLEETDOCK_DIR}/.env"; then
-    sed -i "s|^FLEETDOCK_RELEASE_TAG=.*|FLEETDOCK_RELEASE_TAG=${FLEETDOCK_RELEASE_TAG}|" "${FLEETDOCK_DIR}/.env"
+  # Change the tag only when one was asked for; otherwise keep what the
+  # install is pinned to. Rewritten with awk, not `sed -i` (not portable to
+  # BSD sed on macOS).
+  if [ -n "$TAG_EXPLICIT" ]; then
+    tmp="$(mktemp "${FLEETDOCK_DIR}/.env.XXXXXX")"
+    FD_VAL="$FLEETDOCK_RELEASE_TAG" awk '
+      BEGIN { v = ENVIRON["FD_VAL"]; done = 0 }
+      index($0, "FLEETDOCK_RELEASE_TAG=") == 1 { print "FLEETDOCK_RELEASE_TAG=" v; done = 1; next }
+      { print }
+      END { if (!done) print "FLEETDOCK_RELEASE_TAG=" v }
+    ' "${FLEETDOCK_DIR}/.env" > "$tmp"
+    chmod 600 "$tmp"
+    mv "$tmp" "${FLEETDOCK_DIR}/.env"
   else
-    echo "FLEETDOCK_RELEASE_TAG=${FLEETDOCK_RELEASE_TAG}" >> "${FLEETDOCK_DIR}/.env"
+    FLEETDOCK_RELEASE_TAG="$(grep '^FLEETDOCK_RELEASE_TAG=' "${FLEETDOCK_DIR}/.env" | cut -d= -f2-)"
+    FLEETDOCK_RELEASE_TAG="${FLEETDOCK_RELEASE_TAG:-latest}"
   fi
 fi
 

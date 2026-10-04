@@ -57,8 +57,128 @@ components:
       schema:
         type: string
         format: uuid
+    TableName:
+      name: table
+      in: path
+      required: true
+      description: Table name; on PostgreSQL schema-qualified ("public.orders").
+      schema:
+        type: string
 
   schemas:
+    ColumnSpec:
+      type: object
+      properties:
+        name: {type: string}
+        type: {type: string, example: "varchar(100)"}
+        nullable: {type: boolean}
+        default: {type: string, nullable: true}
+        default_is_expression: {type: boolean}
+        auto_increment: {type: boolean}
+        comment: {type: string}
+        keep_default:
+          type: boolean
+          description: modify_column only — keep the current default (and MySQL AUTO_INCREMENT / ON UPDATE).
+    ForeignKey:
+      type: object
+      properties:
+        name: {type: string}
+        columns: {type: array, items: {type: string}}
+        ref_table: {type: string}
+        ref_columns: {type: array, items: {type: string}}
+        on_delete: {type: string, enum: ["", CASCADE, SET NULL, RESTRICT, NO ACTION]}
+        on_update: {type: string, enum: ["", CASCADE, SET NULL, RESTRICT, NO ACTION]}
+    TableSpec:
+      type: object
+      properties:
+        name: {type: string}
+        columns: {type: array, items: {$ref: "#/components/schemas/ColumnSpec"}}
+        primary_key: {type: array, items: {type: string}}
+        foreign_keys: {type: array, items: {$ref: "#/components/schemas/ForeignKey"}}
+        comment: {type: string}
+    AlterOp:
+      type: object
+      properties:
+        op: {type: string, enum: [add_column, drop_column, modify_column, rename_column, add_foreign_key, drop_foreign_key]}
+        name: {type: string, description: Existing column or constraint}
+        new_name: {type: string}
+        column: {$ref: "#/components/schemas/ColumnSpec"}
+        foreign_key: {$ref: "#/components/schemas/ForeignKey"}
+    RowValues:
+      type: object
+      description: Column name to value; null is SQL NULL.
+      additionalProperties: {type: string, nullable: true}
+    BrowseRequest:
+      type: object
+      properties:
+        filters:
+          type: array
+          items:
+            type: object
+            properties:
+              column: {type: string}
+              op:
+                type: string
+                enum: [eq, ne, lt, lte, gt, gte, contains, starts_with, is_null, not_null]
+              value: {type: string, nullable: true}
+        sort:
+          type: array
+          items:
+            type: object
+            properties:
+              column: {type: string}
+              desc: {type: boolean}
+        search: {type: string, description: Case-insensitive match on any column}
+        limit: {type: integer, maximum: 500, default: 50}
+        offset: {type: integer}
+    BrowseResult:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              name: {type: string}
+              type: {type: string}
+              nullable: {type: boolean}
+              has_default: {type: boolean}
+        rows:
+          type: array
+          items:
+            type: array
+            items: {type: string, nullable: true}
+        total: {type: integer, format: int64}
+        total_exact: {type: boolean}
+        total_capped: {type: boolean}
+        key:
+          type: array
+          items: {type: string}
+    Process:
+      type: object
+      properties:
+        id: {type: integer, format: int64}
+        user: {type: string}
+        host: {type: string}
+        database: {type: string, nullable: true}
+        state: {type: string}
+        seconds: {type: integer, format: int64}
+        query: {type: string, nullable: true}
+    Setting:
+      type: object
+      properties:
+        name: {type: string}
+        value: {type: string}
+    InstanceHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unreachable, unknown]
+        version: {type: string}
+        latency_ms: {type: integer}
+        error: {type: string}
+        checked_at: {type: string, format: date-time}
     Error:
       type: object
       properties:
@@ -104,12 +224,47 @@ components:
         kind:
           type: string
           enum: [managed, external]
+        tls_mode:
+          type: string
+          enum: [disable, prefer, require, verify-full]
+          description: How the control plane secures connections to the instance.
+        health:
+          $ref: "#/components/schemas/InstanceHealth"
+    InstanceRef:
+      type: object
+      description: >
+        Summary of the instance a database lives on, embedded in list and get
+        responses so clients need no second request to resolve the name.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        engine:
+          type: string
+        kind:
+          type: string
+          enum: [managed, external]
+        server_id:
+          type: string
+          format: uuid
+          nullable: true
+        provisioned:
+          type: boolean
+        has_credentials:
+          type: boolean
     Database:
       type: object
       properties:
         id:
           type: string
           format: uuid
+        instance_id:
+          type: string
+          format: uuid
+        instance:
+          $ref: "#/components/schemas/InstanceRef"
         name:
           type: string
         status:
@@ -122,6 +277,12 @@ components:
           format: uuid
         status:
           type: string
+        database_name:
+          type: string
+          description: Name of the backed-up database.
+        instance_name:
+          type: string
+          description: Name of the database server it lives on.
     Operation:
       type: object
       properties:
@@ -132,8 +293,358 @@ components:
           type: string
         status:
           type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+          format: uuid
+        resource_name:
+          type: string
+          description: Display name of the resource (for a backup, its database).
 
 paths:
+  /v1/saved-queries/{id}:
+    patch:
+      tags: [Console]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Update a saved query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                sql: {type: string}
+                database_id: {type: string, format: uuid, nullable: true}
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: [Console]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Delete a saved query
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/saved-queries:
+    get:
+      tags: [Console]
+      security: [{bearerAuth: []}]
+      summary: Your saved queries
+      parameters:
+        - name: database_id
+          in: query
+          schema: {type: string, format: uuid}
+          description: Limit to this database's queries plus unscoped ones.
+      responses:
+        "200":
+          description: Saved queries
+    post:
+      tags: [Console]
+      security: [{bearerAuth: []}]
+      summary: Save a query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                sql: {type: string}
+                database_id: {type: string, format: uuid, nullable: true}
+      responses:
+        "201":
+          description: Saved
+
+  /v1/instances/{id}/db-users/password:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Set a database account's password
+      description: >
+        Refused for the instance's own admin login (edit the instance instead) and
+        for Fleetdock-managed console roles. PostgreSQL passwords are sent as
+        SCRAM verifiers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: {type: string}
+                host: {type: string}
+                password: {type: string, writeOnly: true}
+      responses:
+        "200":
+          description: Changed
+
+  /v1/databases/{id}/import-sql:
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: destination_id
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+          description: Backup destination used to stage the file for the executor.
+        - name: gzip
+          in: query
+          schema: {type: boolean}
+          description: The body is already gzip-compressed.
+      summary: Import a SQL file
+      description: >
+        Applies a SQL dump (max 2 GB) to the database through the restore path,
+        running as the database's read-write role — never as the instance admin.
+        The staged file is deleted afterwards. Requires database:write and
+        backup:write.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        "202":
+          description: Import operation started
+
+  /v1/databases/{id}/query-history:
+    get:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Your console history for this database
+      description: The caller's most recent runs (up to 200 are kept per database).
+      responses:
+        "200":
+          description: History
+
+  /v1/databases/{id}/query/{qid}/cancel:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: qid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      summary: Cancel a running console query
+      description: >
+        Only the user who started the query can cancel it. The statement is
+        killed on the database server as well.
+      responses:
+        "202":
+          description: Cancelling
+
+  /v1/backups/{id}/verify:
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Verify backup (test restore)
+      description: >
+        Restores the backup into a throwaway database on its instance (checking the
+        checksum and that tables come back), records the outcome on the backup
+        (`verify_status`, `verified_at`, `verify_error`) and drops the throwaway
+        database. Requires backup:write.
+      responses:
+        "202":
+          description: Verification operation started
+
+  /v1/backups/{id}/download:
+    get:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Download link
+      description: >
+        Returns a presigned link (valid 15 minutes) to the backup's gzipped SQL
+        dump, downloaded directly from the bucket. Requires backup:read.
+      responses:
+        "200":
+          description: Link
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: {type: string}
+                  expires_at: {type: string, format: date-time}
+
+  /v1/databases/{id}/objects:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: List views, routines, triggers, sequences and events
+      responses:
+        "200":
+          description: Schema objects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: {type: string, enum: [view, materialized_view, function, procedure, trigger, sequence, event]}
+                        schema: {type: string}
+                        name: {type: string}
+                        table: {type: string}
+                        definition: {type: string, nullable: true}
+
+  /v1/databases/{id}/tables/{table}/foreign-keys:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: List foreign keys
+      responses:
+        "200":
+          description: Foreign keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/ForeignKey"}
+
+  /v1/databases/{id}/tables/{table}/indexes/drop:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: Drop index
+      description: An index backing a constraint is dropped by dropping the constraint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+      responses:
+        "200":
+          description: Dropped
+
+  /v1/databases/{id}/tables/{table}/indexes:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: Create index
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                columns: {type: array, items: {type: string}}
+                unique: {type: boolean}
+      responses:
+        "201":
+          description: Created
+
+  /v1/databases/{id}/tables/{table}/rename:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: Rename table
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                new_name: {type: string}
+      responses:
+        "200":
+          description: Renamed
+
+  /v1/databases/{id}/tables/{table}/truncate:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: Truncate table
+      responses:
+        "200":
+          description: Done
+
+  /v1/databases/{id}/tables/{table}/drop:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: Drop table
+      responses:
+        "200":
+          description: Done
+
+  /v1/databases/{id}/tables/{table}:
+    patch:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: Alter table
+      description: >
+        Applies column and foreign-key changes atomically (one ALTER TABLE on
+        MySQL/MariaDB, one transaction on PostgreSQL). On MySQL/MariaDB a change
+        cannot refer to a column added or renamed earlier in the same request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ops:
+                  type: array
+                  items: {$ref: "#/components/schemas/AlterOp"}
+      responses:
+        "200":
+          description: Altered
+
   /healthz:
     get:
       tags: [Health]
@@ -279,6 +790,18 @@ paths:
       responses:
         "200":
           description: User profile
+
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      security: [{bearerAuth: []}]
+      summary: Log out
+      description: >
+        Invalidates every browser session (JWT) issued to the caller so far,
+        on all devices. API tokens are not affected.
+      responses:
+        "204":
+          description: Logged out
 
   /v1/profile:
     get:
@@ -437,9 +960,41 @@ paths:
       tags: [Overview]
       security: [{bearerAuth: []}]
       summary: Fleet overview dashboard
+      description: |
+        Fleet-wide counts, first-run setup progress, and up to 20 open problems
+        ("attention") the caller is allowed to see, critical first.
       responses:
         "200":
           description: Overview stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setup:
+                    type: object
+                    properties:
+                      servers: {type: integer}
+                      instances: {type: integer}
+                      destinations: {type: integer}
+                      schedules: {type: integer}
+                      channels: {type: integer}
+                  attention:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required: [kind, severity, resource_type, resource_id, name, message, since]
+                      properties:
+                        kind:
+                          type: string
+                          enum: [server_offline, instance_unreachable, backup_failed, backup_check_failed, no_recent_backup, database_missing, operation_failed]
+                        severity: {type: string, enum: [critical, warning]}
+                        resource_type: {type: string, enum: [server, instance, database, backup, operation]}
+                        resource_id: {type: string, format: uuid}
+                        name: {type: string}
+                        message: {type: string}
+                        since: {type: string, format: date-time}
 
   /v1/servers:
     get:
@@ -563,6 +1118,37 @@ paths:
       responses:
         "200":
           description: Instance
+    patch:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Update instance
+      description: >
+        Partial update. Omitted fields are left unchanged. `username: ""`
+        clears the admin credentials entirely; `password: ""` removes the
+        stored password but keeps the username. `host` is external-only and
+        `port` cannot be changed on a provisioned instance. Changing `host`
+        requires re-entering `password` (or clearing it), so the stored admin
+        password is never sent to a new host. Loopback, link-local,
+        cloud-metadata and control-plane addresses are refused.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                host: {type: string}
+                port: {type: integer}
+                tls_mode:
+                  type: string
+                  enum: [disable, prefer, require, verify-full]
+                username: {type: string}
+                password: {type: string, writeOnly: true}
+      responses:
+        "200":
+          description: Updated instance
     delete:
       tags: [Instances]
       security: [{bearerAuth: []}]
@@ -572,6 +1158,93 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /v1/instances/{id}/processes:
+    get:
+      tags: [Monitoring]
+      security: [{bearerAuth: []}]
+      summary: List sessions
+      description: >
+        Active sessions on the instance (MySQL/MariaDB PROCESSLIST,
+        PostgreSQL pg_stat_activity client backends). Requires instance:read.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/Process"}
+
+  /v1/instances/{id}/processes/{pid}/kill:
+    post:
+      tags: [Monitoring]
+      security: [{bearerAuth: []}]
+      summary: Cancel or terminate a session
+      description: >
+        Cancels the session's running statement (KILL QUERY /
+        pg_cancel_backend), or with `connection: true` terminates the session
+        (KILL CONNECTION / pg_terminate_backend). Requires instance:write.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: pid
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                connection: {type: boolean, default: false}
+      responses:
+        "204":
+          description: Signalled
+
+  /v1/instances/{id}/status:
+    get:
+      tags: [Monitoring]
+      security: [{bearerAuth: []}]
+      summary: Server status counters
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Status counters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/Setting"}
+
+  /v1/instances/{id}/variables:
+    get:
+      tags: [Monitoring]
+      security: [{bearerAuth: []}]
+      summary: Server configuration
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Configuration settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/Setting"}
 
   /v1/instances/{id}/start:
     post:
@@ -606,11 +1279,32 @@ paths:
         "202":
           description: Restarted
 
+  /v1/instances/{id}/probe:
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      summary: Check now
+      description: >
+        Checks the database server immediately — reachability, version,
+        latency — and refreshes its database list (new databases are added,
+        vanished ones marked missing). The same check runs every minute on its
+        own. Requires instance:read.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Fresh health
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InstanceHealth"}
+
   /v1/instances/{id}/test-connection:
     post:
       tags: [Instances]
       security: [{bearerAuth: []}]
-      summary: Test instance connectivity
+      summary: Test instance connectivity (deprecated)
+      deprecated: true
+      description: Use POST /v1/instances/{id}/probe, which also refreshes the database list.
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
@@ -621,7 +1315,11 @@ paths:
     post:
       tags: [Instances]
       security: [{bearerAuth: []}]
-      summary: Import databases from instance
+      summary: Import databases from instance (deprecated)
+      deprecated: true
+      description: >
+        Databases are now discovered automatically every minute; use
+        POST /v1/instances/{id}/probe to refresh immediately.
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
@@ -892,6 +1590,24 @@ paths:
       responses:
         "200":
           description: Tables
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Create table
+      description: >
+        Creates a table from a typed spec (no SQL). Column types come from an
+        allowlist; defaults are quoted literals or allowlisted expressions.
+        On PostgreSQL `name` may be "schema.table". Requires database:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TableSpec"}
+      responses:
+        "201":
+          description: Created
 
   /v1/databases/{id}/tables/{table}/rows:
     get:
@@ -909,6 +1625,48 @@ paths:
         "200":
           description: Rows
 
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Insert a row
+      description: Omitted columns take their defaults. Requires database:write.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                values: {$ref: "#/components/schemas/RowValues"}
+      responses:
+        "201":
+          description: Inserted
+    patch:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Update one row
+      description: >
+        `key` must give every row-key column. The change must match exactly
+        one row or nothing is written. Requires database:write.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {$ref: "#/components/schemas/RowValues"}
+                values: {$ref: "#/components/schemas/RowValues"}
+      responses:
+        "200":
+          description: Updated
+
   /v1/databases/{id}/tables/{table}/schema:
     get:
       tags: [DBAdmin]
@@ -924,6 +1682,83 @@ paths:
       responses:
         "200":
           description: Schema
+
+  /v1/databases/{id}/tables/{table}/browse:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Browse rows with filters and sorting
+      description: >
+        Returns a page of rows. Filters and sort columns are validated against
+        the table; values are bound as parameters. Results are always ordered
+        by the row key last, so pages are stable. `key` names the columns that
+        identify a row (empty when the table has no primary or NOT NULL unique
+        key — such tables are read-only here). Runs as the database's
+        read-only console role. Requires database:read.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowseRequest"}
+      responses:
+        "200":
+          description: A page of rows
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowseResult"}
+
+  /v1/databases/{id}/tables/{table}/rows/delete:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Delete one row
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {$ref: "#/components/schemas/RowValues"}
+      responses:
+        "200":
+          description: Deleted
+
+  /v1/databases/{id}/tables/{table}/import:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Import CSV
+      description: >
+        The body is the CSV itself (max 100 MB). Its header row names table
+        columns. The import runs in one transaction: any bad row aborts it.
+        A field of exactly `\N` is NULL. Requires database:write.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+        - name: empty_as_null
+          in: query
+          schema: {type: boolean}
+          description: Load empty fields as NULL instead of empty strings.
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: {type: string}
+      responses:
+        "200":
+          description: Rows imported
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported: {type: integer, format: int64}
 
   /v1/databases/{id}/tables/{table}/export:
     get:
@@ -946,11 +1781,52 @@ paths:
       tags: [DBAdmin]
       security: [{bearerAuth: []}]
       summary: SQL query console
+      description: >
+        Runs one or more statements (split on `;` outside literals, comments
+        and dollar quotes; MySQL `DELIMITER` lines are honoured) in order on
+        one session, stopping at the first failure. Reads run as the
+        database's read-only role; a script with any write runs as its
+        read-write role and requires database:write (checked before anything
+        runs). A failing first statement is returned as an error; a later
+        failure returns the earlier results plus `error`. Pass `query_id` (a
+        UUID you generate) to be able to cancel the run.
       parameters:
         - $ref: "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sql: {type: string}
+                limit: {type: integer, maximum: 1000, default: 100, description: Rows returned per statement}
+                query_id: {type: string, format: uuid}
       responses:
         "200":
-          description: Query result
+          description: Results of the statements that ran
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        columns: {type: array, items: {type: string}}
+                        rows: {type: array, items: {type: array, items: {type: string, nullable: true}}}
+                        row_count: {type: integer}
+                        truncated: {type: boolean}
+                        rows_affected: {type: integer, format: int64}
+                        read_only: {type: boolean}
+                        duration_ms: {type: integer, format: int64}
+                  error:
+                    type: object
+                    properties:
+                      statement: {type: integer, description: 1-based index of the failed statement}
+                      message: {type: string}
 
   /v1/databases/{id}/export:
     post:
@@ -1008,9 +1884,17 @@ paths:
       tags: [Backups]
       security: [{bearerAuth: []}]
       summary: List backups
+      parameters:
+        - name: database_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: search
+          in: query
+          description: Matches the database or database server name.
+          schema: {type: string}
       responses:
         "200":
-          description: Backups
+          description: Backups (each with database_name and instance_name)
     post:
       tags: [Backups]
       security: [{bearerAuth: []}]
@@ -1029,6 +1913,16 @@ paths:
       responses:
         "200":
           description: Backup
+    delete:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Delete backup
+      description: Deletes the stored artifact and marks the backup deleted. Running backups cannot be deleted.
+      responses:
+        "204":
+          description: Deleted
 
   /v1/backups/{id}/restore:
     post:

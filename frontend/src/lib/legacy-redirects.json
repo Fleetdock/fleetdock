@@ -1,0 +1,42 @@
+[
+  {
+    "source": "/operations",
+    "destination": "/activity"
+  },
+  {
+    "source": "/operations/:id",
+    "destination": "/activity/:id"
+  },
+  {
+    "source": "/schedules",
+    "destination": "/backups/schedules"
+  },
+  {
+    "source": "/destinations",
+    "destination": "/backups/storage"
+  },
+  {
+    "source": "/users",
+    "destination": "/access/users"
+  },
+  {
+    "source": "/roles",
+    "destination": "/access/roles"
+  },
+  {
+    "source": "/tokens",
+    "destination": "/access/tokens"
+  },
+  {
+    "source": "/notifications",
+    "destination": "/settings/notifications"
+  },
+  {
+    "source": "/profile",
+    "destination": "/settings/profile"
+  },
+  {
+    "source": "/instances",
+    "destination": "/databases"
+  }
+]

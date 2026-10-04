@@ -7,11 +7,11 @@ import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
   title: { default: "Fleetdock", template: "%s · Fleetdock" },
-  description: "Database control plane",
+  description: "Manage your databases, backups and servers",
   applicationName: "Fleetdock",
   openGraph: {
     title: "Fleetdock",
-    description: "Database control plane",
+    description: "Manage your databases, backups and servers",
     siteName: "Fleetdock",
     type: "website",
   },

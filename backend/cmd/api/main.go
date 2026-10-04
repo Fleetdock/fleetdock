@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,7 +21,9 @@ import (
 	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	backupapp "github.com/Fleetdock/fleetdock/backend/internal/app/backup"
+	consoleapp "github.com/Fleetdock/fleetdock/backend/internal/app/console"
 	databaseapp "github.com/Fleetdock/fleetdock/backend/internal/app/database"
+	dbaccessapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbaccess"
 	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
 	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
 	destinationapp "github.com/Fleetdock/fleetdock/backend/internal/app/destination"
@@ -29,6 +32,7 @@ import (
 	moveapp "github.com/Fleetdock/fleetdock/backend/internal/app/move"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
+	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
 	secretsapp "github.com/Fleetdock/fleetdock/backend/internal/app/secrets"
 	serverapp "github.com/Fleetdock/fleetdock/backend/internal/app/server"
@@ -36,10 +40,12 @@ import (
 	tokenapp "github.com/Fleetdock/fleetdock/backend/internal/app/token"
 	userapp "github.com/Fleetdock/fleetdock/backend/internal/app/user"
 	"github.com/Fleetdock/fleetdock/backend/internal/config"
+	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	"github.com/Fleetdock/fleetdock/backend/internal/infra/postgres"
 	"github.com/Fleetdock/fleetdock/backend/internal/interfaces/httpapi"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/auth"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/crypto"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/notify"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/uiproxy"
 	"github.com/Fleetdock/fleetdock/backend/internal/worker"
@@ -48,6 +54,13 @@ import (
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
+	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
+		if err := resetPassword(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		slog.Error("fatal", "error", err.Error())
 		os.Exit(1)
@@ -64,6 +77,14 @@ func run() error {
 	}); err != nil {
 		return err
 	}
+
+	// Instance hosts are user input: refuse loopback/metadata/control-plane
+	// targets for every database connection this process opens.
+	dbPolicy := &netsafe.DBPolicy{AllowLoopback: cfg.AllowLoopbackDBHosts}
+	if addr := cfg.MetadataDBAddr(); addr != "" {
+		dbPolicy.Deny = append(dbPolicy.Deny, addr)
+	}
+	netsafe.ConfigureDB(dbPolicy)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -137,13 +158,27 @@ func run() error {
 	backupSvc := backupapp.NewService(backupRepo, databaseRepo, instanceRepo, destRepo, opsSvc)
 	scheduleSvc := scheduleapp.NewService(scheduleRepo, databaseRepo, destRepo, backupSvc)
 	userSvc := userapp.NewService(userRepo)
-	dbadminSvc := dbadminapp.NewService(instanceRepo, databaseRepo, serverRepo, secretsSvc)
+	accessSvc := dbaccessapp.NewService(postgres.NewDBAccessRepository(pool), secretsSvc)
+	dbadminSvc := dbadminapp.NewService(instanceRepo, databaseRepo, serverRepo, secretsSvc, accessSvc)
+	opsSvc.SetDatabaseDropHook(dbadminSvc.DropAccessRoles)
+	opsSvc.SetAccessRoleResolver(dbadminSvc.WriteRoleCredentials)
+	consoleRepo := postgres.NewConsoleRepository(pool)
+	dbadminSvc.SetHistory(consoleRepo)
 	summarySvc := summaryapp.NewService(statsRepo)
 	notifSender := notify.New(notify.SMTPConfig{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
 		Password: cfg.SMTPPassword, From: cfg.SMTPFrom,
 	})
 	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc)
+
+	// The probe keeps instance health and database lists current: every
+	// minute from the worker, and on demand ("Check now").
+	probeSvc := probeapp.NewService(instanceRepo, databaseRepo, serverRepo, secretsSvc)
+	probeSvc.SetNotifier(notifSvc)
+	probeSvc.SetAgentImporter(probeapp.AgentImportFunc(func(ctx context.Context, inst *instancedom.Instance) error {
+		_, err := instanceSvc.ImportDatabases(ctx, inst.ID.String(), nil)
+		return err
+	}))
 	opsSvc.SetNotifier(notifSvc)
 	moveSvc := moveapp.NewService(databaseRepo, instanceRepo, backupSvc, databaseSvc, endpointSvc)
 	opsSvc.SetMover(moveSvc)
@@ -167,6 +202,8 @@ func run() error {
 			Credentials:      credentialSvc,
 			HeartbeatTimeout: cfg.HeartbeatTimeout,
 			MetricsRetention: cfg.MetricsRetention,
+			HousekeepingLock: postgres.HousekeepingLock(pool),
+			Probe:            probeSvc,
 		}).Run(ctx)
 	}
 
@@ -193,7 +230,7 @@ func run() error {
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Auth:              httpapi.NewAuthHandler(authSvc),
 		Servers:           httpapi.NewServerHandler(serverSvc),
-		Instances:         httpapi.NewInstanceHandler(instanceSvc, resolver),
+		Instances:         httpapi.NewInstanceHandler(instanceSvc, resolver).WithProbe(probeSvc),
 		Databases:         httpapi.NewDatabaseHandler(databaseSvc, resolver),
 		Tokens:            httpapi.NewTokenHandler(tokenSvc),
 		Users:             httpapi.NewUserHandler(userSvc),
@@ -202,7 +239,8 @@ func run() error {
 		Schedules:         httpapi.NewScheduleHandler(scheduleSvc),
 		Moves:             httpapi.NewMoveHandler(moveSvc, resolver),
 		Destinations:      httpapi.NewDestinationHandler(destSvc),
-		DBAdmin:           httpapi.NewDBAdminHandler(dbadminSvc),
+		DBAdmin:           httpapi.NewDBAdminHandler(dbadminSvc, resolver),
+		Console:           httpapi.NewConsoleHandler(consoleapp.NewService(consoleRepo), resolver),
 		Connectivity:      httpapi.NewConnectivityHandler(endpointSvc),
 		DBCredentials:     httpapi.NewDBCredentialHandler(credentialSvc),
 		Agents:            httpapi.NewAgentHandler(agentSvc, opsSvc),

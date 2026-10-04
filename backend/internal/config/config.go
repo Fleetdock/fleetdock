@@ -5,6 +5,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -102,7 +104,20 @@ type Config struct {
 	// GatewaySourceIPMode is "direct" or "proxy-protocol". Behind an L4 load
 	// balancer, only proxy-protocol yields real client addresses.
 	GatewaySourceIPMode string
+
+	// AllowLoopbackDBHosts lets instances point at loopback addresses. Off in
+	// production (inside the container loopback is the control plane itself);
+	// on by default in development, where the database often is on localhost.
+	AllowLoopbackDBHosts bool
 }
+
+// minSecretLen is the shortest JWT secret / encryption key accepted in
+// production; weakSecretLen triggers a warning. generate-secrets.sh and
+// install.sh produce 44+ characters.
+const (
+	minSecretLen  = 16
+	weakSecretLen = 32
+)
 
 // IsProduction reports whether the server runs in production mode.
 func (c Config) IsProduction() bool { return c.Env == "production" }
@@ -125,7 +140,32 @@ func (c Config) ValidateSecrets(warn func(name string)) error {
 			warn(name)
 		}
 	}
+	for name, v := range map[string]string{
+		"FLEETDOCK_JWT_SECRET":     c.JWTSecret,
+		"FLEETDOCK_ENCRYPTION_KEY": c.EncryptionKey,
+	} {
+		switch {
+		case len(v) < minSecretLen && c.IsProduction():
+			return fmt.Errorf("refusing to start: %s must be at least %d characters (generate one with scripts/generate-secrets.sh)", name, minSecretLen)
+		case len(v) < weakSecretLen && warn != nil:
+			warn(name)
+		}
+	}
 	return nil
+}
+
+// MetadataDBAddr returns host:port of the metadata database, or "" when the
+// URL cannot be parsed. Instances must never be pointed at it.
+func (c Config) MetadataDBAddr() string {
+	u, err := url.Parse(c.DatabaseURL)
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		port = "5432"
+	}
+	return net.JoinHostPort(u.Hostname(), port)
 }
 
 // EncryptionKeyring returns every key id → secret needed to decrypt secrets:
@@ -190,9 +230,9 @@ func Load() (Config, error) {
 		UINodeBin:        getenv("FLEETDOCK_UI_NODE_BIN", "node"),
 		UIStartupTimeout: getenvDuration("FLEETDOCK_UI_STARTUP_TIMEOUT", 45*time.Second),
 
-		WorkerEnabled:     getenvBool("FLEETDOCK_WORKER_ENABLED", true),
-		HeartbeatTimeout:  getenvDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", 2*time.Minute),
-		MetricsRetention:  getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
+		WorkerEnabled:    getenvBool("FLEETDOCK_WORKER_ENABLED", true),
+		HeartbeatTimeout: getenvDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", 2*time.Minute),
+		MetricsRetention: getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
 
 		SMTPHost:     os.Getenv("FLEETDOCK_SMTP_HOST"),
 		SMTPPort:     getenv("FLEETDOCK_SMTP_PORT", "587"),
@@ -212,6 +252,7 @@ func Load() (Config, error) {
 		GatewayDiagPort:     getenvInt("FLEETDOCK_GATEWAY_DIAG_PORT", 15431),
 		GatewaySourceIPMode: getenv("FLEETDOCK_GATEWAY_SOURCE_IP_MODE", gateway.SourceIPDirect),
 	}
+	cfg.AllowLoopbackDBHosts = getenvBool("FLEETDOCK_ALLOW_LOOPBACK_DB_HOSTS", !cfg.IsProduction())
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: FLEETDOCK_DATABASE_URL is required")
 	}

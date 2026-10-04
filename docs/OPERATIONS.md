@@ -28,6 +28,22 @@ checksums in metadata.
 Use your provider's automated backup (Neon PITR, RDS snapshots, etc.). Verify
 restore in a staging environment at least once.
 
+### Installed with install.sh
+
+```bash
+fleetdock backup-db                        # → /opt/fleetdock/backups/metadata-<time>.sql.gz
+fleetdock backup-db /mnt/offsite/meta.sql.gz
+```
+
+`fleetdock update` takes the same backup automatically before upgrading and
+stops if it fails (override with `FLEETDOCK_SKIP_BACKUP=1`). Schedule
+`fleetdock backup-db` nightly (cron/systemd timer) and copy the files off the
+host. Restore into an empty database with
+`gunzip -c metadata-….sql.gz | fleetdock psql`.
+
+Stored credentials in the dump are encrypted with `FLEETDOCK_ENCRYPTION_KEY`:
+keep `fleetdock backup-config` (the `.env`) alongside, or they are unreadable.
+
 ### Self-hosted Postgres (Compose `postgres` service)
 
 Nightly logical dump:
@@ -163,26 +179,48 @@ dependency-aware routing.
 - Disk full on the host (agent heartbeats and metrics accumulate)
 - Backup operations failing (dashboard **Operations** or notification rules)
 - Servers stuck `offline` (heartbeat timeout default: 2 minutes)
+- Instances whose health is `unreachable` (the dashboard shows the probe result
+  per instance; managed instances the control plane cannot reach directly show
+  `unknown`, which is not an outage)
+- Backup verifications that fail (`backup.verify_failed` notification event)
 
 Structured JSON logs go to stdout from the API — ship them to your log stack.
 
 ### Worker
 
 The in-process worker (`FLEETDOCK_WORKER_ENABLED=true`) handles external-instance
-operations, scheduled backups, retention pruning, offline detection, and
-notifications. Only one API instance should run the worker per metadata database
-unless you implement external job locking (not supported in v0.1.x).
+operations, scheduled backups, retention pruning, offline detection, the
+instance health probe and notifications.
+
+Several API replicas may share one metadata database: jobs are claimed with
+`FOR UPDATE SKIP LOCKED`, the periodic housekeeping runs on one replica at a
+time (PostgreSQL advisory lock) and migrations serialise. Two caveats: cancelling
+a running SQL console query only works when the request reaches the replica that
+runs it (use sticky sessions), and operations orphaned by a crashed replica are
+failed automatically after 2h15m (the maximum run time plus margin).
 
 ## Admin password reset
 
-If locked out and metadata DB is intact:
-
-1. Connect to Postgres
-2. Set a new bcrypt hash on the user row, **or**
-3. Delete all rows from `users` and restart API with `FLEETDOCK_ADMIN_*` set to
-   bootstrap a fresh admin (destructive — only for greenfield recovery)
-
 Prefer the dashboard **Users** page when any admin account still works.
+If you are locked out:
+
+```bash
+fleetdock reset-admin-password                    # the bootstrap admin email
+fleetdock reset-admin-password ops@example.com    # any dashboard user
+```
+
+It prints a new generated password, reactivates the account if it was
+suspended and signs out all of its sessions. Without the CLI (Compose from
+source, Kubernetes), run the same thing in the control-plane container:
+
+```bash
+docker compose exec fleetdock /api reset-password admin@example.com
+# or choose the password:
+docker compose exec -e FLEETDOCK_NEW_PASSWORD='…' fleetdock /api reset-password admin@example.com
+```
+
+It needs only `FLEETDOCK_DATABASE_URL`, so it works even when the API does not
+start.
 
 ## Data retention
 

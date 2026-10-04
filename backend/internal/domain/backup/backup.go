@@ -43,6 +43,14 @@ type Backup struct {
 	CreatedBy     *uuid.UUID
 	CreatedAt     time.Time
 	Version       int
+	// Verification: the latest test restore (nil status = never verified).
+	VerifyStatus *string
+	VerifiedAt   *time.Time
+	VerifyError  *string
+
+	// DatabaseName and InstanceName are display names, filled on reads.
+	DatabaseName string
+	InstanceName string
 }
 
 // Expired is a completed backup past its retention boundary, carrying the
@@ -57,8 +65,10 @@ type Expired struct {
 type ListFilter struct {
 	DatabaseID *uuid.UUID
 	Status     *Status
-	Limit      int
-	Offset     int
+	// Search matches the database or database server name (case-insensitive).
+	Search string
+	Limit  int
+	Offset int
 	// Scope, when non-nil, restricts results to the caller's readable scope.
 	Scope *authz.ReadSet
 }
@@ -91,4 +101,8 @@ type Repository interface {
 	MarkExpired(ctx context.Context, id uuid.UUID) error
 	// CountByStatusSince counts backups grouped by status created since t.
 	CountByStatusSince(ctx context.Context, since time.Time) (map[Status]int, error)
+	// SetVerify records a verification state: running, passed or failed.
+	SetVerify(ctx context.Context, id uuid.UUID, status string, errMsg *string) error
+	// MarkDeleted flags a backup whose stored object was deleted by a user.
+	MarkDeleted(ctx context.Context, id uuid.UUID) error
 }

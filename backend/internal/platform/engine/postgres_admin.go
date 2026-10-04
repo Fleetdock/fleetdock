@@ -31,10 +31,13 @@ func quotePGIdent(name string) string {
 func (pg *Postgres) resolveTable(ctx context.Context, conn *pgx.Conn, name string) (schema, table string, err error) {
 	if s, t, ok := strings.Cut(name, "."); ok && s != "" && t != "" {
 		var found bool
+		// pg_catalog, not information_schema: the latter hides tables the
+		// role has no privileges on, which would turn a missing grant (that
+		// the caller can repair and retry) into a misleading "not found".
 		if qerr := conn.QueryRow(ctx, `
 			SELECT EXISTS (
-				SELECT 1 FROM information_schema.tables
-				WHERE table_schema = $1 AND table_name = $2
+				SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r','p','v','m','f')
 			)`, s, t).Scan(&found); qerr == nil && found {
 			return s, t, nil
 		}
@@ -49,10 +52,10 @@ func (pg *Postgres) resolveTable(ctx context.Context, conn *pgx.Conn, name strin
 func (pg *Postgres) tableSchema(ctx context.Context, conn *pgx.Conn, table string) (string, error) {
 	var schema string
 	err := conn.QueryRow(ctx, `
-		SELECT table_schema FROM information_schema.tables
-		WHERE table_name = $1
-		  AND table_schema NOT IN ('pg_catalog', 'information_schema')
-		ORDER BY CASE WHEN table_schema = 'public' THEN 0 ELSE 1 END
+		SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relname = $1 AND c.relkind IN ('r','p','v','m','f')
+		  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+		ORDER BY CASE WHEN n.nspname = 'public' THEN 0 ELSE 1 END
 		LIMIT 1`, table).Scan(&schema)
 	return schema, err
 }
@@ -128,9 +131,8 @@ func (pg *Postgres) CreateDBUser(ctx context.Context, p ConnParams, user, host, 
 		return err
 	}
 	defer conn.Close(ctx)
-	pw := strings.ReplaceAll(password, "'", "''")
 	_, err = conn.Exec(ctx, fmt.Sprintf(
-		"CREATE ROLE %s WITH LOGIN PASSWORD '%s'", quotePGIdent(user), pw))
+		"CREATE ROLE %s WITH LOGIN PASSWORD %s", quotePGIdent(user), pgPasswordLiteral(password)))
 	return err
 }
 
@@ -630,19 +632,20 @@ func (pg *Postgres) TableSchema(ctx context.Context, p ConnParams, database, tab
 	out := &TableSchema{Table: schema + "." + table, Columns: []ColumnInfo{}, Indexes: []IndexInfo{}}
 
 	colRows, err := conn.Query(ctx, `
-		SELECT column_name, data_type, is_nullable, column_default,
+		SELECT a.attname,
+		       format_type(a.atttypid, a.atttypmod),
+		       CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END,
+		       pg_get_expr(d.adbin, d.adrelid),
 		       CASE WHEN EXISTS (
-		         SELECT 1 FROM information_schema.table_constraints tc
-		         JOIN information_schema.key_column_usage kcu
-		           ON tc.constraint_name = kcu.constraint_name
-		          AND tc.table_schema = kcu.table_schema
-		         WHERE tc.constraint_type = 'PRIMARY KEY'
-		           AND tc.table_schema = $1 AND tc.table_name = $2
-		           AND kcu.column_name = c.column_name
-		       ) THEN 'PRI' ELSE '' END AS col_key
-		FROM information_schema.columns c
-		WHERE table_schema = $1 AND table_name = $2
-		ORDER BY ordinal_position`, schema, table)
+		         SELECT 1 FROM pg_index i
+		         WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY (i.indkey)
+		       ) THEN 'PRI' ELSE '' END
+		FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+		WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
+		ORDER BY a.attnum`, schema, table)
 	if err != nil {
 		return nil, err
 	}
@@ -666,27 +669,121 @@ func (pg *Postgres) TableSchema(ctx context.Context, p ConnParams, database, tab
 	}
 
 	idxRows, err := conn.Query(ctx, `
-		SELECT indexname, indexdef FROM pg_indexes
-		WHERE schemaname = $1 AND tablename = $2
-		ORDER BY indexname`, schema, table)
+		SELECT ic.relname, i.indisunique, am.amname,
+		       ARRAY(SELECT pg_get_indexdef(i.indexrelid, k.o::int, true)
+		             FROM generate_series(1, i.indnkeyatts) AS k(o) ORDER BY k.o),
+		       pg_get_indexdef(i.indexrelid),
+		       EXISTS (SELECT 1 FROM pg_constraint con WHERE con.conindid = i.indexrelid)
+		FROM pg_index i
+		JOIN pg_class ic ON ic.oid = i.indexrelid
+		JOIN pg_am am ON am.oid = ic.relam
+		JOIN pg_class c ON c.oid = i.indrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2
+		ORDER BY i.indisprimary DESC, ic.relname`, schema, table)
 	if err != nil {
 		return nil, err
 	}
 	defer idxRows.Close()
+	var standaloneIndexes []string
 	for idxRows.Next() {
-		var name, def string
-		if err := idxRows.Scan(&name, &def); err != nil {
+		var idx IndexInfo
+		var def string
+		var backsConstraint bool
+		if err := idxRows.Scan(&idx.Name, &idx.Unique, &idx.Type, &idx.Columns, &def, &backsConstraint); err != nil {
 			return nil, err
 		}
-		unique := strings.Contains(strings.ToUpper(def), "UNIQUE")
-		out.Indexes = append(out.Indexes, IndexInfo{Name: name, Unique: unique, Type: "btree", Columns: []string{}})
+		out.Indexes = append(out.Indexes, idx)
+		if !backsConstraint {
+			standaloneIndexes = append(standaloneIndexes, def+";")
+		}
 	}
 	if err := idxRows.Err(); err != nil {
 		return nil, err
 	}
 
-	out.DDL = buildPostgresDDL(schema, table, out.Columns)
+	ddl, err := pg.tableDDL(ctx, conn, schema, table)
+	if err != nil {
+		// The DDL is a convenience; columns and indexes are still useful.
+		out.DDL = buildPostgresDDL(schema, table, out.Columns)
+		return out, nil
+	}
+	if len(standaloneIndexes) > 0 {
+		ddl += "\n\n" + strings.Join(standaloneIndexes, "\n")
+	}
+	out.DDL = ddl
 	return out, nil
+}
+
+// tableDDL reconstructs CREATE TABLE from the catalog: exact column types,
+// NOT NULL, defaults and identity, then every constraint (primary key,
+// unique, check, foreign key) as PostgreSQL itself prints it.
+func (pg *Postgres) tableDDL(ctx context.Context, conn *pgx.Conn, schema, table string) (string, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull,
+		       pg_get_expr(d.adbin, d.adrelid), a.attidentity, a.attgenerated
+		FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+		WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
+		ORDER BY a.attnum`, schema, table)
+	if err != nil {
+		return "", err
+	}
+	var lines []string
+	for rows.Next() {
+		var name, typ, identity, generated string
+		var notNull bool
+		var def *string
+		if err := rows.Scan(&name, &typ, &notNull, &def, &identity, &generated); err != nil {
+			rows.Close()
+			return "", err
+		}
+		line := "  " + quotePGIdent(name) + " " + typ
+		switch {
+		case generated == "s" && def != nil:
+			line += " GENERATED ALWAYS AS (" + *def + ") STORED"
+		case identity == "a":
+			line += " GENERATED ALWAYS AS IDENTITY"
+		case identity == "d":
+			line += " GENERATED BY DEFAULT AS IDENTITY"
+		case def != nil:
+			line += " DEFAULT " + *def
+		}
+		if notNull {
+			line += " NOT NULL"
+		}
+		lines = append(lines, line)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	crows, err := conn.Query(ctx, `
+		SELECT con.conname, pg_get_constraintdef(con.oid, true)
+		FROM pg_constraint con
+		JOIN pg_class c ON c.oid = con.conrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2 AND con.contype IN ('p','u','c','f','x')
+		ORDER BY CASE con.contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 WHEN 'c' THEN 2 WHEN 'f' THEN 3 ELSE 4 END, con.conname`,
+		schema, table)
+	if err != nil {
+		return "", err
+	}
+	defer crows.Close()
+	for crows.Next() {
+		var name, def string
+		if err := crows.Scan(&name, &def); err != nil {
+			return "", err
+		}
+		lines = append(lines, "  CONSTRAINT "+quotePGIdent(name)+" "+def)
+	}
+	if err := crows.Err(); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("CREATE TABLE %s (\n%s\n);", qualifiedTable(schema, table), strings.Join(lines, ",\n")), nil
 }
 
 func buildPostgresDDL(schema, table string, cols []ColumnInfo) string {
@@ -712,32 +809,47 @@ func buildPostgresDDL(schema, table string, cols []ColumnInfo) string {
 
 // Query runs a single ad-hoc statement.
 func (pg *Postgres) Query(ctx context.Context, p ConnParams, database, sqlText string, limit int, allowWrite bool) (*QueryResult, error) {
+	return singleResult(pg.QueryBatch(ctx, p, database, []string{sqlText}, limit, allowWrite, nil))
+}
+
+// QueryBatch runs statements in order on one session and stops at the first
+// error; see MariaDB.QueryBatch.
+func (pg *Postgres) QueryBatch(ctx context.Context, p ConnParams, database string, stmts []string, limit int, allowWrite bool, onSession func(id int64)) ([]QueryResult, error) {
 	if !identRe.MatchString(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
-	sqlText = strings.TrimSpace(sqlText)
-	if sqlText == "" {
-		return nil, fmt.Errorf("query is empty")
+	if err := checkBatch(stmts, allowWrite); err != nil {
+		return nil, err
 	}
-	if limit <= 0 || limit > 1000 {
-		limit = 100
-	}
-	readOnly := isReadOnlyStmt(sqlText)
-	if !readOnly && !allowWrite {
-		return nil, fmt.Errorf("this looks like a write statement; enable writes (requires database:write) to run it")
-	}
+	limit = clampQueryLimit(limit)
 
 	conn, err := pg.connect(ctx, p, database)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close(ctx)
+	if onSession != nil {
+		onSession(int64(conn.PgConn().PID()))
+	}
 
+	results := make([]QueryResult, 0, len(stmts))
+	for i, stmt := range stmts {
+		res, err := pg.runStatement(ctx, conn, strings.TrimSpace(stmt), limit, allowWrite)
+		if err != nil {
+			return results, &BatchError{Index: i, Err: err}
+		}
+		results = append(results, *res)
+	}
+	return results, nil
+}
+
+func (pg *Postgres) runStatement(ctx context.Context, conn *pgx.Conn, stmt string, limit int, allowWrite bool) (*QueryResult, error) {
 	start := time.Now()
+	readOnly := isReadOnlyStmt(stmt)
 	res := &QueryResult{Columns: []string{}, Rows: [][]*string{}, ReadOnly: readOnly}
 
 	if !readOnly {
-		tag, err := conn.Exec(ctx, sqlText)
+		tag, err := conn.Exec(ctx, stmt)
 		if err != nil {
 			return nil, err
 		}
@@ -746,24 +858,29 @@ func (pg *Postgres) Query(ctx context.Context, p ConnParams, database, sqlText s
 		return res, nil
 	}
 
-	tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return nil, err
+	var rows pgx.Rows
+	var err error
+	if allowWrite {
+		rows, err = conn.Query(ctx, stmt)
+	} else {
+		tx, txErr := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+		if txErr != nil {
+			return nil, txErr
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		rows, err = tx.Query(ctx, stmt)
 	}
-	defer tx.Rollback(ctx)
-
-	rows, err := tx.Query(ctx, sqlText)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	fds := rows.FieldDescriptions()
-	for _, fd := range fds {
+	for _, fd := range rows.FieldDescriptions() {
 		res.Columns = append(res.Columns, string(fd.Name))
 	}
+	size := 0
 	for rows.Next() {
-		if len(res.Rows) == limit {
+		if len(res.Rows) == limit || size > maxResultBytes {
 			res.Truncated = true
 			break
 		}
@@ -775,6 +892,7 @@ func (pg *Postgres) Query(ctx context.Context, p ConnParams, database, sqlText s
 		for i, v := range vals {
 			row[i] = stringifyCell(v, 1024)
 		}
+		size += rowBytes(row)
 		res.Rows = append(res.Rows, row)
 	}
 	if err := rows.Err(); err != nil {

@@ -277,3 +277,5 @@ func TestEnsureAdmin_OnlyWhenEmpty(t *testing.T) {
 		t.Fatal("expected second bootstrap to be skipped")
 	}
 }
+
+func (r *fakeUserRepo) BumpTokenEpoch(_ context.Context, _ uuid.UUID) error { return nil }

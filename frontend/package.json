@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
@@ -15,18 +17,20 @@
     "@tanstack/react-query": "5.101.4",
     "@uiw/react-codemirror": "^4.25.11",
     "lucide-react": "^1.27.0",
-    "next": "16.2.12",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.39.5",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.8",
     "tailwindcss": "^4.3.2",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^5.0.3"
   }
 }

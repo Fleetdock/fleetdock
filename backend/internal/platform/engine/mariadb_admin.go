@@ -300,6 +300,32 @@ func (m *MariaDB) ListTables(ctx context.Context, p ConnParams, database string)
 	return out, rows.Err()
 }
 
+// session opens one pinned connection and applies the server-side statement
+// timeout to it. MariaDB calls the variable max_statement_time (seconds, any
+// statement); MySQL calls it max_execution_time (milliseconds, SELECT only).
+// Whichever the server knows is set; the other attempt fails harmlessly.
+func (m *MariaDB) session(ctx context.Context, p ConnParams) (*sql.Conn, func(), error) {
+	db, err := m.open(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	closeAll := func() {
+		_ = conn.Close()
+		_ = db.Close()
+	}
+	if t := p.StatementTimeout; t > 0 {
+		if _, err := conn.ExecContext(ctx, fmt.Sprintf("SET SESSION max_statement_time = %d", int(t.Seconds()))); err != nil {
+			_, _ = conn.ExecContext(ctx, fmt.Sprintf("SET SESSION max_execution_time = %d", t.Milliseconds()))
+		}
+	}
+	return conn, closeAll, nil
+}
+
 // TableRows returns one page of a table's data with stringified values.
 func (m *MariaDB) TableRows(ctx context.Context, p ConnParams, database, table string, limit, offset int) (*RowsPage, error) {
 	if !identRe.MatchString(database) {
@@ -315,11 +341,11 @@ func (m *MariaDB) TableRows(ctx context.Context, p ConnParams, database, table s
 		offset = 0
 	}
 
-	db, err := m.open(p)
+	db, closeSession, err := m.session(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer closeSession()
 
 	var total int64
 	_ = db.QueryRowContext(ctx, `
@@ -457,33 +483,53 @@ func (m *MariaDB) TableSchema(ctx context.Context, p ConnParams, database, table
 
 // Query runs a single ad-hoc statement against the connection's default schema.
 func (m *MariaDB) Query(ctx context.Context, p ConnParams, database, sqlText string, limit int, allowWrite bool) (*QueryResult, error) {
+	return singleResult(m.QueryBatch(ctx, p, database, []string{sqlText}, limit, allowWrite, nil))
+}
+
+// QueryBatch runs statements in order on one session (so SET, temporary
+// tables and explicit transactions carry across them) and stops at the first
+// error, returning the results so far. Without allowWrite every statement
+// must be a read and runs in a READ ONLY transaction.
+func (m *MariaDB) QueryBatch(ctx context.Context, p ConnParams, database string, stmts []string, limit int, allowWrite bool, onSession func(id int64)) ([]QueryResult, error) {
 	if !identRe.MatchString(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
-	sqlText = strings.TrimSpace(sqlText)
-	if sqlText == "" {
-		return nil, fmt.Errorf("query is empty")
+	if err := checkBatch(stmts, allowWrite); err != nil {
+		return nil, err
 	}
-	if limit <= 0 || limit > 1000 {
-		limit = 100
-	}
-	readOnly := isReadOnlyStmt(sqlText)
-	if !readOnly && !allowWrite {
-		return nil, fmt.Errorf("this looks like a write statement; enable writes (requires database:write) to run it")
-	}
+	limit = clampQueryLimit(limit)
 
 	p.Database = database
-	db, err := m.open(p)
+	conn, closeSession, err := m.session(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer closeSession()
+	if onSession != nil {
+		var id int64
+		if err := conn.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&id); err == nil {
+			onSession(id)
+		}
+	}
 
+	results := make([]QueryResult, 0, len(stmts))
+	for i, stmt := range stmts {
+		res, err := m.runStatement(ctx, conn, strings.TrimSpace(stmt), limit, allowWrite)
+		if err != nil {
+			return results, &BatchError{Index: i, Err: err}
+		}
+		results = append(results, *res)
+	}
+	return results, nil
+}
+
+func (m *MariaDB) runStatement(ctx context.Context, conn *sql.Conn, stmt string, limit int, allowWrite bool) (*QueryResult, error) {
 	start := time.Now()
+	readOnly := isReadOnlyStmt(stmt)
 	res := &QueryResult{Columns: []string{}, Rows: [][]*string{}, ReadOnly: readOnly}
 
 	if !readOnly {
-		out, err := db.ExecContext(ctx, sqlText)
+		out, err := conn.ExecContext(ctx, stmt)
 		if err != nil {
 			return nil, err
 		}
@@ -492,15 +538,22 @@ func (m *MariaDB) Query(ctx context.Context, p ConnParams, database, sqlText str
 		return res, nil
 	}
 
-	// Read-only path: run inside a READ ONLY transaction so a statement that
-	// slips past classification but attempts a write is refused by the engine.
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return nil, err
+	var rows *sql.Rows
+	var err error
+	if allowWrite {
+		// Inside a write batch reads run plainly, so they see (and can be
+		// part of) the batch's own transaction.
+		rows, err = conn.QueryContext(ctx, stmt)
+	} else {
+		// Read-only batch: a READ ONLY transaction makes the engine refuse a
+		// statement that slipped past classification but writes.
+		tx, txErr := conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if txErr != nil {
+			return nil, txErr
+		}
+		defer func() { _ = tx.Rollback() }()
+		rows, err = tx.QueryContext(ctx, stmt)
 	}
-	defer tx.Rollback()
-
-	rows, err := tx.QueryContext(ctx, sqlText)
 	if err != nil {
 		return nil, err
 	}
@@ -511,8 +564,9 @@ func (m *MariaDB) Query(ctx context.Context, p ConnParams, database, sqlText str
 		return nil, err
 	}
 	res.Columns = cols
+	size := 0
 	for rows.Next() {
-		if len(res.Rows) == limit {
+		if len(res.Rows) == limit || size > maxResultBytes {
 			res.Truncated = true
 			break
 		}
@@ -520,6 +574,7 @@ func (m *MariaDB) Query(ctx context.Context, p ConnParams, database, sqlText str
 		if err != nil {
 			return nil, err
 		}
+		size += rowBytes(row)
 		res.Rows = append(res.Rows, row)
 	}
 	if err := rows.Err(); err != nil {
@@ -552,11 +607,11 @@ func (m *MariaDB) ExportCSV(ctx context.Context, p ConnParams, database, table, 
 	}
 
 	p.Database = database
-	db, err := m.open(p)
+	db, closeSession, err := m.session(ctx, p)
 	if err != nil {
 		return 0, err
 	}
-	defer db.Close()
+	defer closeSession()
 
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

@@ -112,3 +112,6 @@ func (r *fakeBackupRepo) MarkExpired(_ context.Context, _ uuid.UUID) error { ret
 func (r *fakeBackupRepo) CountByStatusSince(_ context.Context, _ time.Time) (map[backupdom.Status]int, error) {
 	return nil, nil
 }
+
+func (r *fakeBackupRepo) SetVerify(context.Context, uuid.UUID, string, *string) error { return nil }
+func (r *fakeBackupRepo) MarkDeleted(context.Context, uuid.UUID) error                { return nil }

@@ -3,8 +3,10 @@
 package backupapp
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 	"time"
@@ -123,7 +125,7 @@ func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind stri
 		ScheduleID:    scheduleID,
 		DestinationID: &dest.ID,
 		Type:          kind,
-		Engine:        "mariadb-dump",
+		Engine:        dumpTool(inst.Engine),
 		Status:        backupdom.StatusPending,
 		ExpiresAt:     expiresAt,
 		CreatedBy:     createdBy,
@@ -213,12 +215,168 @@ func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, er
 	}, in.CreatedBy)
 }
 
+// Verify test-restores a completed backup into a throwaway database on the
+// source database's instance (fdv_<id>), records whether it restored, and
+// drops the throwaway database afterwards. The restore path itself checks the
+// artifact's checksum and that tables came back.
+func (s *Service) Verify(ctx context.Context, backupID string, createdBy *uuid.UUID) (*jobdom.Job, error) {
+	bid, err := uuid.Parse(backupID)
+	if err != nil {
+		return nil, apperr.Invalid("id", "id must be a valid UUID")
+	}
+	b, err := s.backups.GetByID(ctx, bid)
+	if err != nil {
+		return nil, err
+	}
+	if b.Status != backupdom.StatusCompleted || b.StorageURL == nil || b.DestinationID == nil {
+		return nil, apperr.Invalid("id", "only completed backups can be verified")
+	}
+	if b.VerifyStatus != nil && *b.VerifyStatus == "running" {
+		return nil, apperr.Conflict("a verification of this backup is already running")
+	}
+	db, err := s.databases.GetByID(ctx, b.DatabaseID)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := s.instances.GetByID(ctx, db.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !inst.HasCredentials() {
+		return nil, apperr.Invalid("id", "the instance has no admin credentials")
+	}
+	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
+	if err != nil {
+		return nil, err
+	}
+	key, err := keyFromStorageURL(*b.StorageURL, dest.Bucket)
+	if err != nil {
+		return nil, apperr.Internal(err)
+	}
+	scratch := "fdv_" + strings.ReplaceAll(b.ID.String(), "-", "")[:16]
+	job, err := s.ops.Create(ctx, jobdom.TypeRestore, "backup", &b.ID, executorFor(inst), operationapp.Params{
+		InstanceID:     inst.ID.String(),
+		Database:       scratch,
+		Charset:        db.Charset,
+		Collation:      db.Collation,
+		BackupID:       b.ID.String(),
+		DestinationID:  dest.ID.String(),
+		Key:            key,
+		VerifyBackupID: b.ID.String(),
+	}, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.backups.SetVerify(ctx, b.ID, "running", nil)
+	return job, nil
+}
+
+// ImportInput loads a user-supplied SQL file into an existing database.
+type ImportInput struct {
+	DatabaseID    string
+	DestinationID string // bucket used to stage the file for the executor
+	Body          io.Reader
+	Gzipped       bool
+	CreatedBy     *uuid.UUID
+}
+
+// ImportSQL stages a .sql (or .sql.gz) file in a backup destination and runs
+// it into the database through the restore path — as the database's
+// read-write console role, never as the instance admin, so the file can only
+// do what a database:write user could do in the console. The staged file is
+// deleted when the import finishes.
+func (s *Service) ImportSQL(ctx context.Context, in ImportInput) (*jobdom.Job, error) {
+	did, err := uuid.Parse(in.DatabaseID)
+	if err != nil {
+		return nil, apperr.Invalid("id", "id must be a valid UUID")
+	}
+	db, err := s.databases.GetByID(ctx, did)
+	if err != nil {
+		return nil, err
+	}
+	if db.System {
+		return nil, apperr.Invalid("id", "SQL files cannot be imported into a system database")
+	}
+	if db.Status != databasedom.StatusActive {
+		return nil, apperr.Conflict(fmt.Sprintf("database is %s; imports need it active", db.Status))
+	}
+	inst, err := s.instances.GetByID(ctx, db.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !inst.HasCredentials() {
+		return nil, apperr.Invalid("id", "the instance has no admin credentials")
+	}
+	destID, err := uuid.Parse(in.DestinationID)
+	if err != nil {
+		return nil, apperr.Invalid("destination_id", "destination_id must be a valid UUID")
+	}
+	dest, err := s.dests.GetByID(ctx, destID)
+	if err != nil {
+		return nil, err
+	}
+
+	key := path.Join(dest.Prefix, "imports", db.Name, uuid.NewString()+".sql.gz")
+	body := in.Body
+	if !in.Gzipped {
+		pr, pw := io.Pipe()
+		go func() {
+			gz := gzip.NewWriter(pw)
+			_, err := io.Copy(gz, in.Body)
+			if cerr := gz.Close(); err == nil {
+				err = cerr
+			}
+			_ = pw.CloseWithError(err)
+		}()
+		body = pr
+	}
+	if err := s.ops.UploadArtifact(ctx, dest.ID.String(), key, body); err != nil {
+		return nil, err
+	}
+	return s.ops.Create(ctx, jobdom.TypeRestore, "database", &db.ID, executorFor(inst), operationapp.Params{
+		InstanceID:     inst.ID.String(),
+		DatabaseID:     db.ID.String(),
+		Database:       db.Name,
+		Charset:        db.Charset,
+		Collation:      db.Collation,
+		DestinationID:  dest.ID.String(),
+		Key:            key,
+		AccessRole:     "rw",
+		DeleteKeyAfter: true,
+	}, in.CreatedBy)
+}
+
+// downloadExpiry is how long a backup download link stays valid.
+const downloadExpiry = 15 * time.Minute
+
+// DownloadURL returns a short-lived presigned link to a backup's artifact
+// (gzipped SQL) and when it expires.
+func (s *Service) DownloadURL(ctx context.Context, id string) (string, time.Time, error) {
+	b, err := s.Get(ctx, id)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	url, err := s.ops.BackupDownloadURL(ctx, b, downloadExpiry)
+	return url, time.Now().Add(downloadExpiry), err
+}
+
+// Delete removes a backup's stored artifact and marks it deleted.
+func (s *Service) Delete(ctx context.Context, id string) error {
+	b, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	return s.ops.DeleteBackup(ctx, b)
+}
+
 // ListParams filters backup listings.
 type ListParams struct {
 	DatabaseID string
-	Limit      int
-	Offset     int
-	Scope      *authz.ReadSet
+	// Search matches the database or database server name.
+	Search string
+	Limit  int
+	Offset int
+	Scope  *authz.ReadSet
 }
 
 // ListResult is a page of backups.
@@ -242,7 +400,7 @@ func (s *Service) List(ctx context.Context, p ListParams) (ListResult, error) {
 	if offset < 0 {
 		offset = 0
 	}
-	f := backupdom.ListFilter{Limit: limit, Offset: offset, Scope: p.Scope}
+	f := backupdom.ListFilter{Limit: limit, Offset: offset, Scope: p.Scope, Search: strings.TrimSpace(p.Search)}
 	if p.DatabaseID != "" {
 		did, err := uuid.Parse(p.DatabaseID)
 		if err != nil {
@@ -268,6 +426,18 @@ func (s *Service) Get(ctx context.Context, id string) (*backupdom.Backup, error)
 
 // executorFor picks the executor: managed instances run on their server's
 // agent, external instances run on the control plane.
+// dumpTool names the logical-dump tool that produces backups for an engine.
+func dumpTool(e instancedom.Engine) string {
+	switch e {
+	case instancedom.EnginePostgres:
+		return "pg_dump"
+	case instancedom.EngineMySQL:
+		return "mysqldump"
+	default:
+		return "mariadb-dump"
+	}
+}
+
 func executorFor(inst *instancedom.Instance) *uuid.UUID {
 	if inst.Kind == instancedom.KindManaged {
 		return inst.ServerID

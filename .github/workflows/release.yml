@@ -10,7 +10,29 @@ permissions:
   packages: write
 
 jobs:
+  # Nothing is published from a tag that does not pass the test suite.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache-dependency-path: backend/go.sum
+      - name: backend tests
+        working-directory: backend
+        run: go vet ./... && go test -race ./...
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: frontend checks
+        working-directory: frontend
+        run: npm ci && npm run lint && npm run typecheck && npm test
+
   release:
+    needs: test
     runs-on: ubuntu-latest
     env:
       REGISTRY: ghcr.io
@@ -25,7 +47,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           cache-dependency-path: backend/go.sum
 
       # Emits both v-prefixed and bare tags, so the FLEETDOCK_RELEASE_TAG in the
@@ -77,7 +99,9 @@ jobs:
       # for Next, and a dashboard bundle that did not get copied.
       - name: Verify image
         run: |
-          IMG="${{ steps.images.outputs.image }}:latest"
+          # The tag this run built — :latest could be a different, older image
+          # if a later tag raced this one.
+          IMG="${{ steps.images.outputs.image }}:${{ github.ref_name }}"
           docker pull "$IMG"
           docker run --rm --entrypoint node "$IMG" --version
           docker run --rm --entrypoint sh "$IMG" -c 'test -f /opt/fleetdock/ui/server.js'
@@ -107,7 +131,12 @@ jobs:
         run: |
           ver="${GITHUB_REF_NAME#v}"
           if [ -f CHANGELOG.md ]; then
-            awk -v ver="$ver" '/^## \[Unreleased\]/{p=0} p; $0 ~ "^## \\[" ver "\\]"{p=1}' CHANGELOG.md > release-notes.md || true
+            # Print this version's section only: start at its heading, stop
+            # at the next "## [" heading.
+            awk -v ver="$ver" '
+              /^## \[/ { if (p) exit; if (index($0, "## [" ver "]") == 1) { p = 1; next } }
+              p
+            ' CHANGELOG.md > release-notes.md || true
           fi
           if [ ! -s release-notes.md ]; then
             echo "Release ${{ github.ref_name }}" > release-notes.md

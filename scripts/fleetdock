@@ -19,10 +19,47 @@ getenv() { grep "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true; }
 
 setenv() {
   # $1 = key, $2 = value. Adds the key if it is not there yet.
-  if grep -q "^$1=" "$ENV_FILE"; then
-    sed -i "s|^$1=.*|$1=$2|" "$ENV_FILE"
+  # Rewritten with awk rather than `sed -i`: BSD sed (macOS) has no bare -i,
+  # and a value containing | & or \ would corrupt a sed replacement. The value
+  # travels through the environment, which awk reads verbatim.
+  tmp="$(mktemp "${ENV_FILE}.XXXXXX")"
+  FD_KEY="$1" FD_VAL="$2" awk '
+    BEGIN { k = ENVIRON["FD_KEY"]; v = ENVIRON["FD_VAL"]; done = 0 }
+    index($0, k "=") == 1 { print k "=" v; done = 1; next }
+    { print }
+    END { if (!done) print k "=" v }
+  ' "$ENV_FILE" > "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$ENV_FILE"
+}
+
+# uses_bundled_postgres reports whether metadata lives in the bundled
+# postgres service (as opposed to a hosted database).
+uses_bundled_postgres() {
+  case "$(getenv FLEETDOCK_DATABASE_URL)" in
+    ""|*@postgres:*) dc ps --services 2>/dev/null | grep -qx postgres ;;
+    *) return 1 ;;
+  esac
+}
+
+# backup_db writes a compressed pg_dump of the metadata database to $1.
+backup_db() {
+  out="$1"
+  umask 077
+  if uses_bundled_postgres; then
+    dc exec -T postgres pg_dump -U fleetdock -d fleetdock --no-owner | gzip > "$out"
   else
-    printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+    # Hosted metadata database: dump through the control-plane container,
+    # which has pg_dump and the connection string (expanded in the container,
+    # hence the single quotes).
+    # shellcheck disable=SC2016
+    dc exec -T fleetdock sh -c 'pg_dump --no-owner "$FLEETDOCK_DATABASE_URL"' | gzip > "$out"
+  fi
+  # An empty or truncated dump must not pass as a backup.
+  if ! gzip -t "$out" 2>/dev/null || [ "$(gzip -dc "$out" | head -c 1 | wc -c)" -eq 0 ]; then
+    rm -f "$out"
+    echo "error: metadata backup failed" >&2
+    return 1
   fi
 }
 
@@ -67,6 +104,10 @@ Usage: fleetdock <command>
   config get <KEY> | set <KEY> <VALUE>
   env [--reveal]        Show configuration; secrets redacted unless --reveal
   psql                  A psql shell on the metadata database
+  backup-db [file]      pg_dump of the metadata database (runs before every update)
+  reset-admin-password [email]
+                        Set a new password for a dashboard user (default: the
+                        bootstrap admin), reactivate it and end its sessions
   shell                 A shell inside the control-plane container
   doctor                Diagnose a broken install
   backup-config         Archive .env and docker-compose.yml
@@ -116,8 +157,11 @@ EOT
     case "${db_url}" in
       ""|*@postgres:*)
         if dc ps --services 2>/dev/null | grep -qx postgres; then
-          n="$(dc exec -T postgres psql -U fleetdock -d fleetdock -tAc \
-                "select count(*) from users where email = '${email}';" 2>/dev/null | tr -d '[:space:]')"
+          # The email is passed as a psql variable and quoted by psql (:'email'),
+          # never spliced into the SQL text.
+          n="$(echo "select count(*) from users where lower(email) = lower(:'email');" \
+                | dc exec -T postgres psql -U fleetdock -d fleetdock -tA -v email="${email}" 2>/dev/null \
+                | tr -d '[:space:]')"
           case "$n" in
             0) echo; echo "No account with that email exists — sign in with the one that does." ;;
             [1-9]*) echo; echo "An account with that email exists." ;;
@@ -142,6 +186,10 @@ EOT
     tag="$(getenv FLEETDOCK_RELEASE_TAG)"
     ref="main"
     [ "$tag" != "latest" ] && [ -n "$tag" ] && ref="$tag"
+    mkdir -p "${FLEETDOCK_DIR}/backups"
+    snap="${FLEETDOCK_DIR}/backups/metadata-pre-update-$(date +%Y%m%d-%H%M%S).sql.gz"
+    echo "==> Backing up the metadata database to ${snap}"
+    backup_db "$snap" || { echo "error: refusing to update without a metadata backup (override: FLEETDOCK_SKIP_BACKUP=1)" >&2; [ "${FLEETDOCK_SKIP_BACKUP:-}" = "1" ] || exit 1; }
     echo "==> Refreshing stack definition (${ref})"
     curl -fsSL "https://raw.githubusercontent.com/${repo}/${ref}/docker-compose.yml" \
       -o "${FLEETDOCK_DIR}/docker-compose.yml"
@@ -280,6 +328,28 @@ EOF
     echo
     echo "== disk =="
     df -h "$FLEETDOCK_DIR" | tail -1
+    ;;
+
+  backup-db)
+    need_root
+    mkdir -p "${FLEETDOCK_DIR}/backups"
+    out="${1:-${FLEETDOCK_DIR}/backups/metadata-$(date +%Y%m%d-%H%M%S).sql.gz}"
+    backup_db "$out"
+    echo "Wrote ${out}"
+    echo "Restore with: gunzip -c ${out} | fleetdock psql"
+    echo "Stored credentials inside are encrypted with FLEETDOCK_ENCRYPTION_KEY — keep"
+    echo "a copy of .env (fleetdock backup-config) alongside it, or they are unreadable."
+    ;;
+
+  reset-admin-password)
+    need_root
+    email="${1:-$(getenv FLEETDOCK_ADMIN_EMAIL)}"
+    [ -n "$email" ] || { echo "usage: fleetdock reset-admin-password <email>" >&2; exit 1; }
+    if ! pw="$(dc exec -T fleetdock /api reset-password "$email")"; then
+      exit 1
+    fi
+    echo "New password for ${email}: ${pw}"
+    echo "All existing dashboard sessions of this user were signed out."
     ;;
 
   backup-config)

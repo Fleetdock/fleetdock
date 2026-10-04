@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
+	backupdom "github.com/Fleetdock/fleetdock/backend/internal/domain/backup"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
@@ -16,6 +18,8 @@ type fakeJobRepo struct {
 	logs        map[uuid.UUID][]jobdom.JobLog
 	claimNext   *jobdom.Job // when set, ClaimNext returns this job once
 	claimCalled bool
+	stuck       []uuid.UUID
+	completed   map[uuid.UUID]jobdom.Status
 }
 
 func newFakeJobRepo() *fakeJobRepo {
@@ -56,8 +60,16 @@ func (r *fakeJobRepo) ClaimNext(_ context.Context, _ *uuid.UUID) (*jobdom.Job, e
 	return nil, nil
 }
 
-func (r *fakeJobRepo) Complete(_ context.Context, _ uuid.UUID, _ jobdom.Status, _ json.RawMessage, _ *string) error {
+func (r *fakeJobRepo) Complete(_ context.Context, id uuid.UUID, st jobdom.Status, _ json.RawMessage, _ *string) error {
+	if r.completed == nil {
+		r.completed = map[uuid.UUID]jobdom.Status{}
+	}
+	r.completed[id] = st
 	return nil
+}
+
+func (r *fakeJobRepo) ListStuck(_ context.Context, _ time.Time) ([]uuid.UUID, error) {
+	return r.stuck, nil
 }
 
 func (r *fakeJobRepo) UpdateProgress(_ context.Context, _ uuid.UUID, _ int) error { return nil }
@@ -179,5 +191,69 @@ func TestClaim_ReconcileGateway(t *testing.T) {
 	}
 	if payload == nil {
 		t.Fatal("expected empty payload")
+	}
+}
+
+func TestFailStuck_FailsThroughComplete(t *testing.T) {
+	repo := newFakeJobRepo()
+	j := &jobdom.Job{ID: uuid.New(), Type: jobdom.TypeTestConnection, Status: jobdom.StatusRunning, Params: json.RawMessage(`{}`)}
+	repo.items[j.ID] = j
+	repo.stuck = []uuid.UUID{j.ID}
+	svc := NewService(repo, nil, nil, nil, nil, nil)
+
+	n, err := svc.FailStuck(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("FailStuck: %v", err)
+	}
+	if n != 1 || repo.completed[j.ID] != jobdom.StatusFailed {
+		t.Fatalf("n = %d, completed = %v; want the stuck job failed", n, repo.completed)
+	}
+}
+
+type verifyBackups struct {
+	backupdom.Repository
+	status string
+}
+
+func (b *verifyBackups) SetVerify(_ context.Context, _ uuid.UUID, status string, _ *string) error {
+	b.status = status
+	return nil
+}
+
+func TestCompleteVerification_RecordsAndDropsScratch(t *testing.T) {
+	for _, ok := range []bool{true, false} {
+		repo := newFakeJobRepo()
+		backups := &verifyBackups{}
+		svc := NewService(repo, nil, nil, backups, nil, nil)
+		bid, iid := uuid.New(), uuid.New()
+		params, _ := json.Marshal(Params{InstanceID: iid.String(), Database: "fdv_x", VerifyBackupID: bid.String()})
+		j := &jobdom.Job{ID: uuid.New(), Type: jobdom.TypeRestore, Status: jobdom.StatusRunning, Params: params}
+		repo.items[j.ID] = j
+
+		status := jobdom.StatusSucceeded
+		if !ok {
+			status = jobdom.StatusFailed
+		}
+		if err := svc.Complete(context.Background(), j.ID, status, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		want := map[bool]string{true: "passed", false: "failed"}[ok]
+		if backups.status != want {
+			t.Errorf("ok=%v: verify status = %q, want %q", ok, backups.status, want)
+		}
+		var drop *jobdom.Job
+		for _, other := range repo.items {
+			if other.Type == jobdom.TypeDeleteDatabase {
+				drop = other
+			}
+		}
+		if drop == nil {
+			t.Fatalf("ok=%v: no drop job for the scratch database", ok)
+		}
+		var dp Params
+		_ = json.Unmarshal(drop.Params, &dp)
+		if dp.Database != "fdv_x" || dp.InstanceID != iid.String() || dp.DatabaseID != "" {
+			t.Errorf("drop params = %+v; must target only the scratch database", dp)
+		}
 	}
 }

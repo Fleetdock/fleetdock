@@ -28,4 +28,6 @@ type Repository interface {
 	CountUsers(ctx context.Context) (int, error)
 	// CreateWithRole creates a user with a password hash and grants a global role.
 	CreateWithRole(ctx context.Context, u *User, passwordHash, roleName string) error
+	// BumpTokenEpoch invalidates every JWT session issued to the user so far.
+	BumpTokenEpoch(ctx context.Context, id uuid.UUID) error
 }

@@ -6,6 +6,7 @@ package authapp
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -137,6 +138,20 @@ func NewService(users userdom.Repository, tokens tokendom.Repository, jwt *auth.
 	return &Service{users: users, tokens: tokens, jwt: jwt}
 }
 
+var (
+	dummyHashOnce sync.Once
+	dummyHashVal  string
+)
+
+// dummyHash is a bcrypt hash at the production cost, compared against when the
+// email is unknown so failed logins take the same time either way.
+func dummyHash() string {
+	dummyHashOnce.Do(func() {
+		dummyHashVal, _ = auth.HashPassword("fleetdock-timing-equaliser")
+	})
+	return dummyHashVal
+}
+
 // LoginResult is returned on a successful password login.
 type LoginResult struct {
 	Token string
@@ -148,7 +163,9 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (Log
 	email = strings.TrimSpace(strings.ToLower(email))
 	creds, err := s.users.GetCredentialsByEmail(ctx, email)
 	if err != nil {
-		// Do not leak whether the email exists.
+		// Do not leak whether the email exists — neither in the message nor
+		// in the response time: spend the same bcrypt work as a real check.
+		auth.CheckPassword(dummyHash(), password)
 		return LoginResult{}, apperr.Unauthorized("invalid email or password")
 	}
 	if !auth.CheckPassword(creds.Hash, password) {
@@ -162,6 +179,13 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (Log
 		return LoginResult{}, apperr.Internal(err)
 	}
 	return LoginResult{Token: tok, User: creds.User}, nil
+}
+
+// Logout ends the user's browser sessions by advancing the token epoch, so
+// every JWT issued so far — including copies an attacker may have lifted —
+// stops working. API tokens are unaffected.
+func (s *Service) Logout(ctx context.Context, userID uuid.UUID) error {
+	return s.users.BumpTokenEpoch(ctx, userID)
 }
 
 // Principal resolves a presented credential (JWT or API token) to a Principal.

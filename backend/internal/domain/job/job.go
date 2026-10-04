@@ -72,6 +72,10 @@ type Job struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	Version      int
+
+	// ResourceName is the resource's display name (database, instance or
+	// server name; a backup's database). Read-only: filled on Get and List.
+	ResourceName string
 }
 
 // JobLog is one line of execution output for a job. Seq is monotonic per job,
@@ -120,4 +124,7 @@ type Repository interface {
 	// ListLogs returns a job's log lines with seq > afterSeq, ordered by seq,
 	// capped at limit.
 	ListLogs(ctx context.Context, jobID uuid.UUID, afterSeq, limit int) ([]JobLog, error)
+	// ListStuck returns control-plane jobs still "running" although they were
+	// claimed before the cutoff — their executor died mid-run.
+	ListStuck(ctx context.Context, claimedBefore time.Time) ([]uuid.UUID, error)
 }

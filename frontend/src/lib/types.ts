@@ -29,6 +29,8 @@ export interface Instance {
   host?: string | null;
   username?: string | null;
   has_credentials: boolean;
+  tls_mode?: TLSMode;
+  health?: InstanceHealth | null;
   provisioned: boolean;
   container_id?: string | null;
   engine_version: string;
@@ -42,9 +44,26 @@ export interface Instance {
   version: number;
 }
 
+/**
+ * Summary of the instance a database lives on, embedded in database responses.
+ * Read this instead of cross-referencing a separately fetched instance list —
+ * that list is paginated, so the lookup silently failed for large fleets.
+ */
+export interface InstanceRef {
+  id: string;
+  name: string;
+  engine: string;
+  kind: "managed" | "external";
+  server_id?: string | null;
+  provisioned: boolean;
+  has_credentials: boolean;
+}
+
 export interface Database {
   id: string;
   instance_id: string;
+  /** Present on list/get responses; absent on write responses. */
+  instance?: InstanceRef;
   name: string;
   charset: string;
   collation: string;
@@ -55,6 +74,8 @@ export interface Database {
   active_connections: number;
   locked_at?: string | null;
   locked_by?: string | null;
+  /** Set while the database is no longer found on its server. */
+  missing_since?: string | null;
   labels: Record<string, string>;
   tags: string[];
   created_at: string;
@@ -123,6 +144,8 @@ export interface Operation {
   type: string;
   resource_type: string;
   resource_id?: string | null;
+  /** Display name of the resource (a backup's database). */
+  resource_name?: string;
   status: string;
   server_id?: string | null;
   params?: Record<string, unknown>;
@@ -144,6 +167,8 @@ export interface OperationLog {
 export interface Backup {
   id: string;
   database_id: string;
+  database_name?: string;
+  instance_name?: string;
   operation_id?: string | null;
   destination_id?: string | null;
   type: string;
@@ -156,6 +181,10 @@ export interface Backup {
   completed_at?: string | null;
   error?: string | null;
   created_at: string;
+  /** Latest test restore: running, passed or failed; absent = never verified. */
+  verify_status?: "running" | "passed" | "failed" | null;
+  verified_at?: string | null;
+  verify_error?: string | null;
 }
 
 export interface Destination {
@@ -248,6 +277,22 @@ export interface CreateInstanceInput {
   port: number;
   username?: string;
   password?: string;
+  tls_mode?: TLSMode;
+}
+
+// UpdateInstanceInput is a partial update: omitted keys are left unchanged.
+// The two empty-string cases are meaningful, not accidental —
+// `username: ""` clears the admin credentials entirely, and `password: ""`
+// removes the stored password while keeping the username.
+export type TLSMode = "disable" | "prefer" | "require" | "verify-full";
+
+export interface UpdateInstanceInput {
+  name?: string;
+  host?: string;
+  port?: number;
+  tls_mode?: TLSMode;
+  username?: string;
+  password?: string;
 }
 
 export interface CreateDatabaseInput {
@@ -304,20 +349,6 @@ export interface StartMoveInput {
   target_database?: string;
   destination_id: string;
   drop_source: boolean;
-}
-
-export interface TestConnectionResult {
-  mode: "sync" | "async";
-  ok: boolean;
-  version?: string;
-  error?: string;
-  operation_id?: string;
-}
-
-export interface ImportDatabasesResult {
-  mode: "sync" | "async";
-  imported: number;
-  operation_id?: string;
 }
 
 export interface CreateTokenInput {
@@ -401,12 +432,6 @@ export interface TableInfo {
   comment: string;
 }
 
-export interface RowsPage {
-  columns: string[];
-  rows: (string | null)[][];
-  total: number;
-}
-
 export interface ColumnInfo {
   name: string;
   type: string;
@@ -441,9 +466,38 @@ export interface QueryResult {
   duration_ms: number;
 }
 
+/** QueryOutput is a console run: one result per statement that ran. */
+export interface QueryOutput {
+  results: QueryResult[];
+  /** Set when a statement after the first failed (1-based). */
+  error?: { statement: number; message: string };
+}
+
+export interface HistoryEntry {
+  id: string;
+  database_id: string;
+  sql: string;
+  statements: number;
+  duration_ms: number;
+  row_count: number;
+  error?: string;
+  created_at: string;
+}
+
+export interface SavedQuery {
+  id: string;
+  database_id: string | null;
+  name: string;
+  sql: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RunQueryInput {
   sql: string;
   limit?: number;
+  /** Client-generated UUID; lets the caller cancel the run. */
+  query_id?: string;
 }
 
 export interface CreateDBUserInput {
@@ -468,12 +522,34 @@ export interface Overview {
   backups: { completed_24h: number; failed_24h: number; last_backup_at?: string | null };
   operations: { running: number; failed_24h: number };
   automation: { schedules_enabled: number; channels_enabled: number; rules_enabled: number };
+  setup: { servers: number; instances: number; destinations: number; schedules: number; channels: number };
+  /** Open problems the current user may see, critical first (at most 20). */
+  attention: AttentionItem[];
+}
+
+export interface AttentionItem {
+  kind:
+    | "server_offline"
+    | "instance_unreachable"
+    | "backup_failed"
+    | "backup_check_failed"
+    | "no_recent_backup"
+    | "database_missing"
+    | "operation_failed";
+  severity: "critical" | "warning";
+  resource_type: "server" | "instance" | "database" | "backup" | "operation";
+  resource_id: string;
+  name: string;
+  message: string;
+  since: string;
 }
 
 // ---- Backup schedules ----
 export interface Schedule {
   id: string;
   database_id: string;
+  database_name?: string;
+  instance_name?: string;
   destination_id: string;
   cron: string;
   engine: string;
@@ -555,4 +631,117 @@ export interface MetricSample {
   disk_used_bytes?: number | null;
   disk_total_bytes?: number | null;
   active_connections?: number | null;
+}
+
+export interface InstanceHealth {
+  status: "healthy" | "unreachable" | "unknown";
+  version?: string;
+  latency_ms: number;
+  error?: string;
+  checked_at: string;
+}
+
+// Process is one session on an instance (PROCESSLIST / pg_stat_activity).
+export interface Process {
+  id: number;
+  user: string;
+  host: string;
+  database: string | null;
+  state: string;
+  seconds: number;
+  query: string | null;
+}
+
+export interface Setting {
+  name: string;
+  value: string;
+}
+
+// ---- Data editing ----
+export type FilterOp =
+  | "eq" | "ne" | "lt" | "lte" | "gt" | "gte"
+  | "contains" | "starts_with" | "is_null" | "not_null";
+
+export interface RowFilter {
+  column: string;
+  op: FilterOp;
+  value?: string | null;
+}
+
+export interface SortKey {
+  column: string;
+  desc: boolean;
+}
+
+export interface BrowseRequest {
+  filters?: RowFilter[];
+  sort?: SortKey[];
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface BrowseColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+  has_default: boolean;
+}
+
+export interface BrowseResult {
+  columns: BrowseColumn[];
+  rows: (string | null)[][];
+  total: number;
+  total_exact: boolean;
+  total_capped: boolean;
+  /** Columns identifying a row; empty = the table is read-only here. */
+  key: string[];
+}
+
+export type RowValues = Record<string, string | null>;
+
+// ---- Structure ----
+export interface ColumnSpec {
+  name: string;
+  type: string;
+  nullable: boolean;
+  default?: string | null;
+  default_is_expression?: boolean;
+  auto_increment?: boolean;
+  comment?: string;
+  /** modify_column only: leave the current default as it is. */
+  keep_default?: boolean;
+}
+
+export interface ForeignKey {
+  name: string;
+  columns: string[];
+  ref_table: string;
+  ref_columns: string[];
+  on_delete: string;
+  on_update: string;
+}
+
+export interface TableSpec {
+  name: string;
+  columns: ColumnSpec[];
+  primary_key: string[];
+  foreign_keys?: Partial<ForeignKey>[];
+  comment?: string;
+}
+
+export type AlterOp =
+  | { op: "add_column"; column: ColumnSpec }
+  | { op: "drop_column"; name: string }
+  | { op: "modify_column"; name: string; column: ColumnSpec }
+  | { op: "rename_column"; name: string; new_name: string }
+  | { op: "add_foreign_key"; foreign_key: Partial<ForeignKey> }
+  | { op: "drop_foreign_key"; name: string };
+
+export interface DBObject {
+  kind: "view" | "materialized_view" | "function" | "procedure" | "trigger" | "sequence" | "event";
+  schema: string;
+  name: string;
+  table?: string;
+  definition: string | null;
 }

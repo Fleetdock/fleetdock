@@ -26,7 +26,7 @@ RUN npm run build \
  && cp -a public /out/public
 
 # ---- control plane build ----
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS api
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS api
 ARG TARGETARCH
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
@@ -64,4 +64,8 @@ COPY --chmod=0755 backend/docker-entrypoint.sh /docker-entrypoint.sh
 # leaves it unset and behaves exactly as it did before the merge.
 ENV FLEETDOCK_UI_DIR=/opt/fleetdock/ui
 EXPOSE 8080
+# Readiness includes the metadata database ping, so an orchestrator without
+# compose's own healthcheck still sees a stuck control plane.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/readyz >/dev/null 2>&1 || exit 1
 ENTRYPOINT ["/docker-entrypoint.sh"]

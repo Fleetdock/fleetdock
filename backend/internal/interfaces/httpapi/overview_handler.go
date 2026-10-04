@@ -4,8 +4,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
 	summaryapp "github.com/Fleetdock/fleetdock/backend/internal/app/summary"
+	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
 	statsdom "github.com/Fleetdock/fleetdock/backend/internal/domain/stats"
 )
@@ -50,7 +53,31 @@ type overviewResponse struct {
 		ChannelsEnabled  int `json:"channels_enabled"`
 		RulesEnabled     int `json:"rules_enabled"`
 	} `json:"automation"`
+	// Setup tracks the first-run steps; the dashboard shows a checklist until
+	// every count is non-zero.
+	Setup struct {
+		Servers      int `json:"servers"`
+		Instances    int `json:"instances"`
+		Destinations int `json:"destinations"`
+		Schedules    int `json:"schedules"`
+		Channels     int `json:"channels"`
+	} `json:"setup"`
+	Attention []attentionItem `json:"attention"`
 }
+
+type attentionItem struct {
+	Kind         string    `json:"kind"`
+	Severity     string    `json:"severity"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   uuid.UUID `json:"resource_id"`
+	Name         string    `json:"name"`
+	Message      string    `json:"message"`
+	Since        time.Time `json:"since"`
+}
+
+// maxAttention bounds the attention list; the repository is asked for more so
+// that items the caller may not see can be dropped without starving the list.
+const maxAttention = 20
 
 func toOverviewResponse(s statsdom.Summary) overviewResponse {
 	var out overviewResponse
@@ -60,6 +87,9 @@ func toOverviewResponse(s statsdom.Summary) overviewResponse {
 	out.Backups.Completed24h, out.Backups.Failed24h, out.Backups.LastBackupAt = s.BackupsCompleted24h, s.BackupsFailed24h, s.LastBackupAt
 	out.Operations.Running, out.Operations.Failed24h = s.OperationsRunning, s.OperationsFailed24h
 	out.Automation.SchedulesEnabled, out.Automation.ChannelsEnabled, out.Automation.RulesEnabled = s.SchedulesEnabled, s.ChannelsEnabled, s.RulesEnabled
+	out.Setup.Servers, out.Setup.Instances, out.Setup.Destinations = s.ServersTotal, s.InstancesTotal, s.DestinationsTotal
+	out.Setup.Schedules, out.Setup.Channels = s.SchedulesEnabled, s.ChannelsEnabled
+	out.Attention = []attentionItem{}
 	return out
 }
 
@@ -70,7 +100,39 @@ func (h *OverviewHandler) Overview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toOverviewResponse(s))
+	out := toOverviewResponse(s)
+	items, err := h.summary.Attention(r.Context(), 5*maxAttention)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	p := principalFrom(r.Context())
+	for _, a := range items {
+		if len(out.Attention) == maxAttention {
+			break
+		}
+		if !p.CanOn(statsdom.AttentionPerm(a.Kind), attentionAncestry(a)) {
+			continue
+		}
+		out.Attention = append(out.Attention, attentionItem{
+			Kind: a.Kind, Severity: a.Severity, ResourceType: a.ResourceType, ResourceID: a.ResourceID,
+			Name: a.Name, Message: a.Message, Since: a.Since,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// attentionAncestry mirrors authzapp.Resolver for an attention item, from the
+// lineage the query already returned (no extra round-trips).
+func attentionAncestry(a statsdom.Attention) authz.Ancestry {
+	var anc authz.Ancestry
+	if a.DatabaseID != uuid.Nil {
+		anc.Covers = append(anc.Covers, authz.Scope{Type: authz.ScopeDatabase, ID: a.DatabaseID})
+	}
+	if a.ServerID != uuid.Nil {
+		anc.Covers = append(anc.Covers, authz.Scope{Type: authz.ScopeServer, ID: a.ServerID})
+	}
+	return anc
 }
 
 type metricSample struct {

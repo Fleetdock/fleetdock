@@ -7,6 +7,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // ConnParams are the network + credential parameters for reaching an instance.
@@ -16,6 +17,33 @@ type ConnParams struct {
 	User     string `json:"user"`
 	Password string `json:"password"`
 	Database string `json:"database,omitempty"`
+	// TLSMode is disable | prefer | require | verify-full ("" = prefer).
+	TLSMode string `json:"tls_mode,omitempty"`
+	// StatementTimeout, when set, is enforced by the server on interactive
+	// sessions (console, browsing, export), so a runaway statement is killed
+	// there rather than only abandoned by the client.
+	StatementTimeout time.Duration `json:"-"`
+	// AssumeOwner (PostgreSQL) switches the session to the database owner's
+	// role when the login role is a member of it, so objects created through
+	// the console are owned by the database owner, not by a Fleetdock role.
+	AssumeOwner bool `json:"-"`
+}
+
+// TLS modes accepted in ConnParams.TLSMode, named after libpq's sslmode.
+const (
+	TLSDisable    = "disable"
+	TLSPrefer     = "prefer"
+	TLSRequire    = "require"
+	TLSVerifyFull = "verify-full"
+)
+
+// ValidTLSMode reports whether m is an accepted TLS mode ("" included).
+func ValidTLSMode(m string) bool {
+	switch m {
+	case "", TLSDisable, TLSPrefer, TLSRequire, TLSVerifyFull:
+		return true
+	}
+	return false
 }
 
 // DatabaseInfo describes a logical database discovered on an instance.

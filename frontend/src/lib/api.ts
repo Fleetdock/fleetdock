@@ -54,6 +54,9 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  // upload sends a raw body (e.g. a CSV file) instead of JSON.
+  upload: <T>(path: string, body: Blob, contentType: string) =>
+    request<T>(path, { method: "POST", body, headers: { "Content-Type": contentType } }),
   post: <T>(path: string, data: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(data) }),
   patch: <T>(path: string, data: unknown) =>

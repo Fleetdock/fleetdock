@@ -52,6 +52,10 @@ func TestIsReadOnlyStmt(t *testing.T) {
 		{"empty", "", false},
 		{"whitespace only", "   \n ", false},
 		{"selection-prefixed identifier", "SELECTED FROM t", false},
+		{"analyze", "ANALYZE TABLE t", false},
+		{"explain analyze executes", "EXPLAIN ANALYZE DELETE FROM t", false},
+		{"explain (analyze) executes", "EXPLAIN (ANALYZE, BUFFERS) UPDATE t SET a = 1", false},
+		{"explain mentioning analyzer column", "EXPLAIN SELECT analyzer FROM t", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

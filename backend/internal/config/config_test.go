@@ -62,3 +62,29 @@ func TestLoad_RequiresDatabaseURL(t *testing.T) {
 		t.Fatalf("expected missing database URL error, got: %v", err)
 	}
 }
+
+func TestValidateSecrets_ProductionRejectsShortSecrets(t *testing.T) {
+	cfg := Config{
+		Env:           "production",
+		JWTSecret:     "short",
+		EncryptionKey: "a-unique-production-encryption-key",
+		AdminPassword: "not-the-default-password",
+	}
+	if err := cfg.ValidateSecrets(nil); err == nil || !strings.Contains(err.Error(), "FLEETDOCK_JWT_SECRET") {
+		t.Fatalf("expected a short JWT secret to be refused, got %v", err)
+	}
+}
+
+func TestMetadataDBAddr(t *testing.T) {
+	cases := map[string]string{
+		"postgres://u:p@postgres:5432/fleetdock?sslmode=disable": "postgres:5432",
+		"postgres://u:p@db.example.com/fleetdock":                "db.example.com:5432",
+		"postgresql://u@[::1]:6543/x":                            "[::1]:6543",
+		"not a url":                                              "",
+	}
+	for in, want := range cases {
+		if got := (Config{DatabaseURL: in}).MetadataDBAddr(); got != want {
+			t.Errorf("MetadataDBAddr(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

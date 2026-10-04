@@ -4,15 +4,26 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"regexp"
+	"strconv"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql" // driver registration
+	"github.com/go-sql-driver/mysql"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 )
+
+// mysqlNet is a custom network name whose dialer enforces the netsafe
+// database policy on the address actually connected to.
+const mysqlNet = "fleetdock-tcp"
 
 // MariaDB and MySQL share the MySQL wire protocol and client tooling, so one
 // implementation serves both engines.
 func init() {
+	mysql.RegisterDialContext(mysqlNet, func(ctx context.Context, addr string) (net.Conn, error) {
+		return netsafe.DialDB(ctx, "tcp", addr)
+	})
 	Register("mariadb", &MariaDB{})
 	Register("mysql", &MariaDB{})
 }
@@ -22,9 +33,38 @@ type MariaDB struct{}
 
 var identRe = regexp.MustCompile(`^[A-Za-z0-9_$]+$`)
 
+// dsn builds the driver DSN. It goes through mysql.Config rather than string
+// formatting so passwords containing '@', '/' or '?' cannot corrupt it.
 func (m *MariaDB) dsn(p ConnParams) string {
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?timeout=8s&readTimeout=30s&writeTimeout=30s",
-		p.User, p.Password, p.Host, p.Port, p.Database)
+	c := mysql.NewConfig()
+	c.User = p.User
+	c.Passwd = p.Password
+	c.Net = mysqlNet
+	c.Addr = net.JoinHostPort(p.Host, strconv.Itoa(p.Port))
+	c.DBName = p.Database
+	c.Timeout = 8 * time.Second
+	c.ReadTimeout = 30 * time.Second
+	c.WriteTimeout = 30 * time.Second
+	c.TLSConfig = mysqlTLS(p.TLSMode)
+	// Report rows matched, not rows changed, for UPDATE: re-saving a row with
+	// identical values must count as one row, or single-row edits would be
+	// refused as "not found".
+	c.ClientFoundRows = true
+	return c.FormatDSN()
+}
+
+// mysqlTLS maps a libpq-style TLS mode onto the driver's tls parameter.
+func mysqlTLS(mode string) string {
+	switch mode {
+	case TLSDisable:
+		return "false"
+	case TLSRequire:
+		return "skip-verify"
+	case TLSVerifyFull:
+		return "true"
+	default:
+		return "preferred"
+	}
 }
 
 func (m *MariaDB) open(p ConnParams) (*sql.DB, error) {

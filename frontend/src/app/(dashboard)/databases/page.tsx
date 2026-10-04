@@ -1,205 +1,136 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type FormEvent } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+
+import { Database as DatabaseIcon, Plus, Search } from "lucide-react";
 
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { AddServerWizard } from "@/components/database/add-server-wizard";
+import { BackupDatabaseModal } from "@/components/database/backup-database-modal";
+import { CreateDatabaseModal } from "@/components/database/create-database-modal";
+import {
+  DatabaseMenu,
+  InstanceGroup,
+  type DatabaseActions,
+} from "@/components/database/instance-group";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
-import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import {
+  EmptyState,
+  PageHeader,
+  StatusBadge,
+  TableSkeleton,
+} from "@/components/ui";
+import { friendlyError } from "@/lib/errors";
+import { formatBytes } from "@/lib/format";
 import {
   LIST_PAGE_SIZE,
-  useCan,
-  useCreateDatabase,
+  useCanAny,
   useDatabases,
-  useDestinations,
   useInstances,
-  useLockDatabase,
-  useTriggerBackup,
-  useUnlockDatabase,
+  useServers,
 } from "@/lib/hooks";
-import type { Database, Instance } from "@/lib/types";
-import { Archive, Lock, Plus, Trash2, Unlock } from "lucide-react";
+import type { Database } from "@/lib/types";
 
 export default function DatabasesPage() {
+  return (
+    <Suspense fallback={<TableSkeleton />}>
+      <Databases />
+    </Suspense>
+  );
+}
+
+function Databases() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const view = sp.get("view") === "all" ? "all" : "grouped";
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const { data, isLoading, error } = useDatabases({ search, page });
-  const { data: instances } = useInstances();
-  const [open, setOpen] = useState(false);
+  const canAny = useCanAny();
+  const canWrite = canAny("database:write");
+  const canBackup = canAny("backup:write");
+  const canAddServer = canAny("instance:write");
+  // Someone granted access to single databases can't list database servers:
+  // they get the flat list instead.
+  const canInstances = canAny("instance:read");
+
+  const {
+    data: instances,
+    isLoading: instancesLoading,
+    error: instancesError,
+  } = useInstances(undefined, undefined, undefined, canInstances);
+  const { data: servers } = useServers(undefined, undefined, canAny("server:read"));
+  const serverName = useMemo(
+    () => new Map(servers?.items.map((s) => [s.id, s.name]) ?? []),
+    [servers],
+  );
+
+  // ?connect=1 (from the setup checklist) opens the wizard straight away.
+  const [wizardOpen, setWizardOpen] = useState(sp.get("connect") === "1");
+  const [createFor, setCreateFor] = useState<string | null | undefined>(
+    undefined,
+  );
   const [backupTarget, setBackupTarget] = useState<Database | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Database | null>(null);
-  const can = useCan();
-  const canWrite = can("database:write");
-  const canBackup = can("backup:write");
-  const showActions = canWrite || canBackup;
 
-  const lock = useLockDatabase();
-  const unlock = useUnlockDatabase();
+  const actions: DatabaseActions = {
+    canWrite,
+    canBackup,
+    onBackup: setBackupTarget,
+    onDelete: setDeleteTarget,
+  };
+  const instanceList = instances?.items ?? [];
+  const writable = instanceList.filter((i) => i.has_credentials);
 
-  const instanceName = useMemo(() => {
-    const m = new Map<string, string>();
-    instances?.items.forEach((i) => m.set(i.id, i.name));
-    return m;
-  }, [instances]);
-
-  const instanceById = useMemo(() => {
-    const m = new Map<string, Instance>();
-    instances?.items.forEach((i) => m.set(i.id, i));
-    return m;
-  }, [instances]);
-
-  const columns = useMemo(() => {
-    const cols: DataTableColumn<Database>[] = [
-      {
-        id: "name",
-        header: "Name",
-        className: "font-medium",
-        render: (d) => (
-          <span className="flex items-center gap-2">
-            <Link
-              href={`/databases/${d.id}`}
-              style={{ textDecoration: "underline" }}
-            >
-              {d.name}
-            </Link>
-            {d.system ? (
-              <span
-                className="badge badge-gray"
-                title="Engine-owned database — browsable and backup-able, not removable"
-              >
-                system
-              </span>
-            ) : null}
-          </span>
-        ),
-      },
-      {
-        id: "instance",
-        header: "Instance",
-        className: "muted",
-        render: (d) =>
-          instanceName.get(d.instance_id) ?? d.instance_id.slice(0, 8),
-      },
-      {
-        id: "charset",
-        header: "Charset",
-        className: "muted",
-        render: (d) => d.charset,
-      },
-      {
-        id: "status",
-        header: "Status",
-        render: (d) => <StatusBadge status={d.status} />,
-      },
-    ];
-    if (showActions) {
-      cols.push({
-        id: "actions",
-        header: "Actions",
-        align: "right",
-        render: (d) => (
-          <div
-            className="flex items-center gap-2"
-            style={{ justifyContent: "flex-end" }}
-          >
-            {canBackup ? (
-              <button
-                className="btn btn-sm"
-                onClick={() => setBackupTarget(d)}
-                title="Back up to S3/R2"
-              >
-                <Archive size={15} /> Backup
-              </button>
-            ) : null}
-            {canWrite ? (
-              <>
-                {d.status === "locked" ? (
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => unlock.mutate(d.id)}
-                    disabled={unlock.isPending}
-                  >
-                    <Unlock size={15} /> Unlock
-                  </button>
-                ) : (
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => lock.mutate(d.id)}
-                    disabled={lock.isPending}
-                  >
-                    <Lock size={15} /> Lock
-                  </button>
-                )}
-                {d.system ? null : (
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={() => setDeleteTarget(d)}
-                    aria-label="Delete"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                )}
-              </>
-            ) : null}
-          </div>
-        ),
-      });
+  function closeWizard() {
+    setWizardOpen(false);
+    if (sp.has("connect")) {
+      const q = new URLSearchParams(sp.toString());
+      q.delete("connect");
+      router.replace(q.toString() ? `${pathname}?${q}` : pathname);
     }
-    return cols;
-  }, [canBackup, canWrite, instanceName, lock, showActions, unlock]);
+  }
 
-  return (
-    <div>
-      <div
-        className="flex justify-between items-center"
-        style={{ marginBottom: "1.1rem" }}
-      >
-        <div>
-          <h1 className="font-semibold text-xl">Databases</h1>
-          <p className="text-sm muted">
-            Logical databases across your instances.
-          </p>
-        </div>
-        {canWrite ? (
-          <button className="btn btn-primary" onClick={() => setOpen(true)}>
-            <Plus size={16} /> Create database
-          </button>
-        ) : null}
-      </div>
+  function setView(v: "grouped" | "all") {
+    const q = new URLSearchParams(sp.toString());
+    if (v === "all") q.set("view", "all");
+    else q.delete("view");
+    router.replace(q.toString() ? `${pathname}?${q}` : pathname);
+  }
 
-      <DataTable<Database>
-        columns={columns}
-        rows={data?.items ?? []}
-        rowKey={(d) => d.id}
-        isLoading={isLoading}
-        error={error ? (error as ApiError).message : undefined}
-        errorTitle="Could not load databases"
-        emptyTitle="No databases yet"
-        emptyHint="Create your first database to get started."
-        emptySearchTitle="No databases match your search"
-        search={{
-          value: search,
-          onChange: (v) => {
-            setSearch(v);
-            setPage(1);
-          },
-          placeholder: "Search databases…",
-        }}
-        pagination={{
-          page,
-          pageCount: Math.max(
-            1,
-            Math.ceil((data?.pagination.total ?? 0) / LIST_PAGE_SIZE),
-          ),
-          onPage: setPage,
-        }}
-      />
+  const header = (
+    <PageHeader
+      title="Databases"
+      description="Your database servers and the databases on them. New databases are found automatically."
+      actions={
+        <>
+          {canAddServer ? (
+            <button className="btn" onClick={() => setWizardOpen(true)}>
+              <Plus size={16} /> Connect database server
+            </button>
+          ) : null}
+          {canWrite && writable.length > 0 ? (
+            <button
+              className="btn btn-primary"
+              onClick={() => setCreateFor(null)}
+            >
+              <Plus size={16} /> Create database
+            </button>
+          ) : null}
+        </>
+      }
+    />
+  );
 
+  const modals = (
+    <>
+      <AddServerWizard open={wizardOpen} onClose={closeWizard} />
       <CreateDatabaseModal
-        open={open}
-        onClose={() => setOpen(false)}
-        instances={instances?.items ?? []}
+        open={createFor !== undefined}
+        onClose={() => setCreateFor(undefined)}
+        instances={writable}
+        instanceId={createFor ?? undefined}
       />
       <BackupDatabaseModal
         database={backupTarget}
@@ -207,197 +138,187 @@ export default function DatabasesPage() {
       />
       <DeleteDatabaseModal
         database={deleteTarget}
-        instance={
-          deleteTarget ? instanceById.get(deleteTarget.instance_id) : undefined
-        }
         onClose={() => setDeleteTarget(null)}
       />
+    </>
+  );
+
+  const searchBox = (placeholder: string) => (
+    <div className="search-box">
+      <Search size={16} aria-hidden />
+      <input
+        className="input"
+        type="search"
+        placeholder={placeholder}
+        aria-label="Search databases"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+    </div>
+  );
+
+  let content: React.ReactNode;
+  if (!canInstances) {
+    content = (
+      <>
+        <div style={{ marginBottom: ".9rem" }}>{searchBox("Search databases…")}</div>
+        <AllDatabases search={search} actions={actions} />
+      </>
+    );
+  } else if (instancesLoading) {
+    content = <TableSkeleton />;
+  } else if (instancesError) {
+    content = <EmptyState title="Could not load your database servers" hint={friendlyError(instancesError)} />;
+  } else if (instanceList.length === 0) {
+    const noServers = (servers?.items.length ?? 0) === 0;
+    content = (
+      <EmptyState
+        icon={<DatabaseIcon size={22} />}
+        title="No database servers yet"
+        hint={
+          noServers
+            ? "Connect a database server you already run anywhere, or connect one of your machines first so Fleetdock can create one there for you."
+            : "Connect an existing database server, or let Fleetdock create a new one on one of your servers."
+        }
+        action={
+          canAddServer ? (
+            <>
+              <button className="btn btn-primary" onClick={() => setWizardOpen(true)}>
+                <Plus size={16} /> Connect database server
+              </button>
+              {noServers ? (
+                <Link href="/servers" className="btn">
+                  Connect a machine
+                </Link>
+              ) : null}
+            </>
+          ) : undefined
+        }
+      />
+    );
+  } else {
+    content = (
+      <>
+        <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", flexWrap: "wrap" }}>
+          {searchBox(view === "all" ? "Search databases…" : "Search servers and databases…")}
+          <div className="segmented" role="group" aria-label="View">
+            <button type="button" aria-pressed={view === "grouped"} onClick={() => setView("grouped")}>
+              By server
+            </button>
+            <button type="button" aria-pressed={view === "all"} onClick={() => setView("all")}>
+              All databases
+            </button>
+          </div>
+        </div>
+        {view === "grouped" ? (
+          <div className="flex flex-col gap-3">
+            {instanceList.map((inst) => (
+              <InstanceGroup
+                key={inst.id}
+                instance={inst}
+                serverName={inst.server_id ? serverName.get(inst.server_id) : undefined}
+                search={search}
+                defaultOpen={instanceList.length <= 4}
+                actions={actions}
+                onCreateDatabase={(id) => setCreateFor(id)}
+                canManageInstance
+              />
+            ))}
+          </div>
+        ) : (
+          <AllDatabases search={search} actions={actions} />
+        )}
+      </>
+    );
+  }
+
+  // The dialogs stay at one place in the tree: switching from the empty state
+  // to the list (e.g. right after the first server is connected) must not
+  // remount them and lose the wizard's "done" step.
+  return (
+    <div>
+      {header}
+      {content}
+      {modals}
     </div>
   );
 }
 
-function BackupDatabaseModal({
-  database,
-  onClose,
+function AllDatabases({
+  search,
+  actions,
 }: {
-  database: Database | null;
-  onClose: () => void;
+  search: string;
+  actions: DatabaseActions;
 }) {
-  const trigger = useTriggerBackup();
-  const { data: destinations } = useDestinations();
-  const [destinationId, setDestinationId] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await trigger.mutateAsync({
-        database_id: database!.id,
-        destination_id: destinationId,
-      });
-      setDone(true);
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Failed to start backup",
-      );
-    }
-  }
-
-  function close() {
-    setDestinationId("");
-    setDone(false);
-    setError(null);
-    onClose();
-  }
-
-  if (!database) return null;
+  const [page, setPage] = useState(1);
+  const { data, isLoading, error } = useDatabases({ search, page });
+  const columns: DataTableColumn<Database>[] = [
+    {
+      id: "name",
+      header: "Database",
+      className: "font-medium",
+      render: (d) => (
+        <span className="flex items-center gap-2">
+          <Link href={`/databases/${d.id}`} className="link-plain">
+            {d.name}
+          </Link>
+          {d.system ? <span className="badge badge-gray">system</span> : null}
+        </span>
+      ),
+    },
+    {
+      id: "instance",
+      header: "Server",
+      className: "muted",
+      render: (d) =>
+        d.instance ? (
+          <Link href={`/instances/${d.instance.id}`} className="link-plain">
+            {d.instance.name}
+          </Link>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      render: (d) => <StatusBadge status={d.status} />,
+    },
+    {
+      id: "size",
+      header: "Size",
+      align: "right",
+      className: "muted",
+      hideOnMobile: true,
+      render: (d) => formatBytes(d.size_bytes),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      render: (d) => <DatabaseMenu database={d} actions={actions} />,
+    },
+  ];
   return (
-    <Modal open onClose={close} title={`Back up "${database.name}"`}>
-      {done ? (
-        <div>
-          <p className="text-sm">
-            Backup started — track it on the Backups page.
-          </p>
-          <div
-            className="flex justify-end items-center"
-            style={{ marginTop: ".8rem" }}
-          >
-            <button className="btn btn-primary" onClick={close}>
-              Done
-            </button>
-          </div>
-        </div>
-      ) : (
-        <form onSubmit={onSubmit}>
-          <Field label="Destination">
-            <select
-              className="input"
-              value={destinationId}
-              onChange={(e) => setDestinationId(e.target.value)}
-              required
-            >
-              <option value="" disabled>
-                Select an S3/R2 destination…
-              </option>
-              {destinations?.items.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.bucket})
-                </option>
-              ))}
-            </select>
-          </Field>
-          {!destinations || destinations.items.length === 0 ? (
-            <p className="text-sm muted">
-              No destinations yet — add one on the Destinations page.
-            </p>
-          ) : null}
-          <ErrorText message={error ?? undefined} />
-          <div
-            className="flex justify-end items-center gap-2"
-            style={{ marginTop: ".5rem" }}
-          >
-            <button type="button" className="btn" onClick={close}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={
-                trigger.isPending ||
-                !destinations ||
-                destinations.items.length === 0
-              }
-            >
-              {trigger.isPending ? "Starting…" : "Start backup"}
-            </button>
-          </div>
-        </form>
-      )}
-    </Modal>
-  );
-}
-
-function CreateDatabaseModal({
-  open,
-  onClose,
-  instances,
-}: {
-  open: boolean;
-  onClose: () => void;
-  instances: { id: string; name: string }[];
-}) {
-  const create = useCreateDatabase();
-  const [instanceId, setInstanceId] = useState("");
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await create.mutateAsync({ instance_id: instanceId, name });
-      setName("");
-      onClose();
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Failed to create database",
-      );
-    }
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title="Create database">
-      <form onSubmit={onSubmit}>
-        <Field label="Instance">
-          <select
-            className="input"
-            value={instanceId}
-            onChange={(e) => setInstanceId(e.target.value)}
-            required
-          >
-            <option value="" disabled>
-              Select an instance…
-            </option>
-            {instances.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Name">
-          <input
-            className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="app_production"
-            required
-          />
-        </Field>
-        {instances.length === 0 ? (
-          <p className="text-sm muted">
-            Register a server and add an instance first.
-          </p>
-        ) : null}
-        <ErrorText message={error ?? undefined} />
-        <div
-          className="flex justify-end items-center gap-2"
-          style={{ marginTop: ".5rem" }}
-        >
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={create.isPending || instances.length === 0}
-          >
-            {create.isPending ? "Creating…" : "Create"}
-          </button>
-        </div>
-      </form>
-    </Modal>
+    <DataTable<Database>
+      columns={columns}
+      rows={data?.items ?? []}
+      rowKey={(d) => d.id}
+      isLoading={isLoading}
+      error={error ? friendlyError(error) : undefined}
+      errorTitle="Could not load databases"
+      emptyTitle="No databases yet"
+      emptyHint="Databases on your connected servers appear here automatically."
+      emptySearchTitle="No databases match your search"
+      pagination={{
+        page,
+        pageCount: Math.max(
+          1,
+          Math.ceil((data?.pagination.total ?? 0) / LIST_PAGE_SIZE),
+        ),
+        onPage: setPage,
+      }}
+    />
   );
 }

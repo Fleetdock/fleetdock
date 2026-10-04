@@ -8,6 +8,7 @@ import (
 
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	instanceapp "github.com/Fleetdock/fleetdock/backend/internal/app/instance"
+	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
@@ -17,6 +18,28 @@ import (
 type InstanceHandler struct {
 	svc      *instanceapp.Service
 	resolver *authzapp.Resolver
+	probe    *probeapp.Service
+}
+
+// WithProbe enables the on-demand health and discovery check.
+func (h *InstanceHandler) WithProbe(p *probeapp.Service) *InstanceHandler {
+	h.probe = p
+	return h
+}
+
+// Probe handles POST /v1/instances/{id}/probe: check the database server now
+// and refresh its database list, instead of waiting for the next minute.
+func (h *InstanceHandler) Probe(w http.ResponseWriter, r *http.Request) {
+	if h.probe == nil {
+		writeError(w, apperr.Conflict("health checks are not enabled on this control plane"))
+		return
+	}
+	health, err := h.probe.ProbeOne(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, health)
 }
 
 // NewInstanceHandler builds the instance handler.
@@ -36,30 +59,33 @@ type registerInstanceRequest struct {
 	Port           int               `json:"port"`
 	Username       string            `json:"username"`
 	Password       string            `json:"password"` // write-only
+	TLSMode        string            `json:"tls_mode"`
 	Labels         map[string]string `json:"labels"`
 	Tags           []string          `json:"tags"`
 }
 
 type instanceResponse struct {
-	ID             string            `json:"id"`
-	ServerID       *string           `json:"server_id,omitempty"`
-	Name           string            `json:"name"`
-	Engine         string            `json:"engine"`
-	Kind           string            `json:"kind"`
-	Host           *string           `json:"host,omitempty"`
-	Username       *string           `json:"username,omitempty"`
-	HasCredentials bool              `json:"has_credentials"`
-	Provisioned    bool              `json:"provisioned"`
-	ContainerID    *string           `json:"container_id,omitempty"`
-	EngineVersion  string            `json:"engine_version"`
-	MariaDBVersion string            `json:"mariadb_version"` // back-compat
-	Port           int               `json:"port"`
-	Status         string            `json:"status"`
-	Labels         map[string]string `json:"labels"`
-	Tags           []string          `json:"tags"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
-	Version        int               `json:"version"`
+	ID             string              `json:"id"`
+	ServerID       *string             `json:"server_id,omitempty"`
+	Name           string              `json:"name"`
+	Engine         string              `json:"engine"`
+	Kind           string              `json:"kind"`
+	Host           *string             `json:"host,omitempty"`
+	Username       *string             `json:"username,omitempty"`
+	HasCredentials bool                `json:"has_credentials"`
+	TLSMode        string              `json:"tls_mode"`
+	Health         *instancedom.Health `json:"health,omitempty"`
+	Provisioned    bool                `json:"provisioned"`
+	ContainerID    *string             `json:"container_id,omitempty"`
+	EngineVersion  string              `json:"engine_version"`
+	MariaDBVersion string              `json:"mariadb_version"` // back-compat
+	Port           int                 `json:"port"`
+	Status         string              `json:"status"`
+	Labels         map[string]string   `json:"labels"`
+	Tags           []string            `json:"tags"`
+	CreatedAt      time.Time           `json:"created_at"`
+	UpdatedAt      time.Time           `json:"updated_at"`
+	Version        int                 `json:"version"`
 }
 
 func toInstanceResponse(in *instancedom.Instance) instanceResponse {
@@ -77,6 +103,8 @@ func toInstanceResponse(in *instancedom.Instance) instanceResponse {
 		Host:           in.Host,
 		Username:       in.Username,
 		HasCredentials: in.HasCredentials(),
+		TLSMode:        in.TLSModeOrDefault(),
+		Health:         in.Health,
 		Provisioned:    in.Provisioned(),
 		ContainerID:    in.ContainerID,
 		EngineVersion:  in.EngineVersion,
@@ -128,6 +156,7 @@ func (h *InstanceHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Port:          req.Port,
 		Username:      req.Username,
 		Password:      req.Password,
+		TLSMode:       req.TLSMode,
 		Labels:        req.Labels,
 		Tags:          req.Tags,
 	})
@@ -193,6 +222,40 @@ func (h *InstanceHandler) Lifecycle(action string) http.HandlerFunc {
 // Get handles GET /v1/instances/{id}.
 func (h *InstanceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	in, err := h.svc.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toInstanceResponse(in))
+}
+
+// updateInstanceRequest is a partial update. Every field is a pointer so the
+// handler can tell "absent" from "explicitly set to empty" — clearing a
+// password and leaving it alone are different operations.
+type updateInstanceRequest struct {
+	Name     *string `json:"name"`
+	Host     *string `json:"host"`
+	Port     *int    `json:"port"`
+	TLSMode  *string `json:"tls_mode"`
+	Username *string `json:"username"`
+	Password *string `json:"password"` // write-only; "" removes the stored password
+}
+
+// Update handles PATCH /v1/instances/{id}.
+func (h *InstanceHandler) Update(w http.ResponseWriter, r *http.Request) {
+	var req updateInstanceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	in, err := h.svc.Update(r.Context(), r.PathValue("id"), instanceapp.UpdateInput{
+		Name:     req.Name,
+		Host:     req.Host,
+		Port:     req.Port,
+		TLSMode:  req.TLSMode,
+		Username: req.Username,
+		Password: req.Password,
+	})
 	if err != nil {
 		writeError(w, err)
 		return
