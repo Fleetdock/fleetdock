@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { emptyWorkspace, parseWorkspace, reducer, serializeWorkspace, type Action, type Workspace } from "./tabs";
+import { emptyWorkspace, objectName, parseWorkspace, reducer, serializeWorkspace, type Action, type Workspace } from "./tabs";
 
 const run = (actions: Action[], ws: Workspace = emptyWorkspace) => actions.reduce(reducer, ws);
 const open = (name: string, preview = false): Action => ({
@@ -89,6 +89,19 @@ describe("tabs reducer", () => {
     ws = reducer(ws, { type: "rename", id: "table:z", name: "a", label: "a" });
     expect(ids(ws)).toEqual(["table:a"]);
     expect(ws.active).toBe("table:a");
+  });
+});
+
+describe("object tabs", () => {
+  it("open once per object and are never renamed", () => {
+    const name = objectName({ kind: "function", schema: "public", name: "calc" });
+    const req: Action = { type: "open", tab: { kind: "object", name, label: "calc" } };
+    let ws = run([req, open("a"), req]);
+    expect(ids(ws)).toEqual(["object:function:public.calc", "table:a"]);
+    expect(ws.active).toBe("object:function:public.calc");
+    ws = reducer(ws, { type: "rename", id: "object:function:public.calc", name: "x", label: "x" });
+    expect(ids(ws)).toEqual(["object:function:public.calc", "table:a"]);
+    expect(parseWorkspace(serializeWorkspace(ws))).toEqual(ws);
   });
 });
 

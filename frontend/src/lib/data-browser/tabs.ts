@@ -5,7 +5,7 @@ import type { RowFilter, SortKey } from "../types";
 // It is plain data so it can be persisted to localStorage and unit-tested; the
 // components only dispatch actions to the reducer below.
 
-export type TabKind = "table" | "view" | "query";
+export type TabKind = "table" | "view" | "query" | "object";
 
 export const PAGE_SIZES = [50, 100, 200, 500] as const;
 export const DEFAULT_PAGE_SIZE = 100;
@@ -28,8 +28,9 @@ export interface Tab {
   kind: TabKind;
   /**
    * What the API addresses: the table identifier for table/view tabs
-   * ("schema.table" on PostgreSQL, the bare name on MySQL/MariaDB), or the
-   * title for query tabs.
+   * ("schema.table" on PostgreSQL, the bare name on MySQL/MariaDB), the
+   * title for query tabs, or "<kind>:<schema>.<name>" for a routine,
+   * trigger, sequence or event (see objectName).
    */
   name: string;
   /** Short label shown on the tab. */
@@ -65,8 +66,11 @@ export function splitName(name: string, postgres: boolean): { schema?: string; l
   return i > 0 ? { schema: name.slice(0, i), label: name.slice(i + 1) } : { label: name };
 }
 
+/** objectName identifies a routine, trigger, sequence or event tab. */
+export const objectName = (o: { kind: string; schema: string; name: string }) => `${o.kind}:${o.schema}.${o.name}`;
+
 export type OpenRequest = {
-  kind: "table" | "view";
+  kind: "table" | "view" | "object";
   name: string;
   label: string;
   preview?: boolean;
@@ -195,7 +199,7 @@ export function reducer(ws: Workspace, a: Action): Workspace {
     }
     case "rename": {
       const tab = ws.tabs.find((t) => t.id === a.id);
-      if (!tab || tab.kind === "query") return ws;
+      if (!tab || tab.kind === "query" || tab.kind === "object") return ws;
       const id = tabId(tab.kind, a.name);
       if (id !== a.id && ws.tabs.some((t) => t.id === id)) {
         // The new name is already open in another tab: keep that one.
@@ -269,7 +273,7 @@ export function parseWorkspace(raw: string | null): Workspace {
   const tabs: Tab[] = [];
   for (const t of v.tabs) {
     if (!isObj(t) || typeof t.name !== "string" || typeof t.label !== "string") continue;
-    if (t.kind !== "table" && t.kind !== "view" && t.kind !== "query") continue;
+    if (t.kind !== "table" && t.kind !== "view" && t.kind !== "query" && t.kind !== "object") continue;
     const id = t.kind === "query" ? (typeof t.id === "string" && t.id.startsWith("query:") ? t.id : null) : tabId(t.kind, t.name);
     if (!id || seen.has(id)) continue;
     seen.add(id);

@@ -7,26 +7,23 @@ import {
   useRouter,
   useSearchParams,
 } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import {
   ConnectivitySection,
   CredentialsSection,
 } from "@/components/connectivity";
 import { DatabaseBackups } from "@/components/backup/database-backups";
-import { DataBrowser } from "@/components/database/data-browser";
 import { GrantsSection } from "@/components/database/grants-section";
 import { ImportSQLModal } from "@/components/database/import-sql-modal";
 import { MoveDatabaseModal } from "@/components/database/move-database-modal";
-import { QueryConsole } from "@/components/database/query-console";
-import { TablesBrowser } from "@/components/database/tables-browser";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import { EmptyState, PageHeader, QueryTabs, Spinner, StatusBadge, Time } from "@/components/ui";
 import { formatBytes as formatBytesOr } from "@/lib/format";
 
-import { useCanOn, useDatabase } from "@/lib/hooks";
+import { useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
 
-import { ArrowRightLeft, FileUp, Table2, Trash2 } from "lucide-react";
+import { ArrowRightLeft, FileUp, SquareTerminal, Table2, Trash2 } from "lucide-react";
 
 const formatBytes = (n: number) => formatBytesOr(n, "0 B");
 
@@ -62,32 +59,23 @@ function DatabaseDetail() {
   const [moveOpen, setMoveOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
-  // View state lives in the URL so the browser back button steps
-  // data browser -> tables list -> schema list -> databases list.
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
-  const tabParam = sp.get("tab");
-  const tab =
-    tabParam === "users" || tabParam === "query" || tabParam === "backups"
-      ? tabParam
-      : "tables";
-  const schema = sp.get("schema");
-  const table = sp.get("table");
-  const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
+  const tab = sp.get("tab") === "users" ? "users" : "backups";
 
-  function navigate(updates: Record<string, string | null>) {
-    const q = new URLSearchParams(sp.toString());
-    for (const [k, v] of Object.entries(updates)) {
-      if (v === null) {
-        q.delete(k);
-      } else {
-        q.set(k, v);
-      }
-    }
-    const qs = q.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
-  }
+  // Tables and the SQL console moved to the Data Browser; old links
+  // (?tab=tables|query, ?schema=, ?table=) land there instead.
+  const legacyTab = sp.get("tab");
+  const legacyTable = sp.get("table");
+  const legacy = legacyTab === "tables" || legacyTab === "query" || sp.has("schema") || legacyTable !== null;
+  useEffect(() => {
+    if (!legacy) return;
+    const q = new URLSearchParams({ db: id });
+    if (legacyTable) q.set("table", legacyTable);
+    else if (legacyTab === "query") q.set("query", "new");
+    router.replace(`/data?${q.toString()}`);
+  }, [legacy, legacyTab, legacyTable, id, router]);
 
   if (isLoading) {
     return (
@@ -126,14 +114,6 @@ function DatabaseDetail() {
         }
         actions={
           <>
-          {hasCreds ? (
-            <Link
-              className="btn btn-sm btn-primary"
-              href={`/data?db=${encodeURIComponent(id)}${table ? `&table=${encodeURIComponent(table)}` : ""}`}
-            >
-              <Table2 size={15} /> Open in Data Browser
-            </Link>
-          ) : null}
           {canMove && !db.system ? (
             <button className="btn btn-sm" onClick={() => setMoveOpen(true)}>
               <ArrowRightLeft size={15} /> Copy / move
@@ -200,14 +180,12 @@ function DatabaseDetail() {
       <ConnectivitySection databaseId={id} canWrite={canWrite} />
       <CredentialsSection databaseId={id} canWrite={canWrite} />
 
+      <DataCard databaseId={id} hasCreds={hasCreds} instance={instance} />
+
       <QueryTabs
         label="Database sections"
-        onSelect={(t) =>
-          navigate({ tab: t === "tables" ? null : t, schema: null, table: null, page: null })
-        }
+        onSelect={(t) => router.push(t === "backups" ? pathname : `${pathname}?tab=${t}`)}
         tabs={[
-          { id: "tables", label: "Tables" },
-          { id: "query", label: "SQL console" },
           { id: "backups", label: "Backups" },
           { id: "users", label: "Access" },
         ]}
@@ -215,43 +193,10 @@ function DatabaseDetail() {
 
       {tab === "backups" ? (
         <DatabaseBackups database={db} canBackup={canMove} />
-      ) : !hasCreds ? (
-        <EmptyState
-          title="Fleetdock can't log in to this database server yet"
-          hint="Add an admin login on the database server's page to browse tables and manage access."
-          action={
-            instance ? (
-              <Link href={`/instances/${instance.id}`} className="btn">
-                Open {instance.name}
-              </Link>
-            ) : undefined
-          }
-        />
-      ) : tab === "query" ? (
-        <QueryConsole databaseId={id} canWrite={canWrite} />
-      ) : tab === "users" ? (
+      ) : hasCreds ? (
         <GrantsSection databaseId={id} canWrite={canWrite} />
-      ) : table ? (
-        <DataBrowser
-          databaseId={id}
-          table={table}
-          page={page}
-          canWrite={canWrite}
-          onPage={(p) => navigate({ page: p <= 1 ? null : String(p) })}
-          onClose={() => navigate({ table: null, page: null })}
-          onRenamed={(t) => navigate({ table: t, page: null })}
-        />
       ) : (
-        <TablesBrowser
-          databaseId={id}
-          schema={schema}
-          onOpenSchema={(s) => navigate({ schema: s, table: null, page: null })}
-          onCloseSchema={() =>
-            navigate({ schema: null, table: null, page: null })
-          }
-          onOpenTable={(t) => navigate({ table: t, page: null })}
-          canWrite={canWrite}
-        />
+        <NoLogin instance={instance} />
       )}
       <DeleteDatabaseModal
         database={deleteOpen ? db : null}
@@ -294,6 +239,76 @@ function Detail({
           value
         )}
       </dd>
+    </div>
+  );
+}
+
+type InstanceRefLike = { id: string; name: string } | undefined;
+
+/** NoLogin explains that browsing needs the server's admin login first. */
+function NoLogin({ instance }: { instance: InstanceRefLike }) {
+  return (
+    <EmptyState
+      title="Fleetdock can't log in to this database server yet"
+      hint="Add an admin login on the database server's page to browse tables and manage access."
+      action={
+        instance ? (
+          <Link href={`/instances/${instance.id}`} className="btn">
+            Open {instance.name}
+          </Link>
+        ) : undefined
+      }
+    />
+  );
+}
+
+/**
+ * DataCard points to the Data Browser, where this database's tables, views,
+ * routines and SQL console live.
+ */
+function DataCard({ databaseId, hasCreds, instance }: { databaseId: string; hasCreds: boolean; instance: InstanceRefLike }) {
+  const tables = useTables(hasCreds ? databaseId : "");
+  const objects = useDBObjects(hasCreds ? databaseId : "");
+  if (!hasCreds) {
+    return (
+      <div className="section">
+        <NoLogin instance={instance} />
+      </div>
+    );
+  }
+  const nTables = tables.data?.items.length;
+  const nViews = objects.data?.filter((o) => o.kind === "view" || o.kind === "materialized_view").length;
+  const nOther = objects.data ? objects.data.length - (nViews ?? 0) : undefined;
+  const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+  const counts = [
+    nTables !== undefined ? plural(nTables, "table") : null,
+    nViews ? plural(nViews, "view") : null,
+    nOther ? plural(nOther, "other object") : null,
+  ].filter(Boolean);
+  const db = encodeURIComponent(databaseId);
+  return (
+    <div className="card data-card">
+      <div className="data-card-icon">
+        <Table2 size={18} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="font-medium">Data</div>
+        <div className="text-sm muted">
+          {tables.isLoading
+            ? "Counting tables…"
+            : counts.length
+              ? `${counts.join(" · ")} — browse, edit and query them in the Data Browser.`
+              : "Browse, edit and query this database in the Data Browser."}
+        </div>
+      </div>
+      <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+        <Link className="btn btn-sm" href={`/data?db=${db}&query=new`}>
+          <SquareTerminal size={15} /> New SQL query
+        </Link>
+        <Link className="btn btn-sm btn-primary" href={`/data?db=${db}`}>
+          <Table2 size={15} /> Open Data Browser
+        </Link>
+      </div>
     </div>
   );
 }

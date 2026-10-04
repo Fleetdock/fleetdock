@@ -99,10 +99,12 @@ type SqlEditorProps = {
   onRun?: () => void;
   placeholder?: string;
   minHeight?: string;
+  /** Show the text without letting it be changed (object definitions). */
+  readOnly?: boolean;
 };
 
 export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function SqlEditor(
-  { value, onChange, onRun, placeholder: placeholderText = "SELECT * FROM ...", minHeight = "200px" },
+  { value, onChange, onRun, placeholder: placeholderText = "SELECT * FROM ...", minHeight = "200px", readOnly = false },
   ref,
 ) {
   const dark = useIsDark();
@@ -142,6 +144,8 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
       <CodeMirror
         value={value}
         height={minHeight}
+        readOnly={readOnly}
+        editable={!readOnly}
         extensions={extensions}
         theme={themeExtensions}
         basicSetup={{

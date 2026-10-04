@@ -6,6 +6,7 @@ import type { Tab } from "@/lib/data-browser/tabs";
 import { Copy, Eye, Plus, SquareTerminal, Table2, X } from "lucide-react";
 
 import { useContextMenu } from "./context-menu";
+import { ObjectIcon } from "./object-tree";
 
 export type CloseKind = "close" | "closeOthers" | "closeRight" | "closeAll";
 
@@ -83,7 +84,9 @@ export function TabBar({
           const isActive = t.id === active;
           const changes = dirty[t.id] ?? 0;
           const icon =
-            t.kind === "query" ? (
+            t.kind === "object" ? (
+              <ObjectIcon kind={t.name.split(":")[0]} className="dbx-tab-icon" />
+            ) : t.kind === "query" ? (
               <SquareTerminal size={13} className="dbx-tab-icon query" />
             ) : t.kind === "view" ? (
               <Eye size={13} className="dbx-tab-icon view" />
@@ -138,7 +141,7 @@ export function TabBar({
                   {
                     label: "Copy name",
                     icon: <Copy size={14} />,
-                    hidden: t.kind === "query",
+                    hidden: t.kind === "query" || t.kind === "object",
                     onSelect: () => void navigator.clipboard?.writeText(t.name),
                   },
                 ])

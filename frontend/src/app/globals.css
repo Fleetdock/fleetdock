@@ -497,3 +497,10 @@ thead .dbx-rownum { top: 0; z-index: 4; cursor: default; }
   .dbx-valuepanel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 6; width: min(21rem, 92%); box-shadow: -8px 0 24px rgba(0,0,0,.15); }
   .dbx-toolbar-search { flex: 1 1 9rem; }
 }
+
+/* database page: link to the Data Browser */
+.data-card { display: flex; align-items: center; gap: .9rem; padding: .9rem 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.data-card-icon { display: inline-flex; padding: .55rem; border-radius: 10px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); flex-shrink: 0; }
+.dbx-tree-icon.obj { color: var(--warning); }
+.dbx-tree-objects { margin-top: .35rem; border-top: 1px solid var(--border); }
+.dbx-object-title { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; font-size: .875rem; }

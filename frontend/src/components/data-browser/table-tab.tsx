@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
 
 import { useConfirm } from "@/components/confirm";
-import { FilterEditor, ImportCSV, needsValue, RowRange } from "@/components/database/row-tools";
+import { FilterEditor, ImportCSV, needsValue, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
 import { useToast } from "@/components/toast";
 import { EmptyState, Menu, Modal, Pagination, Spinner } from "@/components/ui";

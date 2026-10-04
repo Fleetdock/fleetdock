@@ -36,6 +36,7 @@ import { Eye, PanelLeftClose, PanelLeftOpen, SquareTerminal, Table2 } from "luci
 import { DatabaseChooser, DatabasePicker } from "./database-picker";
 import { buildItems, ObjectTree, type ObjectTreeHandle } from "./object-tree";
 import { TabBar, type CloseKind } from "./tab-bar";
+import { ObjectTab } from "./object-tab";
 import { TableTab } from "./table-tab";
 
 const MIN_SIDE = 200;
@@ -85,10 +86,12 @@ export function DataBrowser({
   databaseId,
   tableParam,
   viewParam,
+  queryParam,
 }: {
   databaseId: string | null;
   tableParam: string | null;
   viewParam: string | null;
+  queryParam: string | null;
 }) {
   const router = useRouter();
   const confirm = useConfirm();
@@ -206,6 +209,7 @@ export function DataBrowser({
       db={db}
       tableParam={tableParam}
       viewParam={viewParam}
+      queryParam={queryParam}
       shell={shell}
       sideToggle={sideToggle}
       dirtyRef={dirtyRef}
@@ -218,6 +222,7 @@ function Workspace({
   db,
   tableParam,
   viewParam,
+  queryParam,
   shell,
   sideToggle,
   dirtyRef,
@@ -226,6 +231,7 @@ function Workspace({
   db: Database;
   tableParam: string | null;
   viewParam: string | null;
+  queryParam: string | null;
   shell: (sidebar: ReactNode, main: ReactNode) => ReactNode;
   sideToggle: ReactNode;
   dirtyRef: React.RefObject<number>;
@@ -283,12 +289,21 @@ function Workspace({
   const open = useCallback(
     (req: OpenRequest) => {
       dispatch({ type: "open", tab: req });
-      if (!req.preview) rememberTable(db.id, { kind: req.kind, name: req.name, label: req.label });
+      if (!req.preview && req.kind !== "object") rememberTable(db.id, { kind: req.kind, name: req.name, label: req.label });
       closeDrawer();
     },
     [db.id, closeDrawer],
   );
   const newQuery = useCallback((sql?: string) => dispatch({ type: "newQuery", sql }), []);
+
+  // ?query=new (the database page's "New SQL query") opens one query tab.
+  // The ref keeps React's development double-run from opening two.
+  const queryOpened = useRef(false);
+  useEffect(() => {
+    if (queryParam !== "new" || queryOpened.current) return;
+    queryOpened.current = true;
+    newQuery();
+  }, [queryParam, newQuery]);
 
   // ?table= / ?view= opens (or focuses) that tab; the active tab is written back.
   useEffect(() => {
@@ -484,6 +499,9 @@ function TabContent({
   onOpen: (req: OpenRequest) => void;
   onNewQuery: (sql?: string) => void;
 }) {
+  if (tab.kind === "object") {
+    return <ObjectTab databaseId={db.id} tab={tab} dialect={dialect} onOpen={onOpen} onNewQuery={onNewQuery} />;
+  }
   if (tab.kind === "query") {
     return (
       <div className="dbx-query">

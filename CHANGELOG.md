@@ -64,7 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and delete rows — and stay pending, highlighted, until saved with
   Ctrl+S; the SQL can be reviewed first, and rows that fail stay on screen
   with the reason. SQL console tabs and the structure editor live in the
-  same workspace.
+  same workspace, and functions, procedures, triggers, sequences and events
+  are listed under "Routines & more" with their definitions.
 
 - **Automatic discovery.** Every minute Fleetdock checks each database server
   it can log in to and keeps its database list in sync: new databases appear
@@ -126,6 +127,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   test and frontend unit tests; releases run the test suite first.
 
 ### Changed
+
+- **The database page no longer has Tables and SQL console tabs.** Browsing,
+  editing and querying moved to the Data Browser; the page keeps its
+  overview, connectivity, credentials, backups and access, plus a Data card
+  that opens the Data Browser or a new SQL query there. Old links
+  (`?tab=tables`, `?tab=query`, `?table=…`) redirect to the Data Browser.
 
 - **Dashboard redesign.** Seven sections instead of twelve flat pages:
   Overview, Servers, Databases, Backups (history, schedules, storage),

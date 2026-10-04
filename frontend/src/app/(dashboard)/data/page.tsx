@@ -22,5 +22,12 @@ export default function DataBrowserPage() {
 
 function DataBrowserRoute() {
   const sp = useSearchParams();
-  return <DataBrowser databaseId={sp.get("db")} tableParam={sp.get("table")} viewParam={sp.get("view")} />;
+  return (
+    <DataBrowser
+      databaseId={sp.get("db")}
+      tableParam={sp.get("table")}
+      viewParam={sp.get("view")}
+      queryParam={sp.get("query")}
+    />
+  );
 }

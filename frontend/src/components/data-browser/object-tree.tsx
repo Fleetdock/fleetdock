@@ -5,18 +5,21 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, 
 import { useToast } from "@/components/toast";
 import { Spinner } from "@/components/ui";
 import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells";
-import type { OpenRequest } from "@/lib/data-browser/tabs";
+import { objectName, type OpenRequest } from "@/lib/data-browser/tabs";
 import { formatBytes } from "@/lib/format";
 import { exportTableCSV } from "@/lib/hooks";
 import type { DBObject, TableInfo } from "@/lib/types";
 import {
+  CalendarClock,
   ChevronRight,
   Copy,
   Download,
   Eye,
   Folder,
   FolderOpen,
+  FunctionSquare,
   Layers,
+  ListOrdered,
   Plus,
   RefreshCw,
   Search,
@@ -24,13 +27,14 @@ import {
   Table2,
   TableProperties,
   X,
+  Zap,
 } from "lucide-react";
 
 import { useContextMenu } from "./context-menu";
 
 export type TreeItem = {
-  kind: "table" | "view";
-  /** view kind detail: "materialized_view" for those. */
+  kind: "table" | "view" | "object";
+  /** DBObject kind: "materialized_view" for views, function/trigger/… for objects. */
   sub?: string;
   schema: string;
   /** Bare name. */
@@ -40,9 +44,31 @@ export type TreeItem = {
   rows?: number;
   bytes?: number;
   comment?: string;
+  /** Table a trigger fires on. */
+  table?: string;
 };
 
-/** buildItems merges base tables and views into one sorted list. */
+/** Routines and other non-relation objects, in sidebar order. */
+const OBJECT_KINDS: { kind: string; label: string }[] = [
+  { kind: "function", label: "Functions" },
+  { kind: "procedure", label: "Procedures" },
+  { kind: "trigger", label: "Triggers" },
+  { kind: "sequence", label: "Sequences" },
+  { kind: "event", label: "Events" },
+];
+
+export function ObjectIcon({ kind, className }: { kind?: string; className?: string }) {
+  const cls = `dbx-tree-icon obj${className ? ` ${className}` : ""}`;
+  if (kind === "trigger") return <Zap size={14} className={cls} />;
+  if (kind === "sequence") return <ListOrdered size={14} className={cls} />;
+  if (kind === "event") return <CalendarClock size={14} className={cls} />;
+  return <FunctionSquare size={14} className={cls} />;
+}
+
+/**
+ * buildItems merges base tables and views into one sorted list, followed by
+ * routines, triggers, sequences and events.
+ */
 export function buildItems(tables: TableInfo[], objects: DBObject[], dialect: Dialect): TreeItem[] {
   const api = (schema: string, name: string) => (dialect === "postgres" ? `${schema}.${name}` : name);
   const items: TreeItem[] = tables.map((t) => ({
@@ -55,8 +81,11 @@ export function buildItems(tables: TableInfo[], objects: DBObject[], dialect: Di
     comment: t.comment || undefined,
   }));
   for (const o of objects) {
-    if (o.kind !== "view" && o.kind !== "materialized_view") continue;
-    items.push({ kind: "view", sub: o.kind, schema: o.schema, label: o.name, name: api(o.schema, o.name) });
+    if (o.kind === "view" || o.kind === "materialized_view") {
+      items.push({ kind: "view", sub: o.kind, schema: o.schema, label: o.name, name: api(o.schema, o.name) });
+    } else {
+      items.push({ kind: "object", sub: o.kind, schema: o.schema, label: o.name, name: objectName(o), table: o.table });
+    }
   }
   return items.sort(
     (a, b) => a.schema.localeCompare(b.schema) || (a.kind === b.kind ? 0 : a.kind === "table" ? -1 : 1) || a.label.localeCompare(b.label),
@@ -122,18 +151,26 @@ export const ObjectTree = forwardRef<
 
   useImperativeHandle(ref, () => ({ focusSearch: () => searchRef.current?.select() }), []);
 
+  // Routine groups start collapsed; tables and views are what people open most.
+  const [openKinds, setOpenKinds] = useState<Set<string>>(new Set());
   const q = query.trim().toLowerCase();
+  const relations = useMemo(() => items.filter((i) => i.kind !== "object"), [items]);
   const schemas = useMemo(() => [...new Set(items.map((i) => i.schema))], [items]);
   const grouped = schemas.length > 1;
-  const matches = useMemo(
-    () => (q ? items.filter((i) => i.label.toLowerCase().includes(q) || `${i.schema}.${i.label}`.toLowerCase().includes(q)) : items),
-    [items, q],
-  );
-  // What is on screen, in order: collapsed schemas hide their items unless searching.
-  const visible = useMemo(
-    () => (grouped && !q ? matches.filter((i) => !collapsed.has(i.schema)) : matches),
-    [matches, grouped, q, collapsed],
-  );
+  const isMatch = (i: TreeItem) => !q || i.label.toLowerCase().includes(q) || `${i.schema}.${i.label}`.toLowerCase().includes(q);
+  const matches = relations.filter(isMatch);
+  const objectGroups = OBJECT_KINDS.map((g) => ({
+    ...g,
+    list: items
+      .filter((i) => i.kind === "object" && i.sub === g.kind && isMatch(i))
+      .sort((a, b) => a.schema.localeCompare(b.schema) || a.label.localeCompare(b.label)),
+  })).filter((g) => g.list.length > 0);
+  const objectCount = items.length - relations.length;
+  // What is on screen, in order: collapsed groups hide their items unless searching.
+  const visible = [
+    ...(grouped && !q ? matches.filter((i) => !collapsed.has(i.schema)) : matches),
+    ...objectGroups.flatMap((g) => (q || openKinds.has(g.kind) ? g.list : [])),
+  ];
 
   useEffect(() => {
     if (cursor < 0) return;
@@ -164,6 +201,26 @@ export const ObjectTree = forwardRef<
   }
 
   function menuFor(item: TreeItem) {
+    if (item.kind === "object") {
+      return [
+        { label: "Open", icon: <ObjectIcon kind={item.sub} />, onSelect: () => open(item, false) },
+        {
+          label: `Open table ${item.table}`,
+          icon: <Table2 size={14} />,
+          hidden: !item.table,
+          onSelect: () => {
+            const name = dialect === "postgres" && item.table && !item.table.includes(".") ? `${item.schema}.${item.table}` : item.table!;
+            onOpen({ kind: "table", name, label: item.table! });
+          },
+        },
+        {
+          label: "Copy name",
+          icon: <Copy size={14} />,
+          onSelect: () =>
+            void navigator.clipboard?.writeText(`${item.schema}.${item.label}`).then(() => push("info", `Copied ${item.label}`)),
+        },
+      ];
+    }
     const quoted = quoteTable(item.name, dialect, dialect === "postgres" ? item.schema : undefined);
     return [
       { label: "Open", icon: <Table2 size={14} />, onSelect: () => open(item, false) },
@@ -195,14 +252,16 @@ export const ObjectTree = forwardRef<
     ];
   }
 
-  let index = -1;
+  // Keyboard position of each item on screen (matches `visible`).
+  const position = new Map(visible.map((it, i) => [`${it.kind}:${it.name}`, i]));
   const renderItem = (item: TreeItem): ReactNode => {
-    index += 1;
-    const i = index;
+    const i = position.get(`${item.kind}:${item.name}`) ?? -1;
     const active = activeName === item.name;
     const title = [
       dialect === "postgres" ? `${item.schema}.${item.label}` : item.label,
       item.kind === "view" ? (item.sub === "materialized_view" ? "materialized view" : "view") : null,
+      item.kind === "object" ? item.sub : null,
+      item.table ? `on ${item.table}` : null,
       item.rows !== undefined ? `~${item.rows.toLocaleString()} rows` : null,
       item.bytes ? formatBytes(item.bytes) : null,
       item.comment,
@@ -214,13 +273,15 @@ export const ObjectTree = forwardRef<
         key={`${item.kind}:${item.name}`}
         type="button"
         data-index={i}
-        className={`dbx-tree-item${active ? " active" : ""}${i === cursor ? " cursor" : ""}${grouped ? " nested" : ""}`}
+        className={`dbx-tree-item${active ? " active" : ""}${i === cursor ? " cursor" : ""}${grouped || item.kind === "object" ? " nested" : ""}`}
         title={title}
         onClick={() => open(item, true)}
         onDoubleClick={() => open(item, false)}
         onContextMenu={(e) => ctx.open(e, menuFor(item))}
       >
-        {item.kind === "view" ? (
+        {item.kind === "object" ? (
+          <ObjectIcon kind={item.sub} />
+        ) : item.kind === "view" ? (
           item.sub === "materialized_view" ? (
             <Layers size={14} className="dbx-tree-icon view" />
           ) : (
@@ -230,6 +291,7 @@ export const ObjectTree = forwardRef<
           <Table2 size={14} className="dbx-tree-icon" />
         )}
         <span className="truncate" style={{ flex: 1 }}>
+          {item.kind === "object" && grouped ? <span className="muted">{item.schema}.</span> : null}
           <Highlight text={item.label} query={q} />
         </span>
         {item.rows !== undefined ? <span className="dbx-tree-count">{compactCount(item.rows)}</span> : null}
@@ -253,10 +315,12 @@ export const ObjectTree = forwardRef<
         </button>
       </div>
     );
-  } else if (items.length === 0) {
+  } else if (relations.length === 0 && objectCount === 0) {
     body = <div className="dbx-tree-note">This database has no tables yet.</div>;
-  } else if (matches.length === 0) {
+  } else if (matches.length === 0 && objectGroups.length === 0) {
     body = <div className="dbx-tree-note">Nothing matches “{query}”.</div>;
+  } else if (matches.length === 0) {
+    body = null;
   } else if (!grouped) {
     body = matches.map(renderItem);
   } else {
@@ -292,18 +356,56 @@ export const ObjectTree = forwardRef<
     });
   }
 
-  const tableCount = items.filter((i) => i.kind === "table").length;
-  const viewCount = items.length - tableCount;
+  // Routines, triggers, sequences and events, below the tables.
+  const objectsBody =
+    isLoading || error || objectGroups.length === 0 ? null : (
+      <div className="dbx-tree-objects">
+        <div className="dbx-tree-title" style={{ padding: ".7rem .45rem .25rem" }}>
+          Routines &amp; more
+        </div>
+        {objectGroups.map((g) => {
+          const isOpen = Boolean(q) || openKinds.has(g.kind);
+          return (
+            <div key={g.kind}>
+              <button
+                type="button"
+                className="dbx-tree-schema"
+                aria-expanded={isOpen}
+                onClick={() =>
+                  setOpenKinds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(g.kind)) next.delete(g.kind);
+                    else next.add(g.kind);
+                    return next;
+                  })
+                }
+              >
+                <ChevronRight size={13} className={`dbx-chevron${isOpen ? " open" : ""}`} />
+                <ObjectIcon kind={g.kind} />
+                <span className="truncate" style={{ flex: 1 }}>
+                  {g.label}
+                </span>
+                <span className="dbx-tree-count">{g.list.length}</span>
+              </button>
+              {isOpen ? g.list.map(renderItem) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+
+  const tableCount = relations.filter((i) => i.kind === "table").length;
+  const viewCount = relations.length - tableCount;
 
   return (
     <div className="dbx-tree">
       <div className="dbx-tree-head">
         <span className="dbx-tree-title">
           Tables
-          {items.length ? (
+          {relations.length ? (
             <span className="muted" style={{ fontWeight: 400 }}>
               {" "}
-              {q ? `${matches.length} of ${items.length}` : `${tableCount}${viewCount ? ` + ${viewCount} views` : ""}`}
+              {q ? `${matches.length} of ${relations.length}` : `${tableCount}${viewCount ? ` + ${viewCount} views` : ""}`}
             </span>
           ) : null}
         </span>
@@ -359,6 +461,7 @@ export const ObjectTree = forwardRef<
       </div>
       <div className="dbx-tree-list" ref={listRef}>
         {body}
+        {objectsBody}
       </div>
       {ctx.element}
     </div>

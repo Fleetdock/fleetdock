@@ -1,6 +1,6 @@
 "use client";
 
-// Shared table for list pages. Deferred: DataBrowser (dynamic columns), expandable
+// Shared table for list pages. Not used for: the Data Browser grid (dynamic columns), expandable
 // DB user rows, and roles card layout.
 import type { ReactNode } from "react";
 

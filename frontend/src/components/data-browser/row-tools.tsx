@@ -8,7 +8,7 @@ import { useRowMutations } from "@/lib/hooks";
 import type { BrowseColumn, BrowseResult, FilterOp, RowFilter } from "@/lib/types";
 import { Plus, X } from "lucide-react";
 
-// Pieces shared by the database page's table view and the Data Browser.
+// Row filtering, CSV import and the row-range label for Data Browser table tabs.
 
 export const OPS: { op: FilterOp; label: string; needsValue: boolean }[] = [
   { op: "eq", label: "=", needsValue: true },
