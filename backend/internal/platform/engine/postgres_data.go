@@ -142,21 +142,13 @@ func (pg *Postgres) BrowseRows(ctx context.Context, p ConnParams, database strin
 	}
 
 	rows, err := conn.Query(ctx, fmt.Sprintf("SELECT * FROM %s%s%s LIMIT %d OFFSET %d",
-		meta.qualified, where, order, req.Limit, req.Offset), args...)
+		meta.qualified, where, order, req.Limit, req.Offset), append([]any{pgText}, args...)...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		vals, err := rows.Values()
-		if err != nil {
-			return nil, err
-		}
-		row := make([]*string, len(vals))
-		for i, v := range vals {
-			row[i] = stringifyCell(v, 4096)
-		}
-		res.Rows = append(res.Rows, row)
+		res.Rows = append(res.Rows, textRow(rows, 4096))
 	}
 	return res, rows.Err()
 }

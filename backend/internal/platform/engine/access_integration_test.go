@@ -665,3 +665,57 @@ func TestIntegrationQueryBatch(t *testing.T) {
 		})
 	}
 }
+
+// TestIntegrationPostgresTextValues checks that browse, console and export show
+// PostgreSQL values the way psql does, not as decoded Go values (a numeric
+// printed as "{1337 -2 false finite true}", a uuid as a byte array).
+func TestIntegrationPostgresTextValues(t *testing.T) {
+	ctx := context.Background()
+	pg := &Postgres{}
+	root := itParams(t, "FLEETDOCK_IT_POSTGRES", "postgres")
+	waitReady(t, pg, root)
+	mustQuery(t, pg, root, "postgres", "DROP DATABASE IF EXISTS fd_it_text", true)
+	mustQuery(t, pg, root, "postgres", "CREATE DATABASE fd_it_text", true)
+	mustQuery(t, pg, root, "fd_it_text", `CREATE TABLE typed (id int primary key, amount numeric(12,2), day date,
+		doc jsonb, uid uuid, ok boolean, blank text, missing text);
+		INSERT INTO typed VALUES (1, 13.37, '2026-01-02', '{"a": [1, 2]}',
+		'2c5fe2c6-6ad7-4662-a10b-cf2712877418', true, '', NULL)`, true)
+	want := []*string{ptr("1"), ptr("13.37"), ptr("2026-01-02"), ptr(`{"a": [1, 2]}`),
+		ptr("2c5fe2c6-6ad7-4662-a10b-cf2712877418"), ptr("t"), ptr(""), nil}
+	check := func(what string, row []*string) {
+		t.Helper()
+		if len(row) != len(want) {
+			t.Fatalf("%s: %d cells, want %d", what, len(row), len(want))
+		}
+		for i := range want {
+			if (row[i] == nil) != (want[i] == nil) || (row[i] != nil && *row[i] != *want[i]) {
+				t.Errorf("%s: cell %d = %v, want %v", what, i, deref(row[i]), deref(want[i]))
+			}
+		}
+	}
+
+	res, err := pg.BrowseRows(ctx, root, "fd_it_text", BrowseRequest{Table: "public.typed"})
+	if err != nil || len(res.Rows) != 1 {
+		t.Fatalf("browse: %v (%d rows)", err, len(res.Rows))
+	}
+	check("browse", res.Rows[0])
+	q := mustQuery(t, pg, root, "fd_it_text", "SELECT * FROM typed", false)
+	check("console", q.Rows[0])
+
+	var buf strings.Builder
+	if _, err := pg.ExportCSV(ctx, root, "fd_it_text", "public.typed", "", &buf, nil); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if !strings.Contains(buf.String(), "1,13.37,2026-01-02,") || !strings.Contains(buf.String(), "2c5fe2c6-6ad7-4662-a10b-cf2712877418,t,,") {
+		t.Errorf("export = %q", buf.String())
+	}
+}
+
+func ptr(s string) *string { return &s }
+
+func deref(s *string) string {
+	if s == nil {
+		return "<nil>"
+	}
+	return *s
+}

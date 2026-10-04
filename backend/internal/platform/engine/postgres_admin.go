@@ -60,6 +60,27 @@ func (pg *Postgres) tableSchema(ctx context.Context, conn *pgx.Conn, table strin
 	return schema, err
 }
 
+// pgText asks PostgreSQL for every result column in its text format — what
+// psql prints: 13.37, 2026-01-02, {"a": 1}, a UUID's canonical form. Passed
+// as the first query argument. Decoding the binary format into Go values
+// instead and printing those with %v shows pgx internals such as
+// "{1337 -2 false finite true}" for a numeric.
+var pgText = pgx.QueryResultFormats{pgx.TextFormatCode}
+
+// textRow returns the current row of a pgText query as display strings, each
+// cut to maxLen bytes (0 = no limit). NULL stays nil.
+func textRow(rows pgx.Rows, maxLen int) []*string {
+	raw := rows.RawValues()
+	row := make([]*string, len(raw))
+	for i, b := range raw {
+		if b != nil {
+			// string(b) copies: RawValues buffers are reused by the next row.
+			row[i] = stringifyCell(string(b), maxLen)
+		}
+	}
+	return row
+}
+
 func qualifiedTable(schema, table string) string {
 	return quotePGIdent(schema) + "." + quotePGIdent(table)
 }
@@ -582,7 +603,7 @@ func (pg *Postgres) TableRows(ctx context.Context, p ConnParams, database, table
 
 	sqlText := fmt.Sprintf("SELECT * FROM %s LIMIT %d OFFSET %d",
 		qualifiedTable(schema, table), limit, offset)
-	rows, err := conn.Query(ctx, sqlText)
+	rows, err := conn.Query(ctx, sqlText, pgText)
 	if err != nil {
 		return nil, err
 	}
@@ -595,15 +616,7 @@ func (pg *Postgres) TableRows(ctx context.Context, p ConnParams, database, table
 	}
 	page := &RowsPage{Columns: cols, Rows: [][]*string{}, Total: total}
 	for rows.Next() {
-		vals, err := rows.Values()
-		if err != nil {
-			return nil, err
-		}
-		row := make([]*string, len(vals))
-		for i, v := range vals {
-			row[i] = stringifyCell(v, 1024)
-		}
-		page.Rows = append(page.Rows, row)
+		page.Rows = append(page.Rows, textRow(rows, 1024))
 	}
 	return page, rows.Err()
 }
@@ -861,14 +874,14 @@ func (pg *Postgres) runStatement(ctx context.Context, conn *pgx.Conn, stmt strin
 	var rows pgx.Rows
 	var err error
 	if allowWrite {
-		rows, err = conn.Query(ctx, stmt)
+		rows, err = conn.Query(ctx, stmt, pgText)
 	} else {
 		tx, txErr := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 		if txErr != nil {
 			return nil, txErr
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
-		rows, err = tx.Query(ctx, stmt)
+		rows, err = tx.Query(ctx, stmt, pgText)
 	}
 	if err != nil {
 		return nil, err
@@ -884,14 +897,7 @@ func (pg *Postgres) runStatement(ctx context.Context, conn *pgx.Conn, stmt strin
 			res.Truncated = true
 			break
 		}
-		vals, err := rows.Values()
-		if err != nil {
-			return nil, err
-		}
-		row := make([]*string, len(vals))
-		for i, v := range vals {
-			row[i] = stringifyCell(v, 1024)
-		}
+		row := textRow(rows, 1024)
 		size += rowBytes(row)
 		res.Rows = append(res.Rows, row)
 	}
@@ -945,7 +951,7 @@ func (pg *Postgres) ExportCSV(ctx context.Context, p ConnParams, database, table
 	}
 	defer tx.Rollback(ctx)
 
-	rows, err := tx.Query(ctx, sqlText)
+	rows, err := tx.Query(ctx, sqlText, pgText)
 	if err != nil {
 		return 0, err
 	}
@@ -970,15 +976,11 @@ func (pg *Postgres) ExportCSV(ctx context.Context, p ConnParams, database, table
 		if count >= maxExportRows {
 			break
 		}
-		vals, err := rows.Values()
-		if err != nil {
-			cw.Flush()
-			return count, err
-		}
+		vals := textRow(rows, 0)
 		record := make([]string, len(vals))
 		for i, v := range vals {
-			if s := stringifyCell(v, 0); s != nil {
-				record[i] = *s
+			if v != nil {
+				record[i] = *v
 			}
 		}
 		if err := cw.Write(record); err != nil {

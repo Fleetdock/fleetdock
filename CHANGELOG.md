@@ -149,6 +149,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- PostgreSQL values in the table browser, SQL console and CSV export are
+  shown as PostgreSQL prints them (`13.37`, `2026-01-02`, `{"a": 1}`, a
+  UUID's canonical form) instead of as decoded driver values such as
+  `{1337 -2 false finite true}` or a byte array.
 - Choosing "Custom…" in the backup schedule form did nothing.
 - The connect wizard lost its result screen when the first database server
   was added.
