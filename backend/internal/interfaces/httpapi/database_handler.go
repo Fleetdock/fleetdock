@@ -33,23 +33,40 @@ type createDatabaseRequest struct {
 	Tags       []string          `json:"tags"`
 }
 
+// instanceRefResponse is the owning-instance summary embedded in database
+// responses so clients don't need a second, separately paginated request to
+// render an instance name.
+type instanceRefResponse struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Engine         string  `json:"engine"`
+	Kind           string  `json:"kind"`
+	ServerID       *string `json:"server_id,omitempty"`
+	Provisioned    bool    `json:"provisioned"`
+	HasCredentials bool    `json:"has_credentials"`
+}
+
 type databaseResponse struct {
-	ID                string            `json:"id"`
-	InstanceID        string            `json:"instance_id"`
-	Name              string            `json:"name"`
-	Charset           string            `json:"charset"`
-	Collation         string            `json:"collation"`
-	Status            string            `json:"status"`
-	System            bool              `json:"system"`
-	SizeBytes         int64             `json:"size_bytes"`
-	ActiveConnections int               `json:"active_connections"`
-	LockedAt          *time.Time        `json:"locked_at,omitempty"`
-	LockedBy          *string           `json:"locked_by,omitempty"`
-	Labels            map[string]string `json:"labels"`
-	Tags              []string          `json:"tags"`
-	CreatedAt         time.Time         `json:"created_at"`
-	UpdatedAt         time.Time         `json:"updated_at"`
-	Version           int               `json:"version"`
+	ID string `json:"id"`
+	// InstanceID is retained for backwards compatibility; new clients should
+	// read the embedded instance object.
+	InstanceID        string               `json:"instance_id"`
+	Instance          *instanceRefResponse `json:"instance,omitempty"`
+	Name              string               `json:"name"`
+	Charset           string               `json:"charset"`
+	Collation         string               `json:"collation"`
+	Status            string               `json:"status"`
+	System            bool                 `json:"system"`
+	SizeBytes         int64                `json:"size_bytes"`
+	ActiveConnections int                  `json:"active_connections"`
+	LockedAt          *time.Time           `json:"locked_at,omitempty"`
+	MissingSince      *time.Time           `json:"missing_since,omitempty"`
+	LockedBy          *string              `json:"locked_by,omitempty"`
+	Labels            map[string]string    `json:"labels"`
+	Tags              []string             `json:"tags"`
+	CreatedAt         time.Time            `json:"created_at"`
+	UpdatedAt         time.Time            `json:"updated_at"`
+	Version           int                  `json:"version"`
 }
 
 func toDatabaseResponse(d *databasedom.Database) databaseResponse {
@@ -58,9 +75,27 @@ func toDatabaseResponse(d *databasedom.Database) databaseResponse {
 		s := d.LockedBy.String()
 		lockedBy = &s
 	}
+	var inst *instanceRefResponse
+	if d.Instance != nil {
+		var serverID *string
+		if d.Instance.ServerID != nil {
+			s := d.Instance.ServerID.String()
+			serverID = &s
+		}
+		inst = &instanceRefResponse{
+			ID:             d.Instance.ID.String(),
+			Name:           d.Instance.Name,
+			Engine:         d.Instance.Engine,
+			Kind:           d.Instance.Kind,
+			ServerID:       serverID,
+			Provisioned:    d.Instance.Provisioned,
+			HasCredentials: d.Instance.HasCredentials,
+		}
+	}
 	return databaseResponse{
 		ID:                d.ID.String(),
 		InstanceID:        d.InstanceID.String(),
+		Instance:          inst,
 		Name:              d.Name,
 		Charset:           d.Charset,
 		Collation:         d.Collation,
@@ -69,6 +104,7 @@ func toDatabaseResponse(d *databasedom.Database) databaseResponse {
 		SizeBytes:         d.SizeBytes,
 		ActiveConnections: d.ActiveConnections,
 		LockedAt:          d.LockedAt,
+		MissingSince:      d.MissingSince,
 		LockedBy:          lockedBy,
 		Labels:            d.Labels,
 		Tags:              d.Tags,

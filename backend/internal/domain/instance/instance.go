@@ -86,6 +86,40 @@ type Instance struct {
 	UpdatedAt     time.Time
 	Version       int
 	DeletedAt     *time.Time
+	// TLSMode is how the control plane secures connections to the instance:
+	// disable | prefer | require | verify-full.
+	TLSMode string
+	// Health is the latest probe result (nil until first probed).
+	Health *Health
+}
+
+// HealthStatus is the outcome of a probe.
+type HealthStatus string
+
+const (
+	HealthHealthy     HealthStatus = "healthy"
+	HealthUnreachable HealthStatus = "unreachable"
+	// HealthUnknown: the control plane cannot reach the instance directly
+	// (typical for managed instances whose port is only open to the agent),
+	// which says nothing about whether it is up.
+	HealthUnknown HealthStatus = "unknown"
+)
+
+// Health is the latest result of probing an instance.
+type Health struct {
+	Status    HealthStatus `json:"status"`
+	Version   string       `json:"version,omitempty"`
+	LatencyMS int64        `json:"latency_ms"`
+	Error     string       `json:"error,omitempty"`
+	CheckedAt time.Time    `json:"checked_at"`
+}
+
+// TLSModeOrDefault returns the TLS mode, defaulting to "prefer".
+func (i *Instance) TLSModeOrDefault() string {
+	if i.TLSMode == "" {
+		return "prefer"
+	}
+	return i.TLSMode
 }
 
 // HasCredentials reports whether SQL-level operations are possible.
@@ -146,10 +180,28 @@ func NewExternal(name string, engine Engine, engineVersion, host string, port in
 	return base, nil
 }
 
-func newBase(name string, engine Engine, engineVersion string, port int, username *string, labels map[string]string, tags []string) (*Instance, error) {
+// ValidateName trims and checks an instance name, returning the canonical
+// form. Shared by registration and update so both enforce the same rule.
+func ValidateName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 63 {
-		return nil, apperr.Invalid("name", "name is required and must be at most 63 characters")
+		return "", apperr.Invalid("name", "name is required and must be at most 63 characters")
+	}
+	return name, nil
+}
+
+// ValidatePort checks a TCP port is in range.
+func ValidatePort(port int) error {
+	if port < 1 || port > 65535 {
+		return apperr.Invalid("port", "port must be between 1 and 65535")
+	}
+	return nil
+}
+
+func newBase(name string, engine Engine, engineVersion string, port int, username *string, labels map[string]string, tags []string) (*Instance, error) {
+	name, err := ValidateName(name)
+	if err != nil {
+		return nil, err
 	}
 	if engine == "" {
 		engine = EngineMariaDB
@@ -160,8 +212,8 @@ func newBase(name string, engine Engine, engineVersion string, port int, usernam
 	if strings.TrimSpace(engineVersion) == "" {
 		return nil, apperr.Invalid("engine_version", "engine_version is required")
 	}
-	if port < 1 || port > 65535 {
-		return nil, apperr.Invalid("port", "port must be between 1 and 65535")
+	if err := ValidatePort(port); err != nil {
+		return nil, err
 	}
 	if labels == nil {
 		labels = map[string]string{}

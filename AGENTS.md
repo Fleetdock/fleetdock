@@ -11,9 +11,9 @@ lint/test/build/run commands live in the root `Makefile` and
 caveats for this environment.
 
 ### Toolchain locations
-- Go **1.25** is installed at `/usr/local/go/bin` and is prepended to `PATH`
+- Go **1.26** is installed at `/usr/local/go/bin` and is prepended to `PATH`
   via `~/.bashrc`. The distro also ships `/usr/bin/go` (**1.22**), which is too
-  old for `go.mod` (`go 1.25`) — make sure `/usr/local/go/bin` wins on `PATH`
+  old for `go.mod` (`go 1.26`) — make sure `/usr/local/go/bin` wins on `PATH`
   (non-login shells that skip `~/.bashrc` may need `export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH`).
 - `golangci-lint` **v2.12.2** (matches CI) is at `~/go/bin/golangci-lint`.
 

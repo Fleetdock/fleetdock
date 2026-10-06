@@ -32,7 +32,7 @@ var _ instancedom.Repository = (*InstanceRepository)(nil)
 const instanceColumns = `
 	id, server_id, name, engine, kind, host, username, root_secret_ref,
 	container_id, mariadb_version, port, status,
-	labels, tags, created_at, updated_at, version, deleted_at`
+	labels, tags, created_at, updated_at, version, deleted_at, tls_mode, health`
 
 func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instance) error {
 	labels, err := json.Marshal(in.Labels)
@@ -40,12 +40,12 @@ func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instanc
 		return apperr.Internal(fmt.Errorf("marshal labels: %w", err))
 	}
 	const q = `
-		INSERT INTO instances (id, server_id, name, engine, kind, host, username, mariadb_version, port, status, labels, tags)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
+		INSERT INTO instances (id, server_id, name, engine, kind, host, username, mariadb_version, port, status, labels, tags, tls_mode)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
 		RETURNING created_at, updated_at, version`
 	err = r.pool.QueryRow(ctx, q,
 		in.ID, in.ServerID, in.Name, string(in.Engine), string(in.Kind), in.Host, in.Username,
-		in.EngineVersion, in.Port, string(in.Status), string(labels), in.Tags,
+		in.EngineVersion, in.Port, string(in.Status), string(labels), in.Tags, in.TLSModeOrDefault(),
 	).Scan(&in.CreatedAt, &in.UpdatedAt, &in.Version)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -129,6 +129,51 @@ func (r *InstanceRepository) List(ctx context.Context, f instancedom.ListFilter)
 	return instancedom.Page{Items: items, Total: total}, nil
 }
 
+func (r *InstanceRepository) Update(ctx context.Context, id uuid.UUID, f instancedom.UpdateFields) error {
+	sets := make([]string, 0, 5)
+	args := make([]any, 0, 6)
+	args = append(args, id)
+
+	set := func(col string, val any) {
+		args = append(args, val)
+		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+	if f.Name != nil {
+		set("name", *f.Name)
+	}
+	if f.Host != nil {
+		set("host", *f.Host)
+	}
+	if f.Port != nil {
+		set("port", *f.Port)
+	}
+	if f.TLSMode != nil {
+		set("tls_mode", *f.TLSMode)
+	}
+	if f.Credentials != nil {
+		set("username", f.Credentials.Username)
+		set("root_secret_ref", f.Credentials.RootSecretRef)
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	sets = append(sets, "updated_at = now()", "version = version + 1")
+
+	q := fmt.Sprintf(`UPDATE instances SET %s WHERE id = $1 AND deleted_at IS NULL`, joinSet(sets))
+	tag, err := r.pool.Exec(ctx, q, args...)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return apperr.Conflict("an instance with this name or port already exists on the server")
+		}
+		return apperr.Internal(fmt.Errorf("update instance: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("instance not found")
+	}
+	return nil
+}
+
 func (r *InstanceRepository) SetRootSecretRef(ctx context.Context, id uuid.UUID, ref string) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE instances SET root_secret_ref = $2, version = version + 1 WHERE id = $1 AND deleted_at IS NULL`, id, ref)
@@ -181,23 +226,25 @@ func scanInstance(row rowScanner) (*instancedom.Instance, error) {
 	var (
 		in           instancedom.Instance
 		labelsRaw    []byte
+		healthRaw    []byte
 		status       string
 		engine, kind string
 	)
 	if err := row.Scan(
 		&in.ID, &in.ServerID, &in.Name, &engine, &kind, &in.Host, &in.Username, &in.RootSecretRef,
 		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
-		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt,
+		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw,
 	); err != nil {
 		return nil, err
 	}
-	return finishInstance(&in, labelsRaw, status, engine, kind)
+	return finishInstance(&in, labelsRaw, healthRaw, status, engine, kind)
 }
 
 func scanInstanceWithTotal(row rowScanner) (*instancedom.Instance, int, error) {
 	var (
 		in           instancedom.Instance
 		labelsRaw    []byte
+		healthRaw    []byte
 		status       string
 		engine, kind string
 		total        int
@@ -205,18 +252,24 @@ func scanInstanceWithTotal(row rowScanner) (*instancedom.Instance, int, error) {
 	if err := row.Scan(
 		&in.ID, &in.ServerID, &in.Name, &engine, &kind, &in.Host, &in.Username, &in.RootSecretRef,
 		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
-		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &total,
+		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw, &total,
 	); err != nil {
 		return nil, 0, err
 	}
-	out, err := finishInstance(&in, labelsRaw, status, engine, kind)
+	out, err := finishInstance(&in, labelsRaw, healthRaw, status, engine, kind)
 	if err != nil {
 		return nil, 0, err
 	}
 	return out, total, nil
 }
 
-func finishInstance(in *instancedom.Instance, labelsRaw []byte, status, engine, kind string) (*instancedom.Instance, error) {
+func finishInstance(in *instancedom.Instance, labelsRaw, healthRaw []byte, status, engine, kind string) (*instancedom.Instance, error) {
+	if len(healthRaw) > 0 {
+		var h instancedom.Health
+		if err := json.Unmarshal(healthRaw, &h); err == nil {
+			in.Health = &h
+		}
+	}
 	in.Status = instancedom.Status(status)
 	in.Engine = instancedom.Engine(engine)
 	in.Kind = instancedom.Kind(kind)
@@ -232,4 +285,17 @@ func finishInstance(in *instancedom.Instance, labelsRaw []byte, status, engine, 
 		in.Tags = []string{}
 	}
 	return in, nil
+}
+
+func (r *InstanceRepository) SetHealth(ctx context.Context, id uuid.UUID, h instancedom.Health) error {
+	raw, err := json.Marshal(h)
+	if err != nil {
+		return apperr.Internal(err)
+	}
+	// Deliberately no version bump: health is observed state, and bumping
+	// would make every probe look like a user edit.
+	if _, err := r.pool.Exec(ctx, `UPDATE instances SET health = $2::jsonb WHERE id = $1`, id, string(raw)); err != nil {
+		return apperr.Internal(fmt.Errorf("set instance health: %w", err))
+	}
+	return nil
 }

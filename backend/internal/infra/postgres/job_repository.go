@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -29,6 +30,16 @@ const jobColumns = `
 	error, progress, created_by, claimed_at, started_at, completed_at,
 	created_at, updated_at, version`
 
+// jobResourceName resolves a job's resource to its display name for reads.
+const jobResourceName = `
+	COALESCE(CASE resource_type
+		WHEN 'database' THEN (SELECT name FROM databases WHERE id = jobs.resource_id)
+		WHEN 'instance' THEN (SELECT name FROM instances WHERE id = jobs.resource_id)
+		WHEN 'server'   THEN (SELECT name FROM servers WHERE id = jobs.resource_id)
+		WHEN 'backup'   THEN (SELECT d.name FROM backups b JOIN databases d ON d.id = b.database_id
+		                      WHERE b.id = jobs.resource_id)
+	END, '')`
+
 func (r *JobRepository) Create(ctx context.Context, j *jobdom.Job) error {
 	params := j.Params
 	if params == nil {
@@ -48,8 +59,8 @@ func (r *JobRepository) Create(ctx context.Context, j *jobdom.Job) error {
 }
 
 func (r *JobRepository) GetByID(ctx context.Context, id uuid.UUID) (*jobdom.Job, error) {
-	q := `SELECT ` + jobColumns + ` FROM jobs WHERE id = $1`
-	j, err := scanJob(r.pool.QueryRow(ctx, q, id))
+	q := `SELECT ` + jobColumns + `, ` + jobResourceName + ` FROM jobs WHERE id = $1`
+	j, err := scanJob(r.pool.QueryRow(ctx, q, id), true)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, apperr.NotFound("operation not found")
@@ -88,9 +99,9 @@ func (r *JobRepository) List(ctx context.Context, f jobdom.ListFilter) (jobdom.P
 	offsetPos := len(args)
 
 	q := fmt.Sprintf(
-		`SELECT %s, count(*) OVER() AS total FROM jobs WHERE %s
+		`SELECT %s, %s, count(*) OVER() AS total FROM jobs WHERE %s
 		 ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
-		jobColumns, join(conds), limitPos, offsetPos)
+		jobColumns, jobResourceName, join(conds), limitPos, offsetPos)
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -131,7 +142,7 @@ func (r *JobRepository) ClaimNext(ctx context.Context, serverID *uuid.UUID) (*jo
 			LIMIT 1
 		)
 		RETURNING `+jobColumns, cond)
-	j, err := scanJob(r.pool.QueryRow(ctx, q, args...))
+	j, err := scanJob(r.pool.QueryRow(ctx, q, args...), false)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // nothing to do
@@ -219,43 +230,68 @@ func (r *JobRepository) ListLogs(ctx context.Context, jobID uuid.UUID, afterSeq,
 	return logs, nil
 }
 
-func scanJob(row rowScanner) (*jobdom.Job, error) {
-	var (
-		j           jobdom.Job
-		typ, status string
-		params, res []byte
-	)
-	if err := row.Scan(
-		&j.ID, &typ, &j.ResourceType, &j.ResourceID, &status, &j.ServerID, &params, &res,
-		&j.Error, &j.Progress, &j.CreatedBy, &j.ClaimedAt, &j.StartedAt, &j.CompletedAt,
-		&j.CreatedAt, &j.UpdatedAt, &j.Version,
-	); err != nil {
+// scanJob scans jobColumns, followed by the resource name when named is set.
+func scanJob(row rowScanner, named bool) (*jobdom.Job, error) {
+	j, dest := jobDest()
+	if named {
+		dest = append(dest, &j.ResourceName)
+	}
+	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}
-	j.Type = jobdom.Type(typ)
-	j.Status = jobdom.Status(status)
-	j.Params = params
-	j.Result = res
-	return &j, nil
+	return j.finish(), nil
 }
 
+// scanJobWithTotal scans jobColumns, the resource name and a window count.
 func scanJobWithTotal(row rowScanner) (*jobdom.Job, int, error) {
-	var (
-		j           jobdom.Job
-		typ, status string
-		params, res []byte
-		total       int
-	)
-	if err := row.Scan(
-		&j.ID, &typ, &j.ResourceType, &j.ResourceID, &status, &j.ServerID, &params, &res,
-		&j.Error, &j.Progress, &j.CreatedBy, &j.ClaimedAt, &j.StartedAt, &j.CompletedAt,
-		&j.CreatedAt, &j.UpdatedAt, &j.Version, &total,
-	); err != nil {
+	var total int
+	j, dest := jobDest()
+	dest = append(dest, &j.ResourceName, &total)
+	if err := row.Scan(dest...); err != nil {
 		return nil, 0, err
 	}
-	j.Type = jobdom.Type(typ)
-	j.Status = jobdom.Status(status)
-	j.Params = params
-	j.Result = res
-	return &j, total, nil
+	return j.finish(), total, nil
+}
+
+type scannedJob struct {
+	jobdom.Job
+	typ, status string
+	params, res []byte
+}
+
+func jobDest() (*scannedJob, []any) {
+	j := &scannedJob{}
+	return j, []any{
+		&j.ID, &j.typ, &j.ResourceType, &j.ResourceID, &j.status, &j.ServerID, &j.params, &j.res,
+		&j.Error, &j.Progress, &j.CreatedBy, &j.ClaimedAt, &j.StartedAt, &j.CompletedAt,
+		&j.CreatedAt, &j.UpdatedAt, &j.Version,
+	}
+}
+
+func (j *scannedJob) finish() *jobdom.Job {
+	j.Type = jobdom.Type(j.typ)
+	j.Status = jobdom.Status(j.status)
+	j.Params = j.params
+	j.Result = j.res
+	return &j.Job
+}
+
+func (r *JobRepository) ListStuck(ctx context.Context, claimedBefore time.Time) ([]uuid.UUID, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id FROM jobs
+		WHERE status = 'running' AND server_id IS NULL AND claimed_at < $1
+		ORDER BY claimed_at LIMIT 100`, claimedBefore)
+	if err != nil {
+		return nil, apperr.Internal(fmt.Errorf("list stuck jobs: %w", err))
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperr.Internal(err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

@@ -34,6 +34,8 @@ type updateScheduleRequest struct {
 type scheduleResponse struct {
 	ID            string     `json:"id"`
 	DatabaseID    string     `json:"database_id"`
+	DatabaseName  string     `json:"database_name,omitempty"`
+	InstanceName  string     `json:"instance_name,omitempty"`
 	DestinationID string     `json:"destination_id"`
 	Cron          string     `json:"cron"`
 	Engine        string     `json:"engine"`
@@ -48,6 +50,8 @@ func toScheduleResponse(s *scheduledom.Schedule) scheduleResponse {
 	return scheduleResponse{
 		ID:            s.ID.String(),
 		DatabaseID:    s.DatabaseID.String(),
+		DatabaseName:  s.DatabaseName,
+		InstanceName:  s.InstanceName,
 		DestinationID: s.DestinationID.String(),
 		Cron:          s.Cron,
 		Engine:        s.Engine,

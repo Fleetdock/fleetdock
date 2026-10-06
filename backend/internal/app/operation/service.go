@@ -8,12 +8,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/Fleetdock/fleetdock/backend/internal/app/dbtarget"
 	backupdom "github.com/Fleetdock/fleetdock/backend/internal/domain/backup"
 	backupdestdom "github.com/Fleetdock/fleetdock/backend/internal/domain/backupdest"
 	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
@@ -64,6 +66,8 @@ type Service struct {
 	secrets   SecretsReader
 	notifier  EventEmitter
 	mover     Mover
+	onDropped func(ctx context.Context, databaseID, instanceID uuid.UUID)
+	roleCreds func(ctx context.Context, databaseID uuid.UUID) (user, password string, err error)
 	gateway   GatewayReconciler
 }
 
@@ -75,6 +79,18 @@ func NewService(jobs jobdom.Repository, instances instancedom.Repository, databa
 
 // SetNotifier attaches an event emitter (optional; nil disables events).
 func (s *Service) SetNotifier(n EventEmitter) { s.notifier = n }
+
+// SetDatabaseDropHook registers a callback run after a database was dropped
+// on its instance (optional) — used to remove its console roles.
+func (s *Service) SetDatabaseDropHook(f func(ctx context.Context, databaseID, instanceID uuid.UUID)) {
+	s.onDropped = f
+}
+
+// SetAccessRoleResolver lets operations run as a database's read-write
+// console role (Params.AccessRole) instead of the instance admin.
+func (s *Service) SetAccessRoleResolver(f func(ctx context.Context, databaseID uuid.UUID) (string, string, error)) {
+	s.roleCreds = f
+}
 
 // SetMover attaches the move-database saga hook (optional).
 func (s *Service) SetMover(m Mover) { s.mover = m }
@@ -104,6 +120,17 @@ type Params struct {
 	MoveSourceDatabaseID string `json:"move_source_database_id,omitempty"` // both legs; marks a move
 	MoveDropSource       bool   `json:"move_drop_source,omitempty"`        // both legs
 	EndpointID           string `json:"endpoint_id,omitempty"`
+	// VerifyBackupID marks a restore as a backup verification: it restores
+	// into a throwaway database, which is dropped again once the result is
+	// recorded.
+	VerifyBackupID string `json:"verify_backup_id,omitempty"`
+	// AccessRole "rw" makes the executor connect as the database's
+	// least-privilege read-write role instead of the instance admin — used
+	// for user-supplied SQL (imports), which must not run as root.
+	AccessRole string `json:"access_role,omitempty"`
+	// DeleteKeyAfter removes the uploaded artifact (an import) once the
+	// restore has finished, successfully or not.
+	DeleteKeyAfter bool `json:"delete_key_after,omitempty"`
 }
 
 // isProvisionType reports whether a job type is a container lifecycle op.
@@ -294,6 +321,17 @@ func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Pa
 	if err != nil {
 		return nil, err
 	}
+	if p.AccessRole != "" {
+		dbID, err := uuid.Parse(p.DatabaseID)
+		if err != nil || s.roleCreds == nil {
+			return nil, fmt.Errorf("operation needs a database access role but none can be resolved")
+		}
+		user, password, err := s.roleCreds(ctx, dbID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve database access role: %w", err)
+		}
+		conn.User, conn.Password = user, password
+	}
 
 	payload := &executor.Payload{
 		Engine:    string(inst.Engine),
@@ -380,8 +418,13 @@ func (s *Service) connParams(ctx context.Context, inst *instancedom.Instance) (e
 	host := "127.0.0.1" // managed: the agent runs on the instance's server
 	if inst.Kind == instancedom.KindExternal && inst.Host != nil {
 		host = *inst.Host
+		// External jobs run on the control plane itself (dump/restore tools
+		// dial the host directly), so apply the database host policy here.
+		if err := dbtarget.CheckHost(ctx, host, inst.Port, "host"); err != nil {
+			return engine.ConnParams{}, err
+		}
 	}
-	conn := engine.ConnParams{Host: host, Port: inst.Port}
+	conn := engine.ConnParams{Host: host, Port: inst.Port, TLSMode: inst.TLSModeOrDefault()}
 	if inst.Username != nil {
 		conn.User = *inst.Username
 	}
@@ -422,6 +465,26 @@ func (s *Service) storageFor(ctx context.Context, destinationID string) (*backup
 }
 
 // Complete finalizes an operation and applies its side effects.
+// FailStuck fails control-plane jobs that have been "running" since before
+// the cutoff: the process executing them died (restart, crash, OOM) and no one
+// else will ever finish them. Going through Complete runs the usual failure
+// side effects (e.g. a backup row is marked failed, a locked database is
+// released). It returns how many were failed.
+func (s *Service) FailStuck(ctx context.Context, claimedBefore time.Time) (int, error) {
+	ids, err := s.jobs.ListStuck(ctx, claimedBefore)
+	if err != nil {
+		return 0, err
+	}
+	msg := "operation interrupted: the control plane stopped while it was running"
+	n := 0
+	for _, id := range ids {
+		if err := s.Complete(ctx, id, jobdom.StatusFailed, nil, &msg); err == nil {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Status, result json.RawMessage, errMsg *string) error {
 	j, err := s.jobs.GetByID(ctx, id)
 	if err != nil {
@@ -459,6 +522,17 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 			}
 		}
 	case jobdom.TypeRestore:
+		if p.DeleteKeyAfter && p.Key != "" && p.DestinationID != "" {
+			if _, client, err := s.storageFor(ctx, p.DestinationID); err == nil {
+				if err := client.Delete(ctx, p.Key); err != nil {
+					slog.Warn("delete import upload", "key", p.Key, "error", err.Error())
+				}
+			}
+		}
+		if p.VerifyBackupID != "" {
+			s.completeVerification(ctx, j, p, ok, errMsg)
+			break
+		}
 		if s.mover != nil {
 			s.mover.OnRestoreComplete(ctx, j, ok, result)
 		}
@@ -474,7 +548,15 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 			s.importDiscovered(ctx, p, result)
 		}
 	case jobdom.TypeDeleteDatabase:
-		// Metadata is already soft-deleted when the job was enqueued.
+		// Metadata is already soft-deleted when the job was enqueued; what is
+		// left is the engine-side console roles of the dropped database.
+		if ok && s.onDropped != nil {
+			dbID, e1 := uuid.Parse(p.DatabaseID)
+			instID, e2 := uuid.Parse(p.InstanceID)
+			if e1 == nil && e2 == nil {
+				s.onDropped(ctx, dbID, instID)
+			}
+		}
 	case jobdom.TypeReconcileGateway:
 		// Side effects handled by the worker calling GatewayReconciler directly.
 	case jobdom.TypeProvisionInstance, jobdom.TypeStartInstance, jobdom.TypeStopInstance,
@@ -565,6 +647,95 @@ func (s *Service) importDiscovered(ctx context.Context, p Params, result json.Ra
 		db.System = d.System || engine.IsSystemDatabase(engineName, d.Name)
 		_ = s.databases.Create(ctx, db) // conflicts (already tracked) are fine
 	}
+}
+
+// completeVerification records a test restore's outcome and drops the
+// throwaway database it restored into.
+func (s *Service) completeVerification(ctx context.Context, j *jobdom.Job, p Params, ok bool, errMsg *string) {
+	bid, err := uuid.Parse(p.VerifyBackupID)
+	if err != nil {
+		return
+	}
+	status := "passed"
+	if !ok {
+		status = "failed"
+	}
+	if err := s.backups.SetVerify(ctx, bid, status, errMsg); err != nil {
+		slog.Warn("record backup verification", "backup", bid, "error", err.Error())
+	}
+	if !ok && s.notifier != nil {
+		msg := "A backup failed its test restore."
+		if errMsg != nil {
+			msg = *errMsg
+		}
+		s.notifier.Emit(ctx, "backup.verify_failed", "Backup verification failed", msg, "critical", "backup", bid)
+	}
+	// Drop the scratch database whether or not the restore got far enough to
+	// create it (DROP ... IF EXISTS).
+	if _, err := s.Create(ctx, jobdom.TypeDeleteDatabase, "backup", &bid, j.ServerID, Params{
+		InstanceID: p.InstanceID,
+		Database:   p.Database,
+	}, j.CreatedBy); err != nil {
+		slog.Warn("drop verification database", "backup", bid, "database", p.Database, "error", err.Error())
+	}
+}
+
+// UploadArtifact streams an object into a backup destination (size unknown).
+func (s *Service) UploadArtifact(ctx context.Context, destinationID, key string, r io.Reader) error {
+	_, client, err := s.storageFor(ctx, destinationID)
+	if err != nil {
+		return err
+	}
+	if err := client.Upload(ctx, key, r, -1); err != nil {
+		return apperr.Invalid("destination_id", "could not upload to the backup destination: "+err.Error())
+	}
+	return nil
+}
+
+// BackupDownloadURL returns a short-lived presigned URL for a completed
+// backup's artifact.
+func (s *Service) BackupDownloadURL(ctx context.Context, b *backupdom.Backup, expiry time.Duration) (string, error) {
+	if b.Status != backupdom.StatusCompleted || b.StorageURL == nil || b.DestinationID == nil {
+		return "", apperr.Invalid("id", "only completed backups can be downloaded")
+	}
+	dest, client, err := s.storageFor(ctx, b.DestinationID.String())
+	if err != nil {
+		return "", err
+	}
+	key, err := keyFromStorageURL(*b.StorageURL, dest.Bucket)
+	if err != nil {
+		return "", apperr.Internal(err)
+	}
+	url, err := client.PresignGet(ctx, key, expiry)
+	if err != nil {
+		return "", apperr.Internal(fmt.Errorf("presign download: %w", err))
+	}
+	return url, nil
+}
+
+// DeleteBackup deletes a backup's stored object and marks the backup deleted.
+// Running backups cannot be deleted.
+func (s *Service) DeleteBackup(ctx context.Context, b *backupdom.Backup) error {
+	switch b.Status {
+	case backupdom.StatusPending, backupdom.StatusRunning:
+		return apperr.Conflict("the backup is still running")
+	case backupdom.StatusDeleted:
+		return nil
+	}
+	if b.StorageURL != nil && b.DestinationID != nil && b.Status == backupdom.StatusCompleted {
+		dest, client, err := s.storageFor(ctx, b.DestinationID.String())
+		if err != nil {
+			return err
+		}
+		key, err := keyFromStorageURL(*b.StorageURL, dest.Bucket)
+		if err != nil {
+			return apperr.Internal(err)
+		}
+		if err := client.Delete(ctx, key); err != nil {
+			return apperr.Invalid("id", "could not delete the stored backup: "+err.Error())
+		}
+	}
+	return s.backups.MarkDeleted(ctx, b.ID)
 }
 
 // PruneExpiredBackups deletes stored objects for completed backups past their

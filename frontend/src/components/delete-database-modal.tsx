@@ -5,30 +5,33 @@ import { useState } from "react";
 import { ErrorText, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useDeleteDatabase } from "@/lib/hooks";
-import type { Database, Instance } from "@/lib/types";
+import type { Database } from "@/lib/types";
 
 type DeleteMode = "metadata" | "physical";
 
 export function DeleteDatabaseModal({
   database,
-  instance,
   onClose,
   onDeleted,
 }: {
   database: Database | null;
-  instance: Instance | undefined;
   onClose: () => void;
   onDeleted?: () => void;
 }) {
   const del = useDeleteDatabase();
   const [mode, setMode] = useState<DeleteMode>("metadata");
   const [error, setError] = useState<string | null>(null);
+  const [typed, setTyped] = useState("");
 
-  const canDrop = instance?.has_credentials ?? false;
+  // The owning instance travels with the database, so a physical drop can no
+  // longer be mis-enabled because the instance was missing from a client-side
+  // lookup.
+  const canDrop = database?.instance?.has_credentials ?? false;
 
   function close() {
     setMode("metadata");
     setError(null);
+    setTyped("");
     onClose();
   }
 
@@ -77,9 +80,9 @@ export function DeleteDatabaseModal({
             style={{ marginTop: ".2rem" }}
           />
           <span>
-            <span className="font-medium">Remove from control plane only</span>
+            <span className="font-medium">Remove from Fleetdock only</span>
             <span className="muted block" style={{ marginTop: ".15rem" }}>
-              The database on the server is not touched. The record enters a 7-day recovery window.
+              Fleetdock stops showing it; the data on the server is not touched. If the database still exists there, it is picked up again after 7 days.
             </span>
           </span>
         </label>
@@ -96,14 +99,28 @@ export function DeleteDatabaseModal({
             style={{ marginTop: ".2rem" }}
           />
           <span>
-            <span className="font-medium">Also drop database on the instance</span>
+            <span className="font-medium">Also delete it from the database server</span>
             <span className="muted block" style={{ marginTop: ".15rem" }}>
-              Permanently runs DROP DATABASE on the instance. This cannot be undone.
+              Permanently deletes the database and all its data (DROP DATABASE). This cannot be undone.
             </span>
           </span>
         </label>
         {!canDrop ? (
-          <p className="muted text-sm">Add admin credentials to the instance to enable physical drop.</p>
+          <p className="muted text-sm">Add an admin login to the database server to delete the data too.</p>
+        ) : null}
+        {mode === "physical" ? (
+          <label className="text-sm">
+            Type <code>{database.name}</code> to confirm
+            <input
+              className="input"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              autoFocus
+              aria-label="Database name confirmation"
+              style={{ marginTop: ".3rem" }}
+            />
+          </label>
         ) : null}
         <ErrorText message={error ?? undefined} />
         <div className="flex items-center justify-end gap-2" style={{ marginTop: ".25rem" }}>
@@ -112,7 +129,7 @@ export function DeleteDatabaseModal({
             type="button"
             className="btn btn-danger"
             onClick={onConfirm}
-            disabled={del.isPending}
+            disabled={del.isPending || (mode === "physical" && typed !== database.name)}
           >
             {del.isPending ? "Removing…" : mode === "physical" ? "Drop database" : "Remove"}
           </button>

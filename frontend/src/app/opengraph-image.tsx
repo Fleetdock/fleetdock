@@ -4,7 +4,7 @@ import { ImageResponse } from "next/og";
 // og:image and twitter:image. Uses @vercel/og's bundled default font.
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "Fleetdock — Database control plane";
+export const alt = "Fleetdock — manage your databases, backups and servers";
 
 function bar(width: number, opacity = 1) {
   return {

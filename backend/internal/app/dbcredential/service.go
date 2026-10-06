@@ -323,7 +323,7 @@ func (s *Service) adminTarget(ctx context.Context, databaseID string) (*database
 	if err != nil {
 		return nil, nil, nil, engine.ConnParams{}, err
 	}
-	conn := engine.ConnParams{Host: host, Port: inst.Port, User: *inst.Username}
+	conn := engine.ConnParams{Host: host, Port: inst.Port, User: *inst.Username, TLSMode: inst.TLSModeOrDefault()}
 	pw, err := s.secrets.Get(ctx, *inst.RootSecretRef)
 	if err != nil {
 		return nil, nil, nil, engine.ConnParams{}, err

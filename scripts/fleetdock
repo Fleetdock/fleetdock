@@ -19,17 +19,85 @@ getenv() { grep "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true; }
 
 setenv() {
   # $1 = key, $2 = value. Adds the key if it is not there yet.
-  if grep -q "^$1=" "$ENV_FILE"; then
-    sed -i "s|^$1=.*|$1=$2|" "$ENV_FILE"
+  # Rewritten with awk rather than `sed -i`: BSD sed (macOS) has no bare -i,
+  # and a value containing | & or \ would corrupt a sed replacement. The value
+  # travels through the environment, which awk reads verbatim.
+  tmp="$(mktemp "${ENV_FILE}.XXXXXX")"
+  FD_KEY="$1" FD_VAL="$2" awk '
+    BEGIN { k = ENVIRON["FD_KEY"]; v = ENVIRON["FD_VAL"]; done = 0 }
+    index($0, k "=") == 1 { print k "=" v; done = 1; next }
+    { print }
+    END { if (!done) print k "=" v }
+  ' "$ENV_FILE" > "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$ENV_FILE"
+}
+
+# uses_bundled_postgres reports whether metadata lives in the bundled
+# postgres service (as opposed to a hosted database).
+uses_bundled_postgres() {
+  case "$(getenv FLEETDOCK_DATABASE_URL)" in
+    ""|*@postgres:*) dc ps --services 2>/dev/null | grep -qx postgres ;;
+    *) return 1 ;;
+  esac
+}
+
+# backup_db writes a compressed pg_dump of the metadata database to $1.
+backup_db() {
+  out="$1"
+  umask 077
+  if uses_bundled_postgres; then
+    dc exec -T postgres pg_dump -U fleetdock -d fleetdock --no-owner | gzip > "$out"
   else
-    printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+    # Hosted metadata database: dump through the control-plane container,
+    # which has pg_dump and the connection string (expanded in the container,
+    # hence the single quotes).
+    # shellcheck disable=SC2016
+    dc exec -T fleetdock sh -c 'pg_dump --no-owner "$FLEETDOCK_DATABASE_URL"' | gzip > "$out"
+  fi
+  # An empty or truncated dump must not pass as a backup.
+  if ! gzip -t "$out" 2>/dev/null || [ "$(gzip -dc "$out" | head -c 1 | wc -c)" -eq 0 ]; then
+    rm -f "$out"
+    echo "error: metadata backup failed" >&2
+    return 1
   fi
 }
 
+# is_local reports whether this is an "only this computer" install
+# (install.sh --local, and every macOS or WSL install).
+is_local() {
+  [ "$(getenv FLEETDOCK_MODE)" = "local" ] || [ "$(uname -s)" = "Darwin" ]
+}
+
+# sync_db_password makes the bundled Postgres role's password match
+# FLEETDOCK_POSTGRES_PASSWORD in .env. Postgres reads POSTGRES_PASSWORD only when
+# it first creates its volume, so the two can disagree — an install made before
+# docker-compose.yml read the variable has the generated value in .env but
+# "fleetdock" in the database, and the control plane could not log in. The
+# container's local socket uses trust authentication, so this works whatever
+# the old password was, and repeating it changes nothing.
+sync_db_password() {
+  pw="$(getenv FLEETDOCK_POSTGRES_PASSWORD)"
+  [ -n "$pw" ] || return 0
+  case "$(getenv FLEETDOCK_DATABASE_URL)" in
+    ""|*@postgres:*) ;;
+    *) return 0 ;;
+  esac
+  dc up -d postgres >/dev/null 2>&1 || return 0
+  i=0
+  until dc exec -T postgres pg_isready -U fleetdock -d fleetdock >/dev/null 2>&1; do
+    i=$((i + 1)); [ $i -lt 30 ] || break; sleep 2
+  done
+  echo "ALTER ROLE fleetdock PASSWORD :'pw';" \
+    | dc exec -T postgres psql -U fleetdock -d fleetdock -q -v ON_ERROR_STOP=1 -v pw="$pw" >/dev/null \
+    || echo "warning: could not set the metadata database password" >&2
+}
+
 need_root() {
-  # A macOS install lives under $HOME and drives Docker Desktop as the invoking
-  # user, so there is nothing to elevate for.
-  [ "$(uname -s)" = "Darwin" ] && return 0
+  # A local install lives under $HOME and drives Docker as the invoking user
+  # (Docker Desktop, or membership of the docker group), so there is nothing
+  # to elevate for.
+  is_local && return 0
   [ "$(id -u)" = "0" ] || { echo "error: this needs root (try sudo)" >&2; exit 1; }
 }
 
@@ -67,6 +135,10 @@ Usage: fleetdock <command>
   config get <KEY> | set <KEY> <VALUE>
   env [--reveal]        Show configuration; secrets redacted unless --reveal
   psql                  A psql shell on the metadata database
+  backup-db [file]      pg_dump of the metadata database (runs before every update)
+  reset-admin-password [email]
+                        Set a new password for a dashboard user (default: the
+                        bootstrap admin), reactivate it and end its sessions
   shell                 A shell inside the control-plane container
   doctor                Diagnose a broken install
   backup-config         Archive .env and docker-compose.yml
@@ -116,8 +188,11 @@ EOT
     case "${db_url}" in
       ""|*@postgres:*)
         if dc ps --services 2>/dev/null | grep -qx postgres; then
-          n="$(dc exec -T postgres psql -U fleetdock -d fleetdock -tAc \
-                "select count(*) from users where email = '${email}';" 2>/dev/null | tr -d '[:space:]')"
+          # The email is passed as a psql variable and quoted by psql (:'email'),
+          # never spliced into the SQL text.
+          n="$(echo "select count(*) from users where lower(email) = lower(:'email');" \
+                | dc exec -T postgres psql -U fleetdock -d fleetdock -tA -v email="${email}" 2>/dev/null \
+                | tr -d '[:space:]')"
           case "$n" in
             0) echo; echo "No account with that email exists — sign in with the one that does." ;;
             [1-9]*) echo; echo "An account with that email exists." ;;
@@ -129,7 +204,10 @@ EOT
     ;;
 
   logs) dc logs --tail 200 "$@" ;;
-  start) dc up -d "$@" ;;
+  start)
+    [ $# -gt 0 ] || sync_db_password
+    dc up -d "$@"
+    ;;
   stop) dc stop "$@" ;;
   restart) dc restart "$@" ;;
 
@@ -142,11 +220,16 @@ EOT
     tag="$(getenv FLEETDOCK_RELEASE_TAG)"
     ref="main"
     [ "$tag" != "latest" ] && [ -n "$tag" ] && ref="$tag"
+    mkdir -p "${FLEETDOCK_DIR}/backups"
+    snap="${FLEETDOCK_DIR}/backups/metadata-pre-update-$(date +%Y%m%d-%H%M%S).sql.gz"
+    echo "==> Backing up the metadata database to ${snap}"
+    backup_db "$snap" || { echo "error: refusing to update without a metadata backup (override: FLEETDOCK_SKIP_BACKUP=1)" >&2; [ "${FLEETDOCK_SKIP_BACKUP:-}" = "1" ] || exit 1; }
     echo "==> Refreshing stack definition (${ref})"
     curl -fsSL "https://raw.githubusercontent.com/${repo}/${ref}/docker-compose.yml" \
       -o "${FLEETDOCK_DIR}/docker-compose.yml"
     echo "==> Pulling images"
     dc pull -q
+    sync_db_password
     echo "==> Restarting"
     dc up -d
     docker image prune -f >/dev/null 2>&1 || true
@@ -157,14 +240,33 @@ EOT
     need_root
     new="${1:?usage: fleetdock domain <hostname>}"
     old="$(getenv FLEETDOCK_DOMAIN)"
+    # A local install has no certificate to get, so a bare name means http.
+    default_scheme=https
+    is_local && default_scheme=http
     case "$new" in
       http://*) scheme=http; host="${new#http://}" ;;
       https://*) scheme=https; host="${new#https://}" ;;
-      *) scheme=https; host="$new" ;;
+      *) scheme="$default_scheme"; host="$new" ;;
     esac
     url="${scheme}://${host}"
+    bind="$(getenv FLEETDOCK_HTTP_BIND)"
+    if is_local && [ -n "$bind" ]; then
+      # A local install listens on loopback only while it is "localhost";
+      # any other name (a LAN or VPN address) has to be reachable from other
+      # machines, so listen on every interface — and back again.
+      port="${bind##*:}"
+      [ "$port" = 80 ] || url="${url}:${port}"
+      if [ "$host" = localhost ]; then
+        setenv FLEETDOCK_HTTP_BIND "127.0.0.1:${port}"
+      else
+        setenv FLEETDOCK_HTTP_BIND "$port"
+        echo "Listening on every network interface (port ${port}) so other machines can reach ${host}."
+      fi
+    fi
     setenv FLEETDOCK_DOMAIN "$host"
-    setenv FLEETDOCK_SITE_ADDRESS "$([ "$scheme" = http ] && echo "$url" || echo "$host")"
+    # Caddy listens on 80 inside the container whatever port is published, so
+    # the site address never carries the published port.
+    setenv FLEETDOCK_SITE_ADDRESS "$([ "$scheme" = http ] && echo "http://${host}" || echo "$host")"
     setenv FLEETDOCK_PUBLIC_URL "$url"
     setenv FLEETDOCK_CORS_ORIGIN "$url"
     dc up -d
@@ -264,14 +366,23 @@ EOF
     echo
     domain="$(getenv FLEETDOCK_DOMAIN)"
     url="$(getenv FLEETDOCK_PUBLIC_URL)"
-    echo "== dns =="
-    echo "configured domain: ${domain}"
-    resolved="$(getent hosts "$domain" 2>/dev/null | awk '{print $1}' | head -1 || true)"
-    public="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
-    echo "resolves to:       ${resolved:-<unresolved>}"
-    echo "this host:         ${public:-<unknown>}"
-    if [ -n "$resolved" ] && [ -n "$public" ] && [ "$resolved" != "$public" ]; then
-      echo "  MISMATCH — certificate issuance will keep failing"
+    if is_local; then
+      # No DNS and no certificate to check: the dashboard is served on this
+      # computer only.
+      echo "== local install =="
+      echo "dashboard:         ${url}"
+      echo "listening on:      $(getenv FLEETDOCK_HTTP_BIND || true)"
+      echo "  (127.0.0.1:<port> means this computer only; a bare port means every interface)"
+    else
+      echo "== dns =="
+      echo "configured domain: ${domain}"
+      resolved="$(getent hosts "$domain" 2>/dev/null | awk '{print $1}' | head -1 || true)"
+      public="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+      echo "resolves to:       ${resolved:-<unresolved>}"
+      echo "this host:         ${public:-<unknown>}"
+      if [ -n "$resolved" ] && [ -n "$public" ] && [ "$resolved" != "$public" ]; then
+        echo "  MISMATCH — certificate issuance will keep failing"
+      fi
     fi
     echo
     echo "== reachability =="
@@ -280,6 +391,28 @@ EOF
     echo
     echo "== disk =="
     df -h "$FLEETDOCK_DIR" | tail -1
+    ;;
+
+  backup-db)
+    need_root
+    mkdir -p "${FLEETDOCK_DIR}/backups"
+    out="${1:-${FLEETDOCK_DIR}/backups/metadata-$(date +%Y%m%d-%H%M%S).sql.gz}"
+    backup_db "$out"
+    echo "Wrote ${out}"
+    echo "Restore with: gunzip -c ${out} | fleetdock psql"
+    echo "Stored credentials inside are encrypted with FLEETDOCK_ENCRYPTION_KEY — keep"
+    echo "a copy of .env (fleetdock backup-config) alongside it, or they are unreadable."
+    ;;
+
+  reset-admin-password)
+    need_root
+    email="${1:-$(getenv FLEETDOCK_ADMIN_EMAIL)}"
+    [ -n "$email" ] || { echo "usage: fleetdock reset-admin-password <email>" >&2; exit 1; }
+    if ! pw="$(dc exec -T fleetdock /api reset-password "$email")"; then
+      exit 1
+    fi
+    echo "New password for ${email}: ${pw}"
+    echo "All existing dashboard sessions of this user were signed out."
     ;;
 
   backup-config)
@@ -351,7 +484,7 @@ EOT
       printf 'Type DELETE to confirm: '
       # Read from the terminal when there is one — `curl … | sh` leaves stdin
       # bound to the script. With neither, refuse rather than assume consent.
-      if [ -r /dev/tty ] && { : >/dev/tty; } 2>/dev/null; then
+      if [ -r /dev/tty ] && ( : >/dev/tty ) 2>/dev/null; then
         read -r confirm < /dev/tty
       elif [ -t 0 ]; then
         read -r confirm

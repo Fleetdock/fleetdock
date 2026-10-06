@@ -7,10 +7,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/Fleetdock/fleetdock/backend/internal/app/dbtarget"
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
@@ -40,6 +42,7 @@ type RegisterInput struct {
 	Port          int
 	Username      string
 	Password      string // write-only; stored encrypted
+	TLSMode       string // disable | prefer (default) | require | verify-full
 	Labels        map[string]string
 	Tags          []string
 }
@@ -108,9 +111,18 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*instancedom.
 	if err != nil {
 		return nil, err
 	}
+	if !engine.ValidTLSMode(in.TLSMode) {
+		return nil, apperr.Invalid("tls_mode", "tls_mode must be disable, prefer, require or verify-full")
+	}
+	inst.TLSMode = in.TLSMode
+	if inst.Kind == instancedom.KindExternal && inst.Host != nil {
+		if err := dbtarget.CheckHost(ctx, *inst.Host, inst.Port, "host"); err != nil {
+			return nil, err
+		}
+	}
 
 	if in.Password != "" {
-		ref := "instance/" + inst.ID.String() + "/root"
+		ref := rootSecretRef(inst.ID)
 		if err := s.secrets.Put(ctx, ref, secretdom.KindMariaDBRoot, []byte(in.Password)); err != nil {
 			return nil, err
 		}
@@ -162,7 +174,7 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 	if err != nil {
 		return nil, nil, apperr.Internal(err)
 	}
-	ref := "instance/" + inst.ID.String() + "/root"
+	ref := rootSecretRef(inst.ID)
 	if err := s.secrets.Put(ctx, ref, secretdom.KindMariaDBRoot, []byte(password)); err != nil {
 		return nil, nil, err
 	}
@@ -216,6 +228,203 @@ func (s *Service) Get(ctx context.Context, id string) (*instancedom.Instance, er
 		return nil, apperr.Invalid("id", "id must be a valid UUID")
 	}
 	return s.repo.GetByID(ctx, uid)
+}
+
+// UpdateInput is a partial change to an instance. Nil fields are untouched.
+//
+// Credential semantics, which are the subtle part:
+//   - Username: "" clears the admin credentials entirely (and deletes the
+//     stored password). Any other value renames the admin user in place.
+//   - Password: "" removes the stored password but keeps the username. Any
+//     other value sets or rotates it — the secret ref is deterministic, so a
+//     rotation overwrites rather than orphaning the old ciphertext.
+type UpdateInput struct {
+	Name     *string
+	Host     *string
+	Port     *int
+	TLSMode  *string
+	Username *string
+	Password *string
+}
+
+// rootSecretRef is the deterministic secret reference for an instance's admin
+// password. Deterministic so rotation is an upsert, not a leak.
+func rootSecretRef(id uuid.UUID) string { return "instance/" + id.String() + "/root" }
+
+// Update applies a partial change to an instance's mutable metadata and
+// credentials, and returns the refreshed record.
+func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*instancedom.Instance, error) {
+	inst, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var f instancedom.UpdateFields
+
+	if in.Name != nil {
+		name, err := instancedom.ValidateName(*in.Name)
+		if err != nil {
+			return nil, err
+		}
+		f.Name = &name
+	}
+
+	if in.Host != nil {
+		if inst.Kind != instancedom.KindExternal {
+			return nil, apperr.Invalid("host", "host can only be set on external instances")
+		}
+		host := strings.TrimSpace(*in.Host)
+		if host == "" {
+			return nil, apperr.Invalid("host", "host is required for external instances")
+		}
+		// Moving the instance to another host would otherwise hand the stored
+		// admin password to whatever answers there. Make the caller prove they
+		// know it (or drop the stored password) instead.
+		if inst.Host == nil || host != *inst.Host {
+			if inst.RootSecretRef != nil && in.Password == nil &&
+				(in.Username == nil || strings.TrimSpace(*in.Username) != "") {
+				return nil, apperr.Invalid("password", "re-enter the admin password when changing the host")
+			}
+		}
+		f.Host = &host
+	}
+
+	if in.Port != nil {
+		if inst.Provisioned() {
+			return nil, apperr.Invalid("port", "the port of a provisioned instance is fixed by its container")
+		}
+		if err := instancedom.ValidatePort(*in.Port); err != nil {
+			return nil, err
+		}
+		f.Port = in.Port
+	}
+
+	if in.TLSMode != nil {
+		if *in.TLSMode == "" || !engine.ValidTLSMode(*in.TLSMode) {
+			return nil, apperr.Invalid("tls_mode", "tls_mode must be disable, prefer, require or verify-full")
+		}
+		f.TLSMode = in.TLSMode
+	}
+
+	if inst.Kind == instancedom.KindExternal && (f.Host != nil || f.Port != nil) {
+		host, port := "", inst.Port
+		if inst.Host != nil {
+			host = *inst.Host
+		}
+		if f.Host != nil {
+			host = *f.Host
+		}
+		if f.Port != nil {
+			port = *f.Port
+		}
+		if err := dbtarget.CheckHost(ctx, host, port, "host"); err != nil {
+			return nil, err
+		}
+	}
+
+	plan, err := s.planCredentials(inst, in)
+	if err != nil {
+		return nil, err
+	}
+	f.Credentials = plan.creds
+
+	// A brand-new secret must exist before the row can reference it (FK);
+	// everything else touching the secret store waits until the row update
+	// has succeeded, so a failed update never leaves the row pointing at a
+	// deleted or replaced password.
+	if plan.putBefore {
+		if err := s.secrets.Put(ctx, plan.ref, secretdom.KindMariaDBRoot, plan.password); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.repo.Update(ctx, inst.ID, f); err != nil {
+		if plan.putBefore {
+			_ = s.secrets.Delete(ctx, plan.ref)
+		}
+		return nil, err
+	}
+	switch {
+	case plan.putAfter:
+		if err := s.secrets.Put(ctx, plan.ref, secretdom.KindMariaDBRoot, plan.password); err != nil {
+			return nil, err
+		}
+	case plan.deleteAfter:
+		if err := s.secrets.Delete(ctx, plan.ref); err != nil {
+			return nil, err
+		}
+	}
+	if plan.staleRef != "" {
+		_ = s.secrets.Delete(ctx, plan.staleRef)
+	}
+	return s.repo.GetByID(ctx, inst.ID)
+}
+
+// credentialPlan is the post-update admin login plus the secret-store side
+// effects needed to get there, ordered around the row update by Update.
+type credentialPlan struct {
+	creds       *instancedom.Credentials // nil = credentials untouched
+	ref         string
+	password    []byte
+	putBefore   bool   // new secret: write before the row references it
+	putAfter    bool   // rotation of an existing secret: overwrite after
+	deleteAfter bool   // credentials removed: delete after
+	staleRef    string // previous secret under a different ref, deleted after
+}
+
+// planCredentials works out the instance's post-update admin login without
+// touching the secret store.
+func (s *Service) planCredentials(inst *instancedom.Instance, in UpdateInput) (credentialPlan, error) {
+	if in.Username == nil && in.Password == nil {
+		return credentialPlan{}, nil
+	}
+
+	// Clearing the username drops the whole credential pair.
+	if in.Username != nil && strings.TrimSpace(*in.Username) == "" {
+		if in.Password != nil && *in.Password != "" {
+			return credentialPlan{}, apperr.Invalid("username", "username is required when a password is provided")
+		}
+		p := credentialPlan{creds: &instancedom.Credentials{}}
+		if inst.RootSecretRef != nil {
+			p.ref, p.deleteAfter = *inst.RootSecretRef, true
+		}
+		return p, nil
+	}
+
+	username := inst.Username
+	if in.Username != nil {
+		u := strings.TrimSpace(*in.Username)
+		username = &u
+	}
+
+	p := credentialPlan{}
+	secretRef := inst.RootSecretRef
+	switch {
+	case in.Password == nil:
+		// Username-only change; leave the stored password alone.
+	case *in.Password == "":
+		if inst.RootSecretRef != nil {
+			p.ref, p.deleteAfter = *inst.RootSecretRef, true
+		}
+		secretRef = nil
+	default:
+		if username == nil || *username == "" {
+			return credentialPlan{}, apperr.Invalid("username", "username is required when a password is provided")
+		}
+		ref := rootSecretRef(inst.ID)
+		p.ref, p.password = ref, []byte(*in.Password)
+		if inst.RootSecretRef != nil && *inst.RootSecretRef == ref {
+			p.putAfter = true
+		} else {
+			p.putBefore = true
+			if inst.RootSecretRef != nil {
+				p.staleRef = *inst.RootSecretRef
+			}
+		}
+		secretRef = &ref
+	}
+
+	p.creds = &instancedom.Credentials{Username: username, RootSecretRef: secretRef}
+	return p, nil
 }
 
 // Delete soft-deletes an instance record. For provisioned instances it also
@@ -303,7 +512,7 @@ func (s *Service) TestConnection(ctx context.Context, id string, createdBy *uuid
 		version, perr := eng.Ping(cctx, conn)
 		res := &TestConnectionResult{Mode: "sync", OK: perr == nil, Version: version}
 		if perr != nil {
-			res.Error = perr.Error()
+			res.Error = apperr.EngineMessage(perr)
 		}
 		return res, nil
 	}
@@ -348,7 +557,7 @@ func (s *Service) ImportDatabases(ctx context.Context, id string, createdBy *uui
 		defer cancel()
 		dbs, err := eng.ListDatabases(cctx, conn)
 		if err != nil {
-			return nil, apperr.Invalid("id", "could not list databases: "+err.Error())
+			return nil, apperr.Invalid("id", "could not list databases: "+apperr.EngineMessage(err))
 		}
 		imported := 0
 		for _, d := range dbs {
@@ -378,7 +587,7 @@ func (s *Service) connParams(ctx context.Context, inst *instancedom.Instance) (e
 	if inst.Host != nil {
 		host = *inst.Host
 	}
-	conn := engine.ConnParams{Host: host, Port: inst.Port}
+	conn := engine.ConnParams{Host: host, Port: inst.Port, TLSMode: inst.TLSModeOrDefault()}
 	if inst.Username != nil {
 		conn.User = *inst.Username
 	}

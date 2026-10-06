@@ -8,6 +8,7 @@ package dbtarget
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 )
 
 // Servers is the subset of the server repository host resolution needs.
@@ -26,7 +28,34 @@ type Servers interface {
 //
 // field names the request field blamed in validation errors, so each caller
 // keeps reporting the field its own API exposes.
+//
+// The result is checked against the netsafe database policy: instance hosts
+// (and the addresses agents report for their servers) are untrusted input.
 func Host(ctx context.Context, servers Servers, inst *instancedom.Instance, field string) (string, error) {
+	host, err := resolveHost(ctx, servers, inst, field)
+	if err != nil {
+		return "", err
+	}
+	if err := CheckHost(ctx, host, inst.Port, field); err != nil {
+		return "", err
+	}
+	return host, nil
+}
+
+// CheckHost validates a user- or agent-supplied database address against the
+// netsafe policy, reporting a violation as a validation error on field.
+func CheckHost(ctx context.Context, host string, port int, field string) error {
+	if err := netsafe.CheckDBHost(ctx, hostOnly(host), port); err != nil {
+		if errors.Is(err, netsafe.ErrDisallowedDBHost) {
+			return apperr.Invalid(field,
+				"this host is not allowed: loopback, link-local, cloud-metadata and control-plane addresses are blocked")
+		}
+		return apperr.Internal(err)
+	}
+	return nil
+}
+
+func resolveHost(ctx context.Context, servers Servers, inst *instancedom.Instance, field string) (string, error) {
 	switch {
 	case inst.Kind == instancedom.KindExternal && inst.Host != nil && *inst.Host != "":
 		return hostOnly(*inst.Host), nil

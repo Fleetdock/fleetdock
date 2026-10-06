@@ -1,8 +1,10 @@
 # Production deployment
 
-`curl -sSL https://fleetdock.dev/install.sh | sh` covers almost every case. This
-guide is for understanding what it does, and for the deployments it does not
-cover.
+> Most people only need the [Quick start](../README.md#quick-start):
+> `curl -sSL https://fleetdock.dev/install.sh | sudo sh` on a Linux server. This
+> guide explains what that command does, lists its options, and covers the
+> setups it does not. Installing on your own computer instead? See
+> [LOCAL.md](LOCAL.md).
 
 For day-2 operations (backups, upgrades, key rotation), see [OPERATIONS.md](OPERATIONS.md).
 For a security checklist before exposing the control plane, see
@@ -40,20 +42,44 @@ operations.
 ## The one-command install
 
 ```bash
-curl -sSL https://fleetdock.dev/install.sh | sh -s -- --domain db.example.com
+curl -sSL https://fleetdock.dev/install.sh | sudo sh
+```
+
+Run in a terminal, it asks:
+
+1. **Where are you installing?** A server others reach (HTTPS), or only this
+   computer ([LOCAL.md](LOCAL.md)). Not asked when `--domain`, `--server` or
+   `--local` is given, nor on macOS and WSL, which are always local.
+2. **Domain** — press Enter for an `<ip>.sslip.io` name that still gets a real
+   certificate with no DNS setup.
+3. **Admin email.**
+
+Then it shows a summary — address, directory, ports, whether Docker will be
+installed — and waits for you to confirm. With `--yes`, or with no terminal at
+all (CI, cloud-init, `ssh` without `-t`), it asks nothing and uses the options
+given plus the defaults, exactly as before:
+
+```bash
+curl -sSL https://fleetdock.dev/install.sh | sudo sh -s -- --domain db.example.com --admin-email you@example.com --yes
 ```
 
 | Option              | Effect                                                          |
 | ------------------- | --------------------------------------------------------------- |
 | `--domain <host>`   | Dashboard hostname; gets an automatic Let's Encrypt certificate |
 | `--admin-email <e>` | Bootstrap admin account                                         |
+| `--server`          | A server install; skips the first question                      |
+| `--local`           | Only this computer, on `http://localhost` — see [LOCAL.md](LOCAL.md) |
+| `--port <n>`        | Local installs: serve on `http://localhost:<n>` instead of port 80 |
+| `-y`, `--yes`       | Ask nothing (also `FLEETDOCK_NONINTERACTIVE=1`)                 |
 | `--dir <path>`      | Install directory (default `/opt/fleetdock`)                    |
 | `--tag <tag>`       | Image tag to run (default `latest`)                             |
 | `--with-gateway`    | Also start external database access                             |
 | `--no-tls`          | Plain HTTP on the host IP; no certificate                       |
+| `--source`, `--build` | Install from a checkout — see [below](#installing-from-a-checkout-forks-air-gapped-testing) |
 
 It installs Docker if missing, writes `/opt/fleetdock/{docker-compose.yml,.env}`,
-starts the stack, and prints the dashboard URL and bootstrap password.
+starts the stack, and prints the dashboard URL, the bootstrap password and the
+next steps.
 
 Re-running it upgrades in place. **It never regenerates `.env`** — rotating
 `FLEETDOCK_ENCRYPTION_KEY` would make every stored credential unreadable.
@@ -160,27 +186,21 @@ sudo sh install.sh --source /path/to/fleetdock --build --domain db.example.com
   it. It tags the image exactly as `docker-compose.yml` expects, so Compose finds
   it locally and never reaches for the registry.
 
-### macOS
+### macOS, Windows and your own computer
 
-macOS is supported for **local evaluation**, not as a deployment target:
+macOS, Windows (through WSL2) and Linux desktops get a **local install**: no
+root, plain HTTP on `http://localhost`, and listening on this computer only.
+On macOS and WSL it is chosen automatically; elsewhere pass `--local` or pick it
+when asked. Its steps, how to reach databases on the same machine
+(`host.docker.internal`) and its limits are in [LOCAL.md](LOCAL.md).
+
+Installs made on macOS before local mode existed listen on every interface.
+To make one private to the Mac:
 
 ```bash
-curl -sSL https://fleetdock.dev/install.sh | sh
+fleetdock config set FLEETDOCK_HTTP_BIND 127.0.0.1:80
+fleetdock config set FLEETDOCK_HTTPS_BIND 127.0.0.1:
 ```
-
-It needs Docker Desktop already installed and running — `get.docker.com` is
-Linux-only and Docker Desktop needs a manual first run, so the installer detects
-it and tells you rather than trying. Nothing else differs in kind: it installs
-under `~/.fleetdock`, needs **no root** (Docker Desktop binds 80/443 as your
-user), and serves plain HTTP on `http://localhost`.
-
-Three limits come from macOS rather than from Fleetdock:
-
-| Limit | Why |
-| --- | --- |
-| No TLS | A laptop has no public address for Let's Encrypt to reach |
-| Remote servers cannot enrol | They must reach `FLEETDOCK_PUBLIC_URL`; `localhost` is not routable. Pass your LAN address as `--domain` for agents on the same network |
-| External database access does not work | Docker Desktop NATs inbound connections, so HAProxy sees its VM's address instead of the client's and every CIDR allowlist rejects everyone |
 
 ### Trying it in a VM
 
@@ -264,8 +284,11 @@ curl -sSL https://dbm.example.com/install.sh | \
 Put `sudo` after the pipe (before `sh`), not before `curl` — the installer must run as root.
 
 `FLEETDOCK_PUBLIC_URL` must match the URL servers can reach (no localhost, no
-internal-only DNS names unless every server is on that network). For LAN/VM dev,
-use your host's LAN IP (e.g. `http://192.168.x.x:8080`).
+internal-only DNS names unless every server is on that network). For agents on a
+LAN or in a VM, give Fleetdock the host's LAN address with
+`fleetdock domain 192.168.x.x` — an installed Fleetdock serves on port 80/443,
+so the URL is `http://192.168.x.x`. (Port `8080` is only for `make dev`, where
+the API runs without Docker.)
 
 ## SMTP (optional)
 
@@ -285,8 +308,10 @@ channels still work.
 
 | Symptom                           | Likely cause                                                                                               |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `error: run as root` on install   | `sudo` placed before `curl` instead of before `sh` (after the pipe)                                        |
-| Install aborts on port 80/443     | nginx or apache already bound there. Stop it and re-run                                                    |
+| `error: run as root` from the agent installer | `sudo` placed before `curl` instead of before `sh` (after the pipe)                            |
+| Install aborts on port 80/443     | nginx or apache already bound there. Stop it and re-run. For a local install, use `--port 8090`            |
+| `error: a server install must run as root` | Run `curl … \| sudo sh`, or add `--local` to install for yourself on this computer             |
+| Installer asked no questions      | No terminal was available (CI, cloud-init, `ssh` without `-t`), so it used the flags and defaults         |
 | Install aborts on Compose version | Plugin older than 2.23. Upgrade it: https://docs.docker.com/compose/install/linux/                         |
 | No certificate issued             | DNS does not point at this host yet. `fleetdock doctor` compares them                                      |
 | API exits on start                | `FLEETDOCK_ENV=production` with default secrets — run `generate-secrets.sh`                                |

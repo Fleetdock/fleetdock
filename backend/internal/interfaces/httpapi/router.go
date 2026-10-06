@@ -23,6 +23,7 @@ type RouterDeps struct {
 	Moves         *MoveHandler
 	Destinations  *DestinationHandler
 	DBAdmin       *DBAdminHandler
+	Console       *ConsoleHandler
 	Connectivity  *ConnectivityHandler
 	DBCredentials *DBCredentialHandler
 	Agents        *AgentHandler
@@ -87,6 +88,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	limiter := newLoginLimiter(10, time.Minute, d.TrustProxyHeaders)
 	mux.HandleFunc("POST /v1/auth/login", limiter.Middleware(d.Auth.Login))
 	mux.HandleFunc("GET /v1/auth/me", requirePerm("", d.Auth.Me))
+	mux.HandleFunc("POST /v1/auth/logout", requirePerm("", d.Auth.Logout))
 
 	// Self-service profile
 	mux.HandleFunc("GET /v1/profile", requirePerm("", d.Users.Profile))
@@ -130,10 +132,12 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/instances/provision", requireAnyPerm("instance:write", d.Instances.Provision))
 	mux.HandleFunc("GET /v1/instances", requireAnyPerm("instance:read", d.Instances.List))
 	mux.HandleFunc("GET /v1/instances/{id}", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.Get))
+	mux.HandleFunc("PATCH /v1/instances/{id}", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Update))
 	mux.HandleFunc("DELETE /v1/instances/{id}", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Delete))
 	mux.HandleFunc("POST /v1/instances/{id}/start", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("start")))
 	mux.HandleFunc("POST /v1/instances/{id}/stop", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("stop")))
 	mux.HandleFunc("POST /v1/instances/{id}/restart", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("restart")))
+	mux.HandleFunc("POST /v1/instances/{id}/probe", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.Probe))
 	mux.HandleFunc("POST /v1/instances/{id}/test-connection", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.TestConnection))
 	mux.HandleFunc("POST /v1/instances/{id}/import-databases", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.ImportDatabases))
 
@@ -159,9 +163,14 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/instances/{id}/db-users", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.ListDBUsers))
 	mux.HandleFunc("POST /v1/instances/{id}/db-users", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.CreateDBUser))
 	mux.HandleFunc("POST /v1/instances/{id}/db-users/drop", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.DropDBUser))
+	mux.HandleFunc("POST /v1/instances/{id}/db-users/password", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.SetDBUserPassword))
 	mux.HandleFunc("GET /v1/instances/{id}/db-users/grants", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.UserGrants))
 	mux.HandleFunc("POST /v1/instances/{id}/grants", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.Grant))
 	mux.HandleFunc("POST /v1/instances/{id}/grants/revoke", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.Revoke))
+	mux.HandleFunc("GET /v1/instances/{id}/processes", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.Processes))
+	mux.HandleFunc("POST /v1/instances/{id}/processes/{pid}/kill", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.KillProcess))
+	mux.HandleFunc("GET /v1/instances/{id}/status", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.ServerStatus))
+	mux.HandleFunc("GET /v1/instances/{id}/variables", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.Variables))
 
 	// Live DB administration: database scope (grants, tables, data)
 	mux.HandleFunc("GET /v1/databases/{id}/grants", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaGrants))
@@ -172,9 +181,30 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/rows", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.TableRows))
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/schema", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.TableSchema))
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/export", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ExportTable))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/browse", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.BrowseRows))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/rows", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.InsertRow))
+	mux.HandleFunc("PATCH /v1/databases/{id}/tables/{table}/rows", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.UpdateRow))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/rows/delete", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.DeleteRow))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/import", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.ImportCSV))
+	mux.HandleFunc("POST /v1/databases/{id}/tables", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.CreateTable))
+	mux.HandleFunc("PATCH /v1/databases/{id}/tables/{table}", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.AlterTable))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/drop", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.DropTable))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/truncate", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.TruncateTable))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/rename", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.RenameTable))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/indexes", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.CreateIndex))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/indexes/drop", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.DropIndex))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/foreign-keys", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ForeignKeys))
+	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
 	// SQL console: any writes are gated inside the handler by database:write.
 	mux.HandleFunc("POST /v1/databases/{id}/query", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Query))
 	mux.HandleFunc("POST /v1/databases/{id}/export", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ExportQuery))
+	mux.HandleFunc("POST /v1/databases/{id}/import-sql", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Backups.ImportSQL))
+	mux.HandleFunc("POST /v1/databases/{id}/query/{qid}/cancel", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.CancelQuery))
+	mux.HandleFunc("GET /v1/databases/{id}/query-history", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.Console.History))
+	mux.HandleFunc("GET /v1/saved-queries", requireAnyPerm("database:read", d.Console.ListSaved))
+	mux.HandleFunc("POST /v1/saved-queries", requireAnyPerm("database:read", d.Console.CreateSaved))
+	mux.HandleFunc("PATCH /v1/saved-queries/{id}", requireAnyPerm("database:read", d.Console.UpdateSaved))
+	mux.HandleFunc("DELETE /v1/saved-queries/{id}", requireAnyPerm("database:read", d.Console.DeleteSaved))
 	mux.HandleFunc("GET /v1/db-privileges", requireAnyPerm("instance:read", d.DBAdmin.ListPrivileges))
 
 	// Operations (jobs)
@@ -187,6 +217,9 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/backups", requireAnyPerm("backup:read", d.Backups.List))
 	mux.HandleFunc("GET /v1/backups/{id}", requireResourcePerm(rv, "backup:read", authz.ResourceBackup, "id", d.Backups.Get))
 	mux.HandleFunc("POST /v1/backups/{id}/restore", requireResourcePerm(rv, "backup:write", authz.ResourceBackup, "id", d.Backups.Restore))
+	mux.HandleFunc("GET /v1/backups/{id}/download", requireResourcePerm(rv, "backup:read", authz.ResourceBackup, "id", d.Backups.Download))
+	mux.HandleFunc("DELETE /v1/backups/{id}", requireResourcePerm(rv, "backup:write", authz.ResourceBackup, "id", d.Backups.Delete))
+	mux.HandleFunc("POST /v1/backups/{id}/verify", requireResourcePerm(rv, "backup:write", authz.ResourceBackup, "id", d.Backups.Verify))
 
 	// Move database (backup → restore → verify → optional drop of source).
 	// Authorizes source database + target instance inside the handler.

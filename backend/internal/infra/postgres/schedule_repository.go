@@ -28,7 +28,10 @@ var _ scheduledom.Repository = (*ScheduleRepository)(nil)
 
 const scheduleColumns = `
 	id, database_id, destination_id, cron, engine, retention_days, enabled,
-	last_run_at, next_run_at, created_by, created_at, updated_at, version`
+	last_run_at, next_run_at, created_by, created_at, updated_at, version,
+	COALESCE((SELECT d.name FROM databases d WHERE d.id = backup_schedules.database_id), ''),
+	COALESCE((SELECT i.name FROM databases d JOIN instances i ON i.id = d.instance_id
+	          WHERE d.id = backup_schedules.database_id), '')`
 
 func (r *ScheduleRepository) Create(ctx context.Context, s *scheduledom.Schedule) error {
 	const q = `
@@ -147,6 +150,7 @@ func scanSchedule(row rowScanner) (*scheduledom.Schedule, error) {
 	if err := row.Scan(
 		&s.ID, &s.DatabaseID, &s.DestinationID, &s.Cron, &s.Engine, &s.RetentionDays, &s.Enabled,
 		&s.LastRunAt, &s.NextRunAt, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.Version,
+		&s.DatabaseName, &s.InstanceName,
 	); err != nil {
 		return nil, err
 	}

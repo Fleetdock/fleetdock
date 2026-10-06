@@ -26,6 +26,7 @@ type operationResponse struct {
 	Type         string          `json:"type"`
 	ResourceType string          `json:"resource_type"`
 	ResourceID   *string         `json:"resource_id,omitempty"`
+	ResourceName string          `json:"resource_name,omitempty"`
 	Status       string          `json:"status"`
 	ServerID     *string         `json:"server_id,omitempty"`
 	Params       json.RawMessage `json:"params,omitempty"`
@@ -52,6 +53,7 @@ func toOperationResponse(j *jobdom.Job) operationResponse {
 		Type:         string(j.Type),
 		ResourceType: j.ResourceType,
 		ResourceID:   resourceID,
+		ResourceName: j.ResourceName,
 		Status:       string(j.Status),
 		ServerID:     serverID,
 		Params:       j.Params,

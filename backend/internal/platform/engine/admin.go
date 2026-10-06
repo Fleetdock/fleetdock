@@ -100,6 +100,11 @@ type Admin interface {
 	// (capped) result set; writes are permitted only when allowWrite is true
 	// and return the affected-row count.
 	Query(ctx context.Context, p ConnParams, database, sql string, limit int, allowWrite bool) (*QueryResult, error)
+	// QueryBatch runs several statements in order on one session, stopping at
+	// the first failure (reported as *BatchError) and returning the results
+	// of the statements before it. onSession, if set, receives the server's
+	// session id (for cancellation) before the first statement runs.
+	QueryBatch(ctx context.Context, p ConnParams, database string, stmts []string, limit int, allowWrite bool, onSession func(id int64)) ([]QueryResult, error)
 	// ExportCSV streams a whole table (when table is set) or a read-only query
 	// (when query is set) to w as CSV. onStart, if non-nil, is invoked once the
 	// result set has opened successfully and before any bytes are written, so

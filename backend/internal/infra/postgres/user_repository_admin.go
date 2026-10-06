@@ -88,6 +88,20 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, id uuid.UUID, name, 
 	return nil
 }
 
+// BumpTokenEpoch advances the token epoch, invalidating every JWT session
+// issued before (used by logout).
+func (r *UserRepository) BumpTokenEpoch(ctx context.Context, id uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE users SET token_epoch = token_epoch + 1, version = version + 1 WHERE id = $1`, id)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("bump token epoch: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("user not found")
+	}
+	return nil
+}
+
 // SetPassword replaces the stored password hash and advances the token epoch,
 // which invalidates any JWT sessions issued before the change.
 func (r *UserRepository) SetPassword(ctx context.Context, id uuid.UUID, hash string) error {

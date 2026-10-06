@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           cache-dependency-path: backend/go.sum
 
       - name: go vet
@@ -45,6 +45,58 @@ jobs:
       - name: build
         run: go build ./...
 
+  integration:
+    # Engine behaviour that unit tests cannot prove: the least-privilege
+    # console roles really are confined to one database, statement timeouts
+    # fire server-side, data editing / DDL / monitoring work on every engine,
+    # and migrations apply (twice) on a real PostgreSQL.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env: {MARIADB_ROOT_PASSWORD: rootpw}
+        ports: ["33061:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env: {MYSQL_ROOT_PASSWORD: rootpw}
+        ports: ["33062:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -prootpw"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_PASSWORD: rootpw}
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      FLEETDOCK_IT_MARIADB: 127.0.0.1:33061
+      FLEETDOCK_IT_MYSQL: 127.0.0.1:33062
+      FLEETDOCK_IT_POSTGRES: 127.0.0.1:54329
+      FLEETDOCK_IT_PASSWORD: rootpw
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache-dependency-path: backend/go.sum
+      - name: engine integration tests
+        run: go test -tags integration -count=1 -v ./internal/platform/engine/ -run Integration
+      - name: repository integration tests
+        run: go test -tags integration -count=1 -v ./internal/infra/postgres/ -run Integration
+      - name: migrations apply cleanly and are idempotent
+        env:
+          FLEETDOCK_DATABASE_URL: postgres://postgres:rootpw@127.0.0.1:54329/postgres?sslmode=disable
+        run: |
+          go run ./cmd/migrate
+          go run ./cmd/migrate
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -67,6 +119,9 @@ jobs:
 
       - name: typecheck
         run: npm run typecheck
+
+      - name: unit tests
+        run: npm test
 
       # Deliberately no NEXT_PUBLIC_API_URL: the dashboard must build without
       # one and call the API on its own origin. This is the standing guard
@@ -101,6 +156,38 @@ jobs:
           docker run --rm --entrypoint node fleetdock:ci --version
           docker run --rm --entrypoint sh fleetdock:ci -c 'test -f /opt/fleetdock/ui/server.js'
           docker run --rm --entrypoint sh fleetdock:ci -c 'test -d /opt/fleetdock/ui/.next/static'
+
+      - name: boot smoke test
+        # The real thing: compose up, migrations, readiness, a login, and the
+        # security headers on both the API and the dashboard.
+        run: |
+          cat > ci.env <<EOF
+          FLEETDOCK_SITE_ADDRESS=http://localhost:18080
+          FLEETDOCK_PUBLIC_URL=http://localhost:18080
+          FLEETDOCK_JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')
+          FLEETDOCK_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')
+          FLEETDOCK_ADMIN_PASSWORD=Ci-Smoke-Passw0rd
+          FLEETDOCK_RELEASE_TAG=ci
+          EOF
+          docker tag fleetdock:ci ghcr.io/fleetdock/fleetdock:ci
+          cat > ci.override.yml <<'EOF'
+          services:
+            fleetdock:
+              ports: ["127.0.0.1:18080:8080"]
+          EOF
+          docker compose -p ci --env-file ci.env -f docker-compose.yml -f ci.override.yml up -d --no-deps postgres fleetdock
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:18080/readyz && break; sleep 2; done
+          curl -sf http://127.0.0.1:18080/readyz
+          token=$(curl -sf -X POST http://127.0.0.1:18080/v1/auth/login -H 'Content-Type: application/json' \
+            -d '{"email":"admin@example.com","password":"Ci-Smoke-Passw0rd"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+          curl -sf -H "Authorization: Bearer $token" http://127.0.0.1:18080/v1/auth/me
+          curl -sfI http://127.0.0.1:18080/v1/auth/me | grep -qi "content-security-policy"
+          for _ in $(seq 1 30); do curl -sfI http://127.0.0.1:18080/login | grep -qi "content-security-policy" && break; sleep 2; done
+          curl -sfI http://127.0.0.1:18080/login | grep -qi "content-security-policy"
+
+      - name: smoke logs on failure
+        if: failure()
+        run: docker compose -p ci logs --tail 200 fleetdock || true
 
       - name: validate compose
         run: |

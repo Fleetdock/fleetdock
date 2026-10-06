@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// dashboardCSP confines the dashboard to its own origin. Next.js streams its
+// RSC payload through inline <script> tags, so inline scripts must stay
+// allowed; what this buys is that injected script cannot load code from or
+// send data (the session token included) to any other origin.
+const dashboardCSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; " +
+	"connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
 // Handler serves the dashboard: 503 until the child process is accepting
 // connections, then a reverse proxy to it.
 func (s *Supervisor) Handler() http.Handler { return s.handler }
@@ -39,6 +47,9 @@ func (s *Supervisor) newHandler() http.Handler {
 				resp.Header.Set("X-Frame-Options", "DENY")
 			}
 			resp.Header.Del("X-Powered-By")
+			if resp.Header.Get("Content-Security-Policy") == "" {
+				resp.Header.Set("Content-Security-Policy", dashboardCSP)
+			}
 			return nil
 		},
 

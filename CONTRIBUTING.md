@@ -16,20 +16,48 @@ Thank you for your interest in contributing! This document covers how to set up 
    cp .env.example .env
    ./scripts/generate-secrets.sh >> .env
    ```
-4. Start the full stack (Postgres + API + frontend):
-   ```bash
-   make up
-   ```
-   Or run with hot reload for local development:
-   ```bash
-   make dev
-   ```
+4. Run it, one of two ways:
 
-The dashboard is at http://localhost:3000 and the API at http://localhost:8080.
+   | Command | What runs | Open |
+   | --- | --- | --- |
+   | `make dev` | The Go API and the Next.js dev server on your machine, with hot reload. Needs Go, Node and a PostgreSQL ([below](#without-docker)). | http://localhost:3000 |
+   | `make up` | The real stack — Caddy, Fleetdock built from this checkout, PostgreSQL — in Docker. | http://localhost |
+
+   Sign in as `FLEETDOCK_ADMIN_EMAIL` with the `FLEETDOCK_ADMIN_PASSWORD` from
+   `.env`. The API applies migrations and creates that account on first boot.
+
+`make help` lists every target. To try the installer itself, run it in a
+throwaway VM — see [DEPLOYMENT.md → Trying it in a VM](docs/DEPLOYMENT.md#trying-it-in-a-vm).
+
+### Without Docker
+
+The API needs a PostgreSQL 14+ it can reach. Under Docker the stack supplies
+one; for `make dev`, add its address to `.env`:
+
+```bash
+FLEETDOCK_DATABASE_URL=postgres://fleetdock:fleetdock@localhost:5432/fleetdock?sslmode=disable
+```
+
+`make dev` then loads `.env` and runs both servers. The Next.js dev server
+proxies `/v1`, `/agent` and the other API paths to the Go API on `:8080`, so the
+dashboard is same-origin in development exactly as in production. Point it
+elsewhere with `FLEETDOCK_DEV_API_URL`.
+
+To run an agent by hand against a dev control plane:
+
+```bash
+cd backend
+go build -o fleetdock-agent ./cmd/agent
+FLEETDOCK_URL=http://localhost:8080 FLEETDOCK_TOKEN=<registration-token> \
+  FLEETDOCK_STATE_DIR=/tmp/fleetdock-agent ./fleetdock-agent
+```
+
+Agents on another machine (a VM, say) need your LAN address instead of
+`localhost`, here and in `FLEETDOCK_PUBLIC_URL`.
 
 ## Development Requirements
 
-- Go 1.25+
+- Go 1.26+
 - Node.js 22+
 - Docker and Docker Compose (for the full stack)
 - `golangci-lint` (for linting; CI installs it automatically)
@@ -39,11 +67,12 @@ The dashboard is at http://localhost:3000 and the API at http://localhost:8080.
 ```
 backend/     Go API, worker, and agent (clean architecture)
 frontend/    Next.js dashboard
-docs/        Deployment, operations, and security guides
-scripts/     Helper scripts (secret generation, etc.)
+docs/        Install, operations, security and configuration guides
+scripts/     install.sh (the Fleetdock installer), the fleetdock CLI, generate-secrets.sh
 ```
 
-Configuration uses the `FLEETDOCK_*` environment prefix.
+Configuration uses the `FLEETDOCK_*` environment prefix — see
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ## Code Style
 
@@ -57,8 +86,13 @@ Configuration uses the `FLEETDOCK_*` environment prefix.
 ### TypeScript / Frontend
 
 - Run `npm run lint` and `npm run typecheck` in `frontend/`.
-- Use existing UI components from `frontend/src/components/`.
-- Keep API calls in `frontend/src/lib/api.ts`.
+- Use existing UI components from `frontend/src/components/` (`components/ui`
+  has the primitives: `PageHeader`, `Modal`, `Field`, `Menu`, `Time`, …).
+- Data hooks live in `frontend/src/lib/data/<area>.ts` (re-exported from
+  `@/lib/hooks`); the HTTP client is `frontend/src/lib/api.ts`.
+- Write user-facing text with the words in [docs/glossary.md](docs/glossary.md).
+- Pages and sections come from `frontend/src/lib/nav.ts`; moving a page needs
+  an entry in `frontend/src/lib/legacy-redirects.json`.
 
 ## Testing
 
@@ -67,6 +101,11 @@ make test          # go vet + backend unit tests
 make lint          # golangci-lint + ESLint
 make build         # compile backend and frontend
 ```
+
+Frontend unit tests: `npm test` in `frontend/`. Browser tests drive a running
+install — see [frontend/e2e/README.md](frontend/e2e/README.md). Repository
+tests against a real PostgreSQL:
+`FLEETDOCK_IT_POSTGRES=127.0.0.1:5432 go test -tags integration ./internal/infra/postgres/`.
 
 Add tests for new service logic. Focus on validation, state transitions, and error paths.
 

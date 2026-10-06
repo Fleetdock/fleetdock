@@ -14,10 +14,14 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    # Every interface by default (a server). A local install writes
+    # FLEETDOCK_HTTP_BIND=127.0.0.1:80 and FLEETDOCK_HTTPS_BIND=127.0.0.1: so
+    # the dashboard is reachable from that computer alone; an empty host port
+    # lets Docker pick a free one for the HTTPS port nothing uses there.
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp" # HTTP/3
+      - "${FLEETDOCK_HTTP_BIND:-80}:80"
+      - "${FLEETDOCK_HTTPS_BIND:-443}:443"
+      - "${FLEETDOCK_HTTPS_BIND:-443}:443/udp" # HTTP/3
     environment:
       # A bare hostname ("db.example.com") gets an automatic Let's Encrypt
       # certificate. An explicit "http://203.0.113.10" serves plain HTTP and
@@ -39,7 +43,7 @@ services:
     restart: unless-stopped
     environment:
       FLEETDOCK_HTTP_ADDR: ":8080"
-      FLEETDOCK_DATABASE_URL: ${FLEETDOCK_DATABASE_URL:-postgres://fleetdock:fleetdock@postgres:5432/fleetdock?sslmode=disable}
+      FLEETDOCK_DATABASE_URL: ${FLEETDOCK_DATABASE_URL:-postgres://fleetdock:${FLEETDOCK_POSTGRES_PASSWORD:-fleetdock}@postgres:5432/fleetdock?sslmode=disable}
       FLEETDOCK_ENV: ${FLEETDOCK_ENV:-production}
       FLEETDOCK_JWT_SECRET: ${FLEETDOCK_JWT_SECRET:?set FLEETDOCK_JWT_SECRET in .env}
       FLEETDOCK_ENCRYPTION_KEY: ${FLEETDOCK_ENCRYPTION_KEY:?set FLEETDOCK_ENCRYPTION_KEY in .env}
@@ -77,6 +81,11 @@ services:
       FLEETDOCK_SMTP_USERNAME: ${FLEETDOCK_SMTP_USERNAME:-}
       FLEETDOCK_SMTP_PASSWORD: ${FLEETDOCK_SMTP_PASSWORD:-}
       FLEETDOCK_SMTP_FROM: ${FLEETDOCK_SMTP_FROM:-fleetdock@localhost}
+    # Lets an instance on the machine running Fleetdock be reached as
+    # host.docker.internal — "localhost" inside the container is the container
+    # itself. Docker Desktop provides the name already; Linux needs this.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - gateway_data:/var/lib/fleetdock/gateway
     healthcheck:
@@ -104,7 +113,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: fleetdock
-      POSTGRES_PASSWORD: fleetdock
+      # install.sh generates this for new installs. Installs from before it
+      # existed keep "fleetdock": Postgres only reads it when the volume is
+      # first initialised, so it must not change afterwards.
+      POSTGRES_PASSWORD: ${FLEETDOCK_POSTGRES_PASSWORD:-fleetdock}
       POSTGRES_DB: fleetdock
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -185,6 +197,9 @@ configs:
     content: |
       {$$FLEETDOCK_SITE_ADDRESS} {
       	encode zstd gzip
+      	# Browsers ignore HSTS on plain-http sites, so this is harmless for
+      	# http://localhost and pins HTTPS everywhere else.
+      	header Strict-Transport-Security "max-age=31536000"
       	# No path splitting: the Go binary is the single front door. It serves
       	# /v1, /agent, /healthz, /readyz, /docs, /openapi.yaml and /install.sh
       	# in-process and proxies everything else to the bundled dashboard.

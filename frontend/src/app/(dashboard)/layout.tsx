@@ -1,8 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
+import { CommandPalette } from "@/components/command-palette";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { getToken } from "@/lib/auth";
@@ -17,7 +18,10 @@ function OperationToasts() {
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [ready, setReady] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const closeNav = useCallback(() => setNavOpen(false), []);
 
   useEffect(() => {
     if (!getToken()) {
@@ -30,12 +34,21 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   if (!ready) return null;
 
   return (
-    <div className="flex" style={{ minHeight: "100vh" }}>
+    <div className="app-shell">
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
       <OperationToasts />
-      <Sidebar />
+      <CommandPalette />
+      <Sidebar open={navOpen} onClose={closeNav} />
       <div className="flex flex-col" style={{ flex: 1, minWidth: 0 }}>
-        <Topbar />
-        <main style={{ padding: "1.5rem", width: "100%", maxWidth: "72rem", margin: "0 auto" }}>
+        <Topbar onOpenNav={() => setNavOpen(true)} />
+        <main
+          id="main"
+          // The Data Browser is a full-bleed workspace with its own scrolling panes.
+          className={pathname === "/data" ? "app-main app-main-wide" : "app-main"}
+          tabIndex={-1}
+        >
           {children}
         </main>
       </div>

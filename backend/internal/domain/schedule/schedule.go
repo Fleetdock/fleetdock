@@ -26,6 +26,10 @@ type Schedule struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	Version       int
+
+	// DatabaseName and InstanceName are display names, filled on reads.
+	DatabaseName string
+	InstanceName string
 }
 
 // New validates input and constructs a Schedule, computing the first run time.

@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 // AccessProfile is a reusable permission preset for application credentials.
@@ -15,8 +14,17 @@ const (
 	ProfileAdmin     AccessProfile = "admin"
 )
 
+// ProfileApplier is implemented by engines (and test doubles) that apply
+// access profiles themselves instead of through the built-in grant mapping.
+type ProfileApplier interface {
+	ApplyAccessProfile(ctx context.Context, p ConnParams, user, host, database string, profile AccessProfile) error
+}
+
 // ApplyProfile grants database-scoped privileges for a profile.
 func ApplyProfile(ctx context.Context, admin Admin, p ConnParams, user, host, database string, profile AccessProfile) error {
+	if pa, ok := admin.(ProfileApplier); ok {
+		return pa.ApplyAccessProfile(ctx, p, user, host, database, profile)
+	}
 	switch profile {
 	case ProfileReadonly:
 		return applyReadonly(ctx, admin, p, user, host, database)
@@ -183,9 +191,8 @@ func RotatePassword(ctx context.Context, admin Admin, p ConnParams, user, host, 
 			return err
 		}
 		defer conn.Close(ctx)
-		pw := strings.ReplaceAll(password, "'", "''")
 		_, err = conn.Exec(ctx, fmt.Sprintf(
-			"ALTER ROLE %s WITH PASSWORD '%s'", quotePGIdent(user), pw))
+			"ALTER ROLE %s WITH PASSWORD %s", quotePGIdent(user), pgPasswordLiteral(password)))
 		return err
 	default:
 		return fmt.Errorf("engine does not support password rotation")

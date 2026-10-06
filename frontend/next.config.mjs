@@ -1,4 +1,8 @@
 /** @type {import('next').NextConfig} */
+import { readFileSync } from "node:fs";
+
+// Pages that moved in the navigation restructure. Shared with src/lib/nav.ts.
+const legacyRedirects = JSON.parse(readFileSync(new URL("./src/lib/legacy-redirects.json", import.meta.url), "utf8"));
 
 // Paths the Go control plane owns. Kept in sync with apiOwnedPath() in
 // backend/internal/interfaces/httpapi/ui.go.
@@ -18,6 +22,11 @@ const nextConfig = {
   // no node_modules and no npm.
   output: "standalone",
   poweredByHeader: false,
+
+  // Old bookmarks and links keep working.
+  async redirects() {
+    return legacyRedirects.map(({ source, destination }) => ({ source, destination, permanent: true }));
+  },
 
   // Development only. In production the Go binary is the front door and never
   // forwards an API path here, so these rewrites are unreachable; they exist so

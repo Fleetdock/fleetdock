@@ -37,6 +37,11 @@ const redocPage = `<!doctype html>
 // Page handles GET /docs (renders the spec with Redoc).
 func (h *DocsHandler) Page(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Redoc is the only page the API serves that renders HTML; allow exactly
+	// its CDN bundle, its inline styles and its blob web workers.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src https://cdn.redocly.com; "+
+		"style-src 'unsafe-inline'; img-src data: https:; font-src data: https:; connect-src 'self'; "+
+		"worker-src blob:; frame-ancestors 'none'; base-uri 'none'")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(redocPage))
 }

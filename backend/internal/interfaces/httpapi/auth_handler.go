@@ -83,3 +83,14 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		Grants:      toGrantDTOs(p.Grants()),
 	})
 }
+
+// Logout handles POST /v1/auth/logout: it invalidates every browser session
+// (JWT) of the caller. The client should discard its token as well.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	p := principalFrom(r.Context())
+	if err := h.svc.Logout(r.Context(), p.UserID); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
