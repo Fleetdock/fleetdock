@@ -22,6 +22,9 @@ place instead of SSH, without handing your credentials to a SaaS vendor.
 curl -sSL https://fleetdock.dev/install.sh | sudo sh
 ```
 
+> On a **Mac** or **Windows** PC (WSL2), leave out `sudo` and see
+> [LOCAL.md](docs/LOCAL.md) — Fleetdock then runs privately on that computer.
+
 It asks for a domain (or picks a free `<ip>.sslip.io` name with HTTPS) and an
 admin email, shows what it will do, and waits for you to confirm. Then it
 installs Docker if needed and starts Fleetdock behind automatic HTTPS. At the

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Installer on macOS and WSL refuses `sudo`.** Docker Desktop runs as the
+  logged-in user and a local install lives in their home folder; under
+  `sudo` it went to `/opt/fleetdock` as root, next to the user's own
+  `~/.fleetdock`, and the two fought over the same containers.
+- **A fresh install no longer starts over an earlier install's data.** When
+  Docker still holds Fleetdock's database volume but no `.env` was found, the
+  installer stops and says where the old configuration is (or how to discard
+  the data), instead of generating new keys that cannot open it — which left
+  the control plane crash-looping.
+- **An existing install is upgraded where it is.** The installer looks for
+  the caller's own install first (`~/.fleetdock`, or `/opt/fleetdock` for
+  root) and says so when the one it finds belongs to another user.
+- **`--port` works on upgrades**, moving an existing local install to the new
+  port; a local install from before local mode is made private to the computer
+  (127.0.0.1) as a new one would be.
+- **A busy port is no longer a dead end.** Run in a terminal, a local install
+  offers the next free port instead of stopping.
+- The installer warns about an older `fleetdock` command from an earlier
+  install that would run instead of the new one, and shows the control
+  plane's log when the stack fails to start.
+
+### Added
+
+- `fleetdock port [<n>]` shows or changes a local install's dashboard port.
+  `fleetdock config get` says when a setting is not set instead of printing
+  nothing.
+
+## [0.8.0] - 2026-10-06
+
 ### Security
 
 - **Least-privilege console roles.** The SQL console, table browser, CSV

@@ -24,7 +24,8 @@ server instead — see the [Quick start](../README.md#quick-start).
 ## 2. Run the installer
 
 Open a terminal — on Windows, the **Ubuntu (WSL)** terminal, not PowerShell or
-Git Bash — and run:
+Git Bash — and run it **without `sudo`** (Docker Desktop runs as you, and
+Fleetdock installs into your home folder):
 
 ```bash
 curl -sSL https://fleetdock.dev/install.sh | sh -s -- --local
@@ -47,13 +48,21 @@ It shows what it is about to do and asks you to confirm, then prints your login:
 Open the address in your browser. On Windows, use your normal Windows browser —
 Docker Desktop forwards `localhost` from WSL.
 
-**Port 80 already taken?** Pick another port:
+**Port 80 already taken?** The installer notices and offers the next free port.
+To choose one yourself:
 
 ```bash
 curl -sSL https://fleetdock.dev/install.sh | sh -s -- --local --port 8090
 ```
 
-The dashboard is then at `http://localhost:8090`.
+The dashboard is then at `http://localhost:8090`. To move it later:
+
+```bash
+fleetdock port          # shows the current port
+fleetdock port 3333     # moves the dashboard to http://localhost:3333
+```
+
+Re-running the installer with `--port` on an existing install does the same.
 
 ## 3. Connect your databases
 
