@@ -297,7 +297,8 @@ function EditInstanceModal({
           </select>
         </Field>
         {instance.kind === "external" ? (
-          <Field label="Host" hint="Hostname or IP address Fleetdock can reach.">
+          <Field label="Host" hint="Hostname or IP address Fleetdock can reach."
+              help={<>On the same computer as Fleetdock? Use <code>host.docker.internal</code> — <code>localhost</code> would mean Fleetdock&apos;s own container.</>}>
             <input
               className="input"
               value={host}

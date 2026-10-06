@@ -14,10 +14,14 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    # Every interface by default (a server). A local install writes
+    # FLEETDOCK_HTTP_BIND=127.0.0.1:80 and FLEETDOCK_HTTPS_BIND=127.0.0.1: so
+    # the dashboard is reachable from that computer alone; an empty host port
+    # lets Docker pick a free one for the HTTPS port nothing uses there.
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp" # HTTP/3
+      - "${FLEETDOCK_HTTP_BIND:-80}:80"
+      - "${FLEETDOCK_HTTPS_BIND:-443}:443"
+      - "${FLEETDOCK_HTTPS_BIND:-443}:443/udp" # HTTP/3
     environment:
       # A bare hostname ("db.example.com") gets an automatic Let's Encrypt
       # certificate. An explicit "http://203.0.113.10" serves plain HTTP and
@@ -77,6 +81,11 @@ services:
       FLEETDOCK_SMTP_USERNAME: ${FLEETDOCK_SMTP_USERNAME:-}
       FLEETDOCK_SMTP_PASSWORD: ${FLEETDOCK_SMTP_PASSWORD:-}
       FLEETDOCK_SMTP_FROM: ${FLEETDOCK_SMTP_FROM:-fleetdock@localhost}
+    # Lets an instance on the machine running Fleetdock be reached as
+    # host.docker.internal — "localhost" inside the container is the container
+    # itself. Docker Desktop provides the name already; Linux needs this.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - gateway_data:/var/lib/fleetdock/gateway
     healthcheck:

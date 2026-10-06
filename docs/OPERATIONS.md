@@ -150,7 +150,7 @@ cd backend && go run ./cmd/rotate-keys
    production env: remove `FLEETDOCK_ENCRYPTION_KEYS_OLD`, keep `master-2` as primary
 5. Restart the API
 
-Full details: [README — Security](../README.md#security).
+Full details: [FEATURES.md — Security](FEATURES.md#security).
 
 ## JWT secret rotation
 

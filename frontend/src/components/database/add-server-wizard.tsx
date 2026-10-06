@@ -218,7 +218,8 @@ export function AddServerWizard({
           </div>
 
           {mode === "external" ? (
-            <Field label="Host" hint="Hostname or IP address Fleetdock can reach." error={fieldError(error, "host")}>
+            <Field label="Host" hint="Hostname or IP address Fleetdock can reach."
+              help={<>On the same computer as Fleetdock? Use <code>host.docker.internal</code> — <code>localhost</code> would mean Fleetdock&apos;s own container.</>} error={fieldError(error, "host")}>
               <input className="input" value={host} onChange={(e) => setHost(e.target.value)} placeholder="db.example.com" required />
             </Field>
           ) : null}

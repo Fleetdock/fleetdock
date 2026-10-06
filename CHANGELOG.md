@@ -52,6 +52,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Local install — "only this computer".** `install.sh --local` (automatic on
+  macOS and WSL2, offered as a choice elsewhere) installs for one user with no
+  root, serves `http://localhost`, and publishes the dashboard on 127.0.0.1
+  only (`FLEETDOCK_HTTP_BIND` / `FLEETDOCK_HTTPS_BIND`). `--port` picks another
+  port when 80 is taken. Windows is supported through WSL2 with Docker
+  Desktop; Git Bash/MSYS get directions instead of "unsupported platform". See
+  [docs/LOCAL.md](docs/LOCAL.md).
+- **Guided installer.** Run in a terminal, `install.sh` asks where it is
+  installing, for the domain and the admin email, shows a summary and waits
+  for confirmation; it ends with numbered next steps. `--yes` (or no terminal,
+  as under CI and cloud-init) asks nothing, as before.
+- `host.docker.internal` reaches the machine running Fleetdock from the control
+  plane on Linux too; the Host field says to use it instead of `localhost`.
+
 - **Data Browser** (`/data`, `g t`). A workspace for working with data like
   a desktop database manager: pick a database, find its tables and views in
   a searchable sidebar (grouped by schema), and open each one in its own tab.
@@ -128,6 +142,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs reorganised around what you want to do.** The README is now a short
+  quick start plus a "Which guide do I need?" table. The feature list moved to
+  [docs/FEATURES.md](docs/FEATURES.md), the environment variable reference to
+  [docs/CONFIGURATION.md](docs/CONFIGURATION.md), and running from source to
+  [CONTRIBUTING.md](CONTRIBUTING.md).
+- In a local install, `fleetdock domain` defaults to `http://`, and switches
+  between loopback-only and all-interfaces listening with the name.
+
 - **The database page no longer has Tables and SQL console tabs.** Browsing,
   editing and querying moved to the Data Browser; the page keeps its
   overview, connectivity, credentials, backups and access, plus a Data card
@@ -169,6 +191,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker image has a `HEALTHCHECK`.
 
 ### Fixed
+
+- **Metadata database password after upgrading.** Installs made with an
+  installer that generated `FLEETDOCK_POSTGRES_PASSWORD` before
+  `docker-compose.yml` read it have a database created with the old fixed
+  password; once compose used the generated one, the control plane could not
+  log in. `install.sh`, `fleetdock start` and `fleetdock update` now set the
+  database role's password to the `.env` value before starting.
+- The installer and `fleetdock delete` no longer exit silently when there is no
+  terminal: the `/dev/tty` check redirected a special builtin, which is fatal
+  in POSIX `sh`.
 
 - PostgreSQL values in the table browser, SQL console and CSV export are
   shown as PostgreSQL prints them (`13.37`, `2026-01-02`, `{"a": 1}`, a
