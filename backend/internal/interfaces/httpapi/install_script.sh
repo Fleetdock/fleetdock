@@ -33,7 +33,9 @@ chmod +x /usr/local/bin/fleetdock-agent
 
 echo "==> Installing database client tools (for backups/restores)"
 if command -v apt-get >/dev/null 2>&1; then
-  apt-get update -qq && apt-get install -y -qq mariadb-client postgresql-client >/dev/null 2>&1 || true
+  if apt-get update -qq; then
+    apt-get install -y -qq mariadb-client postgresql-client >/dev/null 2>&1 || true
+  fi
 elif command -v dnf >/dev/null 2>&1; then
   dnf install -y -q mariadb postgresql >/dev/null 2>&1 || true
 elif command -v yum >/dev/null 2>&1; then

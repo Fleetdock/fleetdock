@@ -123,7 +123,9 @@ if [ -n "$LOCAL_PORT" ]; then
   case "$LOCAL_PORT" in
     *[!0-9]*|"") die "--port needs a number, got '$LOCAL_PORT'" ;;
   esac
-  [ "$LOCAL_PORT" -ge 1 ] && [ "$LOCAL_PORT" -le 65535 ] || die "--port must be between 1 and 65535"
+  if [ "$LOCAL_PORT" -lt 1 ] || [ "$LOCAL_PORT" -gt 65535 ]; then
+    die "--port must be between 1 and 65535"
+  fi
   [ "$MODE" != server ] || die "--port is for local installs; a server install serves on 80 and 443"
 fi
 
@@ -870,7 +872,9 @@ chmod 755 "${CLI_DIR}/fleetdock"
 STALE_CLI=""
 for other in "$(command -v fleetdock 2>/dev/null || true)" /usr/local/bin/fleetdock \
              "${HOME}/.local/bin/fleetdock" /opt/homebrew/bin/fleetdock; do
-  [ -n "$other" ] && [ -f "$other" ] && [ "$other" != "${CLI_DIR}/fleetdock" ] || continue
+  if [ -z "$other" ] || [ ! -f "$other" ] || [ "$other" = "${CLI_DIR}/fleetdock" ]; then
+    continue
+  fi
   grep -q 'Fleetdock install' "$other" 2>/dev/null || continue
   case " $STALE_CLI " in *" $other "*) continue ;; esac
   STALE_CLI="${STALE_CLI:+$STALE_CLI }$other"
