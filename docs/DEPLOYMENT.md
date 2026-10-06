@@ -69,7 +69,7 @@ curl -sSL https://fleetdock.dev/install.sh | sudo sh -s -- --domain db.example.c
 | `--admin-email <e>` | Bootstrap admin account                                         |
 | `--server`          | A server install; skips the first question                      |
 | `--local`           | Only this computer, on `http://localhost` — see [LOCAL.md](LOCAL.md) |
-| `--port <n>`        | Local installs: serve on `http://localhost:<n>` instead of port 80 |
+| `--port <n>`        | Local installs: serve on `http://localhost:<n>` instead of port 80; on an existing install, moves it there (also `fleetdock port <n>`) |
 | `-y`, `--yes`       | Ask nothing (also `FLEETDOCK_NONINTERACTIVE=1`)                 |
 | `--dir <path>`      | Install directory (default `/opt/fleetdock`)                    |
 | `--tag <tag>`       | Image tag to run (default `latest`)                             |

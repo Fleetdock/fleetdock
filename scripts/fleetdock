@@ -131,6 +131,7 @@ Usage: fleetdock <command>
   start | stop | restart [service]
   update [--tag <tag>]  Pull and restart on a new image tag
   domain <hostname>     Move the dashboard to a new hostname
+  port [<n>]            Local installs: show, or change, the dashboard's port
   gateway enable|disable  External database access (adds/removes a port range)
   config get <KEY> | set <KEY> <VALUE>
   env [--reveal]        Show configuration; secrets redacted unless --reveal
@@ -150,7 +151,7 @@ EOF
 }
 
 cmd="${1:-}"
-[ $# -gt 0 ] && shift || true
+if [ $# -gt 0 ]; then shift; fi
 
 case "$cmd" in
   status)
@@ -293,6 +294,40 @@ Two things do NOT move automatically:
 EOF
     ;;
 
+  port)
+    bind="$(getenv FLEETDOCK_HTTP_BIND)"
+    if ! is_local || [ -z "$bind" ]; then
+      echo "This is a server install: it serves on ports 80 and 443." >&2
+      exit 1
+    fi
+    old="${bind##*:}"
+    if [ $# -eq 0 ]; then
+      echo "$old"
+      exit 0
+    fi
+    new="$1"
+    case "$new" in *[!0-9]*|"") echo "usage: fleetdock port <number>" >&2; exit 1 ;; esac
+    if [ "$new" -lt 1 ] || [ "$new" -gt 65535 ]; then
+      echo "error: a port is between 1 and 65535" >&2; exit 1
+    fi
+    [ "$new" != "$old" ] || { echo "Already on port ${new}."; exit 0; }
+    if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$new" -sTCP:LISTEN >/dev/null 2>&1; then
+      echo "error: port ${new} is already in use on this computer" >&2; exit 1
+    elif command -v ss >/dev/null 2>&1 && ss -ltnH "sport = :${new}" 2>/dev/null | grep -q .; then
+      echo "error: port ${new} is already in use on this computer" >&2; exit 1
+    fi
+    case "$bind" in
+      *:*) setenv FLEETDOCK_HTTP_BIND "${bind%:*}:${new}" ;;
+      *) setenv FLEETDOCK_HTTP_BIND "$new" ;;
+    esac
+    host="$(getenv FLEETDOCK_DOMAIN)"; host="${host:-localhost}"
+    url="http://${host}"; [ "$new" = 80 ] || url="${url}:${new}"
+    setenv FLEETDOCK_PUBLIC_URL "$url"
+    setenv FLEETDOCK_CORS_ORIGIN "$url"
+    dc up -d
+    echo "Dashboard moved to ${url}"
+    ;;
+
   gateway)
     need_root
     case "${1:-}" in
@@ -328,7 +363,18 @@ EOF
 
   config)
     case "${1:-}" in
-      get) getenv "${2:?usage: fleetdock config get <KEY>}" ;;
+      get)
+        key="${2:?usage: fleetdock config get <KEY>}"
+        if grep -q "^${key}=" "$ENV_FILE"; then
+          getenv "$key"
+        else
+          case "$key" in
+            port|PORT) echo "The dashboard's port: run 'fleetdock port'." >&2 ;;
+            *) echo "${key} is not set. 'fleetdock env' lists every setting." >&2 ;;
+          esac
+          exit 1
+        fi
+        ;;
       set)
         need_root
         key="${2:?usage: fleetdock config set <KEY> <VALUE>}"
