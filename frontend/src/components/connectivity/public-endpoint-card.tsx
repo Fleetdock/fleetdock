@@ -194,6 +194,9 @@ function EnableForm({
       </p>
     );
   }
+  if (gateway.unavailable_reason) {
+    return <p className="muted text-sm">{capitalize(gateway.unavailable_reason)}.</p>;
+  }
   if (!canWrite) {
     return <p className="muted text-sm">Public access is disabled.</p>;
   }
@@ -273,4 +276,8 @@ function SourceIPHint({ gateway }: { gateway: GatewayInfo }) {
       ) : null}
     </p>
   );
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

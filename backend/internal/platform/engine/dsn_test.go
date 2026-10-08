@@ -6,6 +6,8 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/sshtunnel"
 )
 
 func TestMariaDBDSNSpecialCharacters(t *testing.T) {
@@ -39,5 +41,19 @@ func TestTLSModes(t *testing.T) {
 		if _, err := pgx.ParseConfig(cs); err != nil {
 			t.Errorf("pgx cannot parse %q: %v", cs, err)
 		}
+	}
+}
+
+func TestMariaDBConfigDialsThroughTunnel(t *testing.T) {
+	m := &MariaDB{}
+	if c := m.config(ConnParams{Host: "db", Port: 3306}); c.DialFunc != nil {
+		t.Fatal("direct connections use the registered netsafe network, not a DialFunc")
+	}
+	c := m.config(ConnParams{Host: "127.0.0.1", Port: 3306, SSH: &sshtunnel.Config{Host: "bastion"}})
+	if c.DialFunc == nil {
+		t.Fatal("tunnelled connections must dial through the bastion")
+	}
+	if c.Addr != "127.0.0.1:3306" {
+		t.Fatalf("addr = %q; the database address is dialed from the bastion unchanged", c.Addr)
 	}
 }

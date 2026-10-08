@@ -12,6 +12,7 @@ import (
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/sshtunnel"
 )
 
 // InstanceHandler exposes instance endpoints.
@@ -62,6 +63,50 @@ type registerInstanceRequest struct {
 	TLSMode        string            `json:"tls_mode"`
 	Labels         map[string]string `json:"labels"`
 	Tags           []string          `json:"tags"`
+	SSHTunnel      *sshTunnelRequest `json:"ssh_tunnel"`
+}
+
+// sshTunnelRequest configures the SSH bastion of an external instance. The
+// secret fields are write-only.
+type sshTunnelRequest struct {
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Username   string `json:"username"`
+	AuthMethod string `json:"auth_method"` // password | key
+	Password   string `json:"password"`
+	PrivateKey string `json:"private_key"`
+	Passphrase string `json:"passphrase"`
+}
+
+func (t *sshTunnelRequest) input() *instanceapp.SSHTunnelInput {
+	if t == nil {
+		return nil
+	}
+	return &instanceapp.SSHTunnelInput{
+		Host: t.Host, Port: t.Port, Username: t.Username, AuthMethod: t.AuthMethod,
+		Password: t.Password, PrivateKey: t.PrivateKey, Passphrase: t.Passphrase,
+	}
+}
+
+// sshTunnelResponse never carries the SSH secret, only whether the bastion's
+// host key is pinned and its fingerprint.
+type sshTunnelResponse struct {
+	Host               string  `json:"host"`
+	Port               int     `json:"port"`
+	Username           string  `json:"username"`
+	AuthMethod         string  `json:"auth_method"`
+	HostKeyFingerprint *string `json:"host_key_fingerprint"`
+}
+
+func toSSHTunnelResponse(t *instancedom.SSHTunnel) *sshTunnelResponse {
+	if t == nil {
+		return nil
+	}
+	out := &sshTunnelResponse{Host: t.Host, Port: t.Port, Username: t.User, AuthMethod: string(t.Auth)}
+	if fp := sshtunnel.Fingerprint(t.HostKey); fp != "" {
+		out.HostKeyFingerprint = &fp
+	}
+	return out
 }
 
 type instanceResponse struct {
@@ -86,6 +131,7 @@ type instanceResponse struct {
 	CreatedAt      time.Time           `json:"created_at"`
 	UpdatedAt      time.Time           `json:"updated_at"`
 	Version        int                 `json:"version"`
+	SSHTunnel      *sshTunnelResponse  `json:"ssh_tunnel"`
 }
 
 func toInstanceResponse(in *instancedom.Instance) instanceResponse {
@@ -116,6 +162,7 @@ func toInstanceResponse(in *instancedom.Instance) instanceResponse {
 		CreatedAt:      in.CreatedAt,
 		UpdatedAt:      in.UpdatedAt,
 		Version:        in.Version,
+		SSHTunnel:      toSSHTunnelResponse(in.SSH),
 	}
 }
 
@@ -159,6 +206,7 @@ func (h *InstanceHandler) Register(w http.ResponseWriter, r *http.Request) {
 		TLSMode:       req.TLSMode,
 		Labels:        req.Labels,
 		Tags:          req.Tags,
+		SSHTunnel:     req.SSHTunnel.input(),
 	})
 	if err != nil {
 		writeError(w, err)
@@ -239,6 +287,11 @@ type updateInstanceRequest struct {
 	TLSMode  *string `json:"tls_mode"`
 	Username *string `json:"username"`
 	Password *string `json:"password"` // write-only; "" removes the stored password
+	// SSHTunnel sets or changes the SSH tunnel (secrets may be omitted to keep
+	// the stored ones on the same bastion and user).
+	SSHTunnel       *sshTunnelRequest `json:"ssh_tunnel"`
+	RemoveSSHTunnel bool              `json:"remove_ssh_tunnel"`
+	ResetSSHHostKey bool              `json:"reset_ssh_host_key"`
 }
 
 // Update handles PATCH /v1/instances/{id}.
@@ -249,12 +302,15 @@ func (h *InstanceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in, err := h.svc.Update(r.Context(), r.PathValue("id"), instanceapp.UpdateInput{
-		Name:     req.Name,
-		Host:     req.Host,
-		Port:     req.Port,
-		TLSMode:  req.TLSMode,
-		Username: req.Username,
-		Password: req.Password,
+		Name:            req.Name,
+		Host:            req.Host,
+		Port:            req.Port,
+		TLSMode:         req.TLSMode,
+		Username:        req.Username,
+		Password:        req.Password,
+		SSHTunnel:       req.SSHTunnel.input(),
+		RemoveSSHTunnel: req.RemoveSSHTunnel,
+		ResetSSHHostKey: req.ResetSSHHostKey,
 	})
 	if err != nil {
 		writeError(w, err)

@@ -42,6 +42,30 @@ export interface Instance {
   created_at: string;
   updated_at: string;
   version: number;
+  /** SSH bastion this external instance is reached through; null when direct. */
+  ssh_tunnel?: SSHTunnel | null;
+}
+
+export type SSHAuthMethod = "password" | "key";
+
+export interface SSHTunnel {
+  host: string;
+  port: number;
+  username: string;
+  auth_method: SSHAuthMethod;
+  /** SHA256 fingerprint of the pinned bastion host key; null until the first connection. */
+  host_key_fingerprint: string | null;
+}
+
+/** SSHTunnelInput sets a tunnel. Secrets are write-only; on update, omit them to keep the stored ones. */
+export interface SSHTunnelInput {
+  host: string;
+  port?: number;
+  username: string;
+  auth_method: SSHAuthMethod;
+  password?: string;
+  private_key?: string;
+  passphrase?: string;
 }
 
 /**
@@ -104,6 +128,8 @@ export interface GatewayInfo {
   /** Port serving the source-IP diagnostic. Absent or 0 when disabled. */
   diag_port?: number;
   source_ip_mode?: string;
+  /** Why this database cannot get a public endpoint (e.g. behind an SSH tunnel). */
+  unavailable_reason?: string;
 }
 
 export interface Connectivity {
@@ -278,6 +304,7 @@ export interface CreateInstanceInput {
   username?: string;
   password?: string;
   tls_mode?: TLSMode;
+  ssh_tunnel?: SSHTunnelInput;
 }
 
 // UpdateInstanceInput is a partial update: omitted keys are left unchanged.
@@ -293,6 +320,9 @@ export interface UpdateInstanceInput {
   tls_mode?: TLSMode;
   username?: string;
   password?: string;
+  ssh_tunnel?: SSHTunnelInput;
+  remove_ssh_tunnel?: boolean;
+  reset_ssh_host_key?: boolean;
 }
 
 export interface CreateDatabaseInput {

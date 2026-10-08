@@ -32,7 +32,8 @@ var _ instancedom.Repository = (*InstanceRepository)(nil)
 const instanceColumns = `
 	id, server_id, name, engine, kind, host, username, root_secret_ref,
 	container_id, mariadb_version, port, status,
-	labels, tags, created_at, updated_at, version, deleted_at, tls_mode, health`
+	labels, tags, created_at, updated_at, version, deleted_at, tls_mode, health,
+	ssh_host, ssh_port, ssh_user, ssh_auth, ssh_secret_ref, ssh_host_key`
 
 func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instance) error {
 	labels, err := json.Marshal(in.Labels)
@@ -40,12 +41,15 @@ func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instanc
 		return apperr.Internal(fmt.Errorf("marshal labels: %w", err))
 	}
 	const q = `
-		INSERT INTO instances (id, server_id, name, engine, kind, host, username, mariadb_version, port, status, labels, tags, tls_mode)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
+		INSERT INTO instances (id, server_id, name, engine, kind, host, username, mariadb_version, port, status, labels, tags, tls_mode,
+		                       ssh_host, ssh_port, ssh_user, ssh_auth, ssh_secret_ref, ssh_host_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19)
 		RETURNING created_at, updated_at, version`
+	ssh := sshColumns(in.SSH)
 	err = r.pool.QueryRow(ctx, q,
 		in.ID, in.ServerID, in.Name, string(in.Engine), string(in.Kind), in.Host, in.Username,
 		in.EngineVersion, in.Port, string(in.Status), string(labels), in.Tags, in.TLSModeOrDefault(),
+		ssh.host, ssh.port, ssh.user, ssh.auth, ssh.secretRef, ssh.hostKey,
 	).Scan(&in.CreatedAt, &in.UpdatedAt, &in.Version)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -154,6 +158,25 @@ func (r *InstanceRepository) Update(ctx context.Context, id uuid.UUID, f instanc
 		set("username", f.Credentials.Username)
 		set("root_secret_ref", f.Credentials.RootSecretRef)
 	}
+	switch {
+	case f.RemoveSSH:
+		set("ssh_host", nil)
+		set("ssh_port", 22)
+		set("ssh_user", nil)
+		set("ssh_auth", nil)
+		set("ssh_secret_ref", nil)
+		set("ssh_host_key", nil)
+	case f.SSH != nil:
+		ssh := sshColumns(f.SSH)
+		set("ssh_host", ssh.host)
+		set("ssh_port", ssh.port)
+		set("ssh_user", ssh.user)
+		set("ssh_auth", ssh.auth)
+		set("ssh_secret_ref", ssh.secretRef)
+		set("ssh_host_key", ssh.hostKey)
+	case f.ResetSSHHostKey:
+		set("ssh_host_key", nil)
+	}
 	if len(sets) == 0 {
 		return nil
 	}
@@ -229,14 +252,17 @@ func scanInstance(row rowScanner) (*instancedom.Instance, error) {
 		healthRaw    []byte
 		status       string
 		engine, kind string
+		ssh          sshRow
 	)
 	if err := row.Scan(
 		&in.ID, &in.ServerID, &in.Name, &engine, &kind, &in.Host, &in.Username, &in.RootSecretRef,
 		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
 		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw,
+		&ssh.host, &ssh.port, &ssh.user, &ssh.auth, &ssh.secretRef, &ssh.hostKey,
 	); err != nil {
 		return nil, err
 	}
+	in.SSH = ssh.tunnel()
 	return finishInstance(&in, labelsRaw, healthRaw, status, engine, kind)
 }
 
@@ -247,15 +273,18 @@ func scanInstanceWithTotal(row rowScanner) (*instancedom.Instance, int, error) {
 		healthRaw    []byte
 		status       string
 		engine, kind string
+		ssh          sshRow
 		total        int
 	)
 	if err := row.Scan(
 		&in.ID, &in.ServerID, &in.Name, &engine, &kind, &in.Host, &in.Username, &in.RootSecretRef,
 		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
-		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw, &total,
+		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw,
+		&ssh.host, &ssh.port, &ssh.user, &ssh.auth, &ssh.secretRef, &ssh.hostKey, &total,
 	); err != nil {
 		return nil, 0, err
 	}
+	in.SSH = ssh.tunnel()
 	out, err := finishInstance(&in, labelsRaw, healthRaw, status, engine, kind)
 	if err != nil {
 		return nil, 0, err
@@ -298,4 +327,50 @@ func (r *InstanceRepository) SetHealth(ctx context.Context, id uuid.UUID, h inst
 		return apperr.Internal(fmt.Errorf("set instance health: %w", err))
 	}
 	return nil
+}
+
+func (r *InstanceRepository) PinSSHHostKey(ctx context.Context, id uuid.UUID, key string) error {
+	// No version bump, like health: pinning is observed state, not a user edit.
+	if _, err := r.pool.Exec(ctx,
+		`UPDATE instances SET ssh_host_key = $2
+		 WHERE id = $1 AND ssh_host IS NOT NULL AND ssh_host_key IS NULL AND deleted_at IS NULL`,
+		id, key); err != nil {
+		return apperr.Internal(fmt.Errorf("pin ssh host key: %w", err))
+	}
+	return nil
+}
+
+// sshRow is the nullable column form of an instance's SSH tunnel.
+type sshRow struct {
+	host, user, auth, secretRef, hostKey *string
+	port                                 int
+}
+
+func sshColumns(t *instancedom.SSHTunnel) sshRow {
+	if t == nil {
+		return sshRow{port: 22}
+	}
+	auth := string(t.Auth)
+	row := sshRow{host: &t.Host, port: t.Port, user: &t.User, auth: &auth, secretRef: t.SecretRef}
+	if t.HostKey != "" {
+		row.hostKey = &t.HostKey
+	}
+	return row
+}
+
+func (s sshRow) tunnel() *instancedom.SSHTunnel {
+	if s.host == nil {
+		return nil
+	}
+	t := &instancedom.SSHTunnel{Host: *s.host, Port: s.port, SecretRef: s.secretRef}
+	if s.user != nil {
+		t.User = *s.user
+	}
+	if s.auth != nil {
+		t.Auth = instancedom.SSHAuth(*s.auth)
+	}
+	if s.hostKey != nil {
+		t.HostKey = *s.hostKey
+	}
+	return t
 }

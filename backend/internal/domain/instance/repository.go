@@ -41,6 +41,11 @@ type UpdateFields struct {
 	Port        *int
 	TLSMode     *string
 	Credentials *Credentials
+	// SSH, when non-nil, sets the whole tunnel (including its pinned host
+	// key); RemoveSSH clears it. ResetSSHHostKey clears only the pin.
+	SSH             *SSHTunnel
+	RemoveSSH       bool
+	ResetSSHHostKey bool
 }
 
 // Repository is the persistence port for instances.
@@ -59,4 +64,8 @@ type Repository interface {
 	SoftDelete(ctx context.Context, id uuid.UUID) error
 	// SetHealth records the latest probe result.
 	SetHealth(ctx context.Context, id uuid.UUID, h Health) error
+	// PinSSHHostKey records the bastion host key on first use. It only
+	// writes when no key is pinned yet, so concurrent first connections
+	// cannot overwrite each other.
+	PinSSHHostKey(ctx context.Context, id uuid.UUID, key string) error
 }

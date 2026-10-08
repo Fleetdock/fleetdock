@@ -35,7 +35,11 @@ var identRe = regexp.MustCompile(`^[A-Za-z0-9_$]+$`)
 
 // dsn builds the driver DSN. It goes through mysql.Config rather than string
 // formatting so passwords containing '@', '/' or '?' cannot corrupt it.
-func (m *MariaDB) dsn(p ConnParams) string {
+func (m *MariaDB) dsn(p ConnParams) string { return m.config(p).FormatDSN() }
+
+// config builds the driver configuration. With an SSH tunnel the dial goes
+// through the bastion instead of the registered netsafe network.
+func (m *MariaDB) config(p ConnParams) *mysql.Config {
 	c := mysql.NewConfig()
 	c.User = p.User
 	c.Passwd = p.Password
@@ -50,7 +54,10 @@ func (m *MariaDB) dsn(p ConnParams) string {
 	// identical values must count as one row, or single-row edits would be
 	// refused as "not found".
 	c.ClientFoundRows = true
-	return c.FormatDSN()
+	if p.SSH != nil {
+		c.DialFunc = p.dialFunc()
+	}
+	return c
 }
 
 // mysqlTLS maps a libpq-style TLS mode onto the driver's tls parameter.
@@ -68,10 +75,11 @@ func mysqlTLS(mode string) string {
 }
 
 func (m *MariaDB) open(p ConnParams) (*sql.DB, error) {
-	db, err := sql.Open("mysql", m.dsn(p))
+	conn, err := mysql.NewConnector(m.config(p))
 	if err != nil {
 		return nil, err
 	}
+	db := sql.OpenDB(conn)
 	db.SetConnMaxLifetime(time.Minute)
 	db.SetMaxOpenConns(2)
 	return db, nil

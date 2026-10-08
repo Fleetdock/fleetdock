@@ -21,6 +21,7 @@ import (
 	secretdom "github.com/Fleetdock/fleetdock/backend/internal/domain/secret"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/sshtunnel"
 )
 
 // Secrets is the secret store surface this service needs.
@@ -45,6 +46,9 @@ type RegisterInput struct {
 	TLSMode       string // disable | prefer (default) | require | verify-full
 	Labels        map[string]string
 	Tags          []string
+	// SSHTunnel, when set, reaches an external instance through an SSH
+	// bastion; Host is then resolved on the bastion.
+	SSHTunnel *SSHTunnelInput
 }
 
 // ListParams are filter + pagination inputs for listing instances.
@@ -115,7 +119,23 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*instancedom.
 		return nil, apperr.Invalid("tls_mode", "tls_mode must be disable, prefer, require or verify-full")
 	}
 	inst.TLSMode = in.TLSMode
-	if inst.Kind == instancedom.KindExternal && inst.Host != nil {
+
+	var sshCreds *sshtunnel.Credentials
+	if in.SSHTunnel != nil {
+		if inst.Kind != instancedom.KindExternal {
+			return nil, apperr.Invalid("ssh_tunnel", "SSH tunnels are only supported for external instances")
+		}
+		inst.SSH, sshCreds, err = buildTunnel(in.SSHTunnel, nil)
+		if err != nil {
+			return nil, err
+		}
+		if err := dbtarget.CheckHost(ctx, inst.SSH.Host, inst.SSH.Port, "ssh_tunnel.host"); err != nil {
+			return nil, err
+		}
+	}
+	// Behind a tunnel the database host is resolved on the bastion (often
+	// 127.0.0.1 there), so the policy applies to the bastion only.
+	if inst.Kind == instancedom.KindExternal && inst.Host != nil && inst.SSH == nil {
 		if err := dbtarget.CheckHost(ctx, *inst.Host, inst.Port, "host"); err != nil {
 			return nil, err
 		}
@@ -128,10 +148,27 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*instancedom.
 		}
 		inst.RootSecretRef = &ref
 	}
+	if sshCreds != nil {
+		ref := sshSecretRef(inst.ID)
+		raw, err := sshCreds.Marshal()
+		if err != nil {
+			return nil, apperr.Internal(err)
+		}
+		if err := s.secrets.Put(ctx, ref, secretdom.KindSSHKey, raw); err != nil {
+			if inst.RootSecretRef != nil {
+				_ = s.secrets.Delete(ctx, *inst.RootSecretRef)
+			}
+			return nil, err
+		}
+		inst.SSH.SecretRef = &ref
+	}
 
 	if err := s.repo.Create(ctx, inst); err != nil {
 		if inst.RootSecretRef != nil {
 			_ = s.secrets.Delete(ctx, *inst.RootSecretRef)
+		}
+		if inst.SSH != nil && inst.SSH.SecretRef != nil {
+			_ = s.secrets.Delete(ctx, *inst.SSH.SecretRef)
 		}
 		return nil, err
 	}
@@ -245,7 +282,19 @@ type UpdateInput struct {
 	TLSMode  *string
 	Username *string
 	Password *string
+	// SSHTunnel sets or changes the SSH tunnel. Its secret fields may be left
+	// empty to keep the stored SSH credentials, unless the bastion host, user
+	// or auth method changes. RemoveSSHTunnel drops the tunnel;
+	// ResetSSHHostKey forgets the pinned host key so the next connection
+	// pins whatever the bastion presents.
+	SSHTunnel       *SSHTunnelInput
+	RemoveSSHTunnel bool
+	ResetSSHHostKey bool
 }
+
+// sshSecretRef is the deterministic secret reference for an instance's SSH
+// tunnel credentials.
+func sshSecretRef(id uuid.UUID) string { return "instance/" + id.String() + "/ssh" }
 
 // rootSecretRef is the deterministic secret reference for an instance's admin
 // password. Deterministic so rotation is an upsert, not a leak.
@@ -306,7 +355,26 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*insta
 		f.TLSMode = in.TLSMode
 	}
 
-	if inst.Kind == instancedom.KindExternal && (f.Host != nil || f.Port != nil) {
+	ssh, err := planSSH(inst, in)
+	if err != nil {
+		return nil, err
+	}
+	f.SSH, f.RemoveSSH, f.ResetSSHHostKey = ssh.tunnel, ssh.remove, ssh.resetPin
+	if ssh.tunnel != nil {
+		if err := dbtarget.CheckHost(ctx, ssh.tunnel.Host, ssh.tunnel.Port, "ssh_tunnel.host"); err != nil {
+			return nil, err
+		}
+	}
+	// Re-routing the connection (adding, moving or removing the bastion)
+	// would hand the stored admin password to whatever answers on the new
+	// route, exactly like a host change.
+	if ssh.rerouted && inst.RootSecretRef != nil && in.Password == nil &&
+		(in.Username == nil || strings.TrimSpace(*in.Username) != "") {
+		return nil, apperr.Invalid("password", "re-enter the admin password when changing the SSH tunnel")
+	}
+	tunnelled := (inst.SSH != nil && !ssh.remove) || ssh.tunnel != nil
+
+	if inst.Kind == instancedom.KindExternal && !tunnelled && (f.Host != nil || f.Port != nil || ssh.remove) {
 		host, port := "", inst.Port
 		if inst.Host != nil {
 			host = *inst.Host
@@ -337,11 +405,32 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*insta
 			return nil, err
 		}
 	}
+	if ssh.putBefore {
+		if err := s.secrets.Put(ctx, ssh.ref, secretdom.KindSSHKey, ssh.secret); err != nil {
+			if plan.putBefore {
+				_ = s.secrets.Delete(ctx, plan.ref)
+			}
+			return nil, err
+		}
+	}
 	if err := s.repo.Update(ctx, inst.ID, f); err != nil {
 		if plan.putBefore {
 			_ = s.secrets.Delete(ctx, plan.ref)
 		}
+		if ssh.putBefore {
+			_ = s.secrets.Delete(ctx, ssh.ref)
+		}
 		return nil, err
+	}
+	switch {
+	case ssh.putAfter:
+		if err := s.secrets.Put(ctx, ssh.ref, secretdom.KindSSHKey, ssh.secret); err != nil {
+			return nil, err
+		}
+	case ssh.deleteAfter:
+		if err := s.secrets.Delete(ctx, ssh.ref); err != nil {
+			return nil, err
+		}
 	}
 	switch {
 	case plan.putAfter:
@@ -598,6 +687,11 @@ func (s *Service) connParams(ctx context.Context, inst *instancedom.Instance) (e
 		}
 		conn.Password = string(pw)
 	}
+	tunnel, err := dbtarget.Tunnel(ctx, s.secrets, s.repo, inst, "ssh_tunnel")
+	if err != nil {
+		return conn, err
+	}
+	conn.SSH = tunnel
 	return conn, nil
 }
 

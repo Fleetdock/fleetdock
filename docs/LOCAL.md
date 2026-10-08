@@ -73,11 +73,13 @@ anywhere**, then enter the host, port and an admin login.
 | --- | --- |
 | On this same computer (installed directly, or in its own Docker container with a published port) | `host.docker.internal` |
 | Another machine on your network | its IP address or hostname, e.g. `192.168.1.20` |
-| Behind an SSH tunnel you opened on this computer | `host.docker.internal` and the tunnel's local port |
+| Only reachable through an SSH server (bastion / jump host) | the database's address **as seen from the SSH server** (e.g. `127.0.0.1` if it runs there), then tick **Connect through an SSH tunnel** and enter the SSH server's details |
 | A hosted database (RDS, Neon, …) | its hostname, as your provider shows it |
 
 Do **not** enter `localhost` or `127.0.0.1`: Fleetdock runs in a container, so
-those mean the container itself, and Fleetdock refuses them.
+those mean the container itself, and Fleetdock refuses them. The exception is
+an SSH tunnel: there the host is looked up on the SSH server, so `127.0.0.1`
+means the SSH server itself.
 
 A database running on this computer must listen on an address Docker can reach.
 PostgreSQL in particular often listens on `127.0.0.1` only — set

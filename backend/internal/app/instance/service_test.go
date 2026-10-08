@@ -60,6 +60,17 @@ func (r *fakeRepo) Update(_ context.Context, id uuid.UUID, f instancedom.UpdateF
 		in.Username = f.Credentials.Username
 		in.RootSecretRef = f.Credentials.RootSecretRef
 	}
+	switch {
+	case f.RemoveSSH:
+		in.SSH = nil
+	case f.SSH != nil:
+		t := *f.SSH
+		in.SSH = &t
+	case f.ResetSSHHostKey && in.SSH != nil:
+		t := *in.SSH
+		t.HostKey = ""
+		in.SSH = &t
+	}
 	return nil
 }
 
@@ -354,3 +365,4 @@ func TestUpdate_RejectsBadTLSMode(t *testing.T) {
 }
 
 func (r *fakeRepo) SetHealth(context.Context, uuid.UUID, instancedom.Health) error { return nil }
+func (r *fakeRepo) PinSSHHostKey(context.Context, uuid.UUID, string) error         { return nil }

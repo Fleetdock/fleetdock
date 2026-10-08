@@ -105,6 +105,9 @@ func (s *Service) target(ctx context.Context, instanceID string) (*instancedom.I
 		return nil, nil, engine.ConnParams{}, apperr.Internal(err)
 	}
 	conn.Password = string(pw)
+	if conn.SSH, err = dbtarget.Tunnel(ctx, s.secrets, s.instances, inst, "instance_id"); err != nil {
+		return nil, nil, engine.ConnParams{}, err
+	}
 	return inst, admin, conn, nil
 }
 

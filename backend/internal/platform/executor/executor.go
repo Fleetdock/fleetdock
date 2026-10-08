@@ -15,12 +15,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/sshtunnel"
 )
 
 // Payload is the enriched, credential-bearing input for one operation.
@@ -142,7 +145,12 @@ func Execute(ctx context.Context, jobType string, p *Payload, sink LogSink) (jso
 // runBackup dumps one database, gzips it into a temp file (hashing as it
 // goes), then uploads it via the presigned PUT URL.
 func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink) (*Result, error) {
-	binaries, args, env := eng.DumpArgs(p.Conn, p.Database)
+	conn, closeTunnel, err := cliConn(ctx, p.Conn, sink)
+	if err != nil {
+		return nil, err
+	}
+	defer closeTunnel()
+	binaries, args, env := eng.DumpArgs(conn, p.Database)
 	bin, err := lookPath(binaries)
 	if err != nil {
 		return nil, err
@@ -259,7 +267,12 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload, sink LogSink
 		stream = newPGDumpCompat(gz)
 	}
 
-	binaries, args, env := eng.RestoreArgs(p.Conn, p.Database)
+	conn, closeTunnel, err := cliConn(ctx, p.Conn, sink)
+	if err != nil {
+		return nil, err
+	}
+	defer closeTunnel()
+	binaries, args, env := eng.RestoreArgs(conn, p.Database)
 	bin, err := lookPath(binaries)
 	if err != nil {
 		return nil, err
@@ -284,6 +297,24 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload, sink LogSink
 	}
 	sink.Log("info", fmt.Sprintf("restore verified: %d tables", tables))
 	return &Result{OK: true, TableCount: tables}, nil
+}
+
+// cliConn returns the parameters the dump/restore CLI tools should use. The
+// tools dial the database themselves, so an SSH tunnel is exposed to them as
+// a local 127.0.0.1 port forward that lives until the returned close runs.
+func cliConn(ctx context.Context, c engine.ConnParams, sink LogSink) (engine.ConnParams, func(), error) {
+	if c.SSH == nil {
+		return c, func() {}, nil
+	}
+	sink.Log("info", fmt.Sprintf("opening SSH tunnel via %s@%s", c.SSH.User, c.SSH.Host))
+	local, closeFn, err := sshtunnel.Forward(ctx, c.SSH, net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	if err != nil {
+		return c, nil, err
+	}
+	host, ps, _ := net.SplitHostPort(local)
+	port, _ := strconv.Atoi(ps)
+	c.Host, c.Port, c.SSH = host, port, nil
+	return c, closeFn, nil
 }
 
 func downloadToTemp(ctx context.Context, getURL string) (*os.File, error) {

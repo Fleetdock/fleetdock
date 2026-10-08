@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Connect external databases through an SSH tunnel.** An external database
+  server can be reached through an SSH bastion, signing in with a private key
+  (optionally passphrase-protected) or a password. The SSH secret is stored
+  encrypted; the bastion's host key is pinned on the first connection and any
+  later change is refused until it is reset from the database server's page.
+  Live administration, monitoring, discovery, backups and restores all go
+  through the tunnel. Public endpoints are not available for these servers.
 - `fleetdock port [<n>]` shows or changes a local install's dashboard port.
   `fleetdock config get` says when a setting is not set instead of printing
   nothing.

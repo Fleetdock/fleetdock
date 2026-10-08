@@ -11,6 +11,10 @@ import { ENGINE_IDS, ENGINES, type EngineId } from "@/lib/engines";
 import { useCreateInstance, useDatabases, useProbeInstance, useProvisionInstance, useServers } from "@/lib/hooks";
 import type { Instance, TLSMode } from "@/lib/types";
 
+import { sshDraft, sshInput } from "@/lib/ssh-tunnel";
+
+import { SSHTunnelFields } from "./ssh-tunnel-fields";
+
 type Mode = "provision" | "register" | "external";
 
 const MODES: { id: Mode; icon: ReactNode; title: string; text: string }[] = [
@@ -62,6 +66,7 @@ export function AddServerWizard({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [tls, setTls] = useState<TLSMode>("prefer");
+  const [ssh, setSsh] = useState(sshDraft());
   const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState<{ instance: Instance; operationId?: string } | null>(null);
 
@@ -75,6 +80,7 @@ export function AddServerWizard({
     setHost("");
     setUsername("");
     setPassword("");
+    setSsh(sshDraft());
     setError(null);
     setDone(null);
     onClose();
@@ -105,6 +111,7 @@ export function AddServerWizard({
           username: username || undefined,
           password: password || undefined,
           tls_mode: tls,
+          ssh_tunnel: mode === "external" && ssh.enabled ? sshInput(ssh) : undefined,
         });
         setDone({ instance: inst });
         // Check it right away instead of waiting for the next minute's probe,
@@ -218,10 +225,13 @@ export function AddServerWizard({
           </div>
 
           {mode === "external" ? (
-            <Field label="Host" hint="Hostname or IP address Fleetdock can reach."
-              help={<>On the same computer as Fleetdock? Use <code>host.docker.internal</code> — <code>localhost</code> would mean Fleetdock&apos;s own container.</>} error={fieldError(error, "host")}>
-              <input className="input" value={host} onChange={(e) => setHost(e.target.value)} placeholder="db.example.com" required />
-            </Field>
+            <>
+              <Field label="Host" hint={ssh.enabled ? "Hostname or IP address as seen from the SSH server." : "Hostname or IP address Fleetdock can reach."}
+                help={<>On the same computer as Fleetdock? Use <code>host.docker.internal</code> — <code>localhost</code> would mean Fleetdock&apos;s own container.</>} error={fieldError(error, "host")}>
+                <input className="input" value={host} onChange={(e) => setHost(e.target.value)} placeholder={ssh.enabled ? "127.0.0.1" : "db.example.com"} required />
+              </Field>
+              <SSHTunnelFields value={ssh} onChange={setSsh} error={error} />
+            </>
           ) : null}
 
           {mode !== "provision" ? (

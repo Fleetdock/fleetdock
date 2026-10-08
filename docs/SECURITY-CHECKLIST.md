@@ -45,7 +45,9 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 
 - [ ] The control plane connects **directly** to external DB host:port for backups, restores, and live admin
 - [ ] Ensure the API host can reach those ports (security group / firewall rule)
-- [ ] Prefer private network paths (VPC peering, WireGuard) over public internet
+- [ ] Prefer private network paths (VPC peering, WireGuard, or an SSH tunnel through a bastion) over public internet
+- [ ] **SSH tunnels:** use a dedicated bastion user that may only port-forward (e.g. `restrict,port-forwarding,permitopen="db:5432"` in `authorized_keys`), and a key rather than a password. The key is stored envelope-encrypted like other secrets
+- [ ] The bastion's host key is pinned on the first connection (trust on first use). Check the fingerprint shown on the database server's page against the bastion, and reset the pin only when you know its key changed
 - [ ] Use least-privilege DB users for instance admin credentials stored in Fleetdock
 - [ ] **Notification webhooks** are fetched through an SSRF-guarded client that refuses loopback, link-local and cloud-metadata addresses at dial time. RFC1918 stays reachable for LAN targets, so keep `notification:write` restricted to trusted roles
 

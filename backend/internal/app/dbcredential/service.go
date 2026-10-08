@@ -329,6 +329,9 @@ func (s *Service) adminTarget(ctx context.Context, databaseID string) (*database
 		return nil, nil, nil, engine.ConnParams{}, err
 	}
 	conn.Password = string(pw)
+	if conn.SSH, err = dbtarget.Tunnel(ctx, s.secrets, s.instances, inst, "instance"); err != nil {
+		return nil, nil, nil, engine.ConnParams{}, err
+	}
 	return db, inst, admin, conn, nil
 }
 

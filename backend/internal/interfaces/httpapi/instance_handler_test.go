@@ -52,6 +52,13 @@ func (r *memInstances) Update(_ context.Context, id uuid.UUID, f instancedom.Upd
 	if f.Credentials != nil {
 		in.Username, in.RootSecretRef = f.Credentials.Username, f.Credentials.RootSecretRef
 	}
+	switch {
+	case f.RemoveSSH:
+		in.SSH = nil
+	case f.SSH != nil:
+		t := *f.SSH
+		in.SSH = &t
+	}
 	return nil
 }
 func (r *memInstances) SetRootSecretRef(context.Context, uuid.UUID, string) error { return nil }
@@ -151,3 +158,43 @@ func TestUpdateInstance_ClearCredentials(t *testing.T) {
 }
 
 func (r *memInstances) SetHealth(context.Context, uuid.UUID, instancedom.Health) error { return nil }
+func (r *memInstances) PinSSHHostKey(context.Context, uuid.UUID, string) error         { return nil }
+
+func TestUpdateInstance_SSHTunnelNeverEchoesSecrets(t *testing.T) {
+	h, inst, secrets := newInstanceTestServer(t)
+
+	rr := patchInstance(t, h, inst.ID, map[string]any{
+		"password": "s3cret",
+		"ssh_tunnel": map[string]any{
+			"host": "bastion.example.com", "username": "jump", "auth_method": "password", "password": "tunnel-secret",
+		},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body)
+	}
+	if strings.Contains(rr.Body.String(), "tunnel-secret") || strings.Contains(rr.Body.String(), "s3cret") {
+		t.Fatal("response must never include SSH or admin secrets")
+	}
+	var got struct {
+		SSHTunnel *struct {
+			Host               string  `json:"host"`
+			Port               int     `json:"port"`
+			Username           string  `json:"username"`
+			AuthMethod         string  `json:"auth_method"`
+			HostKeyFingerprint *string `json:"host_key_fingerprint"`
+		} `json:"ssh_tunnel"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &got)
+	if got.SSHTunnel == nil || got.SSHTunnel.Host != "bastion.example.com" || got.SSHTunnel.Port != 22 ||
+		got.SSHTunnel.AuthMethod != "password" || got.SSHTunnel.HostKeyFingerprint != nil {
+		t.Fatalf("ssh_tunnel = %+v", got.SSHTunnel)
+	}
+	if _, ok := secrets["instance/"+inst.ID.String()+"/ssh"]; !ok {
+		t.Fatal("SSH secret should be stored")
+	}
+
+	rr = patchInstance(t, h, inst.ID, map[string]any{"remove_ssh_tunnel": true, "password": "s3cret"})
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"ssh_tunnel":null`) {
+		t.Fatalf("remove: status = %d, body = %s", rr.Code, rr.Body)
+	}
+}

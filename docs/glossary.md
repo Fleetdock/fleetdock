@@ -25,6 +25,8 @@ the API call the same thing; keep using those names in code.
 | Schedule, "how often" | cron job | `backup_schedules` |
 | Keep backups for N days | retention | `retention_days` |
 | Encryption | TLS mode | `tls_mode` |
+| Connect through an SSH tunnel | SSH tunnel, bastion | `ssh_tunnel` |
+| Host key ("Reset") | pinned SSH host key (TOFU) | `host_key_fingerprint`, `reset_ssh_host_key` |
 | Database users / Access | users & grants | `db-users`, grants |
 | API token | — | `api_tokens` |
 
