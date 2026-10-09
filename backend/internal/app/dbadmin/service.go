@@ -39,6 +39,7 @@ type Secrets interface {
 type Access interface {
 	Conn(ctx context.Context, t dbaccessapp.Target, mode dbaccessdom.Mode) (engine.ConnParams, error)
 	Reapply(ctx context.Context, t dbaccessapp.Target, mode dbaccessdom.Mode) error
+	Repair(ctx context.Context, t dbaccessapp.Target, mode dbaccessdom.Mode) error
 }
 
 // Service implements live DB administration use cases.
@@ -177,6 +178,23 @@ func (s *Service) scoped(ctx context.Context, databaseID string, mode dbaccessdo
 	conn.StatementTimeout = timeout
 
 	err = fn(cctx, db, admin, conn)
+	if err != nil && engine.IsLoginRejected(err) {
+		// The role was dropped or changed outside Fleetdock; restore it.
+		if rerr := s.access.Repair(cctx, t, mode); rerr != nil {
+			slog.Warn("repair database access role", "database_id", db.ID, "error", rerr.Error())
+		} else if conn, err = s.access.Conn(cctx, t, mode); err != nil {
+			return err
+		} else {
+			conn.StatementTimeout = timeout
+			err = fn(cctx, db, admin, conn)
+		}
+		if err != nil && engine.IsLoginRejected(err) {
+			return apperr.Invalid("instance", fmt.Sprintf(
+				"the database rejected Fleetdock's per-database login %q (the instance admin login is not used here); "+
+					"allow this account in the server's host rules (pg_hba.conf, MySQL account hosts) and any connection pooler",
+				conn.User))
+		}
+	}
 	if err != nil && engine.IsPermissionDenied(err) {
 		if rerr := s.access.Reapply(cctx, t, mode); rerr == nil {
 			err = fn(cctx, db, admin, conn)

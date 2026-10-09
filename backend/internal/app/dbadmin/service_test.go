@@ -42,10 +42,12 @@ type staticSecrets struct{}
 
 func (staticSecrets) Get(context.Context, string) ([]byte, error) { return []byte("rootpw"), nil }
 
-// fakeAccess hands out a recognisable role per mode and counts re-grants.
+// fakeAccess hands out a recognisable role per mode and counts re-grants
+// and repairs.
 type fakeAccess struct {
 	modes    []dbaccessdom.Mode
 	reapply  int
+	repair   int
 	lastRoot engine.ConnParams
 }
 
@@ -62,12 +64,19 @@ func (a *fakeAccess) Reapply(context.Context, dbaccessapp.Target, dbaccessdom.Mo
 	return nil
 }
 
+func (a *fakeAccess) Repair(context.Context, dbaccessapp.Target, dbaccessdom.Mode) error {
+	a.repair++
+	return nil
+}
+
 // fakeEngine records which user ran each batch.
 type fakeEngine struct {
 	engine.Admin
-	users      []string
-	denyFirst  bool
-	writeFlags []bool
+	users     []string
+	denyFirst bool
+	// rejectLogins makes that many batches fail as a refused login.
+	rejectLogins int
+	writeFlags   []bool
 	// failAt makes statement failAt (0-based) of every batch fail with a
 	// permission error; -1 disables.
 	failAt  int
@@ -88,6 +97,10 @@ func (e *fakeEngine) QueryBatch(ctx context.Context, p engine.ConnParams, _ stri
 		case <-ctx.Done():
 			return nil, &engine.BatchError{Index: 0, Err: ctx.Err()}
 		}
+	}
+	if e.rejectLogins > 0 {
+		e.rejectLogins--
+		return nil, &mysql.MySQLError{Number: 1045, Message: "Access denied for user 'fleetdock_ro'@'10.0.0.1' (using password: YES)"}
 	}
 	denied := &mysql.MySQLError{Number: 1142, Message: "command denied"}
 	if e.denyFirst {
@@ -191,6 +204,29 @@ func TestQuery_PermissionDeniedReappliesGrantsAndRetries(t *testing.T) {
 	}
 	if acc.reapply != 1 || len(eng.users) != 2 {
 		t.Errorf("reapply=%d calls=%d, want 1 re-grant and 2 attempts", acc.reapply, len(eng.users))
+	}
+}
+
+func TestQuery_RejectedLoginRepairsRoleAndRetries(t *testing.T) {
+	svc, acc, eng := fixture(t, databasedom.StatusActive)
+	eng.rejectLogins = 1
+	if _, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "SELECT 1", Limit: 10}); err != nil {
+		t.Fatalf("expected the retry to succeed: %v", err)
+	}
+	if acc.repair != 1 || len(eng.users) != 2 {
+		t.Errorf("repair=%d calls=%d, want 1 repair and 2 attempts", acc.repair, len(eng.users))
+	}
+}
+
+func TestQuery_LoginStillRejectedNamesTheRole(t *testing.T) {
+	svc, acc, eng := fixture(t, databasedom.StatusActive)
+	eng.rejectLogins = 2
+	_, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "SELECT 1", Limit: 10})
+	if apperr.KindOf(err) != apperr.KindInvalid || !strings.Contains(err.Error(), "fleetdock_ro") {
+		t.Fatalf("err = %v, want an invalid error naming the console role", err)
+	}
+	if acc.repair != 1 || len(eng.users) != 2 {
+		t.Errorf("repair=%d calls=%d, want a single repair and retry", acc.repair, len(eng.users))
 	}
 }
 
