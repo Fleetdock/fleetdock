@@ -234,3 +234,25 @@ func TestUsernameFitsMySQLLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestRepair_RecreatesDroppedAccountWithStoredPassword(t *testing.T) {
+	svc, admin, _, tgt := fixture()
+	ctx := context.Background()
+	conn, err := svc.Conn(ctx, tgt, dbaccessdom.ModeRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Dropped outside Fleetdock, e.g. from the Users page.
+	delete(admin.users, conn.User)
+	delete(admin.profiles, conn.User)
+
+	if err := svc.Repair(ctx, tgt, dbaccessdom.ModeRead); err != nil {
+		t.Fatalf("Repair: %v", err)
+	}
+	if admin.users[conn.User] != conn.Password {
+		t.Error("account should be recreated with the stored password")
+	}
+	if admin.profiles[conn.User] != engine.ProfileReadonly {
+		t.Errorf("profile = %q, want readonly re-applied", admin.profiles[conn.User])
+	}
+}

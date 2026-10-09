@@ -198,3 +198,24 @@ func RotatePassword(ctx context.Context, admin Admin, p ConnParams, user, host, 
 		return fmt.Errorf("engine does not support password rotation")
 	}
 }
+
+// ResetLogin makes an existing account usable with the given password again.
+// On PostgreSQL it also restores LOGIN, which DropDBUser revokes when the role
+// itself cannot be removed.
+func ResetLogin(ctx context.Context, admin Admin, p ConnParams, user, host, password string) error {
+	a, ok := admin.(*Postgres)
+	if !ok {
+		return RotatePassword(ctx, admin, p, user, host, password)
+	}
+	if !validPGRole(user) {
+		return fmt.Errorf("invalid role name")
+	}
+	conn, err := a.connect(ctx, p, "postgres")
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	_, err = conn.Exec(ctx, fmt.Sprintf(
+		"ALTER ROLE %s WITH LOGIN PASSWORD %s", quotePGIdent(user), pgPasswordLiteral(password)))
+	return err
+}

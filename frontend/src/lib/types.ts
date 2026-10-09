@@ -44,7 +44,17 @@ export interface Instance {
   version: number;
   /** SSH bastion this external instance is reached through; null when direct. */
   ssh_tunnel?: SSHTunnel | null;
+  /** Login the table browser, SQL console, exports and imports connect as. */
+  data_access?: DataAccess;
+  data_username?: string | null;
 }
+
+/**
+ * admin   — the instance's admin login (instance administrators only);
+ * login   — a dedicated login (data_username);
+ * managed — read-only / read-write roles Fleetdock creates per database.
+ */
+export type DataAccess = "admin" | "login" | "managed";
 
 export type SSHAuthMethod = "password" | "key";
 
@@ -305,6 +315,9 @@ export interface CreateInstanceInput {
   password?: string;
   tls_mode?: TLSMode;
   ssh_tunnel?: SSHTunnelInput;
+  data_access?: DataAccess;
+  data_username?: string;
+  data_password?: string;
 }
 
 // UpdateInstanceInput is a partial update: omitted keys are left unchanged.
@@ -323,6 +336,10 @@ export interface UpdateInstanceInput {
   ssh_tunnel?: SSHTunnelInput;
   remove_ssh_tunnel?: boolean;
   reset_ssh_host_key?: boolean;
+  data_access?: DataAccess;
+  data_username?: string;
+  /** Omit to keep the stored data password. */
+  data_password?: string;
 }
 
 export interface CreateDatabaseInput {

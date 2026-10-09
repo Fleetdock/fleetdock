@@ -9,6 +9,7 @@ import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "r
 import { ChevronDown, ChevronRight, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table";
 import { DeleteInstanceModal } from "@/components/delete-instance-modal";
+import { DataAccessFields } from "@/components/database/data-access-fields";
 import { SSHTunnelFields } from "@/components/database/ssh-tunnel-fields";
 import { HealthBadge, InstanceMonitoring } from "@/components/instance-monitoring";
 import {
@@ -30,6 +31,7 @@ import { engineLabel } from "@/lib/engines";
 import { fieldError, friendlyError } from "@/lib/errors";
 import { ApiError } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
+import { DATA_ACCESS_LABELS, dataAccessChanged, dataAccessDraft, dataAccessInput } from "@/lib/data-access";
 import { sshChanged, sshDraft, sshInput } from "@/lib/ssh-tunnel";
 import {
   LIST_PAGE_SIZE,
@@ -136,6 +138,14 @@ function InstanceDetail() {
           <Detail label="Address" value={where} />
           <Detail label="Admin user" value={instance.username ?? "—"} />
           <Detail label="Encryption" value={TLS_LABEL[instance.tls_mode ?? "prefer"]} />
+          <Detail
+            label="Data browsing as"
+            value={
+              instance.data_access === "login" && instance.data_username
+                ? instance.data_username
+                : DATA_ACCESS_LABELS[instance.data_access ?? "admin"]
+            }
+          />
           {instance.ssh_tunnel ? (
             <Detail label="SSH tunnel" value={<SSHTunnelDetail instance={instance} canWrite={can("instance:write")} />} />
           ) : null}
@@ -226,6 +236,7 @@ function EditInstanceModal({
   const [clearPassword, setClearPassword] = useState(false);
   const [tlsMode, setTlsMode] = useState<TLSMode>("prefer");
   const [ssh, setSsh] = useState(sshDraft());
+  const [dataAccess, setDataAccess] = useState(dataAccessDraft());
   const [error, setError] = useState<unknown>(null);
 
   // Re-seed the form whenever a different instance is opened.
@@ -239,6 +250,7 @@ function EditInstanceModal({
     setClearPassword(false);
     setTlsMode(instance.tls_mode ?? "prefer");
     setSsh(sshDraft(instance.ssh_tunnel));
+    setDataAccess(dataAccessDraft(instance));
     setError(null);
   }, [instance]);
 
@@ -254,6 +266,12 @@ function EditInstanceModal({
     ssh.enabled !== !!saved ||
     (ssh.enabled && !!saved && (ssh.host.trim() !== saved.host || (Number(ssh.port) || 22) !== saved.port));
   const needsPassword = (hostChanged || tunnelRerouted) && instance.has_credentials && !clearPassword && username !== "";
+  // The stored data login password stays usable only for the same username and route.
+  const keepsDataPassword =
+    instance.data_access === "login" &&
+    dataAccess.username.trim() === (instance.data_username ?? "") &&
+    !hostChanged &&
+    !tunnelRerouted;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -276,6 +294,9 @@ function EditInstanceModal({
     if (instance.kind === "external" && sshChanged(ssh, instance.ssh_tunnel)) {
       if (ssh.enabled) input.ssh_tunnel = sshInput(ssh);
       else input.remove_ssh_tunnel = true;
+    }
+    if (dataAccessChanged(dataAccess, instance) || (!keepsDataPassword && dataAccess.mode === "login")) {
+      Object.assign(input, dataAccessInput(dataAccess));
     }
 
     try {
@@ -372,6 +393,9 @@ function EditInstanceModal({
             Remove the stored password (makes this instance metadata-only)
           </label>
         ) : null}
+
+        <div style={{ marginTop: "1rem" }} />
+        <DataAccessFields value={dataAccess} onChange={setDataAccess} error={error} hasStoredLogin={keepsDataPassword} />
 
         <ErrorText message={error ? (error instanceof ApiError ? error.message : "Failed to save the changes") : undefined} />
         <div className="flex items-center justify-end gap-2" style={{ marginTop: ".8rem" }}>

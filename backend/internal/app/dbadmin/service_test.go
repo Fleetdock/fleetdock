@@ -42,10 +42,12 @@ type staticSecrets struct{}
 
 func (staticSecrets) Get(context.Context, string) ([]byte, error) { return []byte("rootpw"), nil }
 
-// fakeAccess hands out a recognisable role per mode and counts re-grants.
+// fakeAccess hands out a recognisable role per mode and counts re-grants
+// and repairs.
 type fakeAccess struct {
 	modes    []dbaccessdom.Mode
 	reapply  int
+	repair   int
 	lastRoot engine.ConnParams
 }
 
@@ -62,12 +64,19 @@ func (a *fakeAccess) Reapply(context.Context, dbaccessapp.Target, dbaccessdom.Mo
 	return nil
 }
 
+func (a *fakeAccess) Repair(context.Context, dbaccessapp.Target, dbaccessdom.Mode) error {
+	a.repair++
+	return nil
+}
+
 // fakeEngine records which user ran each batch.
 type fakeEngine struct {
 	engine.Admin
-	users      []string
-	denyFirst  bool
-	writeFlags []bool
+	users     []string
+	denyFirst bool
+	// rejectLogins makes that many batches fail as a refused login.
+	rejectLogins int
+	writeFlags   []bool
 	// failAt makes statement failAt (0-based) of every batch fail with a
 	// permission error; -1 disables.
 	failAt  int
@@ -89,6 +98,10 @@ func (e *fakeEngine) QueryBatch(ctx context.Context, p engine.ConnParams, _ stri
 			return nil, &engine.BatchError{Index: 0, Err: ctx.Err()}
 		}
 	}
+	if e.rejectLogins > 0 {
+		e.rejectLogins--
+		return nil, &mysql.MySQLError{Number: 1045, Message: "Access denied for user 'fleetdock_ro'@'10.0.0.1' (using password: YES)"}
+	}
 	denied := &mysql.MySQLError{Number: 1142, Message: "command denied"}
 	if e.denyFirst {
 		e.denyFirst = false
@@ -104,12 +117,19 @@ func (e *fakeEngine) QueryBatch(ctx context.Context, p engine.ConnParams, _ stri
 	return out, nil
 }
 
+// fixture runs interactive work as Fleetdock-managed roles.
 func fixture(t *testing.T, status databasedom.Status) (*Service, *fakeAccess, *fakeEngine) {
+	t.Helper()
+	return fixtureWith(t, status, func(inst *instancedom.Instance) { inst.DataAccess = instancedom.DataAccessManaged })
+}
+
+func fixtureWith(t *testing.T, status databasedom.Status, setup func(*instancedom.Instance)) (*Service, *fakeAccess, *fakeEngine) {
 	t.Helper()
 	user, host := "root", "db.example.com"
 	ref := "instance/x/root"
 	inst := &instancedom.Instance{ID: uuid.New(), Engine: "fake-test-engine", Kind: instancedom.KindExternal,
 		Host: &host, Port: 3306, Username: &user, RootSecretRef: &ref}
+	setup(inst)
 	db := &databasedom.Database{ID: uuid.New(), InstanceID: inst.ID, Name: "app", Status: status}
 	eng := &fakeEngine{failAt: -1}
 	engine.Register("fake-test-engine", fakeClient{eng})
@@ -191,6 +211,81 @@ func TestQuery_PermissionDeniedReappliesGrantsAndRetries(t *testing.T) {
 	}
 	if acc.reapply != 1 || len(eng.users) != 2 {
 		t.Errorf("reapply=%d calls=%d, want 1 re-grant and 2 attempts", acc.reapply, len(eng.users))
+	}
+}
+
+func TestQuery_AdminModeRunsAsAdminLogin(t *testing.T) {
+	svc, acc, eng := fixtureWith(t, databasedom.StatusActive, func(*instancedom.Instance) {})
+	if _, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "SELECT 1", Limit: 10, AllowWrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(acc.modes) != 0 {
+		t.Errorf("no managed role should be provisioned in admin mode, got %v", acc.modes)
+	}
+	if eng.users[0] != "root" || eng.writeFlags[0] {
+		t.Errorf("ran as %q (write=%v), want root read-only for a SELECT", eng.users[0], eng.writeFlags[0])
+	}
+}
+
+func TestQuery_LoginModeRunsAsDataLogin(t *testing.T) {
+	user, ref := "app_reader", "instance/x/data"
+	svc, acc, eng := fixtureWith(t, databasedom.StatusActive, func(inst *instancedom.Instance) {
+		inst.DataAccess, inst.DataUsername, inst.DataSecretRef = instancedom.DataAccessLogin, &user, &ref
+	})
+	if _, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "DELETE FROM t", Limit: 10, AllowWrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(acc.modes) != 0 || eng.users[0] != "app_reader" {
+		t.Errorf("modes=%v user=%q, want the data login and no managed role", acc.modes, eng.users[0])
+	}
+}
+
+func TestQuery_LoginModeRejectedLoginIsNotRepaired(t *testing.T) {
+	user, ref := "app_reader", "instance/x/data"
+	svc, acc, eng := fixtureWith(t, databasedom.StatusActive, func(inst *instancedom.Instance) {
+		inst.DataAccess, inst.DataUsername, inst.DataSecretRef = instancedom.DataAccessLogin, &user, &ref
+	})
+	eng.rejectLogins = 1
+	_, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "SELECT 1", Limit: 10})
+	if apperr.KindOf(err) != apperr.KindInvalid || !strings.Contains(err.Error(), "app_reader") {
+		t.Fatalf("err = %v, want an invalid error naming the data login", err)
+	}
+	if acc.repair != 0 || len(eng.users) != 1 {
+		t.Errorf("repair=%d calls=%d, a configured login must not be touched or retried", acc.repair, len(eng.users))
+	}
+}
+
+func TestDataAccess_ReportsMode(t *testing.T) {
+	svc, _, _ := fixtureWith(t, databasedom.StatusActive, func(*instancedom.Instance) {})
+	info, err := svc.DataAccess(context.Background(), uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode != instancedom.DataAccessAdmin {
+		t.Errorf("mode = %q, want admin by default", info.Mode)
+	}
+}
+
+func TestQuery_RejectedLoginRepairsRoleAndRetries(t *testing.T) {
+	svc, acc, eng := fixture(t, databasedom.StatusActive)
+	eng.rejectLogins = 1
+	if _, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "SELECT 1", Limit: 10}); err != nil {
+		t.Fatalf("expected the retry to succeed: %v", err)
+	}
+	if acc.repair != 1 || len(eng.users) != 2 {
+		t.Errorf("repair=%d calls=%d, want 1 repair and 2 attempts", acc.repair, len(eng.users))
+	}
+}
+
+func TestQuery_LoginStillRejectedNamesTheRole(t *testing.T) {
+	svc, acc, eng := fixture(t, databasedom.StatusActive)
+	eng.rejectLogins = 2
+	_, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "SELECT 1", Limit: 10})
+	if apperr.KindOf(err) != apperr.KindInvalid || !strings.Contains(err.Error(), "fleetdock_ro") {
+		t.Fatalf("err = %v, want an invalid error naming the console role", err)
+	}
+	if acc.repair != 1 || len(eng.users) != 2 {
+		t.Errorf("repair=%d calls=%d, want a single repair and retry", acc.repair, len(eng.users))
 	}
 }
 

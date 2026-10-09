@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -178,6 +179,51 @@ func (s *Service) Reapply(ctx context.Context, t Target, mode dbaccessdom.Mode) 
 	if err := engine.ApplyConsoleProfile(ctx, t.Admin, t.Root, role.Username, accountHost, t.Database.Name, mode == dbaccessdom.ModeWrite); err != nil {
 		return apperr.FromEngine(fmt.Errorf("re-grant access role: %w", err), "database")
 	}
+	return s.roles.Touch(ctx, t.Database.ID, mode)
+}
+
+// Repair restores a role the server no longer accepts the login of — the
+// account was dropped or its password changed outside Fleetdock (e.g. from
+// the Users page, or the instance now points at a restored or rebuilt
+// server). The account is reset to the stored password, recreated if it is
+// gone, and its grants re-applied. A role that was never provisioned is
+// provisioned instead.
+func (s *Service) Repair(ctx context.Context, t Target, mode dbaccessdom.Mode) error {
+	role, err := s.roles.Get(ctx, t.Database.ID, mode)
+	if err != nil {
+		if apperr.KindOf(err) == apperr.KindNotFound {
+			_, err = s.provision(ctx, t, mode)
+		}
+		return err
+	}
+	l := s.lockFor(t.Database.ID.String() + "/" + string(mode))
+	l.Lock()
+	defer l.Unlock()
+
+	pw, err := s.secrets.Get(ctx, role.SecretRef)
+	if err != nil {
+		if apperr.KindOf(err) != apperr.KindNotFound {
+			return apperr.Internal(fmt.Errorf("load access role secret: %w", err))
+		}
+		// The secret is lost; the account gets a new password.
+		p, gerr := genPassword()
+		if gerr != nil {
+			return apperr.Internal(gerr)
+		}
+		if err := s.secrets.Put(ctx, role.SecretRef, secretKind(t.Instance), []byte(p)); err != nil {
+			return err
+		}
+		pw = []byte(p)
+	}
+	if rerr := engine.ResetLogin(ctx, t.Admin, t.Root, role.Username, accountHost, string(pw)); rerr != nil {
+		if cerr := t.Admin.CreateDBUser(ctx, t.Root, role.Username, accountHost, string(pw)); cerr != nil {
+			return apperr.FromEngine(fmt.Errorf("restore access role: %w", errors.Join(rerr, cerr)), "database")
+		}
+	}
+	if err := engine.ApplyConsoleProfile(ctx, t.Admin, t.Root, role.Username, accountHost, t.Database.Name, mode == dbaccessdom.ModeWrite); err != nil {
+		return apperr.FromEngine(fmt.Errorf("grant access role: %w", err), "database")
+	}
+	slog.Info("repaired database access role", "database_id", t.Database.ID, "mode", mode, "user", role.Username)
 	return s.roles.Touch(ctx, t.Database.ID, mode)
 }
 

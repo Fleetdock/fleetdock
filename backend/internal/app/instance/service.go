@@ -49,6 +49,9 @@ type RegisterInput struct {
 	// SSHTunnel, when set, reaches an external instance through an SSH
 	// bastion; Host is then resolved on the bastion.
 	SSHTunnel *SSHTunnelInput
+	// DataAccess selects the login for the table browser and console
+	// (default: the admin login).
+	DataAccess DataAccessInput
 }
 
 // ListParams are filter + pagination inputs for listing instances.
@@ -141,12 +144,29 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*instancedom.
 		}
 	}
 
+	data, err := planDataAccess(inst, in.DataAccess, false)
+	if err != nil {
+		return nil, err
+	}
+	if data.mode != nil {
+		inst.DataAccess = *data.mode
+	}
+
 	if in.Password != "" {
 		ref := rootSecretRef(inst.ID)
 		if err := s.secrets.Put(ctx, ref, secretdom.KindMariaDBRoot, []byte(in.Password)); err != nil {
 			return nil, err
 		}
 		inst.RootSecretRef = &ref
+	}
+	if data.login != nil {
+		if err := s.secrets.Put(ctx, data.ref, dataSecretKind(inst), data.password); err != nil {
+			if inst.RootSecretRef != nil {
+				_ = s.secrets.Delete(ctx, *inst.RootSecretRef)
+			}
+			return nil, err
+		}
+		inst.DataUsername, inst.DataSecretRef = data.login.Username, data.login.RootSecretRef
 	}
 	if sshCreds != nil {
 		ref := sshSecretRef(inst.ID)
@@ -158,6 +178,9 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*instancedom.
 			if inst.RootSecretRef != nil {
 				_ = s.secrets.Delete(ctx, *inst.RootSecretRef)
 			}
+			if inst.DataSecretRef != nil {
+				_ = s.secrets.Delete(ctx, *inst.DataSecretRef)
+			}
 			return nil, err
 		}
 		inst.SSH.SecretRef = &ref
@@ -166,6 +189,9 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*instancedom.
 	if err := s.repo.Create(ctx, inst); err != nil {
 		if inst.RootSecretRef != nil {
 			_ = s.secrets.Delete(ctx, *inst.RootSecretRef)
+		}
+		if inst.DataSecretRef != nil {
+			_ = s.secrets.Delete(ctx, *inst.DataSecretRef)
 		}
 		if inst.SSH != nil && inst.SSH.SecretRef != nil {
 			_ = s.secrets.Delete(ctx, *inst.SSH.SecretRef)
@@ -290,6 +316,8 @@ type UpdateInput struct {
 	SSHTunnel       *SSHTunnelInput
 	RemoveSSHTunnel bool
 	ResetSSHHostKey bool
+	// DataAccess changes the login used for the table browser and console.
+	DataAccess DataAccessInput
 }
 
 // sshSecretRef is the deterministic secret reference for an instance's SSH
@@ -309,6 +337,7 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*insta
 	}
 
 	var f instancedom.UpdateFields
+	hostChanged := false
 
 	if in.Name != nil {
 		name, err := instancedom.ValidateName(*in.Name)
@@ -330,6 +359,7 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*insta
 		// admin password to whatever answers there. Make the caller prove they
 		// know it (or drop the stored password) instead.
 		if inst.Host == nil || host != *inst.Host {
+			hostChanged = true
 			if inst.RootSecretRef != nil && in.Password == nil &&
 				(in.Username == nil || strings.TrimSpace(*in.Username) != "") {
 				return nil, apperr.Invalid("password", "re-enter the admin password when changing the host")
@@ -396,6 +426,12 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*insta
 	}
 	f.Credentials = plan.creds
 
+	data, err := planDataAccess(inst, in.DataAccess, hostChanged || ssh.rerouted)
+	if err != nil {
+		return nil, err
+	}
+	f.DataAccess, f.DataLogin = data.mode, data.login
+
 	// A brand-new secret must exist before the row can reference it (FK);
 	// everything else touching the secret store waits until the row update
 	// has succeeded, so a failed update never leaves the row pointing at a
@@ -413,6 +449,17 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*insta
 			return nil, err
 		}
 	}
+	if data.putBefore {
+		if err := s.secrets.Put(ctx, data.ref, dataSecretKind(inst), data.password); err != nil {
+			if plan.putBefore {
+				_ = s.secrets.Delete(ctx, plan.ref)
+			}
+			if ssh.putBefore {
+				_ = s.secrets.Delete(ctx, ssh.ref)
+			}
+			return nil, err
+		}
+	}
 	if err := s.repo.Update(ctx, inst.ID, f); err != nil {
 		if plan.putBefore {
 			_ = s.secrets.Delete(ctx, plan.ref)
@@ -420,7 +467,20 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*insta
 		if ssh.putBefore {
 			_ = s.secrets.Delete(ctx, ssh.ref)
 		}
+		if data.putBefore {
+			_ = s.secrets.Delete(ctx, data.ref)
+		}
 		return nil, err
+	}
+	switch {
+	case data.putAfter:
+		if err := s.secrets.Put(ctx, data.ref, dataSecretKind(inst), data.password); err != nil {
+			return nil, err
+		}
+	case data.deleteAfter:
+		if err := s.secrets.Delete(ctx, data.ref); err != nil {
+			return nil, err
+		}
 	}
 	switch {
 	case ssh.putAfter:

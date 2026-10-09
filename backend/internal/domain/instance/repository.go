@@ -46,6 +46,10 @@ type UpdateFields struct {
 	SSH             *SSHTunnel
 	RemoveSSH       bool
 	ResetSSHHostKey bool
+	// DataAccess changes the data access mode; a non-nil DataLogin replaces
+	// the dedicated data login (username and secret ref together).
+	DataAccess *DataAccess
+	DataLogin  *Credentials
 }
 
 // Repository is the persistence port for instances.

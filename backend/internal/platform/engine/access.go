@@ -30,6 +30,22 @@ func IsPermissionDenied(err error) bool {
 	return false
 }
 
+// IsLoginRejected reports whether err is the server refusing to authenticate
+// the connecting account: wrong password, unknown account, an account that
+// may not log in, or no host rule admitting it.
+func IsLoginRejected(err error) bool {
+	var my *mysql.MySQLError
+	if errors.As(err, &my) {
+		return my.Number == 1045 // ER_ACCESS_DENIED_ERROR
+	}
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		// invalid_authorization_specification, invalid_password
+		return pg.Code == "28000" || pg.Code == "28P01"
+	}
+	return false
+}
+
 // ApplyConsoleProfile grants a Fleetdock-managed console role its access to
 // exactly one database. Read roles get the readonly profile; write roles get
 // readwrite. It is idempotent and safe to re-run (e.g. after new tables or

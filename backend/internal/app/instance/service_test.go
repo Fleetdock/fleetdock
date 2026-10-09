@@ -71,6 +71,12 @@ func (r *fakeRepo) Update(_ context.Context, id uuid.UUID, f instancedom.UpdateF
 		t.HostKey = ""
 		in.SSH = &t
 	}
+	if f.DataAccess != nil {
+		in.DataAccess = *f.DataAccess
+	}
+	if f.DataLogin != nil {
+		in.DataUsername, in.DataSecretRef = f.DataLogin.Username, f.DataLogin.RootSecretRef
+	}
 	return nil
 }
 

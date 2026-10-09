@@ -232,6 +232,19 @@ components:
           $ref: "#/components/schemas/InstanceHealth"
         ssh_tunnel:
           $ref: "#/components/schemas/SSHTunnel"
+        data_access:
+          type: string
+          enum: [admin, login, managed]
+          description: >
+            Login the table browser, SQL console, exports and SQL imports use:
+            `admin` — the instance's admin login (only instance administrators
+            may use them); `login` — the dedicated `data_username`;
+            `managed` — read-only and read-write roles Fleetdock creates per
+            database.
+        data_username:
+          type: string
+          nullable: true
+          description: The dedicated data login (data_access `login` only).
     SSHTunnel:
       type: object
       nullable: true
@@ -1154,6 +1167,9 @@ paths:
                 tags: {type: array, items: {type: string}}
                 ssh_tunnel:
                   $ref: "#/components/schemas/SSHTunnelInput"
+                data_access: {type: string, enum: [admin, login, managed], default: admin}
+                data_username: {type: string}
+                data_password: {type: string, writeOnly: true}
       responses:
         "201":
           description: Created
@@ -1195,6 +1211,10 @@ paths:
         the bastion, user and auth method stay the same. Adding, moving or
         removing the tunnel requires re-entering `password`.
         `reset_ssh_host_key` forgets the pinned bastion host key.
+        `data_access` selects the login used for data browsing (see
+        Instance); with `login`, `data_password` may be omitted to keep the
+        stored one, except when the data username, host or tunnel changes.
+        Switching away from `login` deletes the stored data login.
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       requestBody:
@@ -1215,6 +1235,9 @@ paths:
                   $ref: "#/components/schemas/SSHTunnelInput"
                 remove_ssh_tunnel: {type: boolean}
                 reset_ssh_host_key: {type: boolean}
+                data_access: {type: string, enum: [admin, login, managed]}
+                data_username: {type: string}
+                data_password: {type: string, writeOnly: true}
       responses:
         "200":
           description: Updated instance

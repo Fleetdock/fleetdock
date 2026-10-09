@@ -33,7 +33,8 @@ const instanceColumns = `
 	id, server_id, name, engine, kind, host, username, root_secret_ref,
 	container_id, mariadb_version, port, status,
 	labels, tags, created_at, updated_at, version, deleted_at, tls_mode, health,
-	ssh_host, ssh_port, ssh_user, ssh_auth, ssh_secret_ref, ssh_host_key`
+	ssh_host, ssh_port, ssh_user, ssh_auth, ssh_secret_ref, ssh_host_key,
+	data_access, data_username, data_secret_ref`
 
 func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instance) error {
 	labels, err := json.Marshal(in.Labels)
@@ -42,14 +43,16 @@ func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instanc
 	}
 	const q = `
 		INSERT INTO instances (id, server_id, name, engine, kind, host, username, mariadb_version, port, status, labels, tags, tls_mode,
-		                       ssh_host, ssh_port, ssh_user, ssh_auth, ssh_secret_ref, ssh_host_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19)
+		                       ssh_host, ssh_port, ssh_user, ssh_auth, ssh_secret_ref, ssh_host_key,
+		                       data_access, data_username, data_secret_ref)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 		RETURNING created_at, updated_at, version`
 	ssh := sshColumns(in.SSH)
 	err = r.pool.QueryRow(ctx, q,
 		in.ID, in.ServerID, in.Name, string(in.Engine), string(in.Kind), in.Host, in.Username,
 		in.EngineVersion, in.Port, string(in.Status), string(labels), in.Tags, in.TLSModeOrDefault(),
 		ssh.host, ssh.port, ssh.user, ssh.auth, ssh.secretRef, ssh.hostKey,
+		string(in.DataAccessOrDefault()), in.DataUsername, in.DataSecretRef,
 	).Scan(&in.CreatedAt, &in.UpdatedAt, &in.Version)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -177,6 +180,13 @@ func (r *InstanceRepository) Update(ctx context.Context, id uuid.UUID, f instanc
 	case f.ResetSSHHostKey:
 		set("ssh_host_key", nil)
 	}
+	if f.DataAccess != nil {
+		set("data_access", string(*f.DataAccess))
+	}
+	if f.DataLogin != nil {
+		set("data_username", f.DataLogin.Username)
+		set("data_secret_ref", f.DataLogin.RootSecretRef)
+	}
 	if len(sets) == 0 {
 		return nil
 	}
@@ -259,6 +269,7 @@ func scanInstance(row rowScanner) (*instancedom.Instance, error) {
 		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
 		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw,
 		&ssh.host, &ssh.port, &ssh.user, &ssh.auth, &ssh.secretRef, &ssh.hostKey,
+		&in.DataAccess, &in.DataUsername, &in.DataSecretRef,
 	); err != nil {
 		return nil, err
 	}
@@ -280,7 +291,8 @@ func scanInstanceWithTotal(row rowScanner) (*instancedom.Instance, int, error) {
 		&in.ID, &in.ServerID, &in.Name, &engine, &kind, &in.Host, &in.Username, &in.RootSecretRef,
 		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
 		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw,
-		&ssh.host, &ssh.port, &ssh.user, &ssh.auth, &ssh.secretRef, &ssh.hostKey, &total,
+		&ssh.host, &ssh.port, &ssh.user, &ssh.auth, &ssh.secretRef, &ssh.hostKey,
+		&in.DataAccess, &in.DataUsername, &in.DataSecretRef, &total,
 	); err != nil {
 		return nil, 0, err
 	}

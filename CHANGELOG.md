@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Choose the login used for data browsing.** The data browser, SQL
+  console, exports and SQL imports used to connect as roles Fleetdock created
+  on the database server without asking (`fleetdock_ro_*` /
+  `fleetdock_rw_*`). Each instance now has a **Data browsing connects as**
+  setting: its admin login (the default, limited to instance administrators),
+  a dedicated login you provide, or the Fleetdock-managed roles. Instances
+  that already have managed roles keep using them.
+
 ### Fixed
+
+- **"The database rejected the login" in the data browser** when a
+  Fleetdock-managed role was dropped or its password changed outside
+  Fleetdock: the role is now repaired and the request retried, and a server
+  that still refuses it gets an error naming the role.
 
 - **Installer on macOS and WSL refuses `sudo`.** Docker Desktop runs as the
   logged-in user and a local install lives in their home folder; under
