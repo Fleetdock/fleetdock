@@ -64,6 +64,11 @@ type registerInstanceRequest struct {
 	Labels         map[string]string `json:"labels"`
 	Tags           []string          `json:"tags"`
 	SSHTunnel      *sshTunnelRequest `json:"ssh_tunnel"`
+	// DataAccess: admin (default) | login | managed. DataUsername and
+	// DataPassword (write-only) are the login used with "login".
+	DataAccess   string `json:"data_access"`
+	DataUsername string `json:"data_username"`
+	DataPassword string `json:"data_password"`
 }
 
 // sshTunnelRequest configures the SSH bastion of an external instance. The
@@ -132,6 +137,8 @@ type instanceResponse struct {
 	UpdatedAt      time.Time           `json:"updated_at"`
 	Version        int                 `json:"version"`
 	SSHTunnel      *sshTunnelResponse  `json:"ssh_tunnel"`
+	DataAccess     string              `json:"data_access"`
+	DataUsername   *string             `json:"data_username"`
 }
 
 func toInstanceResponse(in *instancedom.Instance) instanceResponse {
@@ -163,6 +170,8 @@ func toInstanceResponse(in *instancedom.Instance) instanceResponse {
 		UpdatedAt:      in.UpdatedAt,
 		Version:        in.Version,
 		SSHTunnel:      toSSHTunnelResponse(in.SSH),
+		DataAccess:     string(in.DataAccessOrDefault()),
+		DataUsername:   in.DataUsername,
 	}
 }
 
@@ -207,6 +216,9 @@ func (h *InstanceHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Labels:        req.Labels,
 		Tags:          req.Tags,
 		SSHTunnel:     req.SSHTunnel.input(),
+		DataAccess: instanceapp.DataAccessInput{
+			Mode: nonEmpty(req.DataAccess), Username: nonEmpty(req.DataUsername), Password: nonEmpty(req.DataPassword),
+		},
 	})
 	if err != nil {
 		writeError(w, err)
@@ -292,6 +304,11 @@ type updateInstanceRequest struct {
 	SSHTunnel       *sshTunnelRequest `json:"ssh_tunnel"`
 	RemoveSSHTunnel bool              `json:"remove_ssh_tunnel"`
 	ResetSSHHostKey bool              `json:"reset_ssh_host_key"`
+	// DataAccess changes the login used for the table browser and console;
+	// data_password may be omitted to keep the stored one.
+	DataAccess   *string `json:"data_access"`
+	DataUsername *string `json:"data_username"`
+	DataPassword *string `json:"data_password"`
 }
 
 // Update handles PATCH /v1/instances/{id}.
@@ -311,6 +328,7 @@ func (h *InstanceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		SSHTunnel:       req.SSHTunnel.input(),
 		RemoveSSHTunnel: req.RemoveSSHTunnel,
 		ResetSSHHostKey: req.ResetSSHHostKey,
+		DataAccess:      instanceapp.DataAccessInput{Mode: req.DataAccess, Username: req.DataUsername, Password: req.DataPassword},
 	})
 	if err != nil {
 		writeError(w, err)
@@ -387,4 +405,12 @@ func callerID(r *http.Request) *uuid.UUID {
 		return &id
 	}
 	return nil
+}
+
+// nonEmpty returns a pointer to s, or nil when s is empty.
+func nonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

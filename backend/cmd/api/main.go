@@ -235,7 +235,7 @@ func run() error {
 		Tokens:            httpapi.NewTokenHandler(tokenSvc),
 		Users:             httpapi.NewUserHandler(userSvc),
 		Operations:        httpapi.NewOperationHandler(opsSvc),
-		Backups:           httpapi.NewBackupHandler(backupSvc, resolver),
+		Backups:           httpapi.NewBackupHandler(backupSvc, resolver).WithDataAccess(dbadminSvc),
 		Schedules:         httpapi.NewScheduleHandler(scheduleSvc),
 		Moves:             httpapi.NewMoveHandler(moveSvc, resolver),
 		Destinations:      httpapi.NewDestinationHandler(destSvc),

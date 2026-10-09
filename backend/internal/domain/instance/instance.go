@@ -94,6 +94,47 @@ type Instance struct {
 	// SSH, when set, routes every connection through an SSH bastion
 	// (external instances only). Host is then resolved on the bastion.
 	SSH *SSHTunnel
+	// DataAccess is the login the table browser, SQL console, exports and
+	// imports use on this instance's databases.
+	DataAccess DataAccess
+	// DataUsername and DataSecretRef are the dedicated login used when
+	// DataAccess is "login"; both nil otherwise.
+	DataUsername  *string
+	DataSecretRef *string
+}
+
+// DataAccess selects the login used for interactive work on an instance's
+// databases (table browser, SQL console, exports, imports).
+type DataAccess string
+
+const (
+	// DataAccessAdmin uses the instance's admin login. It reaches every
+	// database and the account tables, so only instance administrators may
+	// use it.
+	DataAccessAdmin DataAccess = "admin"
+	// DataAccessLogin uses a dedicated login the operator configured; the
+	// server's own grants decide what it can do.
+	DataAccessLogin DataAccess = "login"
+	// DataAccessManaged has Fleetdock create a read-only and a read-write
+	// role per database, confined to that database by the server.
+	DataAccessManaged DataAccess = "managed"
+)
+
+// Valid reports whether d is a supported data access mode.
+func (d DataAccess) Valid() bool {
+	switch d {
+	case DataAccessAdmin, DataAccessLogin, DataAccessManaged:
+		return true
+	}
+	return false
+}
+
+// DataAccessOrDefault returns the data access mode, defaulting to "admin".
+func (i *Instance) DataAccessOrDefault() DataAccess {
+	if i.DataAccess == "" {
+		return DataAccessAdmin
+	}
+	return i.DataAccess
 }
 
 // SSHAuth is how the control plane authenticates to an SSH bastion.

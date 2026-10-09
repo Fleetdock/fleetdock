@@ -129,27 +129,74 @@ func (s *Service) databaseTarget(ctx context.Context, databaseID string) (*datab
 	return db, admin, conn, nil
 }
 
-// SystemDatabaseInstance reports whether a database is engine-owned (mysql,
-// sys, postgres) and, if so, its instance. Those hold account definitions and
-// password hashes, so interactive access to them requires instance-level
-// rights, not just database access.
-func (s *Service) SystemDatabaseInstance(ctx context.Context, databaseID string) (uuid.UUID, bool, error) {
+// DataAccessInfo is what the HTTP layer needs to authorize interactive work
+// on one database.
+type DataAccessInfo struct {
+	InstanceID uuid.UUID
+	// System: an engine-owned database (mysql, sys, postgres). Those hold
+	// account definitions and password hashes, so interactive access to them
+	// requires instance-level rights, not just database access.
+	System bool
+	// Mode is the login interactive work connects as. With the admin login
+	// it reaches every database on the instance, so it too requires
+	// instance-level rights.
+	Mode instancedom.DataAccess
+}
+
+// DataAccess reports a database's instance, whether it is a system database,
+// and which login its interactive features use.
+func (s *Service) DataAccess(ctx context.Context, databaseID string) (DataAccessInfo, error) {
 	did, err := uuid.Parse(databaseID)
 	if err != nil {
-		return uuid.Nil, false, apperr.Invalid("id", "id must be a valid UUID")
+		return DataAccessInfo{}, apperr.Invalid("id", "id must be a valid UUID")
 	}
 	db, err := s.databases.GetByID(ctx, did)
 	if err != nil {
-		return uuid.Nil, false, err
+		return DataAccessInfo{}, err
 	}
-	return db.InstanceID, db.System, nil
+	inst, err := s.instances.GetByID(ctx, db.InstanceID)
+	if err != nil {
+		return DataAccessInfo{}, err
+	}
+	return DataAccessInfo{InstanceID: db.InstanceID, System: db.System, Mode: inst.DataAccessOrDefault()}, nil
 }
 
-// scoped runs fn as the database's console role. Write mode additionally
-// requires the database to be active (not locked, migrating or deleting). If
-// the role is refused for lack of privileges — on PostgreSQL grants do not
-// cover objects created later by other roles — its grants are re-applied and
-// fn retried once.
+// dataConn returns the connection interactive work on t.Database uses, per
+// the instance's data access mode: the admin login, the configured data
+// login, or the database's Fleetdock-managed role (provisioned on first use).
+func (s *Service) dataConn(ctx context.Context, t dbaccessapp.Target, mode dbaccessdom.Mode) (engine.ConnParams, error) {
+	switch t.Instance.DataAccessOrDefault() {
+	case instancedom.DataAccessManaged:
+		return s.access.Conn(ctx, t, mode)
+	case instancedom.DataAccessLogin:
+		if t.Instance.DataUsername == nil || t.Instance.DataSecretRef == nil {
+			return engine.ConnParams{}, apperr.Invalid("instance_id",
+				"the instance's data login is not configured; set it in the instance settings")
+		}
+		pw, err := s.secrets.Get(ctx, *t.Instance.DataSecretRef)
+		if err != nil {
+			return engine.ConnParams{}, apperr.Internal(fmt.Errorf("load data login secret: %w", err))
+		}
+		conn := t.Root
+		conn.User, conn.Password = *t.Instance.DataUsername, string(pw)
+		conn.Database = t.Database.Name
+		return conn, nil
+	default:
+		conn := t.Root
+		conn.Database = t.Database.Name
+		return conn, nil
+	}
+}
+
+// scoped runs fn with the database's data connection (see dataConn). Write
+// mode additionally requires the database to be active (not locked,
+// migrating or deleting).
+//
+// Fleetdock-managed roles are also kept working: if one's login is rejected
+// (dropped or changed outside Fleetdock) it is repaired, and if it is refused
+// for lack of privileges — on PostgreSQL grants do not cover objects created
+// later by other roles — its grants are re-applied; either way fn is retried
+// once.
 func (s *Service) scoped(ctx context.Context, databaseID string, mode dbaccessdom.Mode, timeout time.Duration,
 	fn func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error) error {
 	did, err := uuid.Parse(databaseID)
@@ -171,36 +218,56 @@ func (s *Service) scoped(ctx context.Context, databaseID string, mode dbaccessdo
 
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	conn, err := s.access.Conn(cctx, t, mode)
+	conn, err := s.dataConn(cctx, t, mode)
 	if err != nil {
 		return err
 	}
 	conn.StatementTimeout = timeout
 
 	err = fn(cctx, db, admin, conn)
+	switch inst.DataAccessOrDefault() {
+	case instancedom.DataAccessLogin:
+		if err != nil && engine.IsLoginRejected(err) {
+			return apperr.Invalid("instance", fmt.Sprintf(
+				"the database rejected the instance's data login %q; check its username and password in the instance settings",
+				conn.User))
+		}
+	case instancedom.DataAccessManaged:
+		err = s.retryManaged(cctx, t, mode, timeout, conn, err, fn)
+	}
+	return apperr.FromEngine(err, "instance")
+}
+
+// retryManaged recovers a Fleetdock-managed role from a rejected login or a
+// permission error and retries fn once.
+func (s *Service) retryManaged(ctx context.Context, t dbaccessapp.Target, mode dbaccessdom.Mode, timeout time.Duration,
+	conn engine.ConnParams, err error,
+	fn func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error) error {
+	db := t.Database
 	if err != nil && engine.IsLoginRejected(err) {
 		// The role was dropped or changed outside Fleetdock; restore it.
-		if rerr := s.access.Repair(cctx, t, mode); rerr != nil {
+		if rerr := s.access.Repair(ctx, t, mode); rerr != nil {
 			slog.Warn("repair database access role", "database_id", db.ID, "error", rerr.Error())
-		} else if conn, err = s.access.Conn(cctx, t, mode); err != nil {
+		} else if conn, err = s.access.Conn(ctx, t, mode); err != nil {
 			return err
 		} else {
 			conn.StatementTimeout = timeout
-			err = fn(cctx, db, admin, conn)
+			err = fn(ctx, db, t.Admin, conn)
 		}
 		if err != nil && engine.IsLoginRejected(err) {
 			return apperr.Invalid("instance", fmt.Sprintf(
-				"the database rejected Fleetdock's per-database login %q (the instance admin login is not used here); "+
-					"allow this account in the server's host rules (pg_hba.conf, MySQL account hosts) and any connection pooler",
+				"the database rejected Fleetdock's per-database login %q; allow this account in the server's host rules "+
+					"(pg_hba.conf, MySQL account hosts) and any connection pooler, or switch the instance's data access "+
+					"to its admin login or a login of your own",
 				conn.User))
 		}
 	}
 	if err != nil && engine.IsPermissionDenied(err) {
-		if rerr := s.access.Reapply(cctx, t, mode); rerr == nil {
-			err = fn(cctx, db, admin, conn)
+		if rerr := s.access.Reapply(ctx, t, mode); rerr == nil {
+			err = fn(ctx, db, t.Admin, conn)
 		}
 	}
-	return apperr.FromEngine(err, "instance")
+	return err
 }
 
 // ---- Instance-level: users & grants ----
@@ -783,7 +850,7 @@ func (s *Service) withStructure(ctx context.Context, databaseID string,
 // Best effort: browsing also repairs grants on its own when refused.
 func (s *Service) refreshReadGrants(ctx context.Context, db *databasedom.Database) {
 	inst, admin, root, err := s.target(ctx, db.InstanceID.String())
-	if err != nil || inst.Engine != instancedom.EnginePostgres {
+	if err != nil || inst.Engine != instancedom.EnginePostgres || inst.DataAccessOrDefault() != instancedom.DataAccessManaged {
 		return
 	}
 	t := dbaccessapp.Target{Instance: inst, Database: db, Admin: admin, Root: root}
@@ -871,9 +938,10 @@ func (s *Service) Objects(ctx context.Context, databaseID string) ([]engine.DBOb
 	return out, err
 }
 
-// WriteRoleCredentials returns (provisioning if needed) the database's
-// read-write console role login, for operations that execute user-supplied
-// SQL — such as imports — without instance-admin rights.
+// WriteRoleCredentials returns the login that operations executing
+// user-supplied SQL — such as imports — connect as: the database's
+// read-write data connection (see dataConn), provisioning a Fleetdock-managed
+// role if that is the instance's mode.
 func (s *Service) WriteRoleCredentials(ctx context.Context, databaseID uuid.UUID) (string, string, error) {
 	db, err := s.databases.GetByID(ctx, databaseID)
 	if err != nil {
@@ -885,7 +953,7 @@ func (s *Service) WriteRoleCredentials(ctx context.Context, databaseID uuid.UUID
 	}
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	conn, err := s.access.Conn(cctx, dbaccessapp.Target{Instance: inst, Database: db, Admin: admin, Root: root}, dbaccessdom.ModeWrite)
+	conn, err := s.dataConn(cctx, dbaccessapp.Target{Instance: inst, Database: db, Admin: admin, Root: root}, dbaccessdom.ModeWrite)
 	if err != nil {
 		return "", "", err
 	}

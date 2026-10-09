@@ -11,8 +11,10 @@ import { ENGINE_IDS, ENGINES, type EngineId } from "@/lib/engines";
 import { useCreateInstance, useDatabases, useProbeInstance, useProvisionInstance, useServers } from "@/lib/hooks";
 import type { Instance, TLSMode } from "@/lib/types";
 
+import { dataAccessDraft, dataAccessInput } from "@/lib/data-access";
 import { sshDraft, sshInput } from "@/lib/ssh-tunnel";
 
+import { DataAccessFields } from "./data-access-fields";
 import { SSHTunnelFields } from "./ssh-tunnel-fields";
 
 type Mode = "provision" | "register" | "external";
@@ -67,6 +69,7 @@ export function AddServerWizard({
   const [password, setPassword] = useState("");
   const [tls, setTls] = useState<TLSMode>("prefer");
   const [ssh, setSsh] = useState(sshDraft());
+  const [dataAccess, setDataAccess] = useState(dataAccessDraft());
   const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState<{ instance: Instance; operationId?: string } | null>(null);
 
@@ -81,6 +84,7 @@ export function AddServerWizard({
     setUsername("");
     setPassword("");
     setSsh(sshDraft());
+    setDataAccess(dataAccessDraft());
     setError(null);
     setDone(null);
     onClose();
@@ -112,6 +116,7 @@ export function AddServerWizard({
           password: password || undefined,
           tls_mode: tls,
           ssh_tunnel: mode === "external" && ssh.enabled ? sshInput(ssh) : undefined,
+          ...dataAccessInput(dataAccess),
         });
         setDone({ instance: inst });
         // Check it right away instead of waiting for the next minute's probe,
@@ -259,6 +264,7 @@ export function AddServerWizard({
                   <option value="disable">Never encrypt</option>
                 </select>
               </Field>
+              <DataAccessFields value={dataAccess} onChange={setDataAccess} error={error} />
             </>
           ) : (
             <p className="muted text-sm">Fleetdock generates a strong admin password and keeps it encrypted.</p>

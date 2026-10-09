@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
+	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 )
@@ -33,8 +35,9 @@ func NewDBAdminHandler(svc *dbadminapp.Service, resolver *authzapp.Resolver) *DB
 // interactive gates console, browsing and export requests on one database. The
 // route middleware has already checked database:read on it; this adds:
 //   - system databases (mysql, sys, postgres) hold account definitions and
-//     password hashes, so they additionally require instance:write — the
-//     right to administer the instance's accounts anyway;
+//     password hashes, and an instance whose data access uses its admin login
+//     reaches every database on it, so both additionally require
+//     instance:write — the right to administer the instance anyway;
 //   - whether the caller may write, evaluated on this database's ancestry
 //     (a grant scoped to the database or its server counts, not only a
 //     global one).
@@ -44,16 +47,36 @@ func (h *DBAdminHandler) interactive(r *http.Request) (allowWrite bool, err erro
 	if err != nil {
 		return false, apperr.Invalid("id", "must be a valid UUID")
 	}
-	instID, system, err := h.svc.SystemDatabaseInstance(ctx, dbID.String())
-	if err != nil {
+	if err := authorizeDataAccess(ctx, h.resolver, h.svc, dbID); err != nil {
 		return false, err
 	}
-	if system {
-		if err := authorizeResource(ctx, h.resolver, "instance:write", authz.ResourceInstance, instID); err != nil {
-			return false, apperr.Forbidden("system databases can only be opened by instance administrators")
-		}
-	}
 	return authorizeResource(ctx, h.resolver, "database:write", authz.ResourceDatabase, dbID) == nil, nil
+}
+
+// dataAccessLookup reports how a database's interactive features connect.
+type dataAccessLookup interface {
+	DataAccess(ctx context.Context, databaseID string) (dbadminapp.DataAccessInfo, error)
+}
+
+// authorizeDataAccess requires instance:write where interactive work on a
+// database runs with instance-wide reach: a system database, or an instance
+// whose data access uses its admin login.
+func authorizeDataAccess(ctx context.Context, rv *authzapp.Resolver, lookup dataAccessLookup, dbID uuid.UUID) error {
+	info, err := lookup.DataAccess(ctx, dbID.String())
+	if err != nil {
+		return err
+	}
+	if !info.System && info.Mode != instancedom.DataAccessAdmin {
+		return nil
+	}
+	if err := authorizeResource(ctx, rv, "instance:write", authz.ResourceInstance, info.InstanceID); err != nil {
+		if info.System {
+			return apperr.Forbidden("system databases can only be opened by instance administrators")
+		}
+		return apperr.Forbidden("this instance's data is accessed with its admin login, so only instance administrators " +
+			"can open it; an administrator can set a separate data login in the instance settings")
+	}
+	return nil
 }
 
 // ---- Instance-level ----

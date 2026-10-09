@@ -94,9 +94,21 @@ Backend (Go):
     configuration; a per-minute health probe fills instance health and
     database sizes and connection counts.
 
-  Everything that touches one database's data runs as a **Fleetdock-managed
-  role confined to that database** (`fleetdock_ro_*` / `fleetdock_rw_*`), never
-  as the instance admin — see [Security](#security). Executed synchronously by
+  The login that the data browser, SQL console, exports and SQL imports use
+  is chosen per instance (**Data browsing connects as**, in the instance's
+  settings):
+  - **Admin login** (default) — the instance's admin login, like pgAdmin or
+    DBeaver. It reaches every database, so only instance administrators
+    (`instance:write`) may use these features on that instance;
+  - **Dedicated login** — a login you create on the server (e.g. read-only);
+    the server's grants decide what it can do, and anyone with access to a
+    database may browse it;
+  - **Fleetdock-managed roles** — Fleetdock creates a role confined to each
+    database (`fleetdock_ro_*` / `fleetdock_rw_*`) on first use and repairs it
+    if it is dropped or its password changed outside Fleetdock.
+
+  System databases (`mysql`, `postgres`, …) always require instance
+  administrator rights — see [Security](#security). Executed synchronously by
   the control plane: external instances are reached at their host, managed instances at their server's
   address (reported automatically by the agent on enroll/heartbeat). The
   instance DB port must be reachable from the control plane — for LAN/VM dev,
@@ -150,14 +162,17 @@ drop of source`) copies or relocates a database to another instance, across
 - **Production mode:** set `FLEETDOCK_ENV=production` and provide strong values for
   `FLEETDOCK_JWT_SECRET`, `FLEETDOCK_ENCRYPTION_KEY`, and `FLEETDOCK_ADMIN_PASSWORD`. The API
   refuses to start if defaults are still in use.
-- **Least privilege in the database:** the console, browser, exports, data and
-  structure editing and SQL imports connect as per-database roles created by
-  Fleetdock. The engine itself confines them: other databases, account tables,
-  server files and global settings are unreachable whatever SQL is typed.
-  The engine-owned `mysql`/`sys`/`postgres` databases can only be opened by
-  users with `instance:write`. Root credentials are used only for
-  instance-level administration (accounts, grants, create/drop database,
-  monitoring) — keep `instance:write` for administrators.
+- **Who may browse data:** the console, browser, exports, data and structure
+  editing and SQL imports connect with the login the instance is set to use.
+  With its **admin login** (the default) they reach every database on the
+  instance, so only users with `instance:write` on it may use them. To open
+  them to users with access to a single database, give the instance a
+  **dedicated login** whose server grants you control, or let Fleetdock create
+  **per-database roles** that the engine itself confines: other databases,
+  account tables, server files and global settings are then unreachable
+  whatever SQL is typed. The engine-owned `mysql`/`sys`/`postgres` databases
+  can only be opened by users with `instance:write` in every mode. Keep
+  `instance:write` for administrators.
 - **Network:** instance hosts are checked when saved and when dialled —
   loopback (in production), link-local, cloud-metadata and the metadata
   database itself are refused. Choose `tls_mode` per instance; use

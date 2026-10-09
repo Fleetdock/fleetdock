@@ -17,6 +17,15 @@ import (
 type BackupHandler struct {
 	svc      *backupapp.Service
 	resolver *authzapp.Resolver
+	access   dataAccessLookup
+}
+
+// WithDataAccess makes SQL imports follow the instance's data access rules:
+// an import runs as the data login, so where that is the admin login only
+// instance administrators may import.
+func (h *BackupHandler) WithDataAccess(l dataAccessLookup) *BackupHandler {
+	h.access = l
+	return h
 }
 
 // NewBackupHandler builds the backup handler.
@@ -217,6 +226,12 @@ func (h *BackupHandler) ImportSQL(w http.ResponseWriter, r *http.Request) {
 	if err := authorizeResource(r.Context(), h.resolver, "backup:write", authz.ResourceDatabase, did); err != nil {
 		writeError(w, err)
 		return
+	}
+	if h.access != nil {
+		if err := authorizeDataAccess(r.Context(), h.resolver, h.access, did); err != nil {
+			writeError(w, err)
+			return
+		}
 	}
 	rc := http.NewResponseController(w)
 	_ = rc.SetReadDeadline(time.Now().Add(time.Hour))

@@ -117,12 +117,19 @@ func (e *fakeEngine) QueryBatch(ctx context.Context, p engine.ConnParams, _ stri
 	return out, nil
 }
 
+// fixture runs interactive work as Fleetdock-managed roles.
 func fixture(t *testing.T, status databasedom.Status) (*Service, *fakeAccess, *fakeEngine) {
+	t.Helper()
+	return fixtureWith(t, status, func(inst *instancedom.Instance) { inst.DataAccess = instancedom.DataAccessManaged })
+}
+
+func fixtureWith(t *testing.T, status databasedom.Status, setup func(*instancedom.Instance)) (*Service, *fakeAccess, *fakeEngine) {
 	t.Helper()
 	user, host := "root", "db.example.com"
 	ref := "instance/x/root"
 	inst := &instancedom.Instance{ID: uuid.New(), Engine: "fake-test-engine", Kind: instancedom.KindExternal,
 		Host: &host, Port: 3306, Username: &user, RootSecretRef: &ref}
+	setup(inst)
 	db := &databasedom.Database{ID: uuid.New(), InstanceID: inst.ID, Name: "app", Status: status}
 	eng := &fakeEngine{failAt: -1}
 	engine.Register("fake-test-engine", fakeClient{eng})
@@ -204,6 +211,58 @@ func TestQuery_PermissionDeniedReappliesGrantsAndRetries(t *testing.T) {
 	}
 	if acc.reapply != 1 || len(eng.users) != 2 {
 		t.Errorf("reapply=%d calls=%d, want 1 re-grant and 2 attempts", acc.reapply, len(eng.users))
+	}
+}
+
+func TestQuery_AdminModeRunsAsAdminLogin(t *testing.T) {
+	svc, acc, eng := fixtureWith(t, databasedom.StatusActive, func(*instancedom.Instance) {})
+	if _, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "SELECT 1", Limit: 10, AllowWrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(acc.modes) != 0 {
+		t.Errorf("no managed role should be provisioned in admin mode, got %v", acc.modes)
+	}
+	if eng.users[0] != "root" || eng.writeFlags[0] {
+		t.Errorf("ran as %q (write=%v), want root read-only for a SELECT", eng.users[0], eng.writeFlags[0])
+	}
+}
+
+func TestQuery_LoginModeRunsAsDataLogin(t *testing.T) {
+	user, ref := "app_reader", "instance/x/data"
+	svc, acc, eng := fixtureWith(t, databasedom.StatusActive, func(inst *instancedom.Instance) {
+		inst.DataAccess, inst.DataUsername, inst.DataSecretRef = instancedom.DataAccessLogin, &user, &ref
+	})
+	if _, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "DELETE FROM t", Limit: 10, AllowWrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(acc.modes) != 0 || eng.users[0] != "app_reader" {
+		t.Errorf("modes=%v user=%q, want the data login and no managed role", acc.modes, eng.users[0])
+	}
+}
+
+func TestQuery_LoginModeRejectedLoginIsNotRepaired(t *testing.T) {
+	user, ref := "app_reader", "instance/x/data"
+	svc, acc, eng := fixtureWith(t, databasedom.StatusActive, func(inst *instancedom.Instance) {
+		inst.DataAccess, inst.DataUsername, inst.DataSecretRef = instancedom.DataAccessLogin, &user, &ref
+	})
+	eng.rejectLogins = 1
+	_, err := svc.Query(context.Background(), QueryInput{DatabaseID: uuid.NewString(), SQL: "SELECT 1", Limit: 10})
+	if apperr.KindOf(err) != apperr.KindInvalid || !strings.Contains(err.Error(), "app_reader") {
+		t.Fatalf("err = %v, want an invalid error naming the data login", err)
+	}
+	if acc.repair != 0 || len(eng.users) != 1 {
+		t.Errorf("repair=%d calls=%d, a configured login must not be touched or retried", acc.repair, len(eng.users))
+	}
+}
+
+func TestDataAccess_ReportsMode(t *testing.T) {
+	svc, _, _ := fixtureWith(t, databasedom.StatusActive, func(*instancedom.Instance) {})
+	info, err := svc.DataAccess(context.Background(), uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode != instancedom.DataAccessAdmin {
+		t.Errorf("mode = %q, want admin by default", info.Mode)
 	}
 }
 
