@@ -9,6 +9,7 @@ import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "r
 import { ChevronDown, ChevronRight, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table";
 import { DeleteInstanceModal } from "@/components/delete-instance-modal";
+import { SSHTunnelFields } from "@/components/database/ssh-tunnel-fields";
 import { HealthBadge, InstanceMonitoring } from "@/components/instance-monitoring";
 import {
   ConfirmModal,
@@ -26,9 +27,10 @@ import {
   Time,
 } from "@/components/ui";
 import { engineLabel } from "@/lib/engines";
-import { friendlyError } from "@/lib/errors";
+import { fieldError, friendlyError } from "@/lib/errors";
 import { ApiError } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
+import { sshChanged, sshDraft, sshInput } from "@/lib/ssh-tunnel";
 import {
   LIST_PAGE_SIZE,
   useCan,
@@ -96,7 +98,7 @@ function InstanceDetail() {
   const serverName = servers?.items.find((s) => s.id === instance.server_id)?.name;
   const where =
     instance.kind === "external"
-      ? `${instance.host}:${instance.port}`
+      ? `${instance.host}:${instance.port}${instance.ssh_tunnel ? ` via ${instance.ssh_tunnel.host}` : ""}`
       : `${serverName ?? "server"}, port ${instance.port}`;
 
   function selectTab(t: string) {
@@ -134,6 +136,9 @@ function InstanceDetail() {
           <Detail label="Address" value={where} />
           <Detail label="Admin user" value={instance.username ?? "—"} />
           <Detail label="Encryption" value={TLS_LABEL[instance.tls_mode ?? "prefer"]} />
+          {instance.ssh_tunnel ? (
+            <Detail label="SSH tunnel" value={<SSHTunnelDetail instance={instance} canWrite={can("instance:write")} />} />
+          ) : null}
           <Detail label="Added" value={<Time value={instance.created_at} />} />
           {instance.has_credentials ? <Detail label="Last checked" value={<LastChecked instance={instance} />} /> : null}
         </dl>
@@ -220,7 +225,8 @@ function EditInstanceModal({
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [tlsMode, setTlsMode] = useState<TLSMode>("prefer");
-  const [error, setError] = useState<string | null>(null);
+  const [ssh, setSsh] = useState(sshDraft());
+  const [error, setError] = useState<unknown>(null);
 
   // Re-seed the form whenever a different instance is opened.
   useEffect(() => {
@@ -232,6 +238,7 @@ function EditInstanceModal({
     setPassword("");
     setClearPassword(false);
     setTlsMode(instance.tls_mode ?? "prefer");
+    setSsh(sshDraft(instance.ssh_tunnel));
     setError(null);
   }, [instance]);
 
@@ -241,7 +248,12 @@ function EditInstanceModal({
   // The API refuses to send the stored password to a new host; the user has to
   // re-enter it (or drop it).
   const hostChanged = instance.kind === "external" && host.trim() !== (instance.host ?? "");
-  const needsPassword = hostChanged && instance.has_credentials && !clearPassword && username !== "";
+  // Adding, moving or removing the SSH tunnel re-routes the connection too.
+  const saved = instance.ssh_tunnel;
+  const tunnelRerouted =
+    ssh.enabled !== !!saved ||
+    (ssh.enabled && !!saved && (ssh.host.trim() !== saved.host || (Number(ssh.port) || 22) !== saved.port));
+  const needsPassword = (hostChanged || tunnelRerouted) && instance.has_credentials && !clearPassword && username !== "";
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -261,12 +273,16 @@ function EditInstanceModal({
     } else if (password) {
       input.password = password;
     }
+    if (instance.kind === "external" && sshChanged(ssh, instance.ssh_tunnel)) {
+      if (ssh.enabled) input.ssh_tunnel = sshInput(ssh);
+      else input.remove_ssh_tunnel = true;
+    }
 
     try {
       await update.mutateAsync(input);
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save the changes");
+      setError(err);
     }
   }
 
@@ -297,16 +313,20 @@ function EditInstanceModal({
           </select>
         </Field>
         {instance.kind === "external" ? (
-          <Field label="Host" hint="Hostname or IP address Fleetdock can reach."
-              help={<>On the same computer as Fleetdock? Use <code>host.docker.internal</code> — <code>localhost</code> would mean Fleetdock&apos;s own container.</>}>
-            <input
-              className="input"
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="db.example.com or 10.0.0.5"
-              required
-            />
-          </Field>
+          <>
+            <Field label="Host" hint={ssh.enabled ? "Hostname or IP address as seen from the SSH server." : "Hostname or IP address Fleetdock can reach."}
+                help={<>On the same computer as Fleetdock? Use <code>host.docker.internal</code> — <code>localhost</code> would mean Fleetdock&apos;s own container.</>}
+                error={fieldError(error, "host")}>
+              <input
+                className="input"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder={ssh.enabled ? "127.0.0.1" : "db.example.com or 10.0.0.5"}
+                required
+              />
+            </Field>
+            <SSHTunnelFields value={ssh} onChange={setSsh} error={error} saved={instance.ssh_tunnel} />
+          </>
         ) : null}
 
         <h3 className="font-semibold text-sm" style={{ margin: "1rem 0 .3rem" }}>
@@ -326,7 +346,10 @@ function EditInstanceModal({
               autoComplete="off"
             />
           </Field>
-          <Field label={needsPassword ? "Password (required for the new host)" : instance.has_credentials ? "New password" : "Password"}>
+          <Field
+            label={needsPassword ? `Password (required for the new ${hostChanged ? "host" : "route"})` : instance.has_credentials ? "New password" : "Password"}
+            error={fieldError(error, "password")}
+          >
             <input
               className="input"
               type="password"
@@ -350,7 +373,7 @@ function EditInstanceModal({
           </label>
         ) : null}
 
-        <ErrorText message={error ?? undefined} />
+        <ErrorText message={error ? (error instanceof ApiError ? error.message : "Failed to save the changes") : undefined} />
         <div className="flex items-center justify-end gap-2" style={{ marginTop: ".8rem" }}>
           <button type="button" className="btn" onClick={onClose}>
             Cancel
@@ -361,6 +384,58 @@ function EditInstanceModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+/**
+ * SSHTunnelDetail shows the bastion and its pinned host key. Resetting the pin
+ * is how an expected host key change (a rebuilt bastion) is accepted.
+ */
+function SSHTunnelDetail({ instance, canWrite }: { instance: Instance; canWrite: boolean }) {
+  const t = instance.ssh_tunnel!;
+  const update = useUpdateInstance();
+  const toastError = useErrorToast();
+  const [confirm, setConfirm] = useState(false);
+
+  async function reset() {
+    try {
+      await update.mutateAsync({ id: instance.id, reset_ssh_host_key: true });
+      setConfirm(false);
+    } catch (err) {
+      toastError("Couldn't reset the host key")(err);
+    }
+  }
+
+  return (
+    <>
+      <span>
+        {t.username}@{t.host}
+        {t.port !== 22 ? `:${t.port}` : ""}
+      </span>
+      <span className="muted text-sm" style={{ display: "block", wordBreak: "break-all" }}>
+        {t.host_key_fingerprint ? (
+          <>
+            Host key <code>{t.host_key_fingerprint}</code>
+            {canWrite ? (
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: ".25rem" }} onClick={() => setConfirm(true)}>
+                Reset
+              </button>
+            ) : null}
+          </>
+        ) : (
+          "Host key is pinned on the first connection."
+        )}
+      </span>
+      <ConfirmModal
+        open={confirm}
+        title="Reset the SSH host key?"
+        confirmLabel="Reset host key"
+        busy={update.isPending}
+        message="Fleetdock forgets the pinned key and trusts whatever key the SSH server presents next time. Only do this if you know the server's key changed (for example, it was rebuilt)."
+        onConfirm={reset}
+        onCancel={() => setConfirm(false)}
+      />
+    </>
   );
 }
 

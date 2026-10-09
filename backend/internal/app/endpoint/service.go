@@ -102,7 +102,12 @@ type GatewayInfo struct {
 	PublicHost   string `json:"public_host,omitempty"`
 	DiagPort     int    `json:"diag_port,omitempty"`
 	SourceIPMode string `json:"source_ip_mode,omitempty"`
+	// UnavailableReason, when set, explains why this database cannot get a
+	// public endpoint even though the gateway is enabled.
+	UnavailableReason string `json:"unavailable_reason,omitempty"`
 }
+
+const errNoGatewayViaSSH = "public access is not available for instances reached through an SSH tunnel"
 
 // EnableInput configures public access.
 type EnableInput struct {
@@ -147,6 +152,9 @@ func (s *Service) GetConnectivity(ctx context.Context, databaseID string) (*Conn
 			SourceIPMode: s.gw.SourceIPMode,
 		},
 	}
+	if inst.SSH != nil {
+		out.Gateway.UnavailableReason = errNoGatewayViaSSH
+	}
 
 	ep, err := s.endpoints.GetPublicByDatabaseID(ctx, db.ID)
 	switch {
@@ -189,6 +197,11 @@ func (s *Service) EnablePublicAccess(ctx context.Context, databaseID string, in 
 	}
 	if db.Status != databasedom.StatusActive {
 		return nil, apperr.Invalid("database", "database must be active to enable public access")
+	}
+	if inst.SSH != nil {
+		// The gateway proxies straight to the instance; it cannot reach a
+		// database that is only reachable from an SSH bastion.
+		return nil, apperr.Invalid("instance", errNoGatewayViaSSH)
 	}
 	if _, err := s.endpoints.GetPublicByDatabaseID(ctx, db.ID); err == nil {
 		return nil, apperr.Conflict("public access is already enabled for this database")

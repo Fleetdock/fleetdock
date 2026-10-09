@@ -7,7 +7,11 @@ package engine
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/sshtunnel"
 )
 
 // ConnParams are the network + credential parameters for reaching an instance.
@@ -27,6 +31,21 @@ type ConnParams struct {
 	// role when the login role is a member of it, so objects created through
 	// the console are owned by the database owner, not by a Fleetdock role.
 	AssumeOwner bool `json:"-"`
+	// SSH, when set, reaches Host:Port through an SSH bastion; Host is then
+	// resolved on the bastion, not by the control plane.
+	SSH *sshtunnel.Config `json:"ssh,omitempty"`
+}
+
+// dialFunc returns the dialer for these parameters: through the SSH tunnel
+// when one is configured, otherwise direct under the netsafe policy.
+func (p ConnParams) dialFunc() func(ctx context.Context, network, addr string) (net.Conn, error) {
+	if p.SSH == nil {
+		return netsafe.DialDB
+	}
+	tunnel := p.SSH
+	return func(ctx context.Context, _, addr string) (net.Conn, error) {
+		return sshtunnel.Dial(ctx, tunnel, "tcp", addr)
+	}
 }
 
 // TLS modes accepted in ConnParams.TLSMode, named after libpq's sslmode.

@@ -91,6 +91,33 @@ type Instance struct {
 	TLSMode string
 	// Health is the latest probe result (nil until first probed).
 	Health *Health
+	// SSH, when set, routes every connection through an SSH bastion
+	// (external instances only). Host is then resolved on the bastion.
+	SSH *SSHTunnel
+}
+
+// SSHAuth is how the control plane authenticates to an SSH bastion.
+type SSHAuth string
+
+const (
+	SSHAuthPassword SSHAuth = "password"
+	SSHAuthKey      SSHAuth = "key"
+)
+
+// Valid reports whether a is a supported SSH auth method.
+func (a SSHAuth) Valid() bool { return a == SSHAuthPassword || a == SSHAuthKey }
+
+// SSHTunnel is the bastion an external instance is reached through.
+type SSHTunnel struct {
+	Host string
+	Port int
+	User string
+	Auth SSHAuth
+	// SecretRef points at the SSH password or private key (+ passphrase).
+	SecretRef *string
+	// HostKey is the bastion's pinned host key in authorized_keys format;
+	// empty until the first successful connection pins it (TOFU).
+	HostKey string
 }
 
 // HealthStatus is the outcome of a probe.

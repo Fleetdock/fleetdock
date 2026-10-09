@@ -248,3 +248,5 @@ func TestDelete_AllowsUserDatabase(t *testing.T) {
 func (r *fakeInstanceRepo) SetHealth(context.Context, uuid.UUID, instancedom.Health) error {
 	return nil
 }
+
+func (r *fakeInstanceRepo) PinSSHHostKey(context.Context, uuid.UUID, string) error { return nil }

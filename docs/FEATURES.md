@@ -162,6 +162,15 @@ drop of source`) copies or relocates a database to another instance, across
   loopback (in production), link-local, cloud-metadata and the metadata
   database itself are refused. Choose `tls_mode` per instance; use
   `verify-full` across untrusted networks.
+- **SSH tunnels:** an external instance can be reached through an SSH bastion
+  (`ssh_tunnel` on the instance; private key with optional passphrase, or
+  password). The network policy then applies to the bastion address, and the
+  database host is resolved on the bastion. The bastion's host key is pinned on
+  first use (TOFU) and shown as a SHA256 fingerprint; a different key is
+  refused until the pin is reset (`reset_ssh_host_key`). Adding, moving or
+  removing the tunnel requires re-entering the admin password. Backups and
+  restores reach the database through a short-lived local port forward.
+  Public endpoints (gateway) are not available for tunnelled instances.
 - **JWT storage:** the dashboard stores the session JWT in `localStorage`. A
   Content-Security-Policy confines the dashboard to its own origin, so injected
   script cannot send the token elsewhere, and signing out revokes all of the

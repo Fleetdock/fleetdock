@@ -250,8 +250,12 @@ func (s *Service) connect(ctx context.Context, inst *instancedom.Instance) (engi
 	if err != nil {
 		return engine.ConnParams{}, nil, nil, err
 	}
+	tunnel, err := dbtarget.Tunnel(ctx, s.secrets, s.instances, inst, "instance")
+	if err != nil {
+		return engine.ConnParams{}, nil, nil, err
+	}
 	return engine.ConnParams{Host: host, Port: inst.Port, User: *inst.Username, Password: string(pw),
-		TLSMode: inst.TLSModeOrDefault()}, eng, mon, nil
+		TLSMode: inst.TLSModeOrDefault(), SSH: tunnel}, eng, mon, nil
 }
 
 // AgentImportFunc adapts a function to AgentImporter.

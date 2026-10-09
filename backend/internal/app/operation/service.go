@@ -419,9 +419,13 @@ func (s *Service) connParams(ctx context.Context, inst *instancedom.Instance) (e
 	if inst.Kind == instancedom.KindExternal && inst.Host != nil {
 		host = *inst.Host
 		// External jobs run on the control plane itself (dump/restore tools
-		// dial the host directly), so apply the database host policy here.
-		if err := dbtarget.CheckHost(ctx, host, inst.Port, "host"); err != nil {
-			return engine.ConnParams{}, err
+		// dial the host directly), so apply the database host policy here —
+		// unless the host is reached through an SSH bastion, whose own
+		// address is checked by dbtarget.Tunnel instead.
+		if inst.SSH == nil {
+			if err := dbtarget.CheckHost(ctx, host, inst.Port, "host"); err != nil {
+				return engine.ConnParams{}, err
+			}
 		}
 	}
 	conn := engine.ConnParams{Host: host, Port: inst.Port, TLSMode: inst.TLSModeOrDefault()}
@@ -434,6 +438,13 @@ func (s *Service) connParams(ctx context.Context, inst *instancedom.Instance) (e
 			return conn, fmt.Errorf("load instance credentials: %w", err)
 		}
 		conn.Password = string(pw)
+	}
+	if inst.Kind == instancedom.KindExternal {
+		tunnel, err := dbtarget.Tunnel(ctx, s.secrets, s.instances, inst, "ssh_tunnel")
+		if err != nil {
+			return conn, err
+		}
+		conn.SSH = tunnel
 	}
 	return conn, nil
 }

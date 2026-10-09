@@ -230,6 +230,43 @@ components:
           description: How the control plane secures connections to the instance.
         health:
           $ref: "#/components/schemas/InstanceHealth"
+        ssh_tunnel:
+          $ref: "#/components/schemas/SSHTunnel"
+    SSHTunnel:
+      type: object
+      nullable: true
+      description: >
+        SSH bastion an external instance is reached through (null when it is
+        reached directly). The instance host is resolved on the bastion.
+      properties:
+        host: {type: string}
+        port: {type: integer, default: 22}
+        username: {type: string}
+        auth_method:
+          type: string
+          enum: [password, key]
+        host_key_fingerprint:
+          type: string
+          nullable: true
+          description: >
+            SHA256 fingerprint of the bastion host key, pinned on the first
+            successful connection (trust on first use); null until then.
+    SSHTunnelInput:
+      type: object
+      required: [host, username, auth_method]
+      properties:
+        host: {type: string}
+        port: {type: integer, default: 22}
+        username: {type: string}
+        auth_method:
+          type: string
+          enum: [password, key]
+        password: {type: string, writeOnly: true, description: "Required for auth_method=password."}
+        private_key:
+          type: string
+          writeOnly: true
+          description: OpenSSH or PEM private key. Required for auth_method=key.
+        passphrase: {type: string, writeOnly: true, description: "Passphrase of an encrypted private key."}
     InstanceRef:
       type: object
       description: >
@@ -1095,6 +1132,28 @@ paths:
       tags: [Instances]
       security: [{bearerAuth: []}]
       summary: Register external instance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: {type: string, enum: [managed, external]}
+                server_id: {type: string, format: uuid}
+                host: {type: string}
+                name: {type: string}
+                engine: {type: string, enum: [mariadb, mysql, postgres]}
+                engine_version: {type: string}
+                port: {type: integer}
+                username: {type: string}
+                password: {type: string, writeOnly: true}
+                tls_mode:
+                  type: string
+                  enum: [disable, prefer, require, verify-full]
+                labels: {type: object, additionalProperties: {type: string}}
+                tags: {type: array, items: {type: string}}
+                ssh_tunnel:
+                  $ref: "#/components/schemas/SSHTunnelInput"
       responses:
         "201":
           description: Created
@@ -1129,7 +1188,13 @@ paths:
         `port` cannot be changed on a provisioned instance. Changing `host`
         requires re-entering `password` (or clearing it), so the stored admin
         password is never sent to a new host. Loopback, link-local,
-        cloud-metadata and control-plane addresses are refused.
+        cloud-metadata and control-plane addresses are refused. Behind an SSH
+        tunnel the policy applies to the bastion instead, since the host is
+        resolved there. `ssh_tunnel` sets or changes the tunnel (external
+        only); its secret fields may be omitted to keep the stored ones while
+        the bastion, user and auth method stay the same. Adding, moving or
+        removing the tunnel requires re-entering `password`.
+        `reset_ssh_host_key` forgets the pinned bastion host key.
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       requestBody:
@@ -1146,6 +1211,10 @@ paths:
                   enum: [disable, prefer, require, verify-full]
                 username: {type: string}
                 password: {type: string, writeOnly: true}
+                ssh_tunnel:
+                  $ref: "#/components/schemas/SSHTunnelInput"
+                remove_ssh_tunnel: {type: boolean}
+                reset_ssh_host_key: {type: boolean}
       responses:
         "200":
           description: Updated instance

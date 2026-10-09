@@ -126,6 +126,7 @@ HAProxy uses TCP passthrough; it does not terminate TLS. Clients negotiate TLS w
 - No TLS termination at the gateway (passthrough only)
 - One public port per database; no hostname/SNI routing
 - The gateway must have a network route to `server.address:port`
+- Not available for external servers reached through an SSH tunnel: the gateway proxies straight to the database and cannot use the bastion
 - Integration tests that need a live HAProxy are skipped without Docker
 
 ## Production

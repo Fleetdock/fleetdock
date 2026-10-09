@@ -17,6 +17,7 @@ const (
 	KindPostgresUser Kind = "postgres_user"
 	KindS3Credential Kind = "s3_credential"
 	KindAgentEnroll  Kind = "agent_enrollment"
+	KindSSHKey       Kind = "ssh_key"
 	KindOther        Kind = "other"
 )
 

@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-
-	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 )
 
 func init() { Register("postgres", &Postgres{}) }
@@ -52,7 +50,12 @@ func (pg *Postgres) connect(ctx context.Context, p ConnParams, database string) 
 	if err != nil {
 		return nil, err
 	}
-	cfg.DialFunc = netsafe.DialDB
+	cfg.DialFunc = p.dialFunc()
+	if p.SSH != nil {
+		// The host is resolved on the bastion: it is often only meaningful
+		// there (127.0.0.1, a private DNS name).
+		cfg.LookupFunc = func(_ context.Context, host string) ([]string, error) { return []string{host}, nil }
+	}
 	if t := p.StatementTimeout; t > 0 {
 		ms := strconv.FormatInt(t.Milliseconds(), 10)
 		cfg.RuntimeParams["statement_timeout"] = ms

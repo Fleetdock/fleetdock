@@ -9,6 +9,8 @@ import (
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/sshtunnel"
 )
 
 type fakeServers struct {
@@ -119,4 +121,59 @@ func asAppErr(err error, target **apperr.Error) bool {
 		*target = e
 	}
 	return ok
+}
+
+type fakeSecrets map[string][]byte
+
+func (f fakeSecrets) Get(_ context.Context, ref string) ([]byte, error) { return f[ref], nil }
+
+type fakePins struct{ keys []string }
+
+func (f *fakePins) PinSSHHostKey(_ context.Context, _ uuid.UUID, key string) error {
+	f.keys = append(f.keys, key)
+	return nil
+}
+
+func TestHostBehindTunnelSkipsDBPolicy(t *testing.T) {
+	netsafe.ConfigureDB(&netsafe.DBPolicy{})
+	defer netsafe.ConfigureDB(nil)
+	inst := &instancedom.Instance{Kind: instancedom.KindExternal, Host: ptr("127.0.0.1"), Port: 5432,
+		SSH: &instancedom.SSHTunnel{Host: "10.0.0.5", Port: 22}}
+
+	if host, err := Host(context.Background(), fakeServers{}, inst, "instance"); err != nil || host != "127.0.0.1" {
+		t.Fatalf("Host = %q, %v; a host resolved on the bastion must not be checked locally", host, err)
+	}
+	inst.SSH = nil
+	if _, err := Host(context.Background(), fakeServers{}, inst, "instance"); err == nil {
+		t.Fatal("a direct loopback host must still be refused")
+	}
+}
+
+func TestTunnel(t *testing.T) {
+	if cfg, err := Tunnel(context.Background(), fakeSecrets{}, &fakePins{}, &instancedom.Instance{}, "f"); cfg != nil || err != nil {
+		t.Fatalf("no tunnel: got %v, %v", cfg, err)
+	}
+
+	raw, _ := sshtunnel.Credentials{Password: "pw"}.Marshal()
+	pins := &fakePins{}
+	inst := &instancedom.Instance{ID: uuid.New(), Kind: instancedom.KindExternal, SSH: &instancedom.SSHTunnel{
+		Host: "bastion", Port: 2222, User: "jump", Auth: instancedom.SSHAuthPassword, SecretRef: ptr("instance/x/ssh"),
+	}}
+	cfg, err := Tunnel(context.Background(), fakeSecrets{"instance/x/ssh": raw}, pins, inst, "f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Host != "bastion" || cfg.Port != 2222 || cfg.User != "jump" || cfg.Password != "pw" {
+		t.Fatalf("cfg = %+v", cfg)
+	}
+	if err := cfg.OnPin("ssh-ed25519 AAAA"); err != nil || len(pins.keys) != 1 {
+		t.Fatalf("OnPin should persist the key: %v %v", err, pins.keys)
+	}
+
+	netsafe.ConfigureDB(&netsafe.DBPolicy{})
+	defer netsafe.ConfigureDB(nil)
+	inst.SSH.Host = "169.254.169.254"
+	if _, err := Tunnel(context.Background(), fakeSecrets{"instance/x/ssh": raw}, pins, inst, "f"); err == nil {
+		t.Fatal("a metadata bastion must be refused")
+	}
 }
