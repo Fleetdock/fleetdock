@@ -3,12 +3,24 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
-import { ChevronRight, Copy, Plus, Server } from "lucide-react";
+import { ChevronRight, Plus, Server } from "lucide-react";
+import { useConfirm } from "@/components/confirm";
 import { DataTable } from "@/components/data-table";
-import { ErrorText, Field, Modal, StatusBadge } from "@/components/ui";
+import { InstallCommand } from "@/components/install-command";
+import { useToast } from "@/components/toast";
+import { ErrorText, Field, Modal, StatusBadge, Time } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { LIST_PAGE_SIZE, useCan, useCreateAgentToken, useCreateServer, useServers } from "@/lib/hooks";
-import type { Server as ServerType } from "@/lib/types";
+import { friendlyError } from "@/lib/errors";
+import {
+  LIST_PAGE_SIZE,
+  useAgentTokens,
+  useCan,
+  useCreateAgentToken,
+  useCreateServer,
+  useRevokeRegistrationToken,
+  useServers,
+} from "@/lib/hooks";
+import type { AgentToken, Server as ServerType } from "@/lib/types";
 
 export default function ServersPage() {
   const [search, setSearch] = useState("");
@@ -83,9 +95,74 @@ export default function ServersPage() {
         }}
       />
 
+      {can("server:write") ? <PendingInstallCommands /> : null}
+
       <RegisterServerModal open={registerOpen} onClose={() => setRegisterOpen(false)} />
       <ConnectServerModal open={connectOpen} onClose={() => setConnectOpen(false)} />
     </div>
+  );
+}
+
+/**
+ * PendingInstallCommands lists install commands that have not been used yet,
+ * so one that was shared by mistake can be revoked before it enrolls a host.
+ */
+function PendingInstallCommands() {
+  const { data, dataUpdatedAt } = useAgentTokens();
+  const revoke = useRevokeRegistrationToken();
+  const confirm = useConfirm();
+  const { push } = useToast();
+  // Expiry is judged as of the last fetch, which keeps rendering pure.
+  const pending = (data?.items ?? []).filter(
+    (t) => !t.used_at && new Date(t.expires_at).getTime() > dataUpdatedAt,
+  );
+  if (pending.length === 0) return null;
+
+  async function onRevoke(t: AgentToken) {
+    const ok = await confirm({
+      title: `Revoke install command "${t.name || "install"}"?`,
+      message: "Anyone holding this command can no longer use it to enroll a server.",
+      confirmLabel: "Revoke",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await revoke.mutateAsync(t.id);
+      push("success", "Install command revoked");
+    } catch (err) {
+      push("error", friendlyError(err, "Failed to revoke the install command"));
+    }
+  }
+
+  return (
+    <section className="section" style={{ marginTop: "1.5rem" }}>
+      <h2 className="section-title">Unused install commands</h2>
+      <DataTable<AgentToken>
+        columns={[
+          { id: "name", header: "Label", className: "font-medium", render: (t) => t.name || "install" },
+          {
+            id: "purpose",
+            header: "Purpose",
+            className: "muted",
+            render: (t) => (t.server_id ? "Re-enroll existing server" : "Connect new server"),
+          },
+          { id: "expires", header: "Expires", className: "muted", render: (t) => <Time value={t.expires_at} /> },
+          {
+            id: "actions",
+            header: "",
+            align: "right",
+            render: (t) => (
+              <button className="btn btn-sm btn-danger" disabled={revoke.isPending} onClick={() => onRevoke(t)}>
+                Revoke
+              </button>
+            ),
+          },
+        ]}
+        rows={pending}
+        rowKey={(t) => t.id}
+        emptyTitle="No unused install commands"
+      />
+    </section>
   );
 }
 
@@ -93,7 +170,6 @@ function ConnectServerModal({ open, onClose }: { open: boolean; onClose: () => v
   const create = useCreateAgentToken();
   const [name, setName] = useState("");
   const [command, setCommand] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
@@ -110,7 +186,6 @@ function ConnectServerModal({ open, onClose }: { open: boolean; onClose: () => v
   function close() {
     setName("");
     setCommand(null);
-    setCopied(false);
     setError(null);
     onClose();
   }
@@ -119,29 +194,8 @@ function ConnectServerModal({ open, onClose }: { open: boolean; onClose: () => v
     <Modal open={open} onClose={close} title="Connect a server">
       {command ? (
         <div>
-          <p className="text-sm" style={{ marginBottom: ".6rem" }}>
-            Run this on the target Linux host as a user with <code>sudo</code> (requires <code>curl</code>).
-            Do not put <code>sudo</code> before <code>curl</code> — it must come after the pipe, before <code>sh</code>.
-          </p>
-          <p className="muted text-sm" style={{ marginBottom: ".6rem" }}>
-            If the host is a VM or another machine, set <code>FLEETDOCK_PUBLIC_URL</code> to a URL that host can reach (not <code>localhost</code>).
-          </p>
-          <div
-            className="card"
-            style={{ padding: ".7rem", fontFamily: "ui-monospace, monospace", fontSize: ".75rem", wordBreak: "break-all", background: "var(--panel-2)" }}
-          >
-            {command}
-          </div>
+          <InstallCommand command={command} />
           <div className="flex items-center justify-end gap-2" style={{ marginTop: ".9rem" }}>
-            <button
-              className="btn"
-              onClick={() => {
-                navigator.clipboard?.writeText(command);
-                setCopied(true);
-              }}
-            >
-              <Copy size={15} /> {copied ? "Copied" : "Copy"}
-            </button>
             <button className="btn btn-primary" onClick={close}>Done</button>
           </div>
         </div>

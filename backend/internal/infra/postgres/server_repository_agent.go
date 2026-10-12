@@ -30,6 +30,21 @@ func (r *ServerRepository) SetAgentToken(ctx context.Context, id uuid.UUID, toke
 	return nil
 }
 
+// ClearAgentToken revokes the server's agent bearer token and marks the
+// server offline, since its agent can no longer report in.
+func (r *ServerRepository) ClearAgentToken(ctx context.Context, id uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE servers SET agent_token_hash = NULL, status = 'offline', version = version + 1
+		WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("clear agent token: %w", err))
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("server not found")
+	}
+	return nil
+}
+
 // GetByAgentTokenHash resolves the server for an agent bearer token.
 func (r *ServerRepository) GetByAgentTokenHash(ctx context.Context, tokenHash string) (*serverdom.Server, error) {
 	q := `SELECT ` + serverColumns + ` FROM servers WHERE agent_token_hash = $1 AND deleted_at IS NULL`

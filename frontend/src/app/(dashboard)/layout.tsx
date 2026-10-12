@@ -1,13 +1,14 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { CommandPalette } from "@/components/command-palette";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
-import { getToken } from "@/lib/auth";
-import { useOperationToasts } from "@/lib/hooks";
+import { ApiError } from "@/lib/api";
+import { clearLegacyToken } from "@/lib/auth";
+import { useMe, useOperationToasts } from "@/lib/hooks";
 
 // OperationToasts subscribes to operation-completion toasts. It renders nothing
 // and lives inside the authenticated shell so it only polls when signed in.
@@ -17,21 +18,31 @@ function OperationToasts() {
 }
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
-  const [ready, setReady] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const closeNav = useCallback(() => setNavOpen(false), []);
+  // The session is an httpOnly cookie, so ask the API who we are. A 401 sends
+  // the browser to /login (see lib/api.ts).
+  const me = useMe();
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-    } else {
-      setReady(true);
-    }
-  }, [router]);
+    clearLegacyToken();
+  }, []);
 
-  if (!ready) return null;
+  // A 401 is already redirecting to /login; anything else is an outage.
+  if (me.isError && !(me.error instanceof ApiError && me.error.status === 401)) {
+    return (
+      <div className="flex items-center justify-center" style={{ minHeight: "100vh", padding: "1rem" }}>
+        <div className="callout callout-danger" role="alert">
+          Could not reach the Fleetdock API.{" "}
+          <button className="btn btn-sm" onClick={() => void me.refetch()}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!me.data) return null;
 
   return (
     <div className="app-shell">

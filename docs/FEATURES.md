@@ -186,11 +186,17 @@ drop of source`) copies or relocates a database to another instance, across
   removing the tunnel requires re-entering the admin password. Backups and
   restores reach the database through a short-lived local port forward.
   Public endpoints (gateway) are not available for tunnelled instances.
-- **JWT storage:** the dashboard stores the session JWT in `localStorage`. A
-  Content-Security-Policy confines the dashboard to its own origin, so injected
-  script cannot send the token elsewhere, and signing out revokes all of the
-  user's sessions server-side. Deploy on trusted networks and keep the frontend
-  dependency supply chain clean.
+- **Sessions:** the dashboard's session is an `HttpOnly`, `SameSite=Strict`
+  cookie (`fleetdock_session`), so script on the page cannot read it.
+  State-changing requests authenticated by the cookie must send
+  `X-Fleetdock-CSRF: 1`; bearer-token API clients are unaffected. A
+  Content-Security-Policy confines the dashboard to its own origin, and signing
+  out revokes all of the user's sessions server-side.
+- **Agent credentials:** a server's agent token can be revoked (the agent is
+  cut off at once) or rotated from the server's page. Rotating issues a
+  single-use, 24-hour install command bound to that server; running it
+  re-enrolls the same server with a fresh token. The agent runs as root, as
+  Docker provisioning requires, inside a sandboxed systemd unit.
 - **Encryption key rotation:** secrets are envelope-encrypted, so rotating the
   master key only re-wraps each secret's data key — the payload ciphertext is
   never touched. To rotate, keep the old key readable and promote a new key with

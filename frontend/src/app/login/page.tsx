@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { ApiError, api } from "@/lib/api";
-import { setToken } from "@/lib/auth";
+import { clearLegacyToken } from "@/lib/auth";
 import { ErrorText, Field } from "@/components/ui";
 import { Logo } from "@/components/logo";
 
@@ -20,8 +20,10 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.post<{ token: string }>("/v1/auth/login", { email, password });
-      setToken(res.token);
+      // The API sets the httpOnly session cookie; the token in the response
+      // body is for API clients and is deliberately not kept.
+      await api.post("/v1/auth/login", { email, password });
+      clearLegacyToken();
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Login failed");

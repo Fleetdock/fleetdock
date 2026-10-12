@@ -54,6 +54,7 @@ Gateway tuning (`FLEETDOCK_GATEWAY_*`) is described in
 | `FLEETDOCK_SMTP_FROM`                                 | `fleetdock@localhost`   | envelope/from address for emails                                                                                  |
 | `FLEETDOCK_ADMIN_EMAIL` / `FLEETDOCK_ADMIN_PASSWORD`  | —                       | first-run bootstrap only; generate with `./scripts/generate-secrets.sh`                                           |
 | `FLEETDOCK_CORS_ORIGIN`                               | `http://localhost:3000` | only used for split-origin deployments; same-origin installs never hit CORS                                       |
+| `FLEETDOCK_CORS_CREDENTIALS`                          | `false`                 | split-origin only: let `FLEETDOCK_CORS_ORIGIN` send the dashboard session cookie                                  |
 | `FLEETDOCK_UI_DIR`                                    | —                       | the bundled dashboard. Set by the image; empty means API-only (bare binary, dev)                                  |
 | `FLEETDOCK_UI_PORT`                                   | `3000`                  | loopback port the dashboard binds; never published                                                                |
 | `FLEETDOCK_ALLOW_LOOPBACK_DB_HOSTS`                   | `true` in development, `false` in production | let instances point at loopback addresses (link-local, metadata and the metadata DB are always refused) |

@@ -48,6 +48,15 @@ components:
       type: http
       scheme: bearer
       description: Agent bearer token (fleeta_ prefix)
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: fleetdock_session
+      description: >
+        The dashboard's session: an httpOnly, SameSite=Strict cookie set by
+        login. Requests other than GET/HEAD/OPTIONS authenticated by it must
+        also send the header `X-Fleetdock-CSRF: 1`, or they are refused with
+        403. Requests with an Authorization bearer token need no such header.
 
   parameters:
     ResourceID:
@@ -824,9 +833,12 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/LoginRequest"
+      description: >
+        Returns a JWT for API clients and also sets the `fleetdock_session`
+        httpOnly cookie the dashboard uses (see the cookieAuth scheme).
       responses:
         "200":
-          description: JWT issued
+          description: JWT issued (also set as the session cookie)
           content:
             application/json:
               schema:
@@ -848,7 +860,8 @@ paths:
       summary: Log out
       description: >
         Invalidates every browser session (JWT) issued to the caller so far,
-        on all devices. API tokens are not affected.
+        on all devices, and clears the session cookie. API tokens are not
+        affected.
       responses:
         "204":
           description: Logged out
@@ -1105,6 +1118,37 @@ paths:
       responses:
         "200":
           description: Metrics series
+
+  /v1/servers/{id}/agent-token:
+    delete:
+      tags: [AgentTokens]
+      security: [{bearerAuth: []}]
+      summary: Revoke a server's agent token
+      description: >
+        Revokes the server's agent bearer token immediately. The agent can no
+        longer report in or claim jobs until it re-enrolls with a token from
+        the rotate endpoint. Requires server:write.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Revoked
+
+  /v1/servers/{id}/agent-token/rotate:
+    post:
+      tags: [AgentTokens]
+      security: [{bearerAuth: []}]
+      summary: Rotate a server's agent token
+      description: >
+        Revokes the server's agent bearer token and returns a single-use,
+        24-hour registration token bound to this server, with its install
+        command. Running that command on the server re-enrolls the same
+        server with a fresh agent token. Requires server:write.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "201":
+          description: Re-enrollment token with raw secret and install command
 
   /v1/agent-tokens:
     get:

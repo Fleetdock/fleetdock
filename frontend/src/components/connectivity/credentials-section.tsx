@@ -4,7 +4,7 @@ import { useState } from "react";
 import { KeyRound, Plus, RotateCw, Trash2 } from "lucide-react";
 
 import { DataTable } from "@/components/data-table";
-import { ConfirmModal, ErrorText, Field, Modal, SecretReveal } from "@/components/ui";
+import { ConfirmModal, ErrorText, Field, Modal, SecretReveal, SectionHeader, StatusBadge, Time } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   useConnectivity,
@@ -55,17 +55,19 @@ export function CredentialsSection({ databaseId, canWrite }: { databaseId: strin
   }
 
   return (
-    <section style={{ marginBottom: "1.25rem" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: ".75rem" }}>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <KeyRound size={18} /> Application credentials
-        </h2>
-        {canWrite ? (
-          <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
-            <Plus size={14} /> Create credential
-          </button>
-        ) : null}
-      </div>
+    <section className="section">
+      <SectionHeader
+        title="Application credentials"
+        icon={<KeyRound size={17} />}
+        description="Scoped logins for apps that connect to this database. Passwords are shown once."
+        actions={
+          canWrite ? (
+            <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
+              <Plus size={14} /> Create credential
+            </button>
+          ) : null
+        }
+      />
 
       <ErrorText message={actionError ?? undefined} />
 
@@ -81,18 +83,23 @@ export function CredentialsSection({ databaseId, canWrite }: { databaseId: strin
               </div>
             ),
           },
-          { id: "access", header: "Access", render: (c) => c.access_level },
+          { id: "access", header: "Access", render: (c) => <span className="badge">{c.access_level}</span> },
           {
             id: "status",
             header: "Status",
             render: (c) =>
               c.revoked_at ? (
-                <span className="muted">Revoked {new Date(c.revoked_at).toLocaleDateString()}</span>
+                <span className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                  <StatusBadge status="revoked" />
+                  <span className="muted text-sm">
+                    <Time value={c.revoked_at} />
+                  </span>
+                </span>
               ) : (
-                <span>Active</span>
+                <StatusBadge status="active" />
               ),
           },
-          { id: "created", header: "Created", render: (c) => new Date(c.created_at).toLocaleString() },
+          { id: "created", header: "Created", className: "muted", hideOnMobile: true, render: (c) => <Time value={c.created_at} /> },
           {
             id: "actions",
             header: "",

@@ -255,7 +255,10 @@ _solely_ through the proxy. If port 8080 is also exposed, a client can spoof
 Serving the dashboard and API from different hostnames is still possible but is
 no longer the smooth path: `NEXT_PUBLIC_API_URL` is inlined by `next build`, so
 you must set it as a build arg and build your own image, then set
-`FLEETDOCK_CORS_ORIGIN` to the dashboard's origin.
+`FLEETDOCK_CORS_ORIGIN` to the dashboard's origin and
+`FLEETDOCK_CORS_CREDENTIALS=true` so the dashboard may send its session
+cookie. The cookie is `SameSite=Strict`, so the two hostnames must share a
+registrable domain (for example `app.example.com` and `api.example.com`).
 
 ## Hosted PostgreSQL
 

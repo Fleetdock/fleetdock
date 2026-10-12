@@ -41,7 +41,7 @@ func newSmokeHandler(t *testing.T) http.Handler {
 	}
 
 	authSvc := authapp.NewService(users, nil, auth.NewJWT("smoke-secret", time.Hour))
-	authHandler := NewAuthHandler(authSvc)
+	authHandler := NewAuthHandler(authSvc, SessionCookieConfig{TTL: time.Hour})
 	authn := NewAuthenticator(authSvc)
 	install := NewInstallHandler("https://cp.example.com", t.TempDir())
 	docs := NewDocsHandler()
@@ -57,6 +57,7 @@ func newSmokeHandler(t *testing.T) http.Handler {
 	mux.HandleFunc("GET /install.sh", install.Script)
 	mux.HandleFunc("POST /v1/auth/login", authHandler.Login)
 	mux.HandleFunc("GET /v1/auth/me", authn.Middleware(http.HandlerFunc(authHandler.Me)).ServeHTTP)
+	mux.HandleFunc("POST /v1/auth/logout", authHandler.Logout)
 
 	return authn.Middleware(mux)
 }
@@ -165,6 +166,92 @@ func TestSmoke_LoginAndMe(t *testing.T) {
 	}
 	if me.Email != "admin@example.com" {
 		t.Fatalf("unexpected user: %+v", me)
+	}
+}
+
+func TestSmoke_SessionCookie(t *testing.T) {
+	h := newSmokeHandler(t)
+
+	loginBody, _ := json.Marshal(map[string]string{
+		"email":    "admin@example.com",
+		"password": "secret123",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody))
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var session *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			session = c
+		}
+	}
+	if session == nil || session.Value == "" {
+		t.Fatal("expected a session cookie on login")
+	}
+	if !session.HttpOnly || !session.Secure || session.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("session cookie must be HttpOnly, Secure and SameSite=Strict: %+v", session)
+	}
+
+	// The cookie alone authenticates safe requests.
+	meReq := httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	meReq.AddCookie(session)
+	meRec := httptest.NewRecorder()
+	h.ServeHTTP(meRec, meReq)
+	if meRec.Code != http.StatusOK {
+		t.Fatalf("/auth/me with cookie: expected 200, got %d (%s)", meRec.Code, meRec.Body.String())
+	}
+
+	// A state-changing cookie request without the CSRF header is refused.
+	outReq := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	outReq.AddCookie(session)
+	outRec := httptest.NewRecorder()
+	h.ServeHTTP(outRec, outReq)
+	if outRec.Code != http.StatusForbidden {
+		t.Fatalf("logout without CSRF header: expected 403, got %d", outRec.Code)
+	}
+
+	// With the header it goes through and clears the cookie.
+	outReq = httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	outReq.AddCookie(session)
+	outReq.Header.Set(csrfHeader, "1")
+	outRec = httptest.NewRecorder()
+	h.ServeHTTP(outRec, outReq)
+	if outRec.Code != http.StatusNoContent {
+		t.Fatalf("logout with CSRF header: expected 204, got %d (%s)", outRec.Code, outRec.Body.String())
+	}
+	cleared := false
+	for _, c := range outRec.Result().Cookies() {
+		if c.Name == sessionCookieName && c.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatal("expected logout to clear the session cookie")
+	}
+}
+
+func TestSmoke_BearerNeedsNoCSRFHeader(t *testing.T) {
+	h := newSmokeHandler(t)
+	loginBody, _ := json.Marshal(map[string]string{
+		"email":    "admin@example.com",
+		"password": "secret123",
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(loginBody)))
+	var loginResp loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &loginResp); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	out := httptest.NewRecorder()
+	h.ServeHTTP(out, req)
+	if out.Code != http.StatusNoContent {
+		t.Fatalf("bearer logout: expected 204, got %d (%s)", out.Code, out.Body.String())
 	}
 }
 
