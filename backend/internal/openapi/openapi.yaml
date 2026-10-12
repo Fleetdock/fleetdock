@@ -1975,6 +1975,45 @@ paths:
         "200":
           description: Export URL
 
+  /v1/databases/{id}/dump/check:
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      summary: Check a downloaded backup can start
+      description: >
+        Verifies that a one-off dump of the database can start: the dump tool
+        is installed on the control plane and the database accepts the
+        instance's admin login. Call it before `GET /v1/databases/{id}/dump`
+        to report problems as an error instead of a failed download. Requires
+        backup:write on the database.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: The dump can start
+
+  /v1/databases/{id}/dump:
+    get:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      summary: Download a one-off backup
+      description: >
+        Streams a gzip-compressed SQL dump of the database (the same
+        `pg_dump` / `mariadb-dump` output a stored backup contains) straight
+        to the client as `<database>-<YYYYMMDD-HHMMSS>.sql.gz`. Nothing is
+        stored: no backup destination is needed and no backup record is
+        created. Errors before the first byte return JSON; a failure
+        mid-stream truncates the file, which its gzip trailer check exposes.
+        Requires backup:write on the database.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: The dump
+          content:
+            application/gzip:
+              schema: {type: string, format: binary}
+
   /v1/db-privileges:
     get:
       tags: [DBAdmin]

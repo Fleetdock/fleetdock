@@ -399,6 +399,60 @@ func (h *DBAdminHandler) streamCSV(w http.ResponseWriter, filename string, run f
 	}
 }
 
+// CheckDump handles POST /v1/databases/{id}/dump/check: it verifies a
+// downloaded dump can start, so the dashboard can show why it cannot before
+// handing the download to the browser.
+func (h *DBAdminHandler) CheckDump(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.CheckDump(r.Context(), r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// Dump handles GET /v1/databases/{id}/dump: a gzip-compressed SQL dump of the
+// database streamed straight to the client. Nothing is stored — no backup
+// destination is needed and no backup record is created.
+func (h *DBAdminHandler) Dump(w http.ResponseWriter, r *http.Request) {
+	// A dump of a large database may stream for a long time; the server's
+	// WriteTimeout is sized for JSON requests.
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(dumpWriteDeadline)); err != nil {
+		slog.Warn("database dump: cannot extend write deadline", "error", err.Error())
+	}
+	id := r.PathValue("id")
+	started := false
+	err := h.svc.Dump(r.Context(), id, w, func(dbName string) {
+		started = true
+		filename := dumpFilename(dbName, time.Now().UTC())
+		w.Header().Set("Content-Type", "application/gzip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+		w.WriteHeader(http.StatusOK)
+	})
+	user := ""
+	if uid := callerID(r); uid != nil {
+		user = uid.String()
+	}
+	if err != nil {
+		if !started {
+			writeError(w, err)
+			return
+		}
+		slog.Error("database dump failed mid-stream", "database_id", id, "user_id", user, "error", err.Error())
+		return
+	}
+	slog.Info("database dump downloaded", "database_id", id, "user_id", user)
+}
+
+// dumpWriteDeadline is a little above the service's dump timeout, so the dump,
+// not the socket, is what gives up first.
+const dumpWriteDeadline = 2*time.Hour + time.Minute
+
+// dumpFilename names a downloaded dump after its database and the time it
+// was taken, e.g. "orders-20261012-143005.sql.gz".
+func dumpFilename(dbName string, at time.Time) string {
+	return strings.TrimSuffix(csvFilename(dbName), ".csv") + "-" + at.Format("20060102-150405") + ".sql.gz"
+}
+
 // exportWriteDeadline bounds a streamed export; a little above the service's
 // export timeout so the query, not the socket, is what gives up first.
 const exportWriteDeadline = 6 * time.Minute

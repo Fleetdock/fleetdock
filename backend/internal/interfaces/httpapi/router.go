@@ -201,6 +201,9 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
 	// SQL console: any writes are gated inside the handler by database:write.
 	mux.HandleFunc("POST /v1/databases/{id}/query", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Query))
+	// One-off dump streamed to the client; needs the same right as "back up now".
+	mux.HandleFunc("POST /v1/databases/{id}/dump/check", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.CheckDump))
+	mux.HandleFunc("GET /v1/databases/{id}/dump", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.Dump))
 	mux.HandleFunc("POST /v1/databases/{id}/export", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ExportQuery))
 	mux.HandleFunc("POST /v1/databases/{id}/import-sql", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Backups.ImportSQL))
 	mux.HandleFunc("POST /v1/databases/{id}/query/{qid}/cancel", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.CancelQuery))

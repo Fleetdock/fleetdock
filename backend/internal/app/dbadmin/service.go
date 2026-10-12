@@ -28,6 +28,7 @@ import (
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
 )
 
 // Secrets is the secret store surface this service needs.
@@ -980,4 +981,67 @@ func (s *Service) SetDBUserPassword(ctx context.Context, instanceID, user, host,
 	cctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	return apperr.FromEngine(engine.RotatePassword(cctx, admin, conn, user, host, password), "username")
+}
+
+// dumpTimeout bounds a downloaded dump, matching the worker's job timeout for
+// stored backups.
+const dumpTimeout = 2 * time.Hour
+
+// dumpTarget resolves a database plus the engine and admin connection a dump
+// of it uses — the same login a stored backup runs as.
+func (s *Service) dumpTarget(ctx context.Context, databaseID string) (*databasedom.Database, string, engine.ConnParams, error) {
+	did, err := uuid.Parse(databaseID)
+	if err != nil {
+		return nil, "", engine.ConnParams{}, apperr.Invalid("id", "id must be a valid UUID")
+	}
+	db, err := s.databases.GetByID(ctx, did)
+	if err != nil {
+		return nil, "", engine.ConnParams{}, err
+	}
+	inst, _, conn, err := s.target(ctx, db.InstanceID.String())
+	if err != nil {
+		return nil, "", engine.ConnParams{}, err
+	}
+	return db, string(inst.Engine), conn, nil
+}
+
+// CheckDump verifies a downloaded dump of the database can start: the dump
+// tool is installed and the database accepts the instance's admin login. The
+// dashboard calls it first, so problems surface as a message rather than a
+// failed browser download.
+func (s *Service) CheckDump(ctx context.Context, databaseID string) error {
+	db, engineName, conn, err := s.dumpTarget(ctx, databaseID)
+	if err != nil {
+		return err
+	}
+	if err := executor.DumpPreflight(engineName); err != nil {
+		return apperr.Invalid("engine", "the control plane cannot run the dump tool: "+err.Error())
+	}
+	eng, err := engine.For(engineName)
+	if err != nil {
+		return apperr.Invalid("engine", err.Error())
+	}
+	cctx, cancel := context.WithTimeout(ctx, opTimeout)
+	defer cancel()
+	conn.Database = db.Name
+	if _, err := eng.Ping(cctx, conn); err != nil {
+		return apperr.FromEngine(err, "instance")
+	}
+	return nil
+}
+
+// Dump streams a gzip-compressed SQL dump of the database to w without
+// storing it anywhere. onStart receives the database name just before the
+// first byte is written.
+func (s *Service) Dump(ctx context.Context, databaseID string, w io.Writer, onStart func(dbName string)) error {
+	db, engineName, conn, err := s.dumpTarget(ctx, databaseID)
+	if err != nil {
+		return err
+	}
+	cctx, cancel := context.WithTimeout(ctx, dumpTimeout)
+	defer cancel()
+	if err := executor.Dump(cctx, engineName, conn, db.Name, w, func() { onStart(db.Name) }); err != nil {
+		return apperr.Invalid("database", err.Error())
+	}
+	return nil
 }
