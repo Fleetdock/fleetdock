@@ -122,7 +122,13 @@ function InstanceDetail() {
           </>
         }
         description={`${engineLabel(instance.engine)} ${instance.engine_version} · ${kindLabel(instance)} · ${where}`}
-        actions={can("instance:write") ? <InstanceControls instance={instance} /> : null}
+        actions={
+          <>
+            {/* The probe only needs instance:read, so viewers keep this button. */}
+            {instance.has_credentials ? <CheckNowButton instance={instance} /> : null}
+            {can("instance:write") ? <InstanceControls instance={instance} /> : null}
+          </>
+        }
       />
 
       {!instance.has_credentials ? (
@@ -474,24 +480,26 @@ function Detail({ label, value }: { label: string; value: ReactNode }) {
 
 /**
  * LastChecked shows when Fleetdock last reached the server (it checks every
- * minute on its own) with a button to check — and pick up new databases — now.
+ * minute on its own; "Check now" in the header checks immediately).
  */
 function LastChecked({ instance }: { instance: Instance }) {
+  return <>{instance.health ? <Time value={instance.health.checked_at} /> : "not yet"}</>;
+}
+
+/** CheckNowButton checks the connection — and picks up new databases — now. */
+function CheckNowButton({ instance }: { instance: Instance }) {
   const probe = useProbeInstance();
   const toastError = useErrorToast();
   return (
-    <span className="flex items-center gap-2">
-      {instance.health ? <Time value={instance.health.checked_at} /> : "not yet"}
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        disabled={probe.isPending}
-        onClick={() => probe.mutate(instance.id, { onError: toastError("Could not check the server") })}
-        title="Check the connection and look for new databases now"
-      >
-        {probe.isPending ? <Spinner /> : <RefreshCw size={14} />} Check now
-      </button>
-    </span>
+    <button
+      type="button"
+      className="btn"
+      disabled={probe.isPending}
+      onClick={() => probe.mutate(instance.id, { onError: toastError("Could not check the server") })}
+      title="Check the connection and look for new databases now"
+    >
+      {probe.isPending ? <Spinner /> : <RefreshCw size={15} />} Check now
+    </button>
   );
 }
 
