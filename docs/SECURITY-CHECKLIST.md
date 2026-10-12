@@ -39,7 +39,8 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 
 - [ ] **`FLEETDOCK_PUBLIC_URL`** is the URL agents use — must be reachable from every managed host on 443, and is pinned into each agent at enrolment
 - [ ] Registration tokens are **single-use** and short-lived; do not share install commands in public channels
-- [ ] Agent bearer tokens are stored on disk (`state.json` on the server) — protect file permissions (systemd runs as root today; restrict backup access to state dir)
+- [ ] Agent bearer tokens are stored on disk (`state.json` on the server) — protect file permissions and restrict backup access to the state dir. The agent runs as root (it drives Docker) inside a sandboxed systemd unit; servers enrolled before the sandbox landed get it by re-running the install command
+- [ ] If a server or its agent token may be compromised, **revoke** the token from the server's page (the agent is cut off at once) or **rotate** it and run the one-time re-enroll command on the server
 
 ### External database instances
 
@@ -53,10 +54,9 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 
 ## Authentication and sessions
 
-- [ ] **JWT in localStorage** — the dashboard stores the session token in `localStorage`, which is vulnerable to XSS. Mitigations:
+- [ ] **Session cookie** — the dashboard session is an `HttpOnly`, `SameSite=Strict` cookie that script cannot read; state-changing requests must carry the `X-Fleetdock-CSRF` header. It is marked `Secure` when `FLEETDOCK_PUBLIC_URL` is `https://` or the request arrives over TLS — serve the dashboard over HTTPS
   - Keep frontend dependencies updated (`npm audit`, Dependabot)
   - Do not install untrusted browser extensions for admin users
-  - Consider placing the dashboard behind VPN, SSO gateway, or IP allowlist until httpOnly cookies or OIDC land
 - [ ] **API tokens** — scope tokens minimally; set expiry; revoke unused tokens
 - [ ] **RBAC** — use `viewer` / `operator` roles instead of giving everyone `owner`
 - [ ] **Suspend** compromised accounts immediately (sessions stop working)

@@ -81,6 +81,49 @@ func (s *Service) RevokeToken(ctx context.Context, id string) error {
 	return s.tokens.Delete(ctx, uid)
 }
 
+// RevokeAgentToken revokes a server's agent bearer token immediately. The
+// agent is cut off until it re-enrolls with a token from RotateAgentToken.
+func (s *Service) RevokeAgentToken(ctx context.Context, serverID string) error {
+	uid, err := uuid.Parse(serverID)
+	if err != nil {
+		return apperr.Invalid("id", "id must be a valid UUID")
+	}
+	return s.servers.ClearAgentToken(ctx, uid)
+}
+
+// RotateAgentToken revokes a server's agent bearer token and issues a
+// single-use registration token bound to that server. Re-running the install
+// command with it re-enrolls the same server with a fresh agent token.
+func (s *Service) RotateAgentToken(ctx context.Context, serverID string, createdBy *uuid.UUID) (*regtokendom.Token, string, error) {
+	uid, err := uuid.Parse(serverID)
+	if err != nil {
+		return nil, "", apperr.Invalid("id", "id must be a valid UUID")
+	}
+	srv, err := s.servers.GetByID(ctx, uid)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := s.servers.ClearAgentToken(ctx, uid); err != nil {
+		return nil, "", err
+	}
+	raw, hash, err := newToken("fleetr")
+	if err != nil {
+		return nil, "", apperr.Internal(err)
+	}
+	t := &regtokendom.Token{
+		ID:        uuid.New(),
+		Name:      "Re-enroll " + srv.Name,
+		TokenHash: hash,
+		CreatedBy: createdBy,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ServerID:  &uid,
+	}
+	if err := s.tokens.Create(ctx, t); err != nil {
+		return nil, "", err
+	}
+	return t, raw, nil
+}
+
 // RegisterInput is what an enrolling agent sends.
 type RegisterInput struct {
 	Token        string
@@ -90,8 +133,9 @@ type RegisterInput struct {
 	AgentVersion string
 }
 
-// Register consumes a registration token, creates (or names) the server and
-// issues the agent's long-lived bearer token.
+// Register consumes a registration token, creates (or names) the server — or,
+// for a re-enrollment token, re-attaches its existing server — and issues the
+// agent's long-lived bearer token.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (*serverdom.Server, string, error) {
 	if in.Token == "" || in.Hostname == "" {
 		return nil, "", apperr.Invalid("token", "token and hostname are required")
@@ -107,7 +151,13 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*serverdom.Se
 		return nil, "", apperr.Unauthorized("registration token expired")
 	}
 
-	srv, err := s.createServer(ctx, in)
+	var srv *serverdom.Server
+	if rt.ServerID != nil {
+		// Re-enrollment token: re-attach the agent to its existing server.
+		srv, err = s.servers.GetByID(ctx, *rt.ServerID)
+	} else {
+		srv, err = s.createServer(ctx, in)
+	}
 	if err != nil {
 		return nil, "", err
 	}

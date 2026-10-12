@@ -83,6 +83,46 @@ export function useCreateAgentToken() {
   });
 }
 
+// useRevokeRegistrationToken revokes an unused registration token, so its
+// install command can no longer enroll a server.
+export function useRevokeRegistrationToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/v1/agent-tokens/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-tokens"] }),
+  });
+}
+
+// ---- A server's agent credentials ----
+
+// useRevokeAgentToken cuts a server's agent off immediately: it can no longer
+// report in or run operations until it re-enrolls.
+export function useRevokeAgentToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (serverId: string) => api.del<void>(`/v1/servers/${serverId}/agent-token`),
+    onSuccess: (_d, serverId) => {
+      qc.invalidateQueries({ queryKey: ["servers"] });
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+    },
+  });
+}
+
+// useRotateAgentToken revokes a server's agent token and returns a single-use
+// install command that re-enrolls the same server with a fresh token.
+export function useRotateAgentToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (serverId: string) =>
+      api.post<CreatedAgentToken>(`/v1/servers/${serverId}/agent-token/rotate`, {}),
+    onSuccess: (_d, serverId) => {
+      qc.invalidateQueries({ queryKey: ["servers"] });
+      qc.invalidateQueries({ queryKey: ["server", serverId] });
+      qc.invalidateQueries({ queryKey: ["agent-tokens"] });
+    },
+  });
+}
+
 // ---- Server metrics history ----
 export function useServerMetrics(serverId: string, hours = 6) {
   return useQuery({

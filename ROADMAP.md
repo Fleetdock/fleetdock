@@ -27,7 +27,7 @@ What ships in each release and what we are building next. For release mechanics 
 - **Auth hardening** — JWT token epoch invalidates browser sessions on password change/reset; proxy-aware login rate limiting (`FLEETDOCK_TRUST_PROXY_HEADERS`)
 - **SSRF-resistant webhooks** — notification webhook/Slack delivery blocks loopback, link-local, and cloud metadata targets
 - **MariaDB admin** — password escaping fix for special characters
-- **Audit log removed** — table, permissions, and UI dropped ([migration](backend/internal/infra/postgres/migrations/0009_drop_audit.sql))
+- **Audit log removed** — table, permissions, and UI dropped ([migration](backend/internal/infra/postgres/migrations/0009_drop_audit.sql)); an append-only `audit_events` table for connectivity and credential changes returned later (migration 0011), not yet exposed in the API or UI
 - Docs: [ROADMAP.md](ROADMAP.md) backlog, README GHCR quick-start, [docs/screenshots/README.md](docs/screenshots/README.md)
 
 ---
@@ -82,7 +82,10 @@ What ships in each release and what we are building next. For release mechanics 
 | JWT session invalidation on password change | done | Token epoch in v0.3.0 |
 | SSRF protection for outbound webhooks | done | `netsafe` client in v0.3.0 |
 | Proxy-aware login rate limiting | done | `FLEETDOCK_TRUST_PROXY_HEADERS` in v0.3.0 |
-| httpOnly cookie sessions (replace localStorage JWT) | todo | Reduces XSS blast radius |
+| httpOnly cookie sessions (replace localStorage JWT) | done | `SameSite=Strict` cookie + CSRF header |
+| Per-server agent token revoke / rotate | done | Re-enroll the same server with a bound install command |
+| Sandboxed agent systemd unit | done | Agent still runs as root (Docker) |
+| Expose `audit_events` in API and dashboard | todo | Recorded today, readable only via `fleetdock psql` |
 | SSO / OIDC | todo | Enterprise login |
 | 2FA / MFA | todo | Admin accounts |
 | Cloudflare Tunnel / TCP proxy for external DBs | todo | No open DB ports from internet |
@@ -136,7 +139,7 @@ What ships in each release and what we are building next. For release mechanics 
 1. Real screenshots + public GHCR packages
 2. Worker + backup integration tests (raise coverage on money paths)
 3. Postgres integration tests in CI
-4. httpOnly sessions or SSO (pick based on user feedback)
+4. SSO / OIDC and 2FA
 5. Cloudflare Tunnel for external instances
 6. Helm chart + Prometheus metrics
 

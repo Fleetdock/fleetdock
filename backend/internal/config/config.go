@@ -33,6 +33,9 @@ type Config struct {
 
 	// CORS origin for the web frontend
 	CORSOrigin string
+	// CORSCredentials lets CORSOrigin send the dashboard's session cookie
+	// (Access-Control-Allow-Credentials). Only for split-origin deployments.
+	CORSCredentials bool
 
 	// TrustProxyHeaders makes the API derive the client IP from the
 	// X-Forwarded-For header (used for login rate limiting). Enable it only
@@ -217,6 +220,7 @@ func Load() (Config, error) {
 		AdminPassword: getenv("FLEETDOCK_ADMIN_PASSWORD", "admin12345"),
 
 		CORSOrigin:        getenv("FLEETDOCK_CORS_ORIGIN", "http://localhost:3000"),
+		CORSCredentials:   getenvBool("FLEETDOCK_CORS_CREDENTIALS", false),
 		TrustProxyHeaders: getenvBool("FLEETDOCK_TRUST_PROXY_HEADERS", false),
 
 		EncryptionKey:     getenv("FLEETDOCK_ENCRYPTION_KEY", "dev-insecure-encryption-key"),

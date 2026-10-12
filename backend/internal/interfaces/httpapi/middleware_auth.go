@@ -13,8 +13,8 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
-// Authenticator resolves the request principal from the Authorization header
-// for all non-public routes.
+// Authenticator resolves the request principal from the Authorization header,
+// or else the dashboard's session cookie, for all non-public routes.
 type Authenticator struct {
 	svc    *authapp.Service
 	public map[string]bool
@@ -43,7 +43,17 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		p, err := a.svc.Principal(r.Context(), bearerToken(r))
+		cred := bearerToken(r)
+		if cred == "" {
+			// Browser session: the httpOnly cookie. State-changing requests
+			// must also carry the CSRF header (see session_cookie.go).
+			cred = sessionCookie(r)
+			if cred != "" && !safeMethod(r.Method) && r.Header.Get(csrfHeader) == "" {
+				writeError(w, apperr.Forbidden("missing "+csrfHeader+" header"))
+				return
+			}
+		}
+		p, err := a.svc.Principal(r.Context(), cred)
 		if err != nil {
 			writeError(w, err)
 			return

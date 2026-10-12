@@ -3,13 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { CircleUser, LogOut, Menu as MenuIcon, Moon, Search, Sun, UserRound } from "lucide-react";
 
 import { openCommandPalette } from "@/components/command-palette";
 import { RunningOps } from "@/components/running-ops";
 import { Menu } from "@/components/ui";
 import { api } from "@/lib/api";
-import { clearToken } from "@/lib/auth";
 import { useMe } from "@/lib/hooks";
 
 function useTheme(): [boolean, () => void] {
@@ -32,18 +32,19 @@ function useTheme(): [boolean, () => void] {
 
 export function Topbar({ onOpenNav, extra }: { onOpenNav: () => void; extra?: React.ReactNode }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: me } = useMe();
   const [dark, toggleTheme] = useTheme();
 
   async function logout() {
-    // Revoke the session server-side too, so a copied token stops working.
-    // Best effort: the local token is discarded either way.
+    // Ends every session of this user server-side and clears the httpOnly
+    // session cookie. Best effort: an expired session is already signed out.
     try {
       await api.post("/v1/auth/logout", {});
     } catch {
       /* already expired or offline */
     }
-    clearToken();
+    queryClient.clear();
     router.replace("/login");
   }
 

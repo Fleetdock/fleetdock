@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The dashboard session is an httpOnly cookie.** Login sets a
+  `fleetdock_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` over
+  HTTPS) instead of the dashboard keeping the JWT in `localStorage`, so
+  injected script can no longer read the session. Cookie-authenticated
+  requests that change state must send `X-Fleetdock-CSRF: 1`. API clients keep
+  using `Authorization: Bearer`; the login response still carries the token.
+  Signing out clears the cookie, and a token left in `localStorage` by an
+  earlier release is removed.
+- **Revoke and rotate a server's agent token.** A server's page has *Rotate
+  agent token* and *Revoke agent token*
+  (`POST /v1/servers/{id}/agent-token/rotate`,
+  `DELETE /v1/servers/{id}/agent-token`). Revoking cuts the agent off at once;
+  rotating also returns a single-use install command that re-enrolls the same
+  server with a fresh token. Unused install commands are listed on the Servers
+  page and can be revoked.
+- **The agent's systemd unit is sandboxed.** The agent still runs as root
+  (Docker provisioning needs it), now with `NoNewPrivileges`, `ProtectSystem`,
+  `ProtectHome`, `PrivateTmp`, kernel and control-group protections and a
+  `0077` umask. Re-run the install command on a server to pick up the new unit.
+
 ### Changed
+
+- **Database page redesign.** Headline figures (size, tables, views, open
+  connections) across the top; connection details, public access,
+  application credentials and backups/access in the main column; details and
+  quick links alongside. Connection details include a copyable,
+  credential-free connection URL, and gateway warnings are shown as callouts
+  with plain-language TLS status.
 
 - **Choose the login used for data browsing.** The data browser, SQL
   console, exports and SQL imports used to connect as roles Fleetdock created

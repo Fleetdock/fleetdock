@@ -1,5 +1,6 @@
 // Shared UI primitives. Import from "@/components/ui".
 export * from "./base";
+export * from "./detail";
 export * from "./menu";
 export * from "./page-header";
 export * from "./skeleton";

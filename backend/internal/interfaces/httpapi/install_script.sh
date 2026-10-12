@@ -54,6 +54,10 @@ if command -v systemctl >/dev/null 2>&1 && command -v docker >/dev/null 2>&1; th
 fi
 
 mkdir -p /etc/fleetdock-agent /var/lib/fleetdock-agent
+# A registration token means "enroll now": drop any saved agent identity so a
+# re-run (for example with a re-enrollment token after rotating this server's
+# agent token) enrolls again instead of reusing the old, revoked credentials.
+rm -f /var/lib/fleetdock-agent/state.json
 cat > /etc/fleetdock-agent/agent.env <<EOF
 FLEETDOCK_URL=${FLEETDOCK_URL}
 FLEETDOCK_TOKEN=${FLEETDOCK_TOKEN}
@@ -73,6 +77,23 @@ EnvironmentFile=/etc/fleetdock-agent/agent.env
 ExecStart=/usr/local/bin/fleetdock-agent
 Restart=always
 RestartSec=5
+# The agent runs as root because it drives Docker and the database client
+# tools; this sandbox narrows what a compromised agent process can change.
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target

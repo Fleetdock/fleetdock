@@ -67,18 +67,46 @@ func (h *RegTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	resp := struct {
-		regTokenResponse
-		Token          string `json:"token"`
-		InstallCommand string `json:"install_command"`
-	}{
+	writeJSON(w, http.StatusCreated, h.createdResponse(t, raw))
+}
+
+type createdRegTokenResponse struct {
+	regTokenResponse
+	Token          string `json:"token"`
+	InstallCommand string `json:"install_command"`
+}
+
+// createdResponse pairs a new token with its raw value and the ready-to-paste
+// install command, which are shown exactly once.
+func (h *RegTokenHandler) createdResponse(t *regtokendom.Token, raw string) createdRegTokenResponse {
+	return createdRegTokenResponse{
 		regTokenResponse: toRegTokenResponse(t),
 		Token:            raw,
 		InstallCommand: fmt.Sprintf(
 			"curl -sSL %s/install.sh | sudo env FLEETDOCK_URL=%s FLEETDOCK_TOKEN=%s sh",
 			h.publicURL, h.publicURL, raw),
 	}
-	writeJSON(w, http.StatusCreated, resp)
+}
+
+// RevokeAgent handles DELETE /v1/servers/{id}/agent-token: the server's agent
+// is cut off immediately until it re-enrolls.
+func (h *RegTokenHandler) RevokeAgent(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.RevokeAgentToken(r.Context(), r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// RotateAgent handles POST /v1/servers/{id}/agent-token/rotate: it revokes
+// the agent token and returns a single-use re-enrollment install command.
+func (h *RegTokenHandler) RotateAgent(w http.ResponseWriter, r *http.Request) {
+	t, raw, err := h.svc.RotateAgentToken(r.Context(), r.PathValue("id"), callerID(r))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, h.createdResponse(t, raw))
 }
 
 // List handles GET /v1/agent-tokens.

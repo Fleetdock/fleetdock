@@ -9,11 +9,15 @@ import (
 
 // AuthHandler exposes login and identity endpoints.
 type AuthHandler struct {
-	svc *authapp.Service
+	svc    *authapp.Service
+	cookie SessionCookieConfig
 }
 
-// NewAuthHandler builds the auth handler.
-func NewAuthHandler(svc *authapp.Service) *AuthHandler { return &AuthHandler{svc: svc} }
+// NewAuthHandler builds the auth handler. Login sets the dashboard's session
+// cookie as configured by cookie.
+func NewAuthHandler(svc *authapp.Service, cookie SessionCookieConfig) *AuthHandler {
+	return &AuthHandler{svc: svc, cookie: cookie}
+}
 
 type loginRequest struct {
 	Email    string `json:"email"`
@@ -67,6 +71,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	h.cookie.set(w, r, res.Token)
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token: res.Token,
 		User:  userSummary{ID: res.User.ID.String(), Email: res.User.Email},
@@ -85,12 +90,13 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout handles POST /v1/auth/logout: it invalidates every browser session
-// (JWT) of the caller. The client should discard its token as well.
+// (JWT) of the caller and clears the session cookie.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	p := principalFrom(r.Context())
 	if err := h.svc.Logout(r.Context(), p.UserID); err != nil {
 		writeError(w, err)
 		return
 	}
+	h.cookie.clear(w, r)
 	writeJSON(w, http.StatusNoContent, nil)
 }

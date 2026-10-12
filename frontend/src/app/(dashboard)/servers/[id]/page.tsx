@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Ban, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table";
 import { MetricChart, type ChartPoint } from "@/components/chart";
-import { EmptyState, ErrorText, Field, Modal, PageHeader, Spinner, StatusBadge, Time } from "@/components/ui";
+import { EmptyState, ErrorText, Field, Menu, Modal, PageHeader, Spinner, StatusBadge, Time } from "@/components/ui";
+import { InstallCommand } from "@/components/install-command";
 import { AddServerWizard } from "@/components/database/add-server-wizard";
 import { engineLabel } from "@/lib/engines";
 import { ApiError } from "@/lib/api";
@@ -15,6 +16,8 @@ import {
   useCan,
   useDeleteServer,
   useInstances,
+  useRevokeAgentToken,
+  useRotateAgentToken,
   useServer,
   useServerMetrics,
   useUpdateServer,
@@ -122,10 +125,47 @@ function ServerControls({
 }) {
   const router = useRouter();
   const del = useDeleteServer();
+  const revoke = useRevokeAgentToken();
+  const rotate = useRotateAgentToken();
   const confirm = useConfirm();
   const { push } = useToast();
-  const busy = del.isPending;
+  const [reenroll, setReenroll] = useState<string | null>(null);
+  const busy = del.isPending || revoke.isPending || rotate.isPending;
   const blocked = instanceCount > 0;
+
+  async function onRotate() {
+    const ok = await confirm({
+      title: `Rotate the agent token for ${server.name}?`,
+      message:
+        "The agent's current token stops working immediately. You get a one-time install command; run it on the machine to re-enroll this server with a fresh token. Operations wait until it reconnects.",
+      confirmLabel: "Rotate token",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const res = await rotate.mutateAsync(server.id);
+      setReenroll(res.install_command);
+    } catch (err) {
+      push("error", friendlyError(err, "Failed to rotate the agent token"));
+    }
+  }
+
+  async function onRevoke() {
+    const ok = await confirm({
+      title: `Revoke the agent token for ${server.name}?`,
+      message:
+        "The agent is cut off immediately and can no longer report in or run operations. Use this if the machine or its token may be compromised. To reconnect it later, rotate the token and run the install command.",
+      confirmLabel: "Revoke token",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await revoke.mutateAsync(server.id);
+      push("success", `Agent token for ${server.name} revoked`);
+    } catch (err) {
+      push("error", friendlyError(err, "Failed to revoke the agent token"));
+    }
+  }
 
   async function onDelete() {
     const ok = await confirm({
@@ -162,6 +202,26 @@ function ServerControls({
       >
         <Trash2 size={15} /> Remove
       </button>
+      <Menu
+        label="Agent token actions"
+        items={[
+          { label: "Rotate agent token", icon: <KeyRound size={15} />, onSelect: onRotate, disabled: busy },
+          { label: "Revoke agent token", icon: <Ban size={15} />, onSelect: onRevoke, danger: true, disabled: busy },
+        ]}
+      />
+      <Modal open={reenroll !== null} onClose={() => setReenroll(null)} title={`Re-enroll ${server.name}`}>
+        {reenroll ? (
+          <>
+            <p className="callout callout-info">
+              The old agent token no longer works. This command is shown once and expires in 24 hours.
+            </p>
+            <InstallCommand command={reenroll} />
+            <div className="flex justify-end" style={{ marginTop: ".9rem" }}>
+              <button className="btn btn-primary" onClick={() => setReenroll(null)}>Done</button>
+            </div>
+          </>
+        ) : null}
+      </Modal>
     </>
   );
 }

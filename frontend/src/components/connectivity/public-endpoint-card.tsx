@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Globe } from "lucide-react";
 
-import { ConfirmModal, CopyButton, Detail, ErrorText, Field, StatusBadge } from "@/components/ui";
+import { ConfirmModal, ErrorText, Field, KeyValueList, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useDisablePublicAccess, useEnablePublicAccess } from "@/lib/hooks";
 import type { Connectivity, EndpointView, GatewayInfo } from "@/lib/types";
@@ -22,13 +22,13 @@ export function PublicEndpointCard({
   onOperation: (id: string | null) => void;
 }) {
   return (
-    <div className="card" style={{ padding: "1.1rem" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: ".5rem" }}>
-        <h3 className="font-medium flex items-center gap-2">
-          <Globe size={16} /> Public access
-        </h3>
-        {data.public ? <StatusBadge status={data.public.status} /> : <span className="muted text-sm">Disabled</span>}
-      </div>
+    <div className="card panel">
+      <h3 className="panel-title">
+        <span>
+          <Globe size={16} aria-hidden /> Public access
+        </span>
+        {data.public ? <StatusBadge status={data.public.status} /> : <span className="badge">Off</span>}
+      </h3>
 
       {data.public ? (
         <EnabledPublicAccess
@@ -86,22 +86,38 @@ function EnabledPublicAccess({
 
   return (
     <>
-      <Detail label="Address" value={address} mono />
-      <Detail label="TLS" value={`${endpoint.tls_mode} (observed: ${endpoint.tls_status})`} />
-      <Detail label="Allowed networks" value={cidrs.length ? cidrs.join(", ") : "none"} />
-      {endpoint.denied_connections > 0 ? (
-        <Detail
-          label="Rejected"
-          value={`${endpoint.denied_connections} connection${endpoint.denied_connections === 1 ? "" : "s"} blocked by the allowlist`}
-        />
-      ) : null}
+      <KeyValueList
+        items={[
+          { label: "Address", value: address, mono: true, copy: address },
+          { label: "TLS", value: tlsSummary(endpoint.tls_mode, endpoint.tls_status) },
+          {
+            label: "Allowed networks",
+            value: cidrs.length ? (
+              <span className="flex gap-1" style={{ flexWrap: "wrap" }}>
+                {cidrs.map((c) => (
+                  <code key={c} className={c === ALLOW_ANYWHERE ? "badge badge-amber" : "badge"}>
+                    {c}
+                  </code>
+                ))}
+              </span>
+            ) : (
+              "None"
+            ),
+          },
+          {
+            label: "Rejected",
+            value: `${endpoint.denied_connections} connection${endpoint.denied_connections === 1 ? "" : "s"} blocked by the allowlist`,
+            hidden: endpoint.denied_connections === 0,
+          },
+        ]}
+      />
 
       {endpoint.last_error ? <ErrorText message={endpoint.last_error} /> : null}
 
       {tlsUnsatisfiable ? (
-        <div className="card" style={{ padding: ".7rem", marginTop: ".5rem" }}>
+        <div className="callout callout-danger" role="alert">
           <strong>This database does not accept TLS, but the endpoint requires it.</strong>
-          <p className="text-sm" style={{ marginTop: ".25rem" }}>
+          <p className="text-sm" style={{ margin: ".25rem 0 0" }}>
             Connection URLs are issued with <code>sslmode=require</code> and will fail until you enable TLS on the
             database. Fleetdock will not quietly downgrade the requirement, because that would drop encryption without
             you asking.
@@ -110,9 +126,9 @@ function EnabledPublicAccess({
       ) : null}
 
       {allowlistLikelyWrong ? (
-        <div className="card" style={{ padding: ".7rem", marginTop: ".5rem" }}>
+        <div className="callout callout-warning" role="status">
           <strong>Connections are being rejected by the allowlist.</strong>
-          <p className="text-sm" style={{ marginTop: ".25rem" }}>
+          <p className="text-sm" style={{ margin: ".25rem 0 0" }}>
             The gateway saw {endpoint.denied_connections} connection
             {endpoint.denied_connections === 1 ? "" : "s"} from addresses that are not in your allowed networks, and no
             successful sessions.
@@ -122,30 +138,27 @@ function EnabledPublicAccess({
       ) : null}
 
       {endpoint.status === "pending" ? (
-        <p className="muted text-sm" style={{ marginTop: ".5rem" }}>
+        <div className="callout callout-info" role="status">
           Waiting for the gateway to program this endpoint.
-        </p>
+        </div>
       ) : null}
 
       <ErrorText message={error ?? undefined} />
 
-      <div className="flex gap-2" style={{ marginTop: ".75rem", flexWrap: "wrap" }}>
-        <CopyButton value={address} label="Copy address" />
-        {canWrite ? (
-          <>
-            <button className="btn btn-sm" onClick={() => setEditing(true)}>
-              Edit allowed networks
-            </button>
-            <button
-              className="btn btn-sm btn-danger"
-              disabled={disable.isPending || endpoint.status === "disabling"}
-              onClick={() => setConfirmDisable(true)}
-            >
-              {endpoint.status === "disabling" ? "Disabling…" : "Disable public access"}
-            </button>
-          </>
-        ) : null}
-      </div>
+      {canWrite ? (
+        <div className="panel-actions">
+          <button className="btn btn-sm" onClick={() => setEditing(true)}>
+            Edit allowed networks
+          </button>
+          <button
+            className="btn btn-sm btn-danger"
+            disabled={disable.isPending || endpoint.status === "disabling"}
+            onClick={() => setConfirmDisable(true)}
+          >
+            {endpoint.status === "disabling" ? "Disabling…" : "Disable public access"}
+          </button>
+        </div>
+      ) : null}
 
       {editing ? (
         <AllowlistEditor databaseId={databaseId} current={cidrs} onClose={() => setEditing(false)} />
@@ -240,7 +253,7 @@ function EnableForm({
       <SourceIPHint gateway={gateway} />
 
       {confirmAnywhere ? (
-        <div className="card" style={{ padding: ".7rem", marginTop: ".75rem" }}>
+        <div className="callout callout-warning" role="alert">
           <strong>0.0.0.0/0 allows connections from any address on the internet.</strong> Press Enable again to confirm.
         </div>
       ) : null}
@@ -276,6 +289,26 @@ function SourceIPHint({ gateway }: { gateway: GatewayInfo }) {
       ) : null}
     </p>
   );
+}
+
+const TLS_MODES: Record<string, string> = {
+  required: "Required",
+  preferred: "Preferred",
+  disabled: "Off",
+};
+
+const TLS_OBSERVED: Record<string, string> = {
+  required: "database enforces TLS",
+  preferred: "database supports TLS",
+  disabled: "TLS is turned off on the database",
+  unsupported: "database does not support TLS",
+  misconfigured: "database TLS is misconfigured",
+  unknown: "not checked yet",
+};
+
+/** tlsSummary turns the endpoint's TLS mode and observed status into a sentence. */
+function tlsSummary(mode: string, observed: string): string {
+  return `${TLS_MODES[mode] ?? mode} · ${TLS_OBSERVED[observed] ?? observed}`;
 }
 
 function capitalize(s: string): string {
