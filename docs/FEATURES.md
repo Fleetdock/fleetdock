@@ -115,6 +115,10 @@ Backend (Go):
   ensure published ports on the server are open to the host running Fleetdock.
 - **Backups** — also downloadable (presigned link), deletable, and verifiable by
   a test restore into a scratch database.
+- **One-off backup download** — a database can be dumped straight to the
+  browser (`.sql.gz`) without any backup storage. The control plane runs the
+  dump (it must reach the database port, as for the data browser) and keeps
+  nothing; the file can be restored with Import SQL.
 - **Hardening** — login rate limiting (per client IP), security headers and CSP,
   `/healthz` (liveness) and `/readyz` (metadata DB ping) probes, and
   `FLEETDOCK_ENV=production` mode that refuses to boot with insecure default secrets.

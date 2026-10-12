@@ -556,3 +556,7 @@ thead .dbx-rownum { top: 0; z-index: 4; cursor: default; }
   .detail-grid { grid-template-columns: minmax(0, 1fr); }
   .detail-aside { position: static; display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
 }
+
+/* A choice-card used as a radio option. */
+.choice-list { display: grid; gap: .5rem; margin-bottom: .9rem; }
+.choice-card[aria-checked="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); box-shadow: 0 0 0 1px var(--accent) inset; }

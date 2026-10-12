@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Download a backup without backup storage.** "Back up now" on a database
+  offers **Download to this computer**: the control plane runs the same dump
+  as a stored backup and streams it to the browser as `<database>-<time>.sql.gz`.
+  Nothing is kept in Fleetdock and no bucket is needed
+  (`GET /v1/databases/{id}/dump`, checked first with
+  `POST /v1/databases/{id}/dump/check`; needs `backup:write`). Restore such a
+  file with Import SQL.
+- **"Check now" on a database server's page** moved to the header, next to
+  Edit.
 - **Connect external databases through an SSH tunnel.** An external database
   server can be reached through an SSH bastion, signing in with a private key
   (optionally passphrase-protected) or a password. The SSH secret is stored

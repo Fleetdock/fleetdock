@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api, download } from "../api";
+import { API_URL, api, download } from "../api";
 import type {
   Backup,
   CreateDestinationInput,
@@ -69,6 +69,27 @@ export function useBackupActions() {
 export async function downloadBackup(id: string) {
   const { url } = await api.get<{ url: string; expires_at: string }>(`/v1/backups/${id}/download`);
   window.location.assign(url);
+}
+
+/**
+ * downloadDatabaseDump saves a one-off .sql.gz dump of a database to this
+ * computer. Nothing is stored in Fleetdock, so no backup storage is needed.
+ *
+ * The API first checks the dump can start (tool installed, database
+ * reachable), so problems surface as an ApiError here. The download itself is
+ * then left to the browser, which streams it straight to disk — fetching it
+ * into memory would not cope with large databases. The session cookie
+ * authenticates the GET.
+ */
+export async function downloadDatabaseDump(databaseId: string) {
+  const id = encodeURIComponent(databaseId);
+  await api.post<void>(`/v1/databases/${id}/dump/check`, {});
+  const a = document.createElement("a");
+  a.href = `${API_URL}/v1/databases/${id}/dump`;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 // ---- Backup destinations ----
