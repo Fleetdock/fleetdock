@@ -41,6 +41,9 @@ type AgentRepository interface {
 	// SetAgentToken stores the sha256 hash of the agent's bearer token and
 	// marks the server enrolled.
 	SetAgentToken(ctx context.Context, id uuid.UUID, tokenHash string) error
+	// ClearAgentToken revokes the server's agent bearer token: the agent can
+	// no longer authenticate until it re-enrolls.
+	ClearAgentToken(ctx context.Context, id uuid.UUID) error
 	// GetByAgentTokenHash resolves the server for an agent bearer token.
 	GetByAgentTokenHash(ctx context.Context, tokenHash string) (*Server, error)
 	// Heartbeat updates liveness, versions and the health snapshot, and

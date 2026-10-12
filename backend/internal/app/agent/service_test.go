@@ -98,8 +98,21 @@ func (r *fakeServerRepo) List(_ context.Context, _ serverdom.ListFilter) (server
 	return serverdom.Page{}, nil
 }
 
-func (r *fakeServerRepo) SetAgentToken(_ context.Context, id uuid.UUID, hash string) error {
+func (r *fakeServerRepo) SetAgentToken(ctx context.Context, id uuid.UUID, hash string) error {
+	_ = r.ClearAgentToken(ctx, id)
 	r.agents[hash] = id
+	return nil
+}
+
+func (r *fakeServerRepo) ClearAgentToken(_ context.Context, id uuid.UUID) error {
+	if _, ok := r.servers[id]; !ok {
+		return apperr.NotFound("server not found")
+	}
+	for h, sid := range r.agents {
+		if sid == id {
+			delete(r.agents, h)
+		}
+	}
 	return nil
 }
 
@@ -198,6 +211,70 @@ func TestRegister_Success(t *testing.T) {
 	}
 	if !strings.HasPrefix(agentTok, "fleeta_") {
 		t.Fatalf("expected fleeta_ agent token, got %q", agentTok)
+	}
+}
+
+func TestRotateAgentToken_ReenrollsSameServer(t *testing.T) {
+	ctx := context.Background()
+	tokens := newFakeRegTokenRepo()
+	servers := newFakeServerRepo()
+	svc := NewService(servers, tokens)
+
+	_, raw, err := svc.CreateToken(ctx, CreateTokenInput{Name: "lab"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, oldTok, err := svc.Register(ctx, RegisterInput{Token: raw, Hostname: "db1.internal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rt, reRaw, err := svc.RotateAgentToken(ctx, srv.ID.String(), nil)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if rt.ServerID == nil || *rt.ServerID != srv.ID {
+		t.Fatal("expected the re-enrollment token to be bound to the server")
+	}
+	if _, err := svc.Authenticate(ctx, oldTok); apperr.KindOf(err) != apperr.KindUnauthorized {
+		t.Fatalf("old agent token must stop working after rotation, got %v", err)
+	}
+
+	again, newTok, err := svc.Register(ctx, RegisterInput{Token: reRaw, Hostname: "db1.internal"})
+	if err != nil {
+		t.Fatalf("re-enroll: %v", err)
+	}
+	if again.ID != srv.ID {
+		t.Fatalf("re-enrollment created a new server %s, want %s", again.ID, srv.ID)
+	}
+	if len(servers.servers) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(servers.servers))
+	}
+	got, err := svc.Authenticate(ctx, newTok)
+	if err != nil || got.ID != srv.ID {
+		t.Fatalf("new agent token must authenticate the same server: %v", err)
+	}
+}
+
+func TestRevokeAgentToken(t *testing.T) {
+	ctx := context.Background()
+	tokens := newFakeRegTokenRepo()
+	servers := newFakeServerRepo()
+	svc := NewService(servers, tokens)
+
+	_, raw, _ := svc.CreateToken(ctx, CreateTokenInput{Name: "lab"})
+	srv, agentTok, err := svc.Register(ctx, RegisterInput{Token: raw, Hostname: "db1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeAgentToken(ctx, srv.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Authenticate(ctx, agentTok); apperr.KindOf(err) != apperr.KindUnauthorized {
+		t.Fatalf("revoked agent token must not authenticate, got %v", err)
+	}
+	if err := svc.RevokeAgentToken(ctx, "not-a-uuid"); apperr.KindOf(err) != apperr.KindInvalid {
+		t.Fatalf("expected invalid for bad id, got %v", err)
 	}
 }
 

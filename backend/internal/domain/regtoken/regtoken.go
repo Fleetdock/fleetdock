@@ -18,6 +18,9 @@ type Token struct {
 	CreatedBy *uuid.UUID
 	ExpiresAt time.Time
 	UsedAt    *time.Time
+	// ServerID is the server the token enrolled. A token created bound to
+	// an existing server (UsedAt nil) re-enrolls that server instead of
+	// creating a new one — used to rotate an agent's credentials.
 	ServerID  *uuid.UUID
 	CreatedAt time.Time
 }

@@ -36,6 +36,8 @@ type RouterDeps struct {
 	// Resolver resolves resource scope ancestry for per-resource authorization.
 	Resolver   *authzapp.Resolver
 	CORSOrigin string
+	// CORSCredentials lets CORSOrigin make cookie-authenticated requests.
+	CORSCredentials bool
 	// TrustProxyHeaders lets the login rate limiter read the client IP from
 	// X-Forwarded-For (set only when behind a trusted reverse proxy).
 	TrustProxyHeaders bool
@@ -119,6 +121,8 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/servers/{id}", requireResourcePerm(rv, "server:read", authz.ResourceServer, "id", d.Servers.Get))
 	mux.HandleFunc("PATCH /v1/servers/{id}", requireResourcePerm(rv, "server:write", authz.ResourceServer, "id", d.Servers.Update))
 	mux.HandleFunc("DELETE /v1/servers/{id}", requireResourcePerm(rv, "server:write", authz.ResourceServer, "id", d.Servers.Delete))
+	mux.HandleFunc("DELETE /v1/servers/{id}/agent-token", requireResourcePerm(rv, "server:write", authz.ResourceServer, "id", d.RegTokens.RevokeAgent))
+	mux.HandleFunc("POST /v1/servers/{id}/agent-token/rotate", requireResourcePerm(rv, "server:write", authz.ResourceServer, "id", d.RegTokens.RotateAgent))
 	mux.HandleFunc("GET /v1/servers/{id}/metrics", requireResourcePerm(rv, "server:read", authz.ResourceServer, "id", d.Overview.ServerMetrics))
 
 	// Agent registration tokens (server connect flow)
@@ -263,7 +267,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	// branch. The dashboard is served from this same origin so it needs no
 	// preflight handling, and Next's own immutable caching for /_next/static
 	// must survive — see uiproxy.Handler for the headers it does get.
-	api := securityHeaders(cors(d.CORSOrigin, d.Authn.Middleware(mux)))
+	api := securityHeaders(cors(d.CORSOrigin, d.CORSCredentials, d.Authn.Middleware(mux)))
 	if d.UI == nil {
 		return requestLogger(recoverer(api))
 	}

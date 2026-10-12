@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -228,7 +229,12 @@ func run() error {
 
 	// HTTP layer.
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Auth:              httpapi.NewAuthHandler(authSvc),
+		Auth: httpapi.NewAuthHandler(authSvc, httpapi.SessionCookieConfig{
+			TTL: cfg.JWTTTL,
+			// An HTTPS public URL means browsers always reach us over TLS,
+			// even when a proxy forwards plain HTTP without X-Forwarded-Proto.
+			Secure: strings.HasPrefix(strings.ToLower(cfg.PublicURL), "https://"),
+		}),
 		Servers:           httpapi.NewServerHandler(serverSvc),
 		Instances:         httpapi.NewInstanceHandler(instanceSvc, resolver).WithProbe(probeSvc),
 		Databases:         httpapi.NewDatabaseHandler(databaseSvc, resolver),
@@ -252,6 +258,7 @@ func run() error {
 		Authn:             httpapi.NewAuthenticator(authSvc),
 		Resolver:          resolver,
 		CORSOrigin:        cfg.CORSOrigin,
+		CORSCredentials:   cfg.CORSCredentials,
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
 		Ready:             pool.Ping,
 		UI:                uiHandler,

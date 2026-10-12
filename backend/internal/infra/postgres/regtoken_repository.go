@@ -29,10 +29,10 @@ const regTokenColumns = `id, name, token_hash, created_by, expires_at, used_at, 
 
 func (r *RegTokenRepository) Create(ctx context.Context, t *regtokendom.Token) error {
 	const q = `
-		INSERT INTO agent_registration_tokens (id, name, token_hash, created_by, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO agent_registration_tokens (id, name, token_hash, created_by, expires_at, server_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING created_at`
-	err := r.pool.QueryRow(ctx, q, t.ID, t.Name, t.TokenHash, t.CreatedBy, t.ExpiresAt).Scan(&t.CreatedAt)
+	err := r.pool.QueryRow(ctx, q, t.ID, t.Name, t.TokenHash, t.CreatedBy, t.ExpiresAt, t.ServerID).Scan(&t.CreatedAt)
 	if err != nil {
 		return apperr.Internal(fmt.Errorf("insert registration token: %w", err))
 	}
