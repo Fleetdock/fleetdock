@@ -511,6 +511,19 @@ export interface QueryResult {
   rows_affected: number;
   read_only: boolean;
   duration_ms: number;
+  /** Preview only: caveats of the dry run. */
+  notes?: string[];
+  /** Preview only: rows of a single-table UPDATE/DELETE before and after. */
+  sample?: PreviewSample;
+}
+
+export interface PreviewSample {
+  table: string;
+  key: string[];
+  columns: string[];
+  truncated: boolean;
+  /** after is null when the statement deleted the row. */
+  rows: { before: (string | null)[]; after: (string | null)[] | null }[];
 }
 
 /** QueryOutput is a console run: one result per statement that ran. */
@@ -518,6 +531,8 @@ export interface QueryOutput {
   results: QueryResult[];
   /** Set when a statement after the first failed (1-based). */
   error?: { statement: number; message: string };
+  /** A preview: the run was rolled back, nothing was saved. */
+  rolled_back?: boolean;
 }
 
 export interface HistoryEntry {
@@ -545,6 +560,8 @@ export interface RunQueryInput {
   limit?: number;
   /** Client-generated UUID; lets the caller cancel the run. */
   query_id?: string;
+  /** Dry run: one transaction, rolled back. */
+  preview?: boolean;
 }
 
 export interface CreateDBUserInput {

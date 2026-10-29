@@ -97,6 +97,14 @@ Backend (Go):
     indexes and foreign keys; views, routines, triggers, sequences and events;
   - SQL console: multi-statement scripts on one session, confirmation before
     writes, cancel, per-user history and saved queries;
+  - preview: **Preview** dry-runs a script with writes in one transaction
+    that is always rolled back, showing how many rows each statement would
+    change and, for a single-table UPDATE or DELETE, up to 20 rows before and
+    after; **Apply for real** then runs it with the usual confirmation. Only
+    SELECT, INSERT, UPDATE, DELETE, REPLACE and MERGE can be previewed
+    (no DDL, transaction control, SET or CALL); on MySQL/MariaDB a database
+    with MyISAM, Aria or MEMORY tables cannot be previewed. Triggers still
+    fire and sequence / AUTO_INCREMENT counters still advance;
   - monitoring: live sessions (cancel/terminate), the most expensive
     statements (`pg_stat_statements` / `performance_schema`), status
     counters, configuration; a per-minute health probe fills instance health

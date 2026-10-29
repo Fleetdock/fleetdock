@@ -5,6 +5,7 @@ import { useErrorToast } from "@/components/toast";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import { ExplainView } from "@/components/database/explain-view";
+import { PreviewSampleView } from "@/components/database/preview-sample";
 import { ExportButton } from "@/components/database/export-button";
 import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
 import {
@@ -25,11 +26,12 @@ import {
   useExplain,
   useSchemaColumns,
 } from "@/lib/hooks";
-import { splitStatements, writeStatements } from "@/lib/sql";
+import { previewBlocker, splitStatements, writeStatements } from "@/lib/sql";
 import { sqlCompletion } from "@/lib/sql-schema";
 import type { ExplainResult, QueryOutput, QueryResult } from "@/lib/types";
 import {
   Bookmark,
+  FlaskConical,
   Gauge,
   History,
   ListTree,
@@ -68,6 +70,8 @@ export function QueryConsole({
   const [confirm, setConfirm] = useState<{
     sql: string;
     writes: string[];
+    /** The preview of this script, when it was previewed first. */
+    preview?: QueryOutput;
   } | null>(null);
   const [queryId, setQueryId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("none");
@@ -121,7 +125,7 @@ export function QueryConsole({
     void execute(text);
   }
 
-  async function execute(text: string) {
+  async function execute(text: string, preview = false) {
     setError(null);
     setConfirm(null);
     const id = crypto.randomUUID();
@@ -131,6 +135,7 @@ export function QueryConsole({
         sql: text,
         limit: ROW_LIMIT,
         query_id: id,
+        preview,
       });
       setOutput(res);
       setPlan(null);
@@ -141,6 +146,17 @@ export function QueryConsole({
     } finally {
       setQueryId(null);
     }
+  }
+
+  async function onPreview() {
+    const text = editorRef.current?.getQueryToRun() ?? sql.trim();
+    if (!text) return;
+    const blocked = previewBlocker(text);
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
+    await execute(text, true);
   }
 
   async function onCancel() {
@@ -237,6 +253,16 @@ export function QueryConsole({
               <Square size={14} /> Cancel
             </button>
           ) : null}
+          {canWrite && writeStatements(sql).length > 0 ? (
+            <button
+              className="btn btn-sm"
+              onClick={() => void onPreview()}
+              disabled={run.isPending || explain.isPending}
+              title="Run the script in a transaction that is rolled back, and see what it would change"
+            >
+              <FlaskConical size={14} /> Preview
+            </button>
+          ) : null}
           <button
             className="btn btn-sm"
             onClick={() => void onExplain(false)}
@@ -276,9 +302,28 @@ export function QueryConsole({
 
       {output ? (
         <div>
+          {output.rolled_back ? (
+            <div className="callout callout-info preview-banner" role="status">
+              <span>
+                <strong>Preview — rolled back, nothing was saved.</strong>{" "}
+                {previewSummary(output)}
+              </span>
+              {canWrite && ranSql ? (
+                <button className="btn btn-primary btn-sm" onClick={() => setConfirm({ sql: ranSql, writes: writeStatements(ranSql), preview: output })}>
+                  <Play size={14} /> Apply for real
+                </button>
+              ) : null}
+              <ul className="preview-notes">
+                {(output.results.find((r) => r.notes)?.notes ?? []).slice(1).map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {output.results.map((r, i) => (
             <QueryResultView
               key={i}
+              preview={output.rolled_back}
               result={r}
               label={
                 output.results.length > 1 || output.error
@@ -322,6 +367,12 @@ export function QueryConsole({
             <p style={{ marginTop: 0 }}>
               This script will modify the database. There is no undo.
             </p>
+            {confirm?.preview ? (
+              <p className="callout callout-warning">
+                <strong>Preview:</strong> {previewSummary(confirm.preview)} Data may have changed since, so the
+                real run can differ.
+              </p>
+            ) : null}
             <pre
               className="card"
               style={{
@@ -555,9 +606,12 @@ function SaveQueryModal({
 function QueryResultView({
   result,
   label,
+  preview = false,
 }: {
   result: QueryResult;
   label?: string;
+  /** Part of a rolled-back preview. */
+  preview?: boolean;
 }) {
   const header = label ? <span className="font-medium">{label} · </span> : null;
   if (result.columns.length === 0) {
@@ -569,9 +623,10 @@ function QueryResultView({
         <span className="flex items-center gap-2 text-sm">
           <KeyRound size={15} /> {header}
           {result.rows_affected.toLocaleString()} row
-          {result.rows_affected === 1 ? "" : "s"} affected
+          {result.rows_affected === 1 ? "" : "s"} {preview ? "would be affected" : "affected"}
           <span className="muted">· {result.duration_ms} ms</span>
         </span>
+        {result.sample ? <PreviewSampleView sample={result.sample} /> : null}
       </div>
     );
   }
@@ -631,4 +686,14 @@ function QueryResultView({
       </div>
     </div>
   );
+}
+
+/** previewSummary: "would change 2 rows (statement 1), delete 1 row (statement 3)." */
+function previewSummary(out: QueryOutput): string {
+  const parts = out.results
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !r.read_only)
+    .map(({ r, i }) => `${r.rows_affected.toLocaleString()} row${r.rows_affected === 1 ? "" : "s"} (statement ${i + 1})`);
+  if (out.error) return `Statement ${out.error.statement} would fail: ${out.error.message}`;
+  return parts.length ? `It would change ${parts.join(", ")}.` : "It would change no rows.";
 }

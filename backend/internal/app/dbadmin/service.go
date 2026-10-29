@@ -440,6 +440,9 @@ type QueryInput struct {
 	// QueryID, when set, registers the run so its owner can cancel it.
 	QueryID string
 	UserID  uuid.UUID
+	// Preview dry-runs a script with writes: one transaction, rolled back.
+	// It needs AllowWrite and is not recorded in the history.
+	Preview bool
 }
 
 // BatchFailure says which statement of a run failed (1-based) and why.
@@ -454,6 +457,8 @@ type BatchFailure struct {
 type QueryOutput struct {
 	Results []engine.QueryResult `json:"results"`
 	Error   *BatchFailure        `json:"error,omitempty"`
+	// RolledBack: a preview; nothing was saved.
+	RolledBack bool `json:"rolled_back,omitempty"`
 }
 
 // Query runs a console script. Reads run as the read-only role; a script with
@@ -473,6 +478,16 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 			mode = dbaccessdom.ModeWrite
 		}
 	}
+	if in.Preview {
+		if mode != dbaccessdom.ModeWrite {
+			return nil, apperr.Invalid("sql", "nothing to preview: the script only reads; run it instead")
+		}
+		for i, st := range stmts {
+			if err := engine.PreviewBlocker(st); err != nil {
+				return nil, apperr.Invalid("sql", fmt.Sprintf("statement %d: %s", i+1, err.Error()))
+			}
+		}
+	}
 
 	ctx, done := s.track(ctx, in)
 	defer done()
@@ -482,8 +497,18 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 	var batchErr error
 	err := s.scoped(ctx, in.DatabaseID, mode, queryTimeout,
 		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			res, err := admin.QueryBatch(ctx, conn, db.Name, stmts, in.Limit, mode == dbaccessdom.ModeWrite,
-				func(pid int64) { s.setSessionID(in.QueryID, pid) })
+			onSession := func(pid int64) { s.setSessionID(in.QueryID, pid) }
+			var res []engine.QueryResult
+			var err error
+			if in.Preview {
+				pv, ok := admin.(engine.Previewer)
+				if !ok {
+					return apperr.Invalid("engine", "this engine does not support previews")
+				}
+				res, err = pv.PreviewBatch(ctx, conn, db.Name, stmts, in.Limit, onSession)
+			} else {
+				res, err = admin.QueryBatch(ctx, conn, db.Name, stmts, in.Limit, mode == dbaccessdom.ModeWrite, onSession)
+			}
 			out.Results = res
 			var be *engine.BatchError
 			if errors.As(err, &be) && be.Index > 0 {
@@ -494,7 +519,10 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 			}
 			return err
 		})
-	s.recordHistory(in, len(stmts), out, time.Since(start), firstErr(err, batchErr))
+	if !in.Preview {
+		s.recordHistory(in, len(stmts), out, time.Since(start), firstErr(err, batchErr))
+	}
+	out.RolledBack = in.Preview
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil, apperr.Conflict("the query was cancelled")

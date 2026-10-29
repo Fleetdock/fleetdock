@@ -2278,6 +2278,14 @@ paths:
         runs). A failing first statement is returned as an error; a later
         failure returns the earlier results plus `error`. Pass `query_id` (a
         UUID you generate) to be able to cancel the run.
+
+        With `preview: true` (database:write) the script is a dry run: it
+        runs in one transaction that is always rolled back, and only SELECT,
+        INSERT, UPDATE, DELETE, REPLACE and MERGE are allowed. Each write
+        reports its row count; a single-table UPDATE or DELETE also returns
+        a `sample` of up to 20 rows before and after. On MySQL/MariaDB a
+        database with non-transactional tables (MyISAM, Aria, MEMORY) cannot
+        be previewed. Previews are not kept in the history.
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       requestBody:
@@ -2290,6 +2298,7 @@ paths:
                 sql: {type: string}
                 limit: {type: integer, maximum: 1000, default: 100, description: Rows returned per statement}
                 query_id: {type: string, format: uuid}
+                preview: {type: boolean, default: false, description: Dry run in a transaction that is rolled back.}
       responses:
         "200":
           description: Results of the statements that ran
@@ -2310,6 +2319,23 @@ paths:
                         rows_affected: {type: integer, format: int64}
                         read_only: {type: boolean}
                         duration_ms: {type: integer, format: int64}
+                        notes: {type: array, items: {type: string}, description: Preview caveats.}
+                        sample:
+                          type: object
+                          description: Preview only - rows before and after (after is null when deleted).
+                          properties:
+                            table: {type: string}
+                            key: {type: array, items: {type: string}}
+                            columns: {type: array, items: {type: string}}
+                            truncated: {type: boolean}
+                            rows:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  before: {type: array, items: {type: string, nullable: true}}
+                                  after: {type: array, nullable: true, items: {type: string, nullable: true}}
+                  rolled_back: {type: boolean, description: A preview - nothing was saved.}
                   error:
                     type: object
                     properties:

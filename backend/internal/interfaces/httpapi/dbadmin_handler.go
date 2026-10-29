@@ -292,6 +292,8 @@ type queryRequest struct {
 	Limit int    `json:"limit"`
 	// QueryID (optional, client-generated) lets the caller cancel the run.
 	QueryID string `json:"query_id"`
+	// Preview dry-runs the script and rolls it back.
+	Preview bool `json:"preview"`
 }
 
 // Query handles POST /v1/databases/{id}/query. Whether write statements are
@@ -316,7 +318,7 @@ func (h *DBAdminHandler) Query(w http.ResponseWriter, r *http.Request) {
 	}
 	in := dbadminapp.QueryInput{
 		DatabaseID: r.PathValue("id"), SQL: req.SQL, Limit: req.Limit,
-		AllowWrite: allowWrite, QueryID: req.QueryID,
+		AllowWrite: allowWrite, QueryID: req.QueryID, Preview: req.Preview,
 	}
 	if id := callerID(r); id != nil {
 		in.UserID = *id

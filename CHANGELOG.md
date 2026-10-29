@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Preview writes in the SQL console.** A script with writes can be dry-run
+  first: it runs in one transaction that is always rolled back
+  (`POST /v1/databases/{id}/query` with `preview: true`), reporting rows
+  affected per statement and, for single-table UPDATE / DELETE, a sample of
+  up to 20 rows before and after; reads later in the script see the
+  preview's changes. Only statements a rollback fully undoes are allowed,
+  autocommit is off for the whole run on MySQL/MariaDB, and databases with
+  non-transactional tables are refused. Previews are not kept in the
+  history.
 - **Undo for the data browser.** Every insert, edit and delete made in the
   data browser is journaled with the row before and after, captured in the
   same transaction. Saving shows **Undo**; a table's **Change history** lists

@@ -158,11 +158,21 @@ func (pg *Postgres) BrowseRows(ctx context.Context, p ConnParams, database strin
 type pgRowTx struct{ tx pgx.Tx }
 
 func (t pgRowTx) read(ctx context.Context, m *tableMeta, key RowValues, forUpdate bool) (RowValues, error) {
-	q, args, err := pgDialect.selectByKeySQL(m, key, forUpdate)
+	return pgReadByKey(ctx, t.tx, m, key, forUpdate)
+}
+
+// pgQueryer is what both *pgx.Conn and pgx.Tx offer.
+type pgQueryer interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// pgReadByKey reads one row's full values by key, or nil if there is none.
+func pgReadByKey(ctx context.Context, q pgQueryer, m *tableMeta, key RowValues, forUpdate bool) (RowValues, error) {
+	sqlText, args, err := pgDialect.selectByKeySQL(m, key, forUpdate)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := t.tx.Query(ctx, q, append([]any{pgText}, args...)...)
+	rows, err := q.Query(ctx, sqlText, append([]any{pgText}, args...)...)
 	if err != nil {
 		return nil, err
 	}

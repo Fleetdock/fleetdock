@@ -167,11 +167,16 @@ func (m *MariaDB) BrowseRows(ctx context.Context, p ConnParams, database string,
 type mysqlRowTx struct{ tx *sql.Tx }
 
 func (t mysqlRowTx) read(ctx context.Context, m *tableMeta, key RowValues, forUpdate bool) (RowValues, error) {
-	q, args, err := mysqlDialect.selectByKeySQL(m, key, forUpdate)
+	return mysqlReadByKey(ctx, t.tx, m, key, forUpdate)
+}
+
+// mysqlReadByKey reads one row's full values by key, or nil if there is none.
+func mysqlReadByKey(ctx context.Context, q queryer, m *tableMeta, key RowValues, forUpdate bool) (RowValues, error) {
+	sqlText, args, err := mysqlDialect.selectByKeySQL(m, key, forUpdate)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := t.tx.QueryContext(ctx, q, args...)
+	rows, err := q.QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
