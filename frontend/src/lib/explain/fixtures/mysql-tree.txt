@@ -1,0 +1,6 @@
+-> Nested loop inner join  (cost=0.9 rows=2) (actual time=0.0579..0.0601 rows=2 loops=1)
+    -> Sort: i.sku  (cost=0.45 rows=2) (actual time=0.0447..0.0449 rows=2 loops=1)
+        -> Filter: ((i.qty > 1) and (i.o_region is not null) and (i.o_num is not null))  (cost=0.45 rows=2) (actual time=0.022..0.0252 rows=2 loops=1)
+            -> Table scan on i  (cost=0.45 rows=2) (actual time=0.0194..0.0224 rows=2 loops=1)
+    -> Single-row index lookup on o using PRIMARY (region=i.o_region, num=i.o_num)  (cost=0.35 rows=1) (actual time=0.00653..0.00657 rows=1 loops=2)
+

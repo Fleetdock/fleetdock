@@ -3,10 +3,11 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 
 import { ColumnFields, emptyColumn } from "@/components/database/column-editor";
+import { findingsFor } from "@/components/database/index-health";
 import { ConfirmModal, EmptyState, ErrorText, Field, Modal, Spinner } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useForeignKeys, useStructureMutations, useTableSchema } from "@/lib/hooks";
-import type { AlterOp, ColumnInfo, ColumnSpec, ForeignKey, TableSchema } from "@/lib/types";
+import { useForeignKeys, useIndexInsights, useStructureMutations, useTableSchema } from "@/lib/hooks";
+import type { AlterOp, ColumnInfo, ColumnSpec, ForeignKey, IndexDef, TableSchema } from "@/lib/types";
 import { Eraser, Pencil, Plus, TextCursorInput, Trash2 } from "lucide-react";
 
 const errMsg = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
@@ -30,6 +31,8 @@ export function SchemaView({
 }) {
   const { data, isLoading, error } = useTableSchema(databaseId, table);
   const fks = useForeignKeys(databaseId, table);
+  const insights = useIndexInsights(databaseId);
+  const flagged = findingsFor(insights.data, table);
   const [modal, setModal] = useState<ReactNode>(null);
   const close = () => setModal(null);
 
@@ -159,6 +162,8 @@ export function SchemaView({
                   <th>Columns</th>
                   <th>Unique</th>
                   <th>Type</th>
+                  {insights.data?.usage_available ? <th style={{ textAlign: "right" }}>Scans</th> : null}
+                  <th />
                   {canWrite ? <th /> : null}
                 </tr>
               </thead>
@@ -169,6 +174,21 @@ export function SchemaView({
                     <td className="muted">{idx.columns.join(", ")}</td>
                     <td className="muted">{idx.unique ? "YES" : "NO"}</td>
                     <td className="muted">{idx.type}</td>
+                    {insights.data?.usage_available ? (
+                      <td className="muted" style={{ textAlign: "right" }}>
+                        {usage(insights.data.indexes, table, idx.name)}
+                      </td>
+                    ) : null}
+                    <td>
+                      {flagged[idx.name] ? (
+                        <span
+                          className={`badge ${flagged[idx.name].kind === "redundant" ? "badge-amber" : "badge-gray"}`}
+                          title={`${flagged[idx.name].reason}. To drop: ${flagged[idx.name].drop_sql}`}
+                        >
+                          {flagged[idx.name].kind === "redundant" ? `redundant · ${flagged[idx.name].covered_by}` : "unused"}
+                        </span>
+                      ) : null}
+                    </td>
                     {canWrite ? (
                       <td style={{ textAlign: "right" }}>
                         <button
@@ -266,6 +286,11 @@ export function SchemaView({
       {modal}
     </div>
   );
+}
+
+function usage(indexes: IndexDef[], table: string, name: string): string {
+  const ix = indexes.find((i) => i.name === name && (i.table === table || `${i.schema}.${i.table}` === table));
+  return ix?.scans === undefined ? "" : ix.scans.toLocaleString();
 }
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {

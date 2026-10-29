@@ -4,6 +4,7 @@ import { useErrorToast } from "@/components/toast";
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
+import { ExplainView } from "@/components/database/explain-view";
 import { ExportButton } from "@/components/database/export-button";
 import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
 import {
@@ -21,14 +22,17 @@ import {
   useRunQuery,
   useSavedQueries,
   useSavedQueryMutations,
+  useExplain,
   useSchemaColumns,
 } from "@/lib/hooks";
 import { splitStatements, writeStatements } from "@/lib/sql";
 import { sqlCompletion } from "@/lib/sql-schema";
-import type { QueryOutput, QueryResult } from "@/lib/types";
+import type { ExplainResult, QueryOutput, QueryResult } from "@/lib/types";
 import {
   Bookmark,
+  Gauge,
   History,
+  ListTree,
   KeyRound,
   Play,
   Save,
@@ -68,6 +72,37 @@ export function QueryConsole({
   const [queryId, setQueryId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("none");
   const [saving, setSaving] = useState(false);
+  const explain = useExplain(databaseId);
+  const [plan, setPlan] = useState<ExplainResult | null>(null);
+
+  // Explain works on one statement: the selection, or the whole editor.
+  const explainTarget = (): string | null => {
+    const text = editorRef.current?.getQueryToRun() ?? sql.trim();
+    const stmts = splitStatements(text);
+    if (stmts.length !== 1) {
+      setError(stmts.length === 0 ? null : "Explain works on one statement — select the one to explain.");
+      return null;
+    }
+    return stmts[0];
+  };
+
+  async function onExplain(analyze: boolean) {
+    const stmt = explainTarget();
+    if (!stmt) return;
+    if (analyze && writeStatements(stmt).length > 0) {
+      setError("Only reads can be analyzed: analyzing runs the statement. Use Explain for writes.");
+      return;
+    }
+    setError(null);
+    try {
+      const res = await explain.mutateAsync({ sql: stmt, analyze });
+      setOutput(null);
+      setPlan(res);
+    } catch (err) {
+      setPlan(null);
+      setError(err instanceof ApiError ? err.message : "Explain failed");
+    }
+  }
 
   function onRun() {
     const text = editorRef.current?.getQueryToRun() ?? sql.trim();
@@ -98,6 +133,7 @@ export function QueryConsole({
         query_id: id,
       });
       setOutput(res);
+      setPlan(null);
       setRanSql(text);
     } catch (err) {
       setOutput(null);
@@ -202,6 +238,22 @@ export function QueryConsole({
             </button>
           ) : null}
           <button
+            className="btn btn-sm"
+            onClick={() => void onExplain(false)}
+            disabled={run.isPending || explain.isPending || !sql.trim()}
+            title="Show how the database would run this statement, without running it"
+          >
+            {explain.isPending ? <Spinner /> : <ListTree size={14} />} Explain
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => void onExplain(true)}
+            disabled={run.isPending || explain.isPending || !sql.trim()}
+            title="Run this read and show where the time went (rolled back)"
+          >
+            <Gauge size={14} /> Analyze
+          </button>
+          <button
             className="btn btn-primary btn-sm"
             onClick={onRun}
             disabled={run.isPending || !sql.trim()}
@@ -219,6 +271,8 @@ export function QueryConsole({
       ) : null}
 
       <ErrorText message={error ?? undefined} />
+
+      {plan ? <ExplainView result={plan} /> : null}
 
       {output ? (
         <div>

@@ -76,6 +76,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SQL autocompletion from the real schema.** The console completes the
+  database's tables, schemas and columns (with their types) and the
+  engine's keywords (`GET /v1/databases/{id}/columns`).
+- **Foreign keys both ways.** Composite foreign keys now link to their
+  referenced row, and a row's context menu opens the rows of other tables
+  that reference it (`GET /v1/databases/{id}/tables/{table}/referenced-by`).
+- **Find a table or column anywhere with Ctrl/Cmd+K.** A background loop
+  keeps an index of every reachable database's table and column names
+  (`FLEETDOCK_CATALOG_REFRESH_INTERVAL`, 30 minutes, and right after DDL
+  made through Fleetdock); `GET /v1/search/schema` returns only databases
+  the caller could open in the data browser.
+- **Explain and Analyze in the console.** A statement's plan is drawn as a
+  tree with expected and actual rows, time or cost per step, and warnings
+  for full scans, filesorts, temporary tables, disk spills and stale
+  statistics (`POST /v1/databases/{id}/explain`). Analyze runs reads only,
+  in a read-only transaction that is rolled back.
+- **Index health.** A database's page and each table's structure flag
+  indexes never used since statistics started and indexes made redundant
+  by another one, with the `DROP INDEX` statement to review
+  (`GET /v1/databases/{id}/index-insights`).
+- **Top queries.** An instance's monitoring lists its most expensive
+  statements by total time, time per run or frequency, from
+  `pg_stat_statements` or `performance_schema`, and explains how to turn
+  them on when they are off (`GET /v1/instances/{id}/top-queries`).
 - **Download a backup without backup storage.** "Back up now" on a database
   offers **Download to this computer**: the control plane runs the same dump
   as a stored backup and streams it to the browser as `<database>-<time>.sql.gz`.

@@ -483,6 +483,20 @@ func (h *DBAdminHandler) Processes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+// TopQueries handles GET /v1/instances/{id}/top-queries?database=&sort=&limit=.
+func (h *DBAdminHandler) TopQueries(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	out, err := h.svc.TopQueries(r.Context(), r.PathValue("id"), engine.TopQueriesRequest{
+		Database: q.Get("database"), Sort: q.Get("sort"), Limit: limit,
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 type killProcessRequest struct {
 	// Connection terminates the whole session instead of only cancelling
 	// its current statement.
@@ -819,6 +833,47 @@ func (h *DBAdminHandler) Columns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cat)
+}
+
+// IndexInsights handles GET /v1/databases/{id}/index-insights.
+func (h *DBAdminHandler) IndexInsights(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.interactive(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	out, err := h.svc.IndexInsights(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type explainRequest struct {
+	SQL     string `json:"sql"`
+	Analyze bool   `json:"analyze"`
+}
+
+// Explain handles POST /v1/databases/{id}/explain.
+func (h *DBAdminHandler) Explain(w http.ResponseWriter, r *http.Request) {
+	var req explainRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	allowWrite, err := h.interactive(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	out, err := h.svc.Explain(r.Context(), dbadminapp.ExplainInput{
+		DatabaseID: r.PathValue("id"), SQL: req.SQL, Analyze: req.Analyze, AllowWrite: allowWrite,
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // Objects handles GET /v1/databases/{id}/objects.

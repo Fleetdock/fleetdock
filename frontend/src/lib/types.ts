@@ -822,3 +822,62 @@ export interface SchemaSearchHit {
   column?: string;
   type?: string;
 }
+
+/** ExplainResult is the response of POST /v1/databases/{id}/explain. */
+export interface ExplainResult {
+  format: "postgres" | "mysql" | "mariadb" | "mysql-tree";
+  analyzed: boolean;
+  /** The engine's JSON plan, as returned by the server. */
+  plan?: unknown;
+  /** The plan as text (mysql-tree). */
+  text?: string;
+}
+
+/** TopQueries is GET /v1/instances/{id}/top-queries: the busiest statements. */
+export interface TopQueries {
+  available: boolean;
+  note?: string;
+  stats_since?: string;
+  queries: {
+    database: string;
+    query: string;
+    calls: number;
+    total_ms: number;
+    mean_ms: number;
+    rows: number;
+    rows_examined?: number;
+    no_index_used?: number;
+    cache_hit_pct?: number;
+  }[];
+}
+
+export interface IndexDef {
+  schema?: string;
+  table: string;
+  name: string;
+  columns: string[];
+  unique: boolean;
+  primary: boolean;
+  partial: boolean;
+  expression: boolean;
+  method: string;
+  size_bytes?: number;
+  scans?: number;
+}
+
+export interface IndexFinding {
+  index: IndexDef;
+  reason: string;
+  covered_by?: string;
+  drop_sql: string;
+}
+
+/** IndexInsights is GET /v1/databases/{id}/index-insights. */
+export interface IndexInsights {
+  indexes: IndexDef[];
+  usage_available: boolean;
+  stats_since?: string;
+  note?: string;
+  unused: IndexFinding[];
+  redundant: IndexFinding[];
+}

@@ -15,6 +15,7 @@ import {
 } from "@/components/connectivity";
 import { DatabaseBackups } from "@/components/backup/database-backups";
 import { GrantsSection } from "@/components/database/grants-section";
+import { IndexHealthCard } from "@/components/database/index-health";
 import { ImportSQLModal } from "@/components/database/import-sql-modal";
 import { MoveDatabaseModal } from "@/components/database/move-database-modal";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
@@ -246,6 +247,8 @@ function DatabaseDetail() {
               ]}
             />
           </div>
+
+          {hasCreds ? <IndexHealthCard databaseId={id} browserHref={browserHref} /> : null}
 
           <div className="card panel aside-card">
             <h2 className="panel-title">Quick links</h2>

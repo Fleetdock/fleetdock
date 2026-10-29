@@ -100,6 +100,36 @@ components:
         table:
           type: string
           description: The referencing table. Set only on incoming keys (referenced-by).
+    IndexDef:
+      type: object
+      properties:
+        schema: {type: string}
+        table: {type: string}
+        name: {type: string}
+        columns: {type: array, items: {type: string}}
+        unique: {type: boolean}
+        primary: {type: boolean}
+        partial: {type: boolean}
+        expression: {type: boolean}
+        method: {type: string}
+        size_bytes: {type: integer}
+        scans: {type: integer, description: Absent when the server does not track usage.}
+    IndexFinding:
+      type: object
+      properties:
+        index: {$ref: "#/components/schemas/IndexDef"}
+        reason: {type: string}
+        covered_by: {type: string}
+        drop_sql: {type: string}
+    IndexInsights:
+      type: object
+      properties:
+        indexes: {type: array, items: {$ref: "#/components/schemas/IndexDef"}}
+        usage_available: {type: boolean}
+        stats_since: {type: string, format: date-time}
+        note: {type: string}
+        unused: {type: array, items: {$ref: "#/components/schemas/IndexFinding"}}
+        redundant: {type: array, items: {$ref: "#/components/schemas/IndexFinding"}}
     SchemaSearchHit:
       type: object
       properties:
@@ -665,6 +695,101 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ColumnCatalog"}
+
+  /v1/databases/{id}/index-insights:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Unused and redundant indexes
+      description: >-
+        Every index of the database with its size and how often it was used since statistics started
+        (pg_stat_user_indexes; performance_schema or, on MariaDB, userstat). Indexes never used, and indexes
+        whose columns repeat or are a leftmost prefix of another index on the same table, are listed with a
+        DROP statement to review and run in the console; nothing is dropped automatically. When the server
+        keeps no usage counters, usage_available is false and note says how to enable them.
+      responses:
+        "200":
+          description: Index insights
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/IndexInsights"}
+
+  /v1/databases/{id}/explain:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Explain a statement
+      description: >-
+        Returns the plan of exactly one statement as JSON (PostgreSQL EXPLAIN FORMAT JSON, MySQL/MariaDB EXPLAIN
+        FORMAT=JSON). Without analyze nothing is executed; explaining a write still needs database:write. With
+        analyze (reads only) the statement runs in a read-only transaction that is rolled back, and the plan has
+        actual rows and timings — MySQL returns its EXPLAIN ANALYZE tree as text (format mysql-tree).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sql]
+              properties:
+                sql: {type: string}
+                analyze: {type: boolean, default: false}
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  format: {type: string, enum: [postgres, mysql, mariadb, mysql-tree]}
+                  analyzed: {type: boolean}
+                  plan: {description: The engine's JSON plan, as returned by the server.}
+                  text: {type: string, description: The plan as text (mysql-tree).}
+
+  /v1/instances/{id}/top-queries:
+    get:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: database, in: query, schema: {type: string}, description: Only statements run in this database.}
+        - {name: sort, in: query, schema: {type: string, enum: [total, mean, calls], default: total}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      summary: Most expensive statements
+      description: >-
+        Normalized statements (literals replaced by placeholders) with call counts and time spent, from
+        pg_stat_statements or performance_schema. When the server does not collect them, available is false and
+        note says how to enable it.
+      responses:
+        "200":
+          description: Statement statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: {type: boolean}
+                  note: {type: string}
+                  stats_since: {type: string, format: date-time}
+                  queries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        database: {type: string}
+                        query: {type: string}
+                        calls: {type: integer}
+                        total_ms: {type: number}
+                        mean_ms: {type: number}
+                        rows: {type: integer}
+                        rows_examined: {type: integer, description: MySQL/MariaDB only.}
+                        no_index_used: {type: integer, description: Runs without a good index (MySQL/MariaDB).}
+                        cache_hit_pct: {type: number, description: Shared-buffer hit ratio (PostgreSQL).}
 
   /v1/search/schema:
     get:

@@ -7,6 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import type {
   ColumnCatalog,
+  IndexInsights,
+  ExplainResult,
   SchemaSearchHit,
   HistoryEntry,
   QueryOutput,
@@ -248,6 +250,15 @@ export function useRunQuery(databaseId: string) {
       // A script that wrote may have changed the schema autocompletion uses.
       if (writeStatements(input.sql).length > 0) qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
     },
+  });
+}
+
+// useExplain asks for a statement's plan; analyze runs it read-only and
+// rolls it back.
+export function useExplain(databaseId: string) {
+  return useMutation({
+    mutationFn: (input: { sql: string; analyze: boolean }) =>
+      api.post<ExplainResult>(`/v1/databases/${databaseId}/explain`, input),
   });
 }
 
@@ -526,6 +537,16 @@ export function useSchemaSearch(q: string, enabled = true) {
   });
 }
 
+export function useIndexInsights(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["index-insights", databaseId],
+    queryFn: () => api.get<IndexInsights>(`/v1/databases/${databaseId}/index-insights`),
+    enabled: Boolean(databaseId) && enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 // useSchemaColumns loads every table's columns for SQL autocompletion. The
 // catalog changes rarely, so it is cached for a few minutes and refreshed after
 // DDL from the structure editor or the console.
@@ -560,6 +581,7 @@ export function useStructureMutations(databaseId: string, table = "") {
     qc.invalidateQueries({ queryKey: ["browse-rows", databaseId] });
     qc.invalidateQueries({ queryKey: ["db-objects", databaseId] });
     qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
+    qc.invalidateQueries({ queryKey: ["index-insights", databaseId] });
   };
   const createTable = useMutation({ mutationFn: (spec: TableSpec) => api.post(base, spec), onSuccess: invalidate });
   const alter = useMutation({ mutationFn: (ops: AlterOp[]) => api.patch(t, { ops }), onSuccess: invalidate });

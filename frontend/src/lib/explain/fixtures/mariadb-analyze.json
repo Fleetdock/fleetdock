@@ -1,0 +1,68 @@
+{
+  "query_optimization": {
+    "r_total_time_ms": 0.119623446
+  },
+  "query_block": {
+    "select_id": 1,
+    "cost": 0.018438808,
+    "r_loops": 1,
+    "r_total_time_ms": 0.08350009,
+    "nested_loop": [
+      {
+        "read_sorted_file": {
+          "r_rows": 3,
+          "filesort": {
+            "sort_key": "i.sku",
+            "r_loops": 1,
+            "r_total_time_ms": 0.051323663,
+            "r_used_priority_queue": false,
+            "r_output_rows": 3,
+            "r_buffer_size": "453KiB",
+            "r_sort_mode": "sort_key,packed_addon_fields",
+            "table": {
+              "table_name": "i",
+              "access_type": "ALL",
+              "possible_keys": ["ix_items_region", "ix_items_region_num"],
+              "loops": 1,
+              "r_loops": 1,
+              "rows": 4,
+              "r_rows": 4,
+              "cost": 0.0115068,
+              "r_table_time_ms": 0.023504847,
+              "r_other_time_ms": 0.01354684,
+              "r_engine_stats": {
+                "pages_accessed": 1
+              },
+              "filtered": 100,
+              "r_filtered": 75,
+              "attached_condition": "i.qty > 1 and i.o_region is not null and i.o_num is not null"
+            }
+          }
+        }
+      },
+      {
+        "table": {
+          "table_name": "o",
+          "access_type": "eq_ref",
+          "possible_keys": ["PRIMARY"],
+          "key": "PRIMARY",
+          "key_length": "46",
+          "used_key_parts": ["region", "num"],
+          "ref": ["shop.i.o_region", "shop.i.o_num"],
+          "loops": 4,
+          "r_loops": 3,
+          "rows": 1,
+          "r_rows": 1,
+          "cost": 0.00439696,
+          "r_table_time_ms": 0.012437851,
+          "r_other_time_ms": 0.006412462,
+          "r_engine_stats": {
+            "pages_accessed": 3
+          },
+          "filtered": 100,
+          "r_filtered": 100
+        }
+      }
+    ]
+  }
+}

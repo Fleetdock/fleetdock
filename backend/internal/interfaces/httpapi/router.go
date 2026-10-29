@@ -176,6 +176,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/instances/{id}/processes/{pid}/kill", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.KillProcess))
 	mux.HandleFunc("GET /v1/instances/{id}/status", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.ServerStatus))
 	mux.HandleFunc("GET /v1/instances/{id}/variables", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.Variables))
+	mux.HandleFunc("GET /v1/instances/{id}/top-queries", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.TopQueries))
 
 	// Live DB administration: database scope (grants, tables, data)
 	mux.HandleFunc("GET /v1/databases/{id}/grants", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaGrants))
@@ -202,6 +203,9 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/referenced-by", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ReferencedBy))
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
 	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
+	mux.HandleFunc("GET /v1/databases/{id}/index-insights", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.IndexInsights))
+	// Explaining a write needs database:write; checked in the handler.
+	mux.HandleFunc("POST /v1/databases/{id}/explain", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Explain))
 	// Fleet-wide schema search; hits are filtered per database in the handler.
 	mux.HandleFunc("GET /v1/search/schema", requireAnyPerm("database:read", d.Search.Schema))
 	// SQL console: any writes are gated inside the handler by database:write.

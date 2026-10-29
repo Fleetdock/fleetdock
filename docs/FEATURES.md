@@ -90,9 +90,21 @@ Backend (Go):
     indexes and foreign keys; views, routines, triggers, sequences and events;
   - SQL console: multi-statement scripts on one session, confirmation before
     writes, cancel, per-user history and saved queries;
-  - monitoring: live sessions (cancel/terminate), status counters,
-    configuration; a per-minute health probe fills instance health and
-    database sizes and connection counts.
+  - monitoring: live sessions (cancel/terminate), the most expensive
+    statements (`pg_stat_statements` / `performance_schema`), status
+    counters, configuration; a per-minute health probe fills instance health
+    and database sizes and connection counts;
+  - performance: the console's **Explain** draws a statement's plan as a
+    tree (nothing runs) and **Analyze** runs a read in a rolled-back,
+    read-only transaction to show where the time went, flagging full scans,
+    filesorts and stale statistics; **Index health** lists unused indexes
+    and indexes made redundant by another one, with the `DROP INDEX` to
+    review — Fleetdock never drops them itself;
+  - navigation: the SQL editor autocompletes the database's real tables and
+    columns; foreign keys (composite ones too) link to the referenced row,
+    and a row's menu opens the rows of other tables that reference it;
+    Ctrl/Cmd+K finds a table or column by name across every database of
+    the fleet (only databases you may open are shown).
 
   The login that the data browser, SQL console, exports and SQL imports use
   is chosen per instance (**Data browsing connects as**, in the instance's
