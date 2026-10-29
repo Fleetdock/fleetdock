@@ -61,7 +61,9 @@ func (w *world) GetByID(_ context.Context, id uuid.UUID) (*databasedom.Database,
 
 type instances struct{ w *world }
 
-func (i instances) GetByID(context.Context, uuid.UUID) (*instancedom.Instance, error) { return i.w.inst, nil }
+func (i instances) GetByID(context.Context, uuid.UUID) (*instancedom.Instance, error) {
+	return i.w.inst, nil
+}
 
 func (w *world) Ancestry(_ context.Context, t authz.ResourceType, id uuid.UUID) (authz.Ancestry, error) {
 	if t == authz.ResourceDatabase {
@@ -70,7 +72,9 @@ func (w *world) Ancestry(_ context.Context, t authz.ResourceType, id uuid.UUID) 
 	return authz.Ancestry{}, nil
 }
 
-func (w *world) DataAccess(context.Context, string) (dbadminapp.DataAccessInfo, error) { return w.info, nil }
+func (w *world) DataAccess(context.Context, string) (dbadminapp.DataAccessInfo, error) {
+	return w.info, nil
+}
 
 func (w *world) PrincipalForUser(_ context.Context, id uuid.UUID, _ []string) (*authapp.Principal, error) {
 	if p, ok := w.users[id]; ok {
