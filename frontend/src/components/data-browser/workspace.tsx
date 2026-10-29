@@ -505,7 +505,7 @@ function TabContent({
   if (tab.kind === "query") {
     return (
       <div className="dbx-query">
-        <QueryConsole databaseId={db.id} canWrite={canWrite} initialSql={tab.sql} />
+        <QueryConsole databaseId={db.id} canWrite={canWrite} initialSql={tab.sql} engine={db.instance?.engine} />
       </div>
     );
   }

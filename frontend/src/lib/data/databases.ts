@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, download } from "../api";
 import type {
+  ColumnCatalog,
   HistoryEntry,
   QueryOutput,
   SavedQuery,
@@ -34,6 +35,7 @@ import type {
   RunQueryInput,
 } from "../types";
 import type { Mutation, MutationResult } from "../data-browser/pending";
+import { writeStatements } from "../sql";
 import { pageQS } from "./core";
 
 // ---- Databases ----
@@ -240,7 +242,11 @@ export function useRunQuery(databaseId: string) {
   return useMutation({
     mutationFn: (input: RunQueryInput) =>
       api.post<QueryOutput>(`/v1/databases/${databaseId}/query`, input),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["query-history", databaseId] }),
+    onSettled: (_out, _err, input) => {
+      qc.invalidateQueries({ queryKey: ["query-history", databaseId] });
+      // A script that wrote may have changed the schema autocompletion uses.
+      if (writeStatements(input.sql).length > 0) qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
+    },
   });
 }
 
@@ -492,6 +498,19 @@ export function useForeignKeys(databaseId: string, table: string) {
   });
 }
 
+// useSchemaColumns loads every table's columns for SQL autocompletion. The
+// catalog changes rarely, so it is cached for a few minutes and refreshed after
+// DDL from the structure editor or the console.
+export function useSchemaColumns(databaseId: string) {
+  return useQuery({
+    queryKey: ["schema-columns", databaseId],
+    queryFn: () => api.get<ColumnCatalog>(`/v1/databases/${databaseId}/columns`),
+    enabled: Boolean(databaseId),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
 export function useDBObjects(databaseId: string) {
   return useQuery({
     queryKey: ["db-objects", databaseId],
@@ -512,6 +531,7 @@ export function useStructureMutations(databaseId: string, table = "") {
     qc.invalidateQueries({ queryKey: ["foreign-keys", databaseId] });
     qc.invalidateQueries({ queryKey: ["browse-rows", databaseId] });
     qc.invalidateQueries({ queryKey: ["db-objects", databaseId] });
+    qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
   };
   const createTable = useMutation({ mutationFn: (spec: TableSpec) => api.post(base, spec), onSuccess: invalidate });
   const alter = useMutation({ mutationFn: (ops: AlterOp[]) => api.patch(t, { ops }), onSuccess: invalidate });

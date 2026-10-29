@@ -198,7 +198,9 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/indexes", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.CreateIndex))
 	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/indexes/drop", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.DropIndex))
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/foreign-keys", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ForeignKeys))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/referenced-by", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ReferencedBy))
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
+	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
 	// SQL console: any writes are gated inside the handler by database:write.
 	mux.HandleFunc("POST /v1/databases/{id}/query", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Query))
 	// One-off dump streamed to the client; needs the same right as "back up now".

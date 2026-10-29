@@ -793,6 +793,34 @@ func (h *DBAdminHandler) ForeignKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+// ReferencedBy handles GET /v1/databases/{id}/tables/{table}/referenced-by.
+func (h *DBAdminHandler) ReferencedBy(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.interactive(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	items, err := h.svc.ReferencedBy(r.Context(), r.PathValue("id"), r.PathValue("table"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// Columns handles GET /v1/databases/{id}/columns.
+func (h *DBAdminHandler) Columns(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.interactive(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	cat, err := h.svc.Columns(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cat)
+}
+
 // Objects handles GET /v1/databases/{id}/objects.
 func (h *DBAdminHandler) Objects(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.interactive(r); err != nil {

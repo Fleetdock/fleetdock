@@ -762,6 +762,8 @@ export interface ColumnSpec {
 
 export interface ForeignKey {
   name: string;
+  /** The referencing table; set only on incoming keys (referenced-by). */
+  table?: string;
   columns: string[];
   ref_table: string;
   ref_columns: string[];
@@ -791,4 +793,16 @@ export interface DBObject {
   name: string;
   table?: string;
   definition: string | null;
+}
+
+/** ColumnCatalog lists every table's columns of a database (autocompletion). */
+export interface ColumnCatalog {
+  truncated: boolean;
+  tables: {
+    /** PostgreSQL schema; absent on MySQL/MariaDB. */
+    schema?: string;
+    name: string;
+    kind: "table" | "view";
+    columns: { name: string; type: string }[];
+  }[];
 }

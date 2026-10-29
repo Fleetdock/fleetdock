@@ -2,7 +2,7 @@
 
 import { useErrorToast } from "@/components/toast";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import { ExportButton } from "@/components/database/export-button";
 import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
@@ -21,8 +21,10 @@ import {
   useRunQuery,
   useSavedQueries,
   useSavedQueryMutations,
+  useSchemaColumns,
 } from "@/lib/hooks";
 import { splitStatements, writeStatements } from "@/lib/sql";
+import { sqlCompletion } from "@/lib/sql-schema";
 import type { QueryOutput, QueryResult } from "@/lib/types";
 import {
   Bookmark,
@@ -42,13 +44,18 @@ export function QueryConsole({
   databaseId,
   canWrite,
   initialSql = "",
+  engine,
 }: {
   databaseId: string;
   canWrite: boolean;
+  /** Engine of the database ("postgres", "mysql", "mariadb"), for autocompletion. */
+  engine?: string;
   /** Text the editor starts with (a Data Browser "New query on this table"). */
   initialSql?: string;
 }) {
   const run = useRunQuery(databaseId);
+  const columns = useSchemaColumns(databaseId);
+  const completion = useMemo(() => sqlCompletion(columns.data, engine === "postgres"), [columns.data, engine]);
   const editorRef = useRef<SqlEditorHandle>(null);
   const [sql, setSql] = useState(initialSql);
   const [ranSql, setRanSql] = useState("");
@@ -134,6 +141,8 @@ export function QueryConsole({
         onRun={onRun}
         placeholder="SELECT * FROM ..."
         minHeight="220px"
+        engine={engine}
+        completion={completion}
       />
       <div
         className="flex justify-between items-center"

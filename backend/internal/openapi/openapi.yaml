@@ -97,6 +97,30 @@ components:
         ref_columns: {type: array, items: {type: string}}
         on_delete: {type: string, enum: ["", CASCADE, SET NULL, RESTRICT, NO ACTION]}
         on_update: {type: string, enum: ["", CASCADE, SET NULL, RESTRICT, NO ACTION]}
+        table:
+          type: string
+          description: The referencing table. Set only on incoming keys (referenced-by).
+    ColumnCatalog:
+      type: object
+      properties:
+        truncated:
+          type: boolean
+          description: The database has more than 5000 tables or 100000 columns; only the first are listed.
+        tables:
+          type: array
+          items:
+            type: object
+            properties:
+              schema: {type: string, description: PostgreSQL schema; empty on MySQL/MariaDB.}
+              name: {type: string}
+              kind: {type: string, enum: [table, view]}
+              columns:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    type: {type: string}
     TableSpec:
       type: object
       properties:
@@ -590,6 +614,44 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/ForeignKey"}
+
+  /v1/databases/{id}/tables/{table}/referenced-by:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: List incoming foreign keys
+      description: Foreign keys of tables in this database that reference the table. `table` names the referencing table.
+      responses:
+        "200":
+          description: Incoming foreign keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/ForeignKey"}
+
+  /v1/databases/{id}/columns:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: List every table's columns
+      description: >-
+        All tables and views of the database with their columns, in one call, as the data login sees them.
+        Used for SQL autocompletion.
+      responses:
+        "200":
+          description: Column catalog
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ColumnCatalog"}
 
   /v1/databases/{id}/tables/{table}/indexes/drop:
     post:
