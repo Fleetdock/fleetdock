@@ -22,11 +22,8 @@ interface Toast {
   action?: ToastAction;
 }
 
-/** ToastAction is an optional link shown in the toast, e.g. "View". */
-export interface ToastAction {
-  label: string;
-  href: string;
-}
+/** ToastAction is an optional link or button shown in the toast, e.g. "View" or "Undo". */
+export type ToastAction = { label: string; href: string } | { label: string; onClick: () => void };
 
 interface ToastContextValue {
   push: (kind: ToastKind, message: string, action?: ToastAction) => void;
@@ -47,7 +44,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const id = (idRef.current += 1);
       // Keep at most 4 on screen; errors stay longer so they can be read.
       setToasts((t) => [...t.slice(-3), { id, kind, message, action }]);
-      setTimeout(() => remove(id), kind === "error" ? 9000 : 5000);
+      // Errors, and toasts offering an action (Undo), stay longer.
+      setTimeout(() => remove(id), kind === "error" || action ? 9000 : 5000);
     },
     [remove],
   );
@@ -62,10 +60,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div key={t.id} className={`card toast toast-${t.kind}`}>
             <span className="toast-dot" aria-hidden />
             <span style={{ flex: 1 }}>{t.message}</span>
-            {t.action ? (
+            {t.action && "href" in t.action ? (
               <Link href={t.action.href} className="link" onClick={() => remove(t.id)}>
                 {t.action.label}
               </Link>
+            ) : t.action ? (
+              <button
+                type="button"
+                className="link toast-action"
+                onClick={() => {
+                  remove(t.id);
+                  (t.action as { onClick: () => void }).onClick();
+                }}
+              >
+                {t.action.label}
+              </button>
             ) : null}
             <button type="button" className="toast-close" aria-label="Dismiss" onClick={() => remove(t.id)}>
               <X size={14} />

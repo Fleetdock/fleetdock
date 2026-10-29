@@ -100,6 +100,42 @@ components:
         table:
           type: string
           description: The referencing table. Set only on incoming keys (referenced-by).
+    RowEditResult:
+      type: object
+      properties:
+        status: {type: string, enum: [inserted, updated, deleted]}
+        change_id: {type: string, format: uuid, description: The journal entry; absent when the journal is off.}
+        undoable: {type: boolean}
+        note: {type: string, description: Why the change cannot be undone, when it cannot.}
+    RowChange:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        database_id: {type: string, format: uuid}
+        table: {type: string}
+        op: {type: string, enum: [insert, update, delete]}
+        key: {type: object, additionalProperties: true}
+        before: {type: object, additionalProperties: true, nullable: true}
+        after: {type: object, additionalProperties: true, nullable: true}
+        columns: {type: array, items: {type: string}}
+        undoable: {type: boolean}
+        note: {type: string}
+        batch_id: {type: string, format: uuid}
+        source: {type: string, enum: [editor, undo]}
+        user_id: {type: string, format: uuid}
+        user_email: {type: string}
+        undo_of: {type: string, format: uuid}
+        undone_at: {type: string, format: date-time}
+        undone_by: {type: string, format: uuid}
+        created_at: {type: string, format: date-time}
+    UndoResult:
+      type: object
+      properties:
+        change_id: {type: string, format: uuid}
+        ok: {type: boolean}
+        conflict: {type: boolean, description: The row changed since; retry with force to overwrite.}
+        error: {type: string}
+        undo: {$ref: "#/components/schemas/RowEditResult"}
     IndexDef:
       type: object
       properties:
@@ -790,6 +826,85 @@ paths:
                         rows_examined: {type: integer, description: MySQL/MariaDB only.}
                         no_index_used: {type: integer, description: Runs without a good index (MySQL/MariaDB).}
                         cache_hit_pct: {type: number, description: Shared-buffer hit ratio (PostgreSQL).}
+
+  /v1/databases/{id}/changes:
+    get:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: table, in: query, schema: {type: string}}
+        - {name: batch_id, in: query, schema: {type: string, format: uuid}}
+        - {name: before, in: query, schema: {type: string, format: date-time}, description: Cursor - entries created before this time.}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      summary: Row change journal
+      description: >-
+        Data-browser edits of this database, newest first, with the row before and after (an update keeps only
+        the columns it set, plus the key). Values are null, text, or {"b64": "..."} for binary. Entries are kept
+        for FLEETDOCK_ROW_CHANGE_RETENTION. Requires the same access as browsing the database.
+      responses:
+        "200":
+          description: Journal entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/RowChange"}}
+
+  /v1/databases/{id}/changes/{changeId}/undo:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: changeId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Undo one row change
+      description: >-
+        Reverts the change if the row still looks as the change left it; otherwise the result has conflict=true and
+        nothing is written, unless force is set (which overwrites the later change). The undo is journaled too.
+        Requires database:write.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: {type: boolean, default: false}
+      responses:
+        "200":
+          description: Outcome
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UndoResult"}
+
+  /v1/databases/{id}/changes/undo:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Undo a whole save
+      description: Reverts every not yet undone change with this batch_id, newest first, and reports each. Requires database:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batch_id]
+              properties:
+                batch_id: {type: string, format: uuid}
+                force: {type: boolean, default: false}
+      responses:
+        "200":
+          description: One outcome per change
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/UndoResult"}}
 
   /v1/search/schema:
     get:
@@ -2002,9 +2117,13 @@ paths:
               type: object
               properties:
                 values: {$ref: "#/components/schemas/RowValues"}
+                batch_id: {type: string, format: uuid, description: Groups the edits of one save for undo.}
       responses:
         "201":
-          description: Inserted
+          description: Inserted; the journal entry that can undo it
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RowEditResult"}
     patch:
       tags: [Data]
       security: [{bearerAuth: []}]
@@ -2024,9 +2143,13 @@ paths:
               properties:
                 key: {$ref: "#/components/schemas/RowValues"}
                 values: {$ref: "#/components/schemas/RowValues"}
+                batch_id: {type: string, format: uuid, description: Groups the edits of one save for undo.}
       responses:
         "200":
-          description: Updated
+          description: Updated; the journal entry that can undo it
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RowEditResult"}
 
   /v1/databases/{id}/tables/{table}/schema:
     get:
@@ -2086,9 +2209,13 @@ paths:
               type: object
               properties:
                 key: {$ref: "#/components/schemas/RowValues"}
+                batch_id: {type: string, format: uuid, description: Groups the edits of one save for undo.}
       responses:
         "200":
-          description: Deleted
+          description: Deleted; the journal entry that can undo it
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RowEditResult"}
 
   /v1/databases/{id}/tables/{table}/import:
     post:

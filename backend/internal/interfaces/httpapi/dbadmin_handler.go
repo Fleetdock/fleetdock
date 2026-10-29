@@ -16,6 +16,7 @@ import (
 	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
+	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 )
@@ -570,6 +571,30 @@ func (h *DBAdminHandler) BrowseRows(w http.ResponseWriter, r *http.Request) {
 type rowRequest struct {
 	Key    engine.RowValues `json:"key"`
 	Values engine.RowValues `json:"values"`
+	// BatchID groups the edits of one Save so they can be undone together.
+	BatchID string `json:"batch_id"`
+}
+
+// editMeta is who is editing and the save it belongs to.
+func editMeta(r *http.Request, batchID string) (dbadminapp.EditMeta, error) {
+	var m dbadminapp.EditMeta
+	if id := callerID(r); id != nil {
+		m.UserID = *id
+	}
+	if batchID != "" {
+		b, err := uuid.Parse(batchID)
+		if err != nil {
+			return m, apperr.Invalid("batch_id", "batch_id must be a UUID")
+		}
+		m.BatchID = &b
+	}
+	return m, nil
+}
+
+// rowResponse is a row edit's outcome: the status plus its journal entry.
+type rowResponse struct {
+	Status string `json:"status"`
+	dbadminapp.ChangeRef
 }
 
 // editable gates single-row edits: interactive access plus write permission
@@ -596,11 +621,17 @@ func (h *DBAdminHandler) InsertRow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if err := h.svc.InsertRow(r.Context(), r.PathValue("id"), r.PathValue("table"), req.Values); err != nil {
+	meta, err := editMeta(r, req.BatchID)
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"status": "inserted"})
+	ref, err := h.svc.InsertRow(r.Context(), r.PathValue("id"), r.PathValue("table"), req.Values, meta)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, rowResponse{Status: "inserted", ChangeRef: ref})
 }
 
 // UpdateRow handles PATCH /v1/databases/{id}/tables/{table}/rows.
@@ -614,11 +645,17 @@ func (h *DBAdminHandler) UpdateRow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if err := h.svc.UpdateRow(r.Context(), r.PathValue("id"), r.PathValue("table"), req.Key, req.Values); err != nil {
+	meta, err := editMeta(r, req.BatchID)
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	ref, err := h.svc.UpdateRow(r.Context(), r.PathValue("id"), r.PathValue("table"), req.Key, req.Values, meta)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rowResponse{Status: "updated", ChangeRef: ref})
 }
 
 // DeleteRow handles POST /v1/databases/{id}/tables/{table}/rows/delete.
@@ -632,11 +669,17 @@ func (h *DBAdminHandler) DeleteRow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if err := h.svc.DeleteRow(r.Context(), r.PathValue("id"), r.PathValue("table"), req.Key); err != nil {
+	meta, err := editMeta(r, req.BatchID)
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	ref, err := h.svc.DeleteRow(r.Context(), r.PathValue("id"), r.PathValue("table"), req.Key, meta)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rowResponse{Status: "deleted", ChangeRef: ref})
 }
 
 // maxImportBytes caps a CSV upload.
@@ -874,6 +917,108 @@ func (h *DBAdminHandler) Explain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// ListChanges handles GET /v1/databases/{id}/changes?table=&batch_id=&before=&limit=.
+// Entries hold row data, so they need the same access as browsing.
+func (h *DBAdminHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.interactive(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	did, _ := uuid.Parse(r.PathValue("id"))
+	q := r.URL.Query()
+	f := rowchangedom.ListFilter{DatabaseID: did, Table: q.Get("table")}
+	f.Limit, _ = strconv.Atoi(q.Get("limit"))
+	if b := q.Get("batch_id"); b != "" {
+		id, err := uuid.Parse(b)
+		if err != nil {
+			writeError(w, apperr.Invalid("batch_id", "batch_id must be a UUID"))
+			return
+		}
+		f.BatchID = &id
+	}
+	if b := q.Get("before"); b != "" {
+		t, err := time.Parse(time.RFC3339Nano, b)
+		if err != nil {
+			writeError(w, apperr.Invalid("before", "before must be an RFC 3339 time"))
+			return
+		}
+		f.Before = &t
+	}
+	items, err := h.svc.ListChanges(r.Context(), f)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+type undoRequest struct {
+	// Force undoes even if the row changed since (overwriting that change).
+	Force   bool   `json:"force"`
+	BatchID string `json:"batch_id"`
+}
+
+// UndoChange handles POST /v1/databases/{id}/changes/{changeId}/undo.
+func (h *DBAdminHandler) UndoChange(w http.ResponseWriter, r *http.Request) {
+	if err := h.editable(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	var req undoRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	cid, err := uuid.Parse(r.PathValue("changeId"))
+	if err != nil {
+		writeError(w, apperr.Invalid("changeId", "must be a valid UUID"))
+		return
+	}
+	meta, err := editMeta(r, "")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	res, err := h.svc.UndoChange(r.Context(), r.PathValue("id"), cid, meta, req.Force)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// UndoBatch handles POST /v1/databases/{id}/changes/undo: every change of
+// one save, newest first.
+func (h *DBAdminHandler) UndoBatch(w http.ResponseWriter, r *http.Request) {
+	if err := h.editable(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	var req undoRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	bid, err := uuid.Parse(req.BatchID)
+	if err != nil {
+		writeError(w, apperr.Invalid("batch_id", "batch_id must be a UUID"))
+		return
+	}
+	meta, err := editMeta(r, "")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	// Up to 200 single-row undos: allow more than the default write timeout.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(2 * time.Minute))
+	items, err := h.svc.UndoBatch(r.Context(), r.PathValue("id"), bid, meta, req.Force)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // Objects handles GET /v1/databases/{id}/objects.

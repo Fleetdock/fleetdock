@@ -26,6 +26,7 @@ import {
   Download,
   Filter,
   Lock,
+  History,
   PanelRight,
   Plus,
   RefreshCw,
@@ -36,6 +37,7 @@ import {
 } from "lucide-react";
 
 import { cellState, DataGrid, type Cell, type GridRow } from "./data-grid";
+import { RowHistory, useRowUndo } from "./row-history";
 
 const OP_LABEL: Record<string, string> = {
   eq: "=",
@@ -132,6 +134,7 @@ export function TableTab({
   const [saving, setSaving] = useState(false);
   const [review, setReview] = useState(false);
   const applyChanges = useApplyRowChanges(databaseId, tab.name);
+  const rowUndo = useRowUndo(databaseId);
 
   const columns = useMemo(() => data?.columns ?? [], [data]);
   const key = useMemo(() => data?.key ?? [], [data]);
@@ -244,10 +247,16 @@ export function TableTab({
     if (mutations.length === 0 || saving) return;
     setSaving(true);
     try {
-      const results = await applyChanges(mutations);
+      const { results, batchId } = await applyChanges(mutations);
       pd({ type: "results", results });
       const failed = results.filter((r) => !r.ok).length;
-      if (failed === 0) push("success", `Saved ${results.length} change${results.length === 1 ? "" : "s"} to ${tab.label}`);
+      const undoable = results.some((r) => r.ok && r.undoable);
+      if (failed === 0)
+        push(
+          "success",
+          `Saved ${results.length} change${results.length === 1 ? "" : "s"} to ${tab.label}`,
+          undoable ? { label: "Undo", onClick: () => void rowUndo.run({ batchId }) } : undefined,
+        );
       else
         push(
           "error",
@@ -258,7 +267,7 @@ export function TableTab({
     } finally {
       setSaving(false);
     }
-  }, [pending, saving, applyChanges, push, tab.label]);
+  }, [pending, saving, applyChanges, push, tab.label, rowUndo]);
 
   async function discard() {
     if (count === 0) return;
@@ -289,6 +298,7 @@ export function TableTab({
   const [draftFilters, setDraftFilters] = useState<RowFilter[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [panel, setPanel] = useState(() => load("value-panel") === "1");
+  const [historyOpen, setHistoryOpen] = useState(false);
   const togglePanel = () => {
     setPanel((v) => {
       save("value-panel", v ? null : "1");
@@ -376,6 +386,17 @@ export function TableTab({
             <button className="btn btn-ghost btn-icon" onClick={() => void refetch()} title="Refresh rows" aria-label="Refresh rows">
               <RefreshCw size={14} />
             </button>
+            {!isView ? (
+              <button
+                className={`btn btn-ghost btn-icon${historyOpen ? " btn-active" : ""}`}
+                onClick={() => setHistoryOpen((v) => !v)}
+                title="Change history: edits made here, with undo"
+                aria-label="Toggle change history"
+                aria-pressed={historyOpen}
+              >
+                <History size={15} />
+              </button>
+            ) : null}
             <button
               className={`btn btn-ghost btn-icon${panel ? " btn-active" : ""}`}
               onClick={togglePanel}
@@ -555,10 +576,17 @@ export function TableTab({
               row={cursor ? rows[cursor.row] : undefined}
               col={cursor ? columns[cursor.col] : undefined}
               ci={cursor?.col ?? -1}
-              editable={cursor ? rows[cursor.row]?.kind === "new" || (editable && rows[cursor.row]?.kind === "data") : false}
+              editable={
+                cursor && !columns[cursor.col]?.generated
+                  ? rows[cursor.row]?.kind === "new" || (editable && rows[cursor.row]?.kind === "data")
+                  : false
+              }
               onApply={(v) => cursor && onEdit(cursor.row, cursor.col, v)}
               onClose={togglePanel}
             />
+          ) : null}
+          {historyOpen ? (
+            <RowHistory databaseId={databaseId} table={tab.name} canWrite={canWrite} onClose={() => setHistoryOpen(false)} />
           ) : null}
         </div>
       )}

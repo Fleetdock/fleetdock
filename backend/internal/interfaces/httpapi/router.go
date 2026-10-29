@@ -203,6 +203,10 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/referenced-by", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ReferencedBy))
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
 	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
+	// Row change journal (data browser undo).
+	mux.HandleFunc("GET /v1/databases/{id}/changes", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ListChanges))
+	mux.HandleFunc("POST /v1/databases/{id}/changes/undo", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.UndoBatch))
+	mux.HandleFunc("POST /v1/databases/{id}/changes/{changeId}/undo", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.UndoChange))
 	mux.HandleFunc("GET /v1/databases/{id}/index-insights", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.IndexInsights))
 	// Explaining a write needs database:write; checked in the handler.
 	mux.HandleFunc("POST /v1/databases/{id}/explain", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Explain))

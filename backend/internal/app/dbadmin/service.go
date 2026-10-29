@@ -25,6 +25,7 @@ import (
 	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
 	dbaccessdom "github.com/Fleetdock/fleetdock/backend/internal/domain/dbaccess"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
+	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
@@ -59,6 +60,8 @@ type Service struct {
 	history   History
 	// schemaChanged, when set, is told about DDL made through Fleetdock.
 	schemaChanged func(databaseID uuid.UUID)
+	// journal, when set, records data-browser row changes for undo.
+	journal rowchangedom.Repository
 
 	runningMu sync.Mutex
 	running   map[string]*runningQuery
@@ -758,42 +761,6 @@ func (s *Service) BrowseRows(ctx context.Context, databaseID string, req engine.
 			return err
 		})
 	return res, err
-}
-
-// InsertRow inserts one row.
-func (s *Service) InsertRow(ctx context.Context, databaseID, table string, values engine.RowValues) error {
-	return s.scoped(ctx, databaseID, dbaccessdom.ModeWrite, opTimeout,
-		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			ed, err := dataEditor(admin)
-			if err != nil {
-				return err
-			}
-			return ed.InsertRow(ctx, conn, db.Name, table, values)
-		})
-}
-
-// UpdateRow updates the row identified by key.
-func (s *Service) UpdateRow(ctx context.Context, databaseID, table string, key, values engine.RowValues) error {
-	return s.scoped(ctx, databaseID, dbaccessdom.ModeWrite, opTimeout,
-		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			ed, err := dataEditor(admin)
-			if err != nil {
-				return err
-			}
-			return ed.UpdateRow(ctx, conn, db.Name, table, key, values)
-		})
-}
-
-// DeleteRow deletes the row identified by key.
-func (s *Service) DeleteRow(ctx context.Context, databaseID, table string, key engine.RowValues) error {
-	return s.scoped(ctx, databaseID, dbaccessdom.ModeWrite, opTimeout,
-		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			ed, err := dataEditor(admin)
-			if err != nil {
-				return err
-			}
-			return ed.DeleteRow(ctx, conn, db.Name, table, key)
-		})
 }
 
 // ImportCSV loads a CSV into a table, all or nothing. The reader is consumed

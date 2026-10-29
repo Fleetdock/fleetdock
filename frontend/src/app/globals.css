@@ -590,3 +590,15 @@ thead .dbx-rownum { top: 0; z-index: 4; cursor: default; }
 .explain-raw { max-height: 28rem; overflow: auto; font-size: .76rem; background: var(--panel-2); padding: .7rem; border-radius: var(--radius); margin: 0; }
 .index-findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .65rem; }
 .index-findings li { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.dbx-history .dbx-valuepanel-body { gap: .9rem; }
+.dbx-history-group { display: flex; flex-direction: column; gap: .4rem; padding-bottom: .8rem; border-bottom: 1px solid var(--border); }
+.dbx-history-group:last-child { border-bottom: none; }
+.dbx-history-change { display: flex; flex-direction: column; gap: .25rem; padding: .35rem .5rem; border-radius: 8px; background: var(--panel-2); }
+.dbx-history-change.is-undone { opacity: .55; }
+.dbx-history-diff { margin: 0; display: flex; flex-direction: column; gap: .15rem; font-size: .76rem; }
+.dbx-history-diff > div { display: grid; grid-template-columns: minmax(4rem, max-content) 1fr; gap: .5rem; }
+.dbx-history-diff dt { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dbx-history-diff dd { margin: 0; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dbx-history-diff del { color: var(--danger); text-decoration: line-through; }
+.dbx-history-diff ins { color: var(--success); text-decoration: none; }
+.toast-action { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }

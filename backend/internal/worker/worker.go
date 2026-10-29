@@ -23,6 +23,7 @@ import (
 	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
+	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
 )
 
@@ -50,6 +51,10 @@ type Deps struct {
 	// housekeeping pass so only one replica runs schedules, retention and
 	// alerts. ok=false means another replica holds it this round.
 	HousekeepingLock func(ctx context.Context) (release func(), ok bool, err error)
+	// RowChanges is the data-browser change journal, pruned after
+	// RowChangeRetention.
+	RowChanges         rowchangedom.Repository
+	RowChangeRetention time.Duration
 	// Catalog, when set and enabled, refreshes the fleet-wide schema
 	// catalog on its own loop, under CatalogLock (one replica at a time).
 	Catalog     *catalogapp.Service
@@ -208,6 +213,16 @@ func (w *Worker) housekeeping(ctx context.Context) {
 			slog.Error("prune health history", "error", err.Error())
 		} else if n > 0 {
 			slog.Info("pruned health history", "count", n)
+		}
+	}
+
+	// Row change journal retention (data browser undo).
+	if w.deps.RowChanges != nil && w.deps.RowChangeRetention > 0 {
+		cutoff := time.Now().Add(-w.deps.RowChangeRetention)
+		if n, err := w.deps.RowChanges.PruneBefore(ctx, cutoff); err != nil {
+			slog.Error("prune row changes", "error", err.Error())
+		} else if n > 0 {
+			slog.Info("pruned row changes", "count", n)
 		}
 	}
 

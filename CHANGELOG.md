@@ -76,6 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Undo for the data browser.** Every insert, edit and delete made in the
+  data browser is journaled with the row before and after, captured in the
+  same transaction. Saving shows **Undo**; a table's **Change history** lists
+  the edits of the last week (`FLEETDOCK_ROW_CHANGE_RETENTION`) with undo per
+  row or per save. An undo first checks that the row still looks as the
+  edit left it and asks before overwriting a later change. Binary values,
+  identity and generated columns and the session time zone round-trip
+  exactly (`GET /v1/databases/{id}/changes`,
+  `POST /v1/databases/{id}/changes/{changeId}/undo`,
+  `POST /v1/databases/{id}/changes/undo`). Row edits now return the
+  journal entry, and generated columns are read-only in the grid.
 - **SQL autocompletion from the real schema.** The console completes the
   database's tables, schemas and columns (with their types) and the
   engine's keywords (`GET /v1/databases/{id}/columns`).

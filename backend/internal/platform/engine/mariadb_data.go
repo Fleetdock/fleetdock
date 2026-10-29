@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -39,7 +40,9 @@ func mysqlMeta(ctx context.Context, q queryer, database, table string) (*tableMe
 	rows, err := q.QueryContext(ctx, `
 		SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE,
 		       COLUMN_DEFAULT IS NOT NULL OR IS_NULLABLE = 'YES' OR EXTRA LIKE '%auto_increment%'
-		       OR EXTRA LIKE '%GENERATED%'
+		       OR COALESCE(GENERATION_EXPRESSION, '') <> '',
+		       COALESCE(GENERATION_EXPRESSION, '') <> '',
+		       EXTRA LIKE '%auto_increment%'
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 		ORDER BY ORDINAL_POSITION`, database, table)
@@ -50,7 +53,7 @@ func mysqlMeta(ctx context.Context, q queryer, database, table string) (*tableMe
 	for rows.Next() {
 		var c column
 		var nullable string
-		if err := rows.Scan(&c.Name, &c.Type, &nullable, &c.HasDefault); err != nil {
+		if err := rows.Scan(&c.Name, &c.Type, &nullable, &c.HasDefault, &c.Generated, &c.AutoIncrement); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -160,63 +163,127 @@ func (m *MariaDB) BrowseRows(ctx context.Context, p ConnParams, database string,
 	return res, rows.Err()
 }
 
-// mutate runs one single-row statement in a transaction and requires it to
-// affect exactly one row.
-func (m *MariaDB) mutate(ctx context.Context, p ConnParams, database, table string,
-	build func(meta *tableMeta) (string, []any, error), mustBeOne bool) error {
+// mysqlRowTx adapts a MySQL transaction to the row-image logic.
+type mysqlRowTx struct{ tx *sql.Tx }
+
+func (t mysqlRowTx) read(ctx context.Context, m *tableMeta, key RowValues, forUpdate bool) (RowValues, error) {
+	q, args, err := mysqlDialect.selectByKeySQL(m, key, forUpdate)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := t.tx.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out RowValues
+	for rows.Next() {
+		if out != nil {
+			return nil, exactlyOne(2)
+		}
+		row, err := scanStringRow(rows, len(m.columns), 0)
+		if err != nil {
+			return nil, err
+		}
+		out = m.rowToValues(row)
+	}
+	return out, rows.Err()
+}
+
+func (t mysqlRowTx) exec(ctx context.Context, q string, args []any) (int64, error) {
+	res, err := t.tx.ExecContext(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (t mysqlRowTx) insert(ctx context.Context, m *tableMeta, q string, args []any) (int64, RowValues, error) {
+	res, err := t.tx.ExecContext(ctx, q, args...)
+	if err != nil {
+		return 0, nil, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, nil, err
+	}
+	assigned := RowValues{}
+	if id, err := res.LastInsertId(); err == nil && id != 0 {
+		for _, c := range m.columns {
+			if c.AutoIncrement {
+				v := strconv.FormatInt(id, 10)
+				assigned[c.Name] = &v
+			}
+		}
+	}
+	return n, assigned, nil
+}
+
+// rowTx runs fn on one session inside a transaction, with the table's
+// metadata, and commits if it succeeds. session reports the settings the
+// row values are read and written under.
+func (m *MariaDB) rowTx(ctx context.Context, p ConnParams, database, table string, session map[string]string,
+	fn func(tx rowTx, meta *tableMeta) (*RowChange, error)) (*RowChange, error) {
 	conn, closeSession, err := m.session(ctx, p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer closeSession()
+	if tz := session["time_zone"]; tz != "" {
+		if _, err := conn.ExecContext(ctx, "SET time_zone = ?", tz); err != nil {
+			return nil, err
+		}
+	}
+	var tz string
+	if err := conn.QueryRowContext(ctx, "SELECT @@session.time_zone").Scan(&tz); err != nil {
+		return nil, err
+	}
 	meta, err := mysqlMeta(ctx, conn, database, table)
 	if err != nil {
-		return err
-	}
-	q, args, err := build(meta)
-	if err != nil {
-		return err
+		return nil, err
 	}
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx, q, args...)
+	ch, err := fn(mysqlRowTx{tx}, meta)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if mustBeOne {
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if err := exactlyOne(n); err != nil {
-			return err
-		}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
-	return tx.Commit()
+	ch.Session = map[string]string{"time_zone": tz}
+	return ch, nil
 }
 
 // InsertRow inserts one row; omitted columns take their defaults.
-func (m *MariaDB) InsertRow(ctx context.Context, p ConnParams, database, table string, values RowValues) error {
-	return m.mutate(ctx, p, database, table, func(meta *tableMeta) (string, []any, error) {
-		return mysqlDialect.insertSQL(meta, values)
-	}, true)
+func (m *MariaDB) InsertRow(ctx context.Context, p ConnParams, database, table string, values RowValues) (*RowChange, error) {
+	return m.rowTx(ctx, p, database, table, nil, func(tx rowTx, meta *tableMeta) (*RowChange, error) {
+		return changeRow(ctx, mysqlDialect, tx, meta, "insert", nil, values)
+	})
 }
 
 // UpdateRow updates the row identified by key.
-func (m *MariaDB) UpdateRow(ctx context.Context, p ConnParams, database, table string, key, values RowValues) error {
-	return m.mutate(ctx, p, database, table, func(meta *tableMeta) (string, []any, error) {
-		return mysqlDialect.updateSQL(meta, key, values)
-	}, true)
+func (m *MariaDB) UpdateRow(ctx context.Context, p ConnParams, database, table string, key, values RowValues) (*RowChange, error) {
+	return m.rowTx(ctx, p, database, table, nil, func(tx rowTx, meta *tableMeta) (*RowChange, error) {
+		return changeRow(ctx, mysqlDialect, tx, meta, "update", key, values)
+	})
 }
 
 // DeleteRow deletes the row identified by key.
-func (m *MariaDB) DeleteRow(ctx context.Context, p ConnParams, database, table string, key RowValues) error {
-	return m.mutate(ctx, p, database, table, func(meta *tableMeta) (string, []any, error) {
-		return mysqlDialect.deleteSQL(meta, key)
-	}, true)
+func (m *MariaDB) DeleteRow(ctx context.Context, p ConnParams, database, table string, key RowValues) (*RowChange, error) {
+	return m.rowTx(ctx, p, database, table, nil, func(tx rowTx, meta *tableMeta) (*RowChange, error) {
+		return changeRow(ctx, mysqlDialect, tx, meta, "delete", key, nil)
+	})
+}
+
+// ApplyRowImage makes one row match an image (see ApplyRequest).
+func (m *MariaDB) ApplyRowImage(ctx context.Context, p ConnParams, database, table string, req ApplyRequest) (*RowChange, error) {
+	return m.rowTx(ctx, p, database, table, req.Session, func(tx rowTx, meta *tableMeta) (*RowChange, error) {
+		return applyRow(ctx, mysqlDialect, tx, meta, req)
+	})
 }
 
 // ImportCSV loads a CSV into the table in one transaction (all or nothing).

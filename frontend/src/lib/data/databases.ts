@@ -7,6 +7,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import type {
   ColumnCatalog,
+  RowChange,
+  RowEditResult,
+  UndoResult,
   IndexInsights,
   ExplainResult,
   SchemaSearchHit,
@@ -471,18 +474,26 @@ export function useRowMutations(databaseId: string, table: string) {
 // endpoints, one row at a time (each in its own transaction server-side), and
 // reports every outcome so failures can stay on screen. The table is
 // refreshed once at the end rather than after every row.
+export interface AppliedChanges {
+  results: MutationResult[];
+  /** Groups this save's changes in the journal; undo it with useUndoBatch. */
+  batchId: string;
+}
+
 export function useApplyRowChanges(databaseId: string, table: string) {
   const qc = useQueryClient();
   return useCallback(
-    async (mutations: Mutation[]): Promise<MutationResult[]> => {
+    async (mutations: Mutation[]): Promise<AppliedChanges> => {
       const path = rowsPath(databaseId, table);
+      const batchId = crypto.randomUUID();
       const results: MutationResult[] = [];
       for (const m of mutations) {
         try {
-          if (m.kind === "delete") await api.post<void>(`${path}/delete`, { key: m.key });
-          else if (m.kind === "update") await api.patch<void>(path, { key: m.key, values: m.values });
-          else await api.post<void>(path, { values: m.values });
-          results.push({ kind: m.kind, id: m.id, ok: true });
+          let res: RowEditResult;
+          if (m.kind === "delete") res = await api.post<RowEditResult>(`${path}/delete`, { key: m.key, batch_id: batchId });
+          else if (m.kind === "update") res = await api.patch<RowEditResult>(path, { key: m.key, values: m.values, batch_id: batchId });
+          else res = await api.post<RowEditResult>(path, { values: m.values, batch_id: batchId });
+          results.push({ kind: m.kind, id: m.id, ok: true, changeId: res?.change_id, undoable: res?.undoable });
         } catch (err) {
           results.push({ kind: m.kind, id: m.id, ok: false, error: err instanceof Error ? err.message : "Failed" });
         }
@@ -490,11 +501,49 @@ export function useApplyRowChanges(databaseId: string, table: string) {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["browse-rows", databaseId, table] }),
         qc.invalidateQueries({ queryKey: ["tables", databaseId] }),
+        qc.invalidateQueries({ queryKey: ["row-changes", databaseId] }),
       ]);
-      return results;
+      return { results, batchId };
     },
     [qc, databaseId, table],
   );
+}
+
+// useRowChanges lists the change journal of a table, newest first.
+export function useRowChanges(databaseId: string, table: string, enabled = true) {
+  return useQuery({
+    queryKey: ["row-changes", databaseId, table],
+    queryFn: () =>
+      api
+        .get<{ items: RowChange[] }>(`/v1/databases/${databaseId}/changes?table=${encodeURIComponent(table)}&limit=100`)
+        .then((r) => r.items),
+    enabled: Boolean(databaseId && table) && enabled,
+    retry: false,
+  });
+}
+
+// useUndo reverts one change (changeId) or a whole save (batchId).
+export function useUndo(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { changeId?: string; batchId?: string; force?: boolean }): Promise<UndoResult[]> => {
+      if (input.changeId) {
+        const r = await api.post<UndoResult>(`/v1/databases/${databaseId}/changes/${input.changeId}/undo`, { force: input.force ?? false });
+        return [r];
+      }
+      const r = await api.post<{ items: UndoResult[] }>(`/v1/databases/${databaseId}/changes/undo`, {
+        batch_id: input.batchId,
+        force: input.force ?? false,
+      });
+      return r.items;
+    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["row-changes", databaseId] }),
+        qc.invalidateQueries({ queryKey: ["browse-rows", databaseId] }),
+        qc.invalidateQueries({ queryKey: ["tables", databaseId] }),
+      ]),
+  });
 }
 
 // ---- Structure ----

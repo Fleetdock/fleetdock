@@ -173,6 +173,10 @@ export function DataGrid(props: GridProps) {
 
   function startEdit(r: number, c: number, text?: string) {
     if (!canEditRow(r)) return;
+    if (columns[c]?.generated) {
+      push("info", `${columns[c].name} is computed by the database and cannot be edited.`);
+      return;
+    }
     const st = cellState(rows[r], columns[c], c);
     if (isTruncated(st.original) && !st.changed) {
       push("info", "This value is too long to edit here. Use the SQL console to change it.");
@@ -334,7 +338,7 @@ export function DataGrid(props: GridProps) {
     const rowsLabel = n === 1 ? "row" : `${n} rows`;
     const fk = props.fks[col.name];
     const record = toRecord(row, columns);
-    const editableHere = canEditRow(r);
+    const editableHere = canEditRow(r) && !col.generated;
     const deletable = idx.filter((i) => rows[i].kind === "new" || (editable && rows[i].kind === "data" && !(rows[i] as { deleted: boolean }).deleted));
     const restorable = idx.filter((i) => rows[i].kind === "data" && (rows[i] as { deleted: boolean }).deleted);
     const items: ContextItem[] = [

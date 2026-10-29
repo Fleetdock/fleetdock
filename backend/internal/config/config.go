@@ -76,6 +76,9 @@ type Config struct {
 	HeartbeatTimeout time.Duration
 	// MetricsRetention is how long server health-history samples are kept.
 	MetricsRetention time.Duration
+	// RowChangeRetention is how long data-browser edits stay in the change
+	// journal (and can be undone); 0 turns the journal off.
+	RowChangeRetention time.Duration
 	// CatalogRefreshInterval is how often each database's table and column
 	// names are re-read for fleet-wide schema search (0 disables it).
 	CatalogRefreshInterval time.Duration
@@ -242,6 +245,7 @@ func Load() (Config, error) {
 		MetricsRetention: getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
 
 		CatalogRefreshInterval: getenvDuration("FLEETDOCK_CATALOG_REFRESH_INTERVAL", 30*time.Minute),
+		RowChangeRetention:     getenvDuration("FLEETDOCK_ROW_CHANGE_RETENTION", 7*24*time.Hour),
 
 		SMTPHost:     os.Getenv("FLEETDOCK_SMTP_HOST"),
 		SMTPPort:     getenv("FLEETDOCK_SMTP_PORT", "587"),

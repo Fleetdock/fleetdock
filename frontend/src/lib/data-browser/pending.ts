@@ -168,7 +168,15 @@ export type Mutation =
   | { kind: "update"; id: string; key: RowValues; values: RowValues }
   | { kind: "insert"; id: string; values: RowValues };
 
-export type MutationResult = { kind: Mutation["kind"]; id: string; ok: boolean; error?: string };
+export type MutationResult = {
+  kind: Mutation["kind"];
+  id: string;
+  ok: boolean;
+  error?: string;
+  /** The journal entry that can undo this change. */
+  changeId?: string;
+  undoable?: boolean;
+};
 
 /**
  * toMutations orders the pending work deletes → updates → inserts, so that a

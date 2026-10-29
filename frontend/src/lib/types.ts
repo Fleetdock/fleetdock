@@ -733,6 +733,8 @@ export interface BrowseColumn {
   type: string;
   nullable: boolean;
   has_default: boolean;
+  /** Computed by the database; read-only. */
+  generated?: boolean;
 }
 
 export interface BrowseResult {
@@ -880,4 +882,45 @@ export interface IndexInsights {
   note?: string;
   unused: IndexFinding[];
   redundant: IndexFinding[];
+}
+
+/** A journaled value: text, SQL NULL, or binary as base64. */
+export type ImageValue = string | null | { b64: string };
+
+/** RowChange is one data-browser edit kept in the change journal (undo). */
+export interface RowChange {
+  id: string;
+  database_id: string;
+  table: string;
+  op: "insert" | "update" | "delete";
+  key: Record<string, ImageValue>;
+  before: Record<string, ImageValue> | null;
+  after: Record<string, ImageValue> | null;
+  columns: string[];
+  undoable: boolean;
+  note?: string;
+  batch_id?: string;
+  source: "editor" | "undo";
+  user_id?: string;
+  user_email?: string;
+  undo_of?: string;
+  undone_at?: string;
+  undone_by?: string;
+  created_at: string;
+}
+
+/** RowEditResult is what a row insert/update/delete returns. */
+export interface RowEditResult {
+  status: "inserted" | "updated" | "deleted";
+  change_id?: string;
+  undoable: boolean;
+  note?: string;
+}
+
+export interface UndoResult {
+  change_id: string;
+  ok: boolean;
+  conflict?: boolean;
+  error?: string;
+  undo?: RowEditResult;
 }

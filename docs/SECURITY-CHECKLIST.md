@@ -116,3 +116,12 @@ FLEETDOCK_ENV=production FLEETDOCK_DATABASE_URL=postgres://x:x@localhost/x \
 ```
 
 Run from `backend/` after cloning the repo.
+
+## Data kept by the change journal
+
+The data browser's undo keeps a copy of every row it edits — including the
+full contents of deleted rows — in the metadata database for
+`FLEETDOCK_ROW_CHANGE_RETENTION` (7 days by default). Treat metadata backups
+accordingly, shorten the retention if the edited tables hold sensitive data,
+or set it to `0` to keep no copies (and lose undo). The journal is readable
+only by users who may browse that database.

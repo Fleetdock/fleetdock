@@ -86,6 +86,13 @@ Backend (Go):
   - data: filtered, sorted, searchable browser; insert/edit/delete rows by
     primary key (exactly one row or nothing); CSV import and export; SQL file
     import;
+  - undo: every insert, edit and delete made in the data browser is kept in a
+    change journal with the row before and after (for
+    `FLEETDOCK_ROW_CHANGE_RETENTION`, a week by default). **Undo** right after
+    saving, or later from a table's **Change history**, per row or per save;
+    if the row changed since, Fleetdock asks before overwriting that change.
+    Undo does not revert what triggers or cascading deletes did, and changes
+    made in the SQL console or by CSV import are not journaled;
   - structure without SQL: create/alter/rename/truncate/drop tables, columns,
     indexes and foreign keys; views, routines, triggers, sequences and events;
   - SQL console: multi-statement scripts on one session, confirmation before

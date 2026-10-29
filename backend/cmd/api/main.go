@@ -166,6 +166,10 @@ func run() error {
 	opsSvc.SetAccessRoleResolver(dbadminSvc.WriteRoleCredentials)
 	consoleRepo := postgres.NewConsoleRepository(pool)
 	dbadminSvc.SetHistory(consoleRepo)
+	rowChangeRepo := postgres.NewRowChangeRepository(pool)
+	if cfg.RowChangeRetention > 0 {
+		dbadminSvc.SetJournal(rowChangeRepo)
+	}
 	catalogSvc := catalogapp.NewService(postgres.NewCatalogRepository(pool), dbadminSvc, cfg.CatalogRefreshInterval)
 	if catalogSvc.Enabled() {
 		dbadminSvc.SetSchemaChanged(catalogSvc.SchemaChanged)
@@ -200,18 +204,20 @@ func run() error {
 	// scheduled backups, retention, alert evaluation + notification dispatch.
 	if cfg.WorkerEnabled {
 		go worker.New(worker.Deps{
-			Ops:              opsSvc,
-			Agents:           agentSvc,
-			Schedules:        scheduleSvc,
-			Notifications:    notifSvc,
-			Endpoints:        endpointSvc,
-			Credentials:      credentialSvc,
-			HeartbeatTimeout: cfg.HeartbeatTimeout,
-			MetricsRetention: cfg.MetricsRetention,
-			HousekeepingLock: postgres.HousekeepingLock(pool),
-			Probe:            probeSvc,
-			Catalog:          catalogSvc,
-			CatalogLock:      postgres.CatalogLock(pool),
+			Ops:                opsSvc,
+			Agents:             agentSvc,
+			Schedules:          scheduleSvc,
+			Notifications:      notifSvc,
+			Endpoints:          endpointSvc,
+			Credentials:        credentialSvc,
+			HeartbeatTimeout:   cfg.HeartbeatTimeout,
+			MetricsRetention:   cfg.MetricsRetention,
+			HousekeepingLock:   postgres.HousekeepingLock(pool),
+			Probe:              probeSvc,
+			Catalog:            catalogSvc,
+			RowChanges:         rowChangeRepo,
+			RowChangeRetention: cfg.RowChangeRetention,
+			CatalogLock:        postgres.CatalogLock(pool),
 		}).Run(ctx)
 	}
 
