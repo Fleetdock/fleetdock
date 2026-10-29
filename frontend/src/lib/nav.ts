@@ -3,6 +3,7 @@ import {
   Archive,
   Database,
   LayoutDashboard,
+  Layers,
   Server,
   Settings,
   ShieldCheck,
@@ -39,7 +40,7 @@ export type NavSection = {
 const backupRead: Requirement[] = [{ perm: "backup:read", scoped: true }];
 
 /**
- * NAV is the whole dashboard structure: eight sections, each a set of pages.
+ * NAV is the whole dashboard structure: nine sections, each a set of pages.
  * The sidebar, section tabs, breadcrumbs and command palette all derive from it.
  */
 export const NAV: NavSection[] = [
@@ -85,6 +86,20 @@ export const NAV: NavSection[] = [
         label: "Data browser",
         requires: [{ perm: "database:read", scoped: true }],
         keywords: "tables rows views browse grid edit data sql query",
+      },
+    ],
+  },
+  {
+    label: "Fleet query",
+    Icon: Layers,
+    href: "/fleet",
+    match: ["/fleet"],
+    pages: [
+      {
+        href: "/fleet",
+        label: "Fleet query",
+        requires: [{ perm: "database:read", scoped: true }],
+        keywords: "run sql on many databases all servers bulk multi fleet query",
       },
     ],
   },

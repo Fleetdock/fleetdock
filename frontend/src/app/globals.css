@@ -638,3 +638,25 @@ thead .dbx-rownum { top: 0; z-index: 4; cursor: default; }
 .schema-def { margin: .2rem 0 0; padding: .55rem .65rem; border-radius: 8px; background: var(--panel-2); font-size: .76rem; white-space: pre-wrap; word-break: break-word; max-height: 18rem; overflow: auto; }
 .schema-def.is-before { border-left: 3px solid var(--danger); }
 .schema-def.is-after { border-left: 3px solid var(--success); }
+
+/* ---- fleet query ---- */
+.fleet-compose { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
+@media (max-width: 960px) { .fleet-compose { grid-template-columns: minmax(0, 1fr); } }
+.fleet-compose .panel { display: flex; flex-direction: column; gap: .75rem; }
+.fleet-options { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: end; }
+.fleet-options label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; color: var(--muted); }
+.fleet-options label .input { width: 7rem; }
+.fleet-options .fleet-check { flex-direction: row; align-items: center; gap: .4rem; color: inherit; }
+.fleet-picker { display: flex; flex-direction: column; gap: .6rem; }
+.fleet-picker-list { max-height: 26rem; overflow-y: auto; }
+.fleet-picker-row { display: flex; align-items: center; gap: .55rem; padding: .45rem .75rem; border-bottom: 1px solid var(--border); cursor: pointer; flex-wrap: wrap; }
+.fleet-picker-row:last-child { border-bottom: none; }
+.fleet-sql-snippet { font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 32rem; vertical-align: bottom; }
+.fleet-summary { margin-bottom: 1rem; display: flex; flex-direction: column; gap: .6rem; }
+.fleet-progress { display: flex; height: .5rem; border-radius: 999px; overflow: hidden; background: var(--panel-2); }
+.fleet-progress .is-ok { background: var(--success); }
+.fleet-progress .is-failed { background: var(--danger); }
+.fleet-progress .is-skipped { background: var(--muted); opacity: .5; }
+.fleet-counts { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; }
+.fleet-results { overflow: auto; max-height: 70vh; }
+.fleet-results td { white-space: nowrap; max-width: 24rem; overflow: hidden; text-overflow: ellipsis; }

@@ -51,6 +51,8 @@ Gateway tuning (`FLEETDOCK_GATEWAY_*`) is described in
 | `FLEETDOCK_ROW_CHANGE_RETENTION`                      | `168h`                  | how long data-browser edits stay in the change journal and can be undone; `0` turns the journal off                |
 | `FLEETDOCK_CATALOG_REFRESH_INTERVAL`                  | `30m`                   | how often each database's table and column names are re-read for the fleet-wide search (Ctrl/Cmd+K); `0` disables it |
 | `FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL`                  | `15m`                   | how often databases with schema history turned on are checked for structural changes; `0` checks only after DDL made through Fleetdock and on demand |
+| `FLEETDOCK_FLEET_MAX_PARALLEL`                        | `16`                    | how many fleet-query databases one Fleetdock process works on at once (each run also has its own limit, 1–16) |
+| `FLEETDOCK_FLEET_RUN_RETENTION`                       | `720h`                  | how long finished fleet-query runs and their results are kept |
 | `FLEETDOCK_BACKUP_COPY_TTL`                           | `2h`                    | how long a backup opened for **Compare with a backup** is kept next to the database before it is dropped (extendable up to 24h) |
 | `FLEETDOCK_BACKUP_COPY_MAX_BYTES`                     | `10737418240`           | largest backup (compressed size) that can be opened for comparison; the copy takes disk on the database's server |
 | `FLEETDOCK_SMTP_HOST`                                 | —                       | SMTP host for email notification channels (empty ⇒ email delivery disabled)                                       |

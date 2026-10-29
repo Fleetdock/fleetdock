@@ -1060,3 +1060,59 @@ export interface SchemaComparison {
   changes: SchemaChange[];
   review: number;
 }
+
+// ---- fleet queries ----
+
+export type FleetRunStatus = "running" | "paused" | "canceling" | "succeeded" | "failed" | "canceled";
+export type FleetTargetStatus = "pending" | "running" | "succeeded" | "failed" | "skipped" | "canceled" | "unknown";
+
+export interface FleetRun {
+  id: string;
+  created_by: string;
+  sql: string;
+  writes: boolean;
+  status: FleetRunStatus;
+  concurrency: number;
+  stop_on_error: boolean;
+  canary: boolean;
+  timeout_seconds: number;
+  row_limit: number;
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  running: number;
+  created_at: string;
+  updated_at: string;
+  finished_at?: string;
+}
+
+export interface FleetTargetResults {
+  results: QueryResult[];
+  error?: { statement: number; message: string };
+  trimmed?: boolean;
+}
+
+export interface FleetTarget {
+  position: number;
+  database_id?: string;
+  database_name: string;
+  instance_name: string;
+  engine: string;
+  status: FleetTargetStatus;
+  results?: FleetTargetResults;
+  rows_affected?: number;
+  error?: string;
+  started_at?: string;
+  finished_at?: string;
+}
+
+export interface CreateFleetRunInput {
+  sql: string;
+  database_ids: string[];
+  concurrency?: number;
+  stop_on_error?: boolean;
+  canary?: boolean;
+  timeout_seconds?: number;
+  row_limit?: number;
+}

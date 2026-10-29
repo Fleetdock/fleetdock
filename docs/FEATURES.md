@@ -131,6 +131,18 @@ Backend (Go):
     (no DDL, transaction control, SET or CALL); on MySQL/MariaDB a database
     with MyISAM, Aria or MEMORY tables cannot be previewed. Triggers still
     fire and sequence / AUTO_INCREMENT counters still advance;
+  - fleet query: **Fleet query** runs one SQL script on many databases
+    (up to 500, picked by name pattern, server and engine) in the
+    background, a few at a time, and merges what they return into one table
+    with the database and server in front (CSV download too). Each database
+    needs the same access as the SQL console, checked when the run starts
+    and again just before it runs there. A script that writes asks for a
+    typed confirmation, runs on the first database alone and waits for you
+    to continue, and stops at the first failure (both can be turned off).
+    Runs can be canceled (running statements are killed) and failed ones
+    retried; a database whose run was interrupted is marked "unknown" and
+    never re-run on its own. Only the user who started a run sees it; runs
+    are kept for `FLEETDOCK_FLEET_RUN_RETENTION` (30 days);
   - monitoring: live sessions (cancel/terminate), the most expensive
     statements (`pg_stat_statements` / `performance_schema`), status
     counters, configuration; a per-minute health probe fills instance health

@@ -17,7 +17,6 @@ import (
 	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
 	schemahistoryapp "github.com/Fleetdock/fleetdock/backend/internal/app/schemahistory"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
-	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
@@ -71,15 +70,12 @@ func authorizeDataAccess(ctx context.Context, rv *authzapp.Resolver, lookup data
 	if err != nil {
 		return err
 	}
-	if !info.System && info.Mode != instancedom.DataAccessAdmin {
+	need, why := info.NeedsInstanceWrite()
+	if !need {
 		return nil
 	}
 	if err := authorizeResource(ctx, rv, "instance:write", authz.ResourceInstance, info.InstanceID); err != nil {
-		if info.System {
-			return apperr.Forbidden("system databases can only be opened by instance administrators")
-		}
-		return apperr.Forbidden("this instance's data is accessed with its admin login, so only instance administrators " +
-			"can open it; an administrator can set a separate data login in the instance settings")
+		return apperr.Forbidden(why)
 	}
 	return nil
 }

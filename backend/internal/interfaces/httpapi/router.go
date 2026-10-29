@@ -32,6 +32,7 @@ type RouterDeps struct {
 	Notifications *NotificationHandler
 	Overview      *OverviewHandler
 	Search        *SearchHandler
+	Fleet         *FleetHandler
 	Docs          *DocsHandler
 	Authn         *Authenticator
 	// Resolver resolves resource scope ancestry for per-resource authorization.
@@ -225,6 +226,16 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/databases/{id}/explain", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Explain))
 	// Fleet-wide schema search; hits are filtered per database in the handler.
 	mux.HandleFunc("GET /v1/search/schema", requireAnyPerm("database:read", d.Search.Schema))
+
+	// Fleet queries: each target database is authorized inside the service.
+	mux.HandleFunc("POST /v1/fleet-runs", requireAnyPerm("database:read", d.Fleet.Create))
+	mux.HandleFunc("GET /v1/fleet-runs", requireAnyPerm("database:read", d.Fleet.List))
+	mux.HandleFunc("GET /v1/fleet-runs/{id}", requireAnyPerm("database:read", d.Fleet.Get))
+	mux.HandleFunc("GET /v1/fleet-runs/{id}/targets", requireAnyPerm("database:read", d.Fleet.Targets))
+	mux.HandleFunc("GET /v1/fleet-runs/{id}/results.csv", requireAnyPerm("database:read", d.Fleet.ResultsCSV))
+	mux.HandleFunc("POST /v1/fleet-runs/{id}/resume", requireAnyPerm("database:read", d.Fleet.Resume))
+	mux.HandleFunc("POST /v1/fleet-runs/{id}/cancel", requireAnyPerm("database:read", d.Fleet.Cancel))
+	mux.HandleFunc("POST /v1/fleet-runs/{id}/retry", requireAnyPerm("database:read", d.Fleet.Retry))
 	// SQL console: any writes are gated inside the handler by database:write.
 	mux.HandleFunc("POST /v1/databases/{id}/query", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Query))
 	// One-off dump streamed to the client; needs the same right as "back up now".

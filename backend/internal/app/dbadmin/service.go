@@ -151,6 +151,19 @@ type DataAccessInfo struct {
 	Mode instancedom.DataAccess
 }
 
+// NeedsInstanceWrite reports whether interactive work on the database
+// requires instance:write on its instance, and the message to refuse with.
+func (i DataAccessInfo) NeedsInstanceWrite() (bool, string) {
+	switch {
+	case i.System:
+		return true, "system databases can only be opened by instance administrators"
+	case i.Mode == instancedom.DataAccessAdmin:
+		return true, "this instance's data is accessed with its admin login, so only instance administrators " +
+			"can open it; an administrator can set a separate data login in the instance settings"
+	}
+	return false, ""
+}
+
 // DataAccess reports a database's instance, whether it is a system database,
 // and which login its interactive features use.
 func (s *Service) DataAccess(ctx context.Context, databaseID string) (DataAccessInfo, error) {
@@ -445,6 +458,8 @@ type QueryInput struct {
 	// Preview dry-runs a script with writes: one transaction, rolled back.
 	// It needs AllowWrite and is not recorded in the history.
 	Preview bool
+	// Timeout bounds the run (0 = the console's default).
+	Timeout time.Duration
 }
 
 // BatchFailure says which statement of a run failed (1-based) and why.
@@ -497,7 +512,11 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 	start := time.Now()
 	out := &QueryOutput{Results: []engine.QueryResult{}}
 	var batchErr error
-	err := s.scoped(ctx, in.DatabaseID, mode, queryTimeout,
+	timeout := queryTimeout
+	if in.Timeout > 0 {
+		timeout = in.Timeout
+	}
+	err := s.scoped(ctx, in.DatabaseID, mode, timeout,
 		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
 			onSession := func(pid int64) { s.setSessionID(in.QueryID, pid) }
 			var res []engine.QueryResult

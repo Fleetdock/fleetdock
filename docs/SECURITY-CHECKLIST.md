@@ -135,3 +135,10 @@ Schema history reads a watched database's structure (never its rows) with
 the instance's admin login and keeps it in the metadata database; anyone who
 may browse the database can see it. Schema comparison reads both databases
 as the caller's own data login.
+
+A fleet query runs in the background as the user who started it: before
+each database, Fleetdock rebuilds that user's current permissions (limited
+to the API token's scopes when it was started with one) and skips the
+database if they no longer allow it — a suspended user's runs stop. Up to
+the row limit of each database's results is kept in the metadata database
+for `FLEETDOCK_FLEET_RUN_RETENTION`, visible only to that user.

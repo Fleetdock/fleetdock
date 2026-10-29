@@ -90,6 +90,10 @@ type Config struct {
 	// SchemaSnapshotInterval is how often watched databases' structure is
 	// checked for changes (0 disables the background checks).
 	SchemaSnapshotInterval time.Duration
+	// FleetMaxParallel caps the fleet-query targets this process runs at
+	// once; FleetRunRetention is how long finished runs are kept.
+	FleetMaxParallel  int
+	FleetRunRetention time.Duration
 
 	// SMTP configures outbound email for notification channels. When
 	// SMTPHost is empty, email delivery is disabled.
@@ -254,6 +258,8 @@ func Load() (Config, error) {
 
 		CatalogRefreshInterval: getenvDuration("FLEETDOCK_CATALOG_REFRESH_INTERVAL", 30*time.Minute),
 		SchemaSnapshotInterval: getenvDuration("FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL", 15*time.Minute),
+		FleetMaxParallel:       getenvInt("FLEETDOCK_FLEET_MAX_PARALLEL", 16),
+		FleetRunRetention:      getenvDuration("FLEETDOCK_FLEET_RUN_RETENTION", 30*24*time.Hour),
 		RowChangeRetention:     getenvDuration("FLEETDOCK_ROW_CHANGE_RETENTION", 7*24*time.Hour),
 		BackupCopyTTL:          getenvDuration("FLEETDOCK_BACKUP_COPY_TTL", 2*time.Hour),
 		BackupCopyMaxBytes:     getenvInt64("FLEETDOCK_BACKUP_COPY_MAX_BYTES", 10<<30),

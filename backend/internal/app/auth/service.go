@@ -25,6 +25,18 @@ type Principal struct {
 	UserID uuid.UUID
 	Email  string
 	grants []authz.Grant
+	// scopes are the API token's scopes (nil for a session or an unscoped
+	// token): work done later on the principal's behalf keeps them.
+	scopes []string
+}
+
+// TokenScopes returns the scopes the principal's API token is limited to
+// (nil when it is not limited).
+func (p *Principal) TokenScopes() []string {
+	if p == nil {
+		return nil
+	}
+	return p.scopes
 }
 
 // Can reports whether the principal holds the given permission at global scope.
@@ -218,6 +230,18 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 		jwtEpoch = epoch
 	}
 
+	return s.principalFor(ctx, userID, tokenScopes, jwtEpoch)
+}
+
+// PrincipalForUser rebuilds a user's principal for work done later on their
+// behalf (a fleet query running in the background): their current grants,
+// limited to scopes when the work was started with a scoped API token. A
+// suspended or deleted user has none.
+func (s *Service) PrincipalForUser(ctx context.Context, userID uuid.UUID, scopes []string) (*Principal, error) {
+	return s.principalFor(ctx, userID, scopes, -1)
+}
+
+func (s *Service) principalFor(ctx context.Context, userID uuid.UUID, tokenScopes []string, jwtEpoch int) (*Principal, error) {
 	u, err := s.users.GetByID(ctx, userID)
 	if err != nil {
 		return nil, apperr.Unauthorized("account no longer exists")
@@ -238,10 +262,12 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 
 	// An API token restricts the user's grants to its scopes. An empty scope
 	// list means the token inherits all of the user's grants (session-like).
+	var scopes []string
 	if len(tokenScopes) > 0 {
 		grants = restrictToScopes(grants, tokenScopes)
+		scopes = tokenScopes
 	}
-	return &Principal{UserID: u.ID, Email: u.Email, grants: grants}, nil
+	return &Principal{UserID: u.ID, Email: u.Email, grants: grants, scopes: scopes}, nil
 }
 
 // EnsureAdmin creates a bootstrap owner account if there are no users yet.

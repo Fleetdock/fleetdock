@@ -85,7 +85,9 @@ func (r *fakeRepo) Get(_ context.Context, db, id uuid.UUID) (*schemahistorydom.S
 	return nil, apperr.NotFound("schema snapshot not found")
 }
 
-type fakeSource struct{ schemas map[uuid.UUID]*schemadiff.Schema }
+type fakeSource struct {
+	schemas map[uuid.UUID]*schemadiff.Schema
+}
 
 func (f *fakeSource) Schema(_ context.Context, id string) (*schemadiff.Schema, error) {
 	return f.schemas[uuid.MustParse(id)], nil

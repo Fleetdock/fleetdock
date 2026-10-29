@@ -83,6 +83,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Fleet query: one script, many databases.** The new *Fleet query* page
+  runs a SQL script on up to 500 databases in the background, a few at a
+  time, and merges the results into one table (with CSV export). Access is
+  checked per database when the run starts and again before each one runs;
+  scripts that write need a typed confirmation, run on one database first
+  and stop at the first failure by default. Runs can be canceled and
+  retried. `FLEETDOCK_FLEET_MAX_PARALLEL` (16) caps the work per process,
+  `FLEETDOCK_FLEET_RUN_RETENTION` (30 days) how long runs are kept. API:
+  `/v1/fleet-runs`.
 - **Schema history and drift.** Turn on *Track changes* on a database's new
   **Schema** tab and every structural change — from Fleetdock, a migration
   tool or someone's psql — is recorded as a snapshot with what changed, and

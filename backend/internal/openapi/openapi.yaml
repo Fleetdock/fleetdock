@@ -33,6 +33,8 @@ tags:
   - name: Destinations
   - name: Schedules
   - name: Moves
+  - name: Fleet
+    x-displayName: Fleet queries
   - name: Notifications
   - name: Agent
   - name: Install
@@ -100,6 +102,51 @@ components:
         table:
           type: string
           description: The referencing table. Set only on incoming keys (referenced-by).
+    FleetRun:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        created_by: {type: string, format: uuid}
+        sql: {type: string}
+        writes: {type: boolean, description: The script has at least one statement that writes.}
+        status: {type: string, enum: [running, paused, canceling, succeeded, failed, canceled]}
+        concurrency: {type: integer}
+        stop_on_error: {type: boolean}
+        canary: {type: boolean, description: Run the first database alone and pause until resumed.}
+        timeout_seconds: {type: integer}
+        row_limit: {type: integer}
+        total: {type: integer}
+        succeeded: {type: integer}
+        failed: {type: integer}
+        skipped: {type: integer, description: Not run because an earlier database failed or the run was canceled.}
+        running: {type: integer}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+    FleetTarget:
+      type: object
+      properties:
+        position: {type: integer}
+        database_id: {type: string, format: uuid}
+        database_name: {type: string}
+        instance_name: {type: string}
+        engine: {type: string}
+        status: {type: string, enum: [pending, running, succeeded, failed, skipped, canceled, unknown]}
+        results:
+          type: object
+          description: The console results of the script on this database (rows trimmed to fit the run's storage limit).
+          properties:
+            results: {type: array, items: {type: object}}
+            error:
+              type: object
+              properties:
+                statement: {type: integer}
+                message: {type: string}
+            trimmed: {type: boolean}
+        rows_affected: {type: integer, format: int64}
+        error: {type: string}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
     SchemaWatch:
       type: object
       properties:
@@ -893,6 +940,142 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/SchemaWatch"}
+
+  /v1/fleet-runs:
+    post:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      summary: Run a script on many databases
+      description: >-
+        Queues the script to run on each database (up to 500), a few at a time, in the background. Every database
+        needs the same access as the SQL console (database:read, database:write when the script writes, and
+        instance:write for system databases or admin-login instances), checked now and again just before it runs
+        there. A script that writes stops at the first failure and runs the first database alone, pausing until
+        resumed, unless stop_on_error / canary say otherwise.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sql, database_ids]
+              properties:
+                sql: {type: string}
+                database_ids: {type: array, items: {type: string, format: uuid}, maxItems: 500}
+                concurrency: {type: integer, minimum: 1, maximum: 16, default: 4}
+                stop_on_error: {type: boolean, description: Default true when the script writes.}
+                canary: {type: boolean, description: Default true when the script writes and there are several databases.}
+                timeout_seconds: {type: integer, minimum: 1, maximum: 600, default: 60}
+                row_limit: {type: integer, minimum: 1, maximum: 1000, default: 100}
+      responses:
+        "201":
+          description: Queued
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+    get:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      summary: Your recent fleet runs
+      responses:
+        "200":
+          description: Runs, newest first (up to 50)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/FleetRun"}}
+
+  /v1/fleet-runs/{id}:
+    get:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: A fleet run
+      description: Only the user who started a run can see it.
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+
+  /v1/fleet-runs/{id}/targets:
+    get:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: A fleet run's databases and their results
+      responses:
+        "200":
+          description: Targets in order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/FleetTarget"}}
+
+  /v1/fleet-runs/{id}/results.csv:
+    get:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Merged results as CSV
+      description: >-
+        The first result set of every database that returned rows, merged into one table whose columns are the union
+        of theirs, led by database and server.
+      responses:
+        "200":
+          description: CSV
+          content:
+            text/csv:
+              schema: {type: string}
+
+  /v1/fleet-runs/{id}/resume:
+    post:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Continue a run paused after its first database
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+        "409": {description: The run is not paused}
+
+  /v1/fleet-runs/{id}/cancel:
+    post:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Cancel a run
+      description: Databases not started are skipped; statements running are killed on their server.
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+        "409": {description: The run is over}
+
+  /v1/fleet-runs/{id}/retry:
+    post:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Retry the databases that did not succeed
+      description: Re-queues a failed or canceled run's failed, skipped, canceled and interrupted databases.
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+        "409": {description: The run is still going, or nothing is left to retry}
 
   /v1/schema/compare:
     post:

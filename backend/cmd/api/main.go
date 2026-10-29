@@ -33,6 +33,7 @@ import (
 	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
 	destinationapp "github.com/Fleetdock/fleetdock/backend/internal/app/destination"
 	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
+	fleetapp "github.com/Fleetdock/fleetdock/backend/internal/app/fleet"
 	instanceapp "github.com/Fleetdock/fleetdock/backend/internal/app/instance"
 	moveapp "github.com/Fleetdock/fleetdock/backend/internal/app/move"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
@@ -207,6 +208,16 @@ func run() error {
 	copySvc.SetPreparer(dbadminSvc)
 	opsSvc.SetBackupCopyHook(copySvc)
 	dbadminSvc.SetCopies(copySvc)
+	fleetSvc := fleetapp.NewService(fleetapp.Deps{
+		Repo:       postgres.NewFleetRepository(pool),
+		Databases:  databaseRepo,
+		Instances:  instanceRepo,
+		Ancestry:   resolver,
+		DataAccess: dbadminSvc,
+		Principals: authSvc,
+		Queries:    dbadminSvc,
+		Audit:      auditSvc,
+	})
 	moveSvc := moveapp.NewService(databaseRepo, instanceRepo, backupSvc, databaseSvc, endpointSvc)
 	opsSvc.SetMover(moveSvc)
 
@@ -238,6 +249,8 @@ func run() error {
 			RowChangeRetention: cfg.RowChangeRetention,
 			CatalogLock:        postgres.CatalogLock(pool),
 		}).Run(ctx)
+		// Fleet queries run on every replica, each taking its share.
+		go fleetapp.NewRunner(fleetSvc, cfg.FleetMaxParallel, cfg.FleetRunRetention).Run(ctx)
 	}
 
 	// Bundled dashboard: a supervised node child on loopback, fronted by this
@@ -282,6 +295,7 @@ func run() error {
 		Destinations:      httpapi.NewDestinationHandler(destSvc),
 		DBAdmin:           dbadminHandler,
 		Search:            httpapi.NewSearchHandler(catalogSvc, dbadminSvc, resolver),
+		Fleet:             httpapi.NewFleetHandler(fleetSvc),
 		Console:           httpapi.NewConsoleHandler(consoleapp.NewService(consoleRepo), resolver),
 		Connectivity:      httpapi.NewConnectivityHandler(endpointSvc),
 		DBCredentials:     httpapi.NewDBCredentialHandler(credentialSvc),
