@@ -100,6 +100,28 @@ components:
         table:
           type: string
           description: The referencing table. Set only on incoming keys (referenced-by).
+    BackupCopy:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        database_id: {type: string, format: uuid}
+        backup_id: {type: string, format: uuid}
+        instance_id: {type: string, format: uuid}
+        scratch_name: {type: string}
+        status: {type: string, enum: [restoring, ready, failed, dropping, dropped]}
+        job_id: {type: string, format: uuid}
+        error: {type: string}
+        ready_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        backup_created_at: {type: string, format: date-time}
+        created_by: {type: string, format: uuid}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    DiffCursor:
+      type: object
+      properties:
+        phase: {type: string, enum: [live, backup]}
+        after: {type: object, additionalProperties: true}
     RowEditResult:
       type: object
       properties:
@@ -121,7 +143,7 @@ components:
         undoable: {type: boolean}
         note: {type: string}
         batch_id: {type: string, format: uuid}
-        source: {type: string, enum: [editor, undo]}
+        source: {type: string, enum: [editor, undo, restore]}
         user_id: {type: string, format: uuid}
         user_email: {type: string}
         undo_of: {type: string, format: uuid}
@@ -905,6 +927,188 @@ paths:
                 type: object
                 properties:
                   items: {type: array, items: {$ref: "#/components/schemas/UndoResult"}}
+
+  /v1/databases/{id}/backup-copies:
+    get:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: List backup copies
+      description: The database's backups opened for comparison that are not dropped yet, newest first.
+      responses:
+        "200":
+          description: Copies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/BackupCopy"}}
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Open a backup for comparison
+      description: >-
+        Restores a completed backup of this database into a temporary database (fds_...) on the same instance,
+        kept for FLEETDOCK_BACKUP_COPY_TTL (2h by default, extendable up to 24h) and then dropped. One copy per
+        database at a time. Needs backup:write and data access to the database. Poll the copy until status is
+        ready (or failed).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [backup_id]
+              properties:
+                backup_id: {type: string, format: uuid}
+      responses:
+        "202":
+          description: Restoring
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BackupCopy"}
+
+  /v1/databases/{id}/backup-copies/{copyId}:
+    get:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Get a backup copy
+      responses:
+        "200":
+          description: Copy
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BackupCopy"}
+    delete:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Discard a backup copy
+      description: Drops the temporary database now (as soon as its restore ends, if it is still restoring).
+      responses:
+        "204":
+          description: Dropping
+
+  /v1/databases/{id}/backup-copies/{copyId}/extend:
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Keep a backup copy longer
+      description: Moves the expiry to one TTL from now, at most 24 hours after the copy became ready.
+      responses:
+        "200":
+          description: Copy
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BackupCopy"}
+
+  /v1/databases/{id}/backup-copies/{copyId}/diff:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Compare a table with the backup copy
+      description: >-
+        One step of a comparison by row key: up to 1000 rows per call. The first phase scans the live table and finds
+        rows added or changed since the backup; the second scans the copy and finds rows removed since. Call again with
+        `next` until it is absent. Only columns both sides have are compared. Needs data access to the database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [table]
+              properties:
+                table: {type: string}
+                cursor: {$ref: "#/components/schemas/DiffCursor"}
+      responses:
+        "200":
+          description: Differences found in this step
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns: {type: array, items: {type: string}}
+                  key: {type: array, items: {type: string}}
+                  scanned: {type: integer}
+                  warnings: {type: array, items: {type: string}}
+                  next: {$ref: "#/components/schemas/DiffCursor"}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: {type: string, enum: [added, removed, changed]}
+                        key: {type: object, additionalProperties: true}
+                        live: {type: array, items: {type: string, nullable: true}}
+                        backup: {type: array, items: {type: string, nullable: true}}
+                        changed: {type: array, items: {type: string}}
+                        live_hash: {type: string}
+
+  /v1/databases/{id}/backup-copies/{copyId}/restore-rows:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Put rows back as they were in the backup
+      description: >-
+        Changed rows get the backup's values, removed rows are inserted again and added rows are deleted - each only if
+        it still looks as it did when compared (otherwise conflict). Every row is journaled under one batch_id, so the
+        whole restore can be undone from the change history. At most 200 rows per call. Requires database:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [table, rows]
+              properties:
+                table: {type: string}
+                rows:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key: {type: object, additionalProperties: true}
+                      kind: {type: string, enum: [added, removed, changed]}
+                      live_hash: {type: string}
+      responses:
+        "200":
+          description: One outcome per row
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id: {type: string, format: uuid}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: {type: object, additionalProperties: true}
+                        ok: {type: boolean}
+                        conflict: {type: boolean}
+                        error: {type: string}
+                        change_id: {type: string, format: uuid}
 
   /v1/search/schema:
     get:

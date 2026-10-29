@@ -34,9 +34,11 @@ import {
   SquareTerminal,
   Upload,
   X,
+  ArchiveRestore,
 } from "lucide-react";
 
 import { cellState, DataGrid, type Cell, type GridRow } from "./data-grid";
+import { BackupCompare } from "./backup-compare";
 import { RowHistory, useRowUndo } from "./row-history";
 
 const OP_LABEL: Record<string, string> = {
@@ -62,6 +64,7 @@ export function TableTab({
   tab,
   active,
   canWrite,
+  canBackup,
   dialect,
   dispatch,
   onDirty,
@@ -72,6 +75,7 @@ export function TableTab({
   tab: Tab;
   active: boolean;
   canWrite: boolean;
+  canBackup: boolean;
   dialect: Dialect;
   dispatch: Dispatch<Action>;
   onDirty: (id: string, changes: number) => void;
@@ -299,6 +303,7 @@ export function TableTab({
   const [importOpen, setImportOpen] = useState(false);
   const [panel, setPanel] = useState(() => load("value-panel") === "1");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const togglePanel = () => {
     setPanel((v) => {
       save("value-panel", v ? null : "1");
@@ -431,6 +436,12 @@ export function TableTab({
                 ),
             },
             { label: "Import CSV…", icon: <Upload size={15} />, hidden: !canWrite || isView, onSelect: () => setImportOpen(true) },
+            {
+              label: "Compare with a backup…",
+              icon: <ArchiveRestore size={15} />,
+              hidden: isView,
+              onSelect: () => setCompareOpen(true),
+            },
             {
               label: "Copy name",
               icon: <ClipboardCopy size={15} />,
@@ -587,6 +598,15 @@ export function TableTab({
           ) : null}
           {historyOpen ? (
             <RowHistory databaseId={databaseId} table={tab.name} canWrite={canWrite} onClose={() => setHistoryOpen(false)} />
+          ) : null}
+          {compareOpen ? (
+            <BackupCompare
+              databaseId={databaseId}
+              table={tab.name}
+              canWrite={canWrite}
+              canBackup={canBackup}
+              onClose={() => setCompareOpen(false)}
+            />
           ) : null}
         </div>
       )}

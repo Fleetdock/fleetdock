@@ -22,6 +22,7 @@ import (
 	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	backupapp "github.com/Fleetdock/fleetdock/backend/internal/app/backup"
+	backupcopyapp "github.com/Fleetdock/fleetdock/backend/internal/app/backupcopy"
 	catalogapp "github.com/Fleetdock/fleetdock/backend/internal/app/catalog"
 	consoleapp "github.com/Fleetdock/fleetdock/backend/internal/app/console"
 	databaseapp "github.com/Fleetdock/fleetdock/backend/internal/app/database"
@@ -190,6 +191,11 @@ func run() error {
 		return err
 	}))
 	opsSvc.SetNotifier(notifSvc)
+	copySvc := backupcopyapp.NewService(postgres.NewBackupCopyRepository(pool), backupRepo, databaseRepo, backupSvc,
+		cfg.BackupCopyTTL, cfg.BackupCopyMaxBytes)
+	copySvc.SetPreparer(dbadminSvc)
+	opsSvc.SetBackupCopyHook(copySvc)
+	dbadminSvc.SetCopies(copySvc)
 	moveSvc := moveapp.NewService(databaseRepo, instanceRepo, backupSvc, databaseSvc, endpointSvc)
 	opsSvc.SetMover(moveSvc)
 
@@ -216,6 +222,7 @@ func run() error {
 			Probe:              probeSvc,
 			Catalog:            catalogSvc,
 			RowChanges:         rowChangeRepo,
+			BackupCopies:       copySvc,
 			RowChangeRetention: cfg.RowChangeRetention,
 			CatalogLock:        postgres.CatalogLock(pool),
 		}).Run(ctx)
@@ -241,6 +248,8 @@ func run() error {
 	}
 
 	// HTTP layer.
+	dbadminHandler := httpapi.NewDBAdminHandler(dbadminSvc, resolver)
+	dbadminHandler.SetCopies(copySvc)
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Auth: httpapi.NewAuthHandler(authSvc, httpapi.SessionCookieConfig{
 			TTL: cfg.JWTTTL,
@@ -258,7 +267,7 @@ func run() error {
 		Schedules:         httpapi.NewScheduleHandler(scheduleSvc),
 		Moves:             httpapi.NewMoveHandler(moveSvc, resolver),
 		Destinations:      httpapi.NewDestinationHandler(destSvc),
-		DBAdmin:           httpapi.NewDBAdminHandler(dbadminSvc, resolver),
+		DBAdmin:           dbadminHandler,
 		Search:            httpapi.NewSearchHandler(catalogSvc, dbadminSvc, resolver),
 		Console:           httpapi.NewConsoleHandler(consoleapp.NewService(consoleRepo), resolver),
 		Connectivity:      httpapi.NewConnectivityHandler(endpointSvc),

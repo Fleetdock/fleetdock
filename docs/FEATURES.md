@@ -93,6 +93,16 @@ Backend (Go):
     if the row changed since, Fleetdock asks before overwriting that change.
     Undo does not revert what triggers or cascading deletes did, and changes
     made in the SQL console or by CSV import are not journaled;
+  - compare with a backup: a table's **Compare with a backup…** restores a
+    chosen backup into a temporary database on the same server (named
+    `fds_…`, dropped after `FLEETDOCK_BACKUP_COPY_TTL`, two hours by default;
+    **Keep longer** extends it up to a day), then lists the rows changed,
+    deleted or added since, by primary key. Picked rows are put back as they
+    were in the backup, under a check that each still looks as compared, and
+    the restore is journaled as one save, so **Undo** reverts it. Opening a
+    backup needs `backup:write`; restoring rows needs `database:write`. The
+    copy uses disk on the production server for as long as it is kept, and
+    backups larger than `FLEETDOCK_BACKUP_COPY_MAX_BYTES` are refused;
   - structure without SQL: create/alter/rename/truncate/drop tables, columns,
     indexes and foreign keys; views, routines, triggers, sequences and events;
   - SQL console: multi-statement scripts on one session, confirmation before

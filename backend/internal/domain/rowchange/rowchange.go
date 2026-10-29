@@ -20,6 +20,8 @@ import (
 const (
 	SourceEditor = "editor"
 	SourceUndo   = "undo"
+	// SourceRestore: a row put back from a backup copy.
+	SourceRestore = "restore"
 )
 
 // MaxEntryBytes caps one entry's encoded images. A bigger change is still

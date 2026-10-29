@@ -241,6 +241,7 @@ function Workspace({
   const qc = useQueryClient();
   const canOn = useCanOn();
   const canWrite = canOn("database:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
+  const canBackup = canOn("backup:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
   const dialect: Dialect = dialectOf(db.instance?.engine);
   const pg = dialect === "postgres";
 
@@ -449,6 +450,7 @@ function Workspace({
                 active={t.id === ws.active}
                 db={db}
                 canWrite={canWrite}
+                canBackup={canBackup && !db.system}
                 dialect={dialect}
                 dispatch={dispatch}
                 onDirty={onDirty}
@@ -483,6 +485,7 @@ function TabContent({
   active,
   db,
   canWrite,
+  canBackup,
   dialect,
   dispatch,
   onDirty,
@@ -493,6 +496,7 @@ function TabContent({
   active: boolean;
   db: Database;
   canWrite: boolean;
+  canBackup: boolean;
   dialect: Dialect;
   dispatch: React.Dispatch<import("@/lib/data-browser/tabs").Action>;
   onDirty: (id: string, n: number) => void;
@@ -515,6 +519,7 @@ function TabContent({
       tab={tab}
       active={active}
       canWrite={canWrite}
+      canBackup={canBackup}
       dialect={dialect}
       dispatch={dispatch}
       onDirty={onDirty}

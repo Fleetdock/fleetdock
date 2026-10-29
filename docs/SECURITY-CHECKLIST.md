@@ -125,3 +125,8 @@ full contents of deleted rows — in the metadata database for
 accordingly, shorten the retention if the edited tables hold sensitive data,
 or set it to `0` to keep no copies (and lose undo). The journal is readable
 only by users who may browse that database.
+
+*Compare with a backup* restores a backup into a temporary `fds_…` database
+on the same server as the live one, readable by the instance's admin login,
+until it is discarded or `FLEETDOCK_BACKUP_COPY_TTL` passes. Only users with
+`backup:write` on the database can open one.

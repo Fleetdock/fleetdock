@@ -11,3 +11,4 @@ export * from "./data/backups";
 export * from "./data/access";
 export * from "./data/notifications";
 export * from "./data/overview";
+export * from "./data/backup-copies";

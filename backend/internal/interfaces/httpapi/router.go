@@ -203,6 +203,14 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/referenced-by", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ReferencedBy))
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
 	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
+	// Backup copies: compare a table with a backup and put rows back.
+	mux.HandleFunc("GET /v1/databases/{id}/backup-copies", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ListCopies))
+	mux.HandleFunc("POST /v1/databases/{id}/backup-copies", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.CreateCopy))
+	mux.HandleFunc("GET /v1/databases/{id}/backup-copies/{copyId}", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.GetCopy))
+	mux.HandleFunc("POST /v1/databases/{id}/backup-copies/{copyId}/extend", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.ExtendCopy))
+	mux.HandleFunc("DELETE /v1/databases/{id}/backup-copies/{copyId}", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.DiscardCopy))
+	mux.HandleFunc("POST /v1/databases/{id}/backup-copies/{copyId}/diff", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.DiffCopy))
+	mux.HandleFunc("POST /v1/databases/{id}/backup-copies/{copyId}/restore-rows", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.RestoreCopyRows))
 	// Row change journal (data browser undo).
 	mux.HandleFunc("GET /v1/databases/{id}/changes", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ListChanges))
 	mux.HandleFunc("POST /v1/databases/{id}/changes/undo", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.UndoBatch))

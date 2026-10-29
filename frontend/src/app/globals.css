@@ -614,3 +614,10 @@ thead .dbx-rownum { top: 0; z-index: 4; cursor: default; }
 .preview-table td.is-old { color: var(--danger); text-decoration: line-through; }
 .preview-table td.is-new { color: var(--success); font-weight: 600; }
 .preview-table td.is-deleted { color: var(--danger); font-style: italic; }
+
+/* ---- compare with a backup ---- */
+.backup-copy-banner { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.backup-copy-banner > span:first-child { flex: 1; min-width: 14rem; }
+.compare-table td { vertical-align: top; }
+.compare-table td:last-child { min-width: 16rem; }
+.compare-table code { word-break: break-all; }

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
+	backupcopyapp "github.com/Fleetdock/fleetdock/backend/internal/app/backupcopy"
 	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
@@ -26,6 +27,7 @@ import (
 type DBAdminHandler struct {
 	svc      *dbadminapp.Service
 	resolver *authzapp.Resolver
+	copies   *backupcopyapp.Service
 }
 
 // NewDBAdminHandler builds the handler.

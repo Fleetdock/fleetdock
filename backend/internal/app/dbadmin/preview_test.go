@@ -51,8 +51,8 @@ func TestPreview_Refusals(t *testing.T) {
 		in   QueryInput
 		kind apperr.Kind
 	}{
-		{QueryInput{SQL: "UPDATE t SET a = 1", Preview: true}, apperr.KindForbidden},             // no write access
-		{QueryInput{SQL: "SELECT 1", Preview: true, AllowWrite: true}, apperr.KindInvalid},       // nothing to preview
+		{QueryInput{SQL: "UPDATE t SET a = 1", Preview: true}, apperr.KindForbidden},       // no write access
+		{QueryInput{SQL: "SELECT 1", Preview: true, AllowWrite: true}, apperr.KindInvalid}, // nothing to preview
 		{QueryInput{SQL: "DELETE FROM t; DROP TABLE t", Preview: true, AllowWrite: true}, apperr.KindInvalid},
 		{QueryInput{SQL: "UPDATE t SET a = 1; COMMIT", Preview: true, AllowWrite: true}, apperr.KindInvalid},
 	}

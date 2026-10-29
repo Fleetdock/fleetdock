@@ -82,6 +82,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Compare a table with a backup, restore single rows.** *Compare with a
+  backup…* in the data browser restores a backup into a temporary `fds_…`
+  database on the same server, lists the rows changed, deleted or added since
+  (by primary key, in pages), and puts the picked rows back as they were.
+  Restores are journaled, so **Undo** reverts them. The copy is dropped after
+  `FLEETDOCK_BACKUP_COPY_TTL` (2h; extendable to 24h);
+  `FLEETDOCK_BACKUP_COPY_MAX_BYTES` caps the backup size. API:
+  `/v1/databases/{id}/backup-copies` (create, list, extend, discard, diff,
+  restore-rows).
 - **Preview writes in the SQL console.** A script with writes can be dry-run
   first: it runs in one transaction that is always rolled back
   (`POST /v1/databases/{id}/query` with `preview: true`), reporting rows

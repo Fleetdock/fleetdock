@@ -62,6 +62,8 @@ type Service struct {
 	schemaChanged func(databaseID uuid.UUID)
 	// journal, when set, records data-browser row changes for undo.
 	journal rowchangedom.Repository
+	// copies, when set, finds backup copies to compare tables with.
+	copies CopyLookup
 
 	runningMu sync.Mutex
 	running   map[string]*runningQuery

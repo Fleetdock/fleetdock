@@ -79,6 +79,11 @@ type Config struct {
 	// RowChangeRetention is how long data-browser edits stay in the change
 	// journal (and can be undone); 0 turns the journal off.
 	RowChangeRetention time.Duration
+	// BackupCopyTTL is how long a backup opened for comparison is kept;
+	// BackupCopyMaxBytes caps the compressed size of a backup that may be
+	// opened (0 = no cap).
+	BackupCopyTTL      time.Duration
+	BackupCopyMaxBytes int64
 	// CatalogRefreshInterval is how often each database's table and column
 	// names are re-read for fleet-wide schema search (0 disables it).
 	CatalogRefreshInterval time.Duration
@@ -246,6 +251,8 @@ func Load() (Config, error) {
 
 		CatalogRefreshInterval: getenvDuration("FLEETDOCK_CATALOG_REFRESH_INTERVAL", 30*time.Minute),
 		RowChangeRetention:     getenvDuration("FLEETDOCK_ROW_CHANGE_RETENTION", 7*24*time.Hour),
+		BackupCopyTTL:          getenvDuration("FLEETDOCK_BACKUP_COPY_TTL", 2*time.Hour),
+		BackupCopyMaxBytes:     getenvInt64("FLEETDOCK_BACKUP_COPY_MAX_BYTES", 10<<30),
 
 		SMTPHost:     os.Getenv("FLEETDOCK_SMTP_HOST"),
 		SMTPPort:     getenv("FLEETDOCK_SMTP_PORT", "587"),
@@ -317,6 +324,15 @@ func getenvDuration(key string, def time.Duration) time.Duration {
 func getenvBool(key string, def bool) bool {
 	if v := os.Getenv(key); v != "" {
 		return v == "1" || strings.EqualFold(v, "true")
+	}
+	return def
+}
+
+func getenvInt64(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
 	}
 	return def
 }

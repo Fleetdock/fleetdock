@@ -941,3 +941,51 @@ export interface UndoResult {
   error?: string;
   undo?: RowEditResult;
 }
+
+/** BackupCopy is a backup restored next to its database for comparison. */
+export interface BackupCopy {
+  id: string;
+  database_id: string;
+  backup_id: string;
+  instance_id: string;
+  scratch_name: string;
+  status: "restoring" | "ready" | "failed" | "dropping" | "dropped";
+  job_id?: string;
+  error?: string;
+  ready_at?: string;
+  expires_at?: string;
+  backup_created_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiffCursor {
+  phase: "live" | "backup";
+  after?: Record<string, ImageValue>;
+}
+
+export interface DiffItem {
+  kind: "added" | "removed" | "changed";
+  key: Record<string, ImageValue>;
+  live?: (string | null)[];
+  backup?: (string | null)[];
+  changed?: string[];
+  live_hash?: string;
+}
+
+export interface CopyDiff {
+  columns: string[];
+  key: string[];
+  items: DiffItem[];
+  scanned: number;
+  next?: DiffCursor;
+  warnings?: string[];
+}
+
+export interface RestoreRowResult {
+  key: Record<string, ImageValue>;
+  ok: boolean;
+  conflict?: boolean;
+  error?: string;
+  change_id?: string;
+}

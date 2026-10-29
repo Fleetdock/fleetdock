@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	backupcopyapp "github.com/Fleetdock/fleetdock/backend/internal/app/backupcopy"
 	catalogapp "github.com/Fleetdock/fleetdock/backend/internal/app/catalog"
 	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
 	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
@@ -55,6 +56,8 @@ type Deps struct {
 	// RowChangeRetention.
 	RowChanges         rowchangedom.Repository
 	RowChangeRetention time.Duration
+	// BackupCopies drops expired backup copies.
+	BackupCopies *backupcopyapp.Service
 	// Catalog, when set and enabled, refreshes the fleet-wide schema
 	// catalog on its own loop, under CatalogLock (one replica at a time).
 	Catalog     *catalogapp.Service
@@ -223,6 +226,15 @@ func (w *Worker) housekeeping(ctx context.Context) {
 			slog.Error("prune row changes", "error", err.Error())
 		} else if n > 0 {
 			slog.Info("pruned row changes", "count", n)
+		}
+	}
+
+	// Drop expired backup copies and retry stalled drops.
+	if w.deps.BackupCopies != nil {
+		if n, err := w.deps.BackupCopies.ExpireDue(ctx); err != nil {
+			slog.Error("expire backup copies", "error", err.Error())
+		} else if n > 0 {
+			slog.Info("dropping backup copies", "count", n)
 		}
 	}
 
