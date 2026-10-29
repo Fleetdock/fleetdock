@@ -62,7 +62,7 @@ func (m *MariaDB) IndexReport(ctx context.Context, p ConnParams, database string
 		var col sql.NullString
 		var subPart sql.NullInt64
 		if err := rows.Scan(&table, &name, &nonUnique, &col, &subPart, &typ); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		k := table + "\x00" + name
@@ -84,7 +84,7 @@ func (m *MariaDB) IndexReport(ctx context.Context, p ConnParams, database string
 			ix.Columns = append(ix.Columns, col.String)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (m *MariaDB) IndexReport(ctx context.Context, p ConnParams, database string
 				}
 			}
 		}
-		srows.Close()
+		_ = srows.Close()
 	}
 
 	maria, err := isMariaDB(ctx, db)
@@ -135,7 +135,7 @@ func (m *MariaDB) IndexReport(ctx context.Context, p ConnParams, database string
 				}
 			}
 		}
-		urows.Close()
+		_ = urows.Close()
 		rep.UsageAvailable = true
 	case maria:
 		var userstat int
@@ -164,7 +164,7 @@ func (m *MariaDB) IndexReport(ctx context.Context, p ConnParams, database string
 				}
 			}
 		}
-		urows.Close()
+		_ = urows.Close()
 		rep.UsageAvailable = true
 		rep.Note = "Counted by userstat since it was switched on or the statistics were flushed."
 	default:

@@ -95,7 +95,7 @@ func (pg *Postgres) TopQueries(ctx context.Context, p ConnParams, req TopQueries
 			return nil, err
 		}
 		done, err := pg.topQueries(ctx, conn, req, out)
-		conn.Close(ctx)
+		_ = conn.Close(ctx)
 		if err != nil {
 			return nil, err
 		}
