@@ -498,6 +498,18 @@ export function useForeignKeys(databaseId: string, table: string) {
   });
 }
 
+export function useReferencedBy(databaseId: string, table: string) {
+  return useQuery({
+    queryKey: ["foreign-keys", databaseId, table, "incoming"],
+    queryFn: () =>
+      api
+        .get<{ items: ForeignKey[] }>(`/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/referenced-by`)
+        .then((r) => r.items),
+    enabled: Boolean(databaseId && table),
+    retry: false,
+  });
+}
+
 // useSchemaColumns loads every table's columns for SQL autocompletion. The
 // catalog changes rarely, so it is cached for a few minutes and refreshed after
 // DDL from the structure editor or the console.

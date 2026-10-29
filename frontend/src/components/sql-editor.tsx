@@ -63,6 +63,36 @@ function fleetdockEditorTheme(dark: boolean): Extension {
         padding: "0 8px 0 4px",
         minWidth: "2.25rem",
       },
+      ".cm-tooltip": {
+        backgroundColor: "var(--panel)",
+        color: "var(--fg)",
+        border: "1px solid var(--border)",
+        borderRadius: "6px",
+        boxShadow: "0 6px 20px rgb(0 0 0 / 0.12)",
+        overflow: "hidden",
+      },
+      ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        fontSize: "12.5px",
+        maxHeight: "16em",
+      },
+      ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+        padding: "2px 10px 2px 6px",
+      },
+      ".cm-tooltip-autocomplete ul li[aria-selected]": {
+        backgroundColor: dark ? "color-mix(in srgb, var(--accent) 35%, transparent)" : "color-mix(in srgb, var(--accent) 16%, transparent)",
+        color: "var(--fg)",
+      },
+      ".cm-completionDetail": {
+        color: "var(--muted)",
+        fontStyle: "normal",
+        marginLeft: "1em",
+      },
+      ".cm-completionMatchedText": {
+        textDecoration: "none",
+        fontWeight: 600,
+        color: "var(--accent)",
+      },
     },
     { dark },
   );

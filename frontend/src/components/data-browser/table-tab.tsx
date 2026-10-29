@@ -18,7 +18,8 @@ import {
 } from "@/lib/data-browser/pending";
 import { load, save } from "@/lib/data-browser/storage";
 import { PAGE_SIZES, splitName, type Action, type OpenRequest, type Tab, type TableView } from "@/lib/data-browser/tabs";
-import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys } from "@/lib/hooks";
+import { fkByColumn, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
+import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys, useReferencedBy } from "@/lib/hooks";
 import type { ForeignKey, RowFilter, SortKey } from "@/lib/types";
 import {
   ClipboardCopy,
@@ -116,11 +117,9 @@ export function TableTab({
   );
   const { data, isLoading, error, isFetching, refetch } = useBrowseRows(databaseId, tab.name, req);
   const fkQuery = useForeignKeys(databaseId, tab.kind === "table" ? tab.name : "");
-  const fks = useMemo(() => {
-    const out: Record<string, ForeignKey> = {};
-    for (const fk of fkQuery.data ?? []) if (fk.columns.length === 1 && fk.ref_columns.length === 1) out[fk.columns[0]] = fk;
-    return out;
-  }, [fkQuery.data]);
+  const fks = useMemo(() => fkByColumn(fkQuery.data ?? []), [fkQuery.data]);
+  const incomingQuery = useReferencedBy(databaseId, tab.kind === "table" ? tab.name : "");
+  const incoming = useMemo(() => incomingQuery.data ?? [], [incomingQuery.data]);
 
   const { schema } = splitName(tab.name, dialect === "postgres");
   const quoted = quoteTable(tab.name, dialect, schema);
@@ -232,15 +231,13 @@ export function TableTab({
     setView({ sort: next, page: 1 });
   }
 
-  function follow(fk: ForeignKey, value: string) {
-    const { label } = splitName(fk.ref_table, dialect === "postgres");
-    onOpen({
-      kind: "table",
-      name: fk.ref_table,
-      label,
-      view: { mode: "data", search: "", filters: [{ column: fk.ref_columns[0], op: "eq", value }] },
-    });
+  function openFiltered(table: string, filters: RowFilter[] | null) {
+    if (!filters) return;
+    const { label } = splitName(table, dialect === "postgres");
+    onOpen({ kind: "table", name: table, label, view: { mode: "data", search: "", filters } });
   }
+  const follow = (fk: ForeignKey, row: RowRecord) => openFiltered(fk.ref_table, followFilters(fk, row));
+  const referencing = (fk: ForeignKey, row: RowRecord) => openFiltered(fk.table ?? "", referencingFilters(fk, row));
 
   const doSave = useCallback(async () => {
     const mutations = toMutations(pending);
@@ -537,6 +534,8 @@ export function TableTab({
                   addFilter(value === null ? { column, op: "is_null" } : { column, op: "eq", value })
                 }
                 onFollow={follow}
+                incoming={incoming}
+                onReferencing={referencing}
                 editRequest={editRequest}
                 onEditRequestDone={clearEditRequest}
                 emptyText={

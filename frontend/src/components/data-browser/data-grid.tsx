@@ -13,6 +13,7 @@ import {
   type CellKind,
   type Dialect,
 } from "@/lib/data-browser/cells";
+import { describeFilters, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
 import type { BrowseColumn, ForeignKey, RowValues, SortKey } from "@/lib/types";
 import {
   AlertCircle,
@@ -21,6 +22,7 @@ import {
   ArrowUpRight,
   ClipboardCopy,
   CopyPlus,
+  CornerDownRight,
   Eraser,
   Filter,
   KeyRound,
@@ -67,6 +69,13 @@ export function rowValues(row: GridRow, columns: BrowseColumn[]): (string | null
   return columns.map((c, i) => cellState(row, c, i).value);
 }
 
+/** toRecord is rowValues by column name. */
+export function toRecord(row: GridRow, columns: BrowseColumn[]): RowRecord {
+  const out: RowRecord = {};
+  columns.forEach((c, i) => (out[c.name] = cellState(row, c, i).value));
+  return out;
+}
+
 const ROWNUM_WIDTH = 52;
 const isTrue = (v: string) => /^(t|true|1|y|yes|on)$/i.test(v);
 
@@ -94,7 +103,10 @@ export type GridProps = {
   onRestoreRows: (rows: number[]) => void;
   onDuplicate: (row: number) => void;
   onFilterBy: (column: string, value: string | null) => void;
-  onFollow: (fk: ForeignKey, value: string) => void;
+  onFollow: (fk: ForeignKey, row: RowRecord) => void;
+  /** Foreign keys of other tables that reference this one. */
+  incoming: ForeignKey[];
+  onReferencing: (fk: ForeignKey, row: RowRecord) => void;
   emptyText: string;
   /** Open this cell's editor as soon as it is on screen (a just-added row). */
   editRequest: Cell | null;
@@ -321,6 +333,7 @@ export function DataGrid(props: GridProps) {
     const n = idx.length;
     const rowsLabel = n === 1 ? "row" : `${n} rows`;
     const fk = props.fks[col.name];
+    const record = toRecord(row, columns);
     const editableHere = canEditRow(r);
     const deletable = idx.filter((i) => rows[i].kind === "new" || (editable && rows[i].kind === "data" && !(rows[i] as { deleted: boolean }).deleted));
     const restorable = idx.filter((i) => rows[i].kind === "data" && (rows[i] as { deleted: boolean }).deleted);
@@ -342,9 +355,15 @@ export function DataGrid(props: GridProps) {
       {
         label: `Open referenced row in ${fk?.ref_table}`,
         icon: <ArrowUpRight size={14} />,
-        hidden: !fk || st.value === null || st.isDefault,
-        onSelect: () => fk && st.value !== null && props.onFollow(fk, st.value),
+        hidden: !fk || row.kind !== "data" || !followFilters(fk, record),
+        onSelect: () => fk && props.onFollow(fk, record),
       },
+      ...props.incoming.map((ref): ContextItem => ({
+        label: `Rows in ${ref.table} referencing this row (${ref.columns.join(", ")})`,
+        icon: <CornerDownRight size={14} />,
+        hidden: row.kind !== "data" || !referencingFilters(ref, record),
+        onSelect: () => props.onReferencing(ref, record),
+      })),
       "separator",
       { label: "Edit value", hint: "Enter", hidden: !editableHere, onSelect: () => startEdit(r, c) },
       { label: "Set to NULL", icon: <Eraser size={14} />, hidden: !editableHere || !col.nullable || (st.value === null && !st.isDefault), onSelect: () => props.onEdit(r, c, null) },
@@ -424,7 +443,7 @@ export function DataGrid(props: GridProps) {
   const onCellDouble = useCallback((r: number, c: number) => handlers.current.startEdit(r, c), []);
   const onCellMenu = useCallback((e: React.MouseEvent, r: number, c: number) => handlers.current.cellMenu(e, r, c), []);
   const onNum = useCallback((e: React.MouseEvent, r: number) => handlers.current.onRowNumber(e, r), []);
-  const onFollow = useCallback((fk: ForeignKey, v: string) => handlers.current.follow(fk, v), []);
+  const onFollow = useCallback((fk: ForeignKey, row: RowRecord) => handlers.current.follow(fk, row), []);
 
   const { editRequest, onEditRequestDone } = props;
   useEffect(() => {
@@ -554,7 +573,7 @@ type RowViewProps = {
   onCellDouble: (r: number, c: number) => void;
   onCellMenu: (e: React.MouseEvent, r: number, c: number) => void;
   onRowNumber: (e: React.MouseEvent, r: number) => void;
-  onFollow: (fk: ForeignKey, value: string) => void;
+  onFollow: (fk: ForeignKey, row: RowRecord) => void;
 };
 
 const GridRowView = memo(
@@ -570,6 +589,10 @@ const GridRowView = memo(
     ]
       .filter(Boolean)
       .join(" ");
+    // Where each outgoing key of this row leads (null: a key column is NULL).
+    const record = row.kind === "data" ? toRecord(row, p.columns) : null;
+    const follow: Record<string, ReturnType<typeof followFilters>> = {};
+    if (record) for (const fk of Object.values(p.fks)) follow[fk.name] ??= followFilters(fk, record);
     return (
       <tr className={cls} aria-selected={p.selected} title={row.error}>
         <th scope="row" className="dbx-rownum" onMouseDown={(e) => e.preventDefault()} onClick={(e) => p.onRowNumber(e, r)}>
@@ -632,16 +655,16 @@ const GridRowView = memo(
               ) : (
                 <>
                   <CellContent value={st.value} isDefault={st.isDefault} kind={kind} />
-                  {fk && st.value !== null ? (
+                  {fk && follow[fk.name] ? (
                     <button
                       type="button"
                       className="dbx-fk"
                       tabIndex={-1}
-                      title={`Open ${fk.ref_table} where ${fk.ref_columns[0]} = ${st.value}`}
+                      title={`Open ${fk.ref_table} where ${describeFilters(follow[fk.name]!)}`}
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation();
-                        p.onFollow(fk, st.value!);
+                        p.onFollow(fk, record!);
                       }}
                     >
                       <ArrowUpRight size={12} />
