@@ -989,3 +989,74 @@ export interface RestoreRowResult {
   error?: string;
   change_id?: string;
 }
+
+// ---- schema history & comparison ----
+
+export interface SchemaWatch {
+  database_id: string;
+  enabled: boolean;
+  last_checked_at?: string;
+  last_error?: string;
+  updated_at: string;
+}
+
+export interface SchemaSnapshot {
+  id: string;
+  database_id: string;
+  hash: string;
+  summary: {
+    counts: { tables: number; views: number; routines: number; triggers: number };
+    changes: { added: number; removed: number; changed: number };
+    highlights?: string[];
+    truncated?: boolean;
+    stored: boolean;
+  };
+  previous_id?: string;
+  trigger: "scheduled" | "manual" | "ddl";
+  taken_by?: string;
+  taken_at: string;
+}
+
+export type SchemaChangeKind =
+  | "table"
+  | "column"
+  | "index"
+  | "constraint"
+  | "options"
+  | "view"
+  | "routine"
+  | "trigger"
+  | "type"
+  | "extension";
+
+export interface SchemaChange {
+  kind: SchemaChangeKind;
+  op: "added" | "removed" | "changed";
+  schema?: string;
+  table?: string;
+  name?: string;
+  before?: string;
+  after?: string;
+}
+
+export interface SchemaHistory {
+  watch: SchemaWatch | null;
+  interval_seconds: number;
+  items: SchemaSnapshot[];
+}
+
+export interface SchemaSnapshotDetail {
+  snapshot: SchemaSnapshot;
+  previous?: SchemaSnapshot;
+  changes: SchemaChange[];
+}
+
+export interface SchemaComparison {
+  same: boolean;
+  source_hash: string;
+  target_hash: string;
+  warnings: string[];
+  sql: string;
+  changes: SchemaChange[];
+  review: number;
+}

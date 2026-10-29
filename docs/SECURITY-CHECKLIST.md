@@ -130,3 +130,8 @@ only by users who may browse that database.
 on the same server as the live one, readable by the instance's admin login,
 until it is discarded or `FLEETDOCK_BACKUP_COPY_TTL` passes. Only users with
 `backup:write` on the database can open one.
+
+Schema history reads a watched database's structure (never its rows) with
+the instance's admin login and keeps it in the metadata database; anyone who
+may browse the database can see it. Schema comparison reads both databases
+as the caller's own data login.

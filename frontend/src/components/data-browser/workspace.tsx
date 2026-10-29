@@ -18,6 +18,7 @@ import {
   rememberDatabase,
   rememberTable,
   save,
+  takeQueryDraft,
   workspaceKey,
   type RecentTable,
 } from "@/lib/data-browser/storage";
@@ -297,14 +298,15 @@ function Workspace({
   );
   const newQuery = useCallback((sql?: string) => dispatch({ type: "newQuery", sql }), []);
 
-  // ?query=new (the database page's "New SQL query") opens one query tab.
+  // ?query=new (the database page's "New SQL query") opens one query tab;
+  // ?query=draft opens one holding a stashed script (schema comparison).
   // The ref keeps React's development double-run from opening two.
   const queryOpened = useRef(false);
   useEffect(() => {
-    if (queryParam !== "new" || queryOpened.current) return;
+    if ((queryParam !== "new" && queryParam !== "draft") || queryOpened.current) return;
     queryOpened.current = true;
-    newQuery();
-  }, [queryParam, newQuery]);
+    newQuery(queryParam === "draft" ? (takeQueryDraft(db.id) ?? undefined) : undefined);
+  }, [queryParam, newQuery, db.id]);
 
   // ?table= / ?view= opens (or focuses) that tab; the active tab is written back.
   useEffect(() => {

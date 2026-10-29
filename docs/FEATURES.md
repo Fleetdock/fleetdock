@@ -103,6 +103,22 @@ Backend (Go):
     backup needs `backup:write`; restoring rows needs `database:write`. The
     copy uses disk on the production server for as long as it is kept, and
     backups larger than `FLEETDOCK_BACKUP_COPY_MAX_BYTES` are refused;
+  - schema history: a database's **Schema** tab records every structure it
+    has had once **Track changes** is on (checked every
+    `FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL`, 15 minutes by default, and right
+    after DDL made through Fleetdock): a timeline of what was added, removed
+    or changed (tables, columns, indexes, constraints, views, routines,
+    triggers, PostgreSQL enum types and extensions), whoever made the change.
+    A change emits a `database.schema_changed` notification. **Go back to the
+    version before this…** writes the script that returns the schema to an
+    earlier snapshot (structure only: data in dropped tables or columns is
+    not brought back);
+  - schema comparison: **Compare with…** diffs the structure of two databases
+    on the same engine and writes the DDL that makes one match the other;
+    it opens in the SQL console to run with the usual confirmation. Dropping
+    tables and columns is left commented out for review; what cannot be
+    generated (a changed generation expression, re-ordered enum labels,
+    repartitioning) is described in a `-- manual:` comment;
   - structure without SQL: create/alter/rename/truncate/drop tables, columns,
     indexes and foreign keys; views, routines, triggers, sequences and events;
   - SQL console: multi-statement scripts on one session, confirmation before

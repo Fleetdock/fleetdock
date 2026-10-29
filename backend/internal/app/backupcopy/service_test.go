@@ -15,7 +15,9 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
-type memCopies struct{ items map[uuid.UUID]*backupcopydom.Copy }
+type memCopies struct {
+	items map[uuid.UUID]*backupcopydom.Copy
+}
 
 func (m *memCopies) Create(_ context.Context, c *backupcopydom.Copy) error {
 	for _, o := range m.items {
@@ -36,7 +38,9 @@ func (m *memCopies) Get(_ context.Context, id uuid.UUID) (*backupcopydom.Copy, e
 	cp := *c
 	return &cp, nil
 }
-func (m *memCopies) ListByDatabase(context.Context, uuid.UUID) ([]backupcopydom.Copy, error) { return nil, nil }
+func (m *memCopies) ListByDatabase(context.Context, uuid.UUID) ([]backupcopydom.Copy, error) {
+	return nil, nil
+}
 func (m *memCopies) SetJob(_ context.Context, id, job uuid.UUID) error {
 	m.items[id].JobID = &job
 	return nil

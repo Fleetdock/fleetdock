@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The SQL console now honours a `DELIMITER` line that follows a comment.
 - **Backup verification no longer shows up as a database.** The temporary
   `fdv_…` database a test restore uses was picked up by discovery while it
   existed and then reported as missing once dropped. Names `fdv_`/`fds_`
@@ -82,6 +83,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Schema history and drift.** Turn on *Track changes* on a database's new
+  **Schema** tab and every structural change — from Fleetdock, a migration
+  tool or someone's psql — is recorded as a snapshot with what changed, and
+  announced as a `database.schema_changed` notification. *Compare with…*
+  diffs two databases on the same engine and writes the DDL that aligns them
+  (destructive steps commented out for review); a snapshot can be compared
+  with the live schema to go back to it. Checks run every
+  `FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL` (15m). API:
+  `/v1/databases/{id}/schema/snapshots`, `/v1/databases/{id}/schema/watch`,
+  `POST /v1/schema/compare`.
 - **Compare a table with a backup, restore single rows.** *Compare with a
   backup…* in the data browser restores a backup into a temporary `fds_…`
   database on the same server, lists the rows changed, deleted or added since

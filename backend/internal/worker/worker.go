@@ -23,6 +23,7 @@ import (
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
 	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
+	schemahistoryapp "github.com/Fleetdock/fleetdock/backend/internal/app/schemahistory"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
 	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
@@ -60,8 +61,11 @@ type Deps struct {
 	BackupCopies *backupcopyapp.Service
 	// Catalog, when set and enabled, refreshes the fleet-wide schema
 	// catalog on its own loop, under CatalogLock (one replica at a time).
-	Catalog     *catalogapp.Service
-	CatalogLock func(ctx context.Context) (release func(), ok bool, err error)
+	Catalog *catalogapp.Service
+	// SchemaHistory checks watched databases for schema changes, on the
+	// catalog loop and under its lock.
+	SchemaHistory *schemahistoryapp.Service
+	CatalogLock   func(ctx context.Context) (release func(), ok bool, err error)
 }
 
 // jobTimeout bounds one control-plane operation; stuckAfter is how long a
@@ -89,7 +93,7 @@ func (w *Worker) Run(ctx context.Context) {
 	defer fast.Stop()
 
 	slog.Info("operations worker started")
-	if w.deps.Catalog != nil && w.deps.Catalog.Enabled() {
+	if (w.deps.Catalog != nil && w.deps.Catalog.Enabled()) || (w.deps.SchemaHistory != nil && w.deps.SchemaHistory.Enabled()) {
 		go w.catalogLoop(ctx)
 	}
 	for {
@@ -135,7 +139,8 @@ func (w *Worker) withLock(ctx context.Context, lock func(context.Context) (func(
 	fn(ctx)
 }
 
-// catalogLoop refreshes stale schema catalogs once a minute. It runs on its
+// catalogLoop refreshes stale schema catalogs and checks watched schemas
+// once a minute. It runs on its
 // own goroutine because a pass connects to many databases and must not hold
 // up job claiming or alerts.
 func (w *Worker) catalogLoop(ctx context.Context) {
@@ -146,7 +151,14 @@ func (w *Worker) catalogLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			w.withLock(ctx, w.deps.CatalogLock, func(ctx context.Context) { w.deps.Catalog.RefreshDue(ctx) })
+			w.withLock(ctx, w.deps.CatalogLock, func(ctx context.Context) {
+				if w.deps.Catalog != nil {
+					w.deps.Catalog.RefreshDue(ctx)
+				}
+				if w.deps.SchemaHistory != nil {
+					w.deps.SchemaHistory.RunDue(ctx)
+				}
+			})
 		}
 	}
 }

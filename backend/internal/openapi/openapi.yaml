@@ -100,6 +100,54 @@ components:
         table:
           type: string
           description: The referencing table. Set only on incoming keys (referenced-by).
+    SchemaWatch:
+      type: object
+      properties:
+        database_id: {type: string, format: uuid}
+        enabled: {type: boolean}
+        last_checked_at: {type: string, format: date-time}
+        last_error: {type: string}
+        updated_at: {type: string, format: date-time}
+    SchemaSnapshot:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        database_id: {type: string, format: uuid}
+        hash: {type: string, description: SHA-256 of the canonical structure; equal structures hash equally.}
+        summary:
+          type: object
+          properties:
+            counts:
+              type: object
+              properties:
+                tables: {type: integer}
+                views: {type: integer}
+                routines: {type: integer}
+                triggers: {type: integer}
+            changes:
+              type: object
+              description: Differences from the previous snapshot.
+              properties:
+                added: {type: integer}
+                removed: {type: integer}
+                changed: {type: integer}
+            highlights: {type: array, items: {type: string}}
+            truncated: {type: boolean}
+            stored: {type: boolean, description: False when the structure was too large to keep (hash only).}
+        previous_id: {type: string, format: uuid}
+        trigger: {type: string, enum: [scheduled, manual, ddl]}
+        taken_by: {type: string, format: uuid}
+        taken_at: {type: string, format: date-time}
+    SchemaChange:
+      type: object
+      properties:
+        kind: {type: string, enum: [table, column, index, constraint, options, view, routine, trigger, type, extension]}
+        op: {type: string, enum: [added, removed, changed]}
+        schema: {type: string}
+        table: {type: string}
+        name: {type: string}
+        before: {type: string, description: The definition before (or in the target).}
+        after: {type: string, description: The definition after (or in the source).}
     BackupCopy:
       type: object
       properties:
@@ -753,6 +801,135 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ColumnCatalog"}
+
+  /v1/databases/{id}/schema/snapshots:
+    get:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Schema history of a database
+      description: The database's watch setting and its snapshots, newest first (up to 200). Needs data access.
+      responses:
+        "200":
+          description: History
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  watch: {$ref: "#/components/schemas/SchemaWatch"}
+                  interval_seconds: {type: integer, description: How often watched databases are checked; 0 = only by hand.}
+                  items: {type: array, items: {$ref: "#/components/schemas/SchemaSnapshot"}}
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Snapshot the schema now
+      description: >-
+        Reads the database's structure with the instance's admin login and records it if it differs from the latest
+        snapshot (201); otherwise returns the latest snapshot (200).
+      responses:
+        "200":
+          description: Unchanged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshot: {$ref: "#/components/schemas/SchemaSnapshot"}
+                  created: {type: boolean}
+        "201":
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshot: {$ref: "#/components/schemas/SchemaSnapshot"}
+                  created: {type: boolean}
+
+  /v1/databases/{id}/schema/snapshots/{snapshotId}:
+    get:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: snapshotId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: One schema snapshot and what changed since the previous one
+      responses:
+        "200":
+          description: Snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshot: {$ref: "#/components/schemas/SchemaSnapshot"}
+                  previous: {$ref: "#/components/schemas/SchemaSnapshot"}
+                  changes: {type: array, items: {$ref: "#/components/schemas/SchemaChange"}}
+
+  /v1/databases/{id}/schema/watch:
+    put:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Turn schema history on or off
+      description: >-
+        A watched database is checked every FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL and after DDL made through Fleetdock; a
+        change records a snapshot and emits a database.schema_changed notification. Turning it on takes the first
+        snapshot right away. Needs database:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        "200":
+          description: Watch
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SchemaWatch"}
+
+  /v1/schema/compare:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Compare two schemas and write the migration script
+      description: >-
+        Compares the target database with the source (a database as it is now, or one of its snapshots) and returns the
+        differences plus the DDL that makes the target match. Dropping tables and columns is left commented out for
+        review. Both databases must be on the same engine; both need database:read and data access, and are read as
+        the caller's data login sees them. Nothing is executed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_database_id, target_database_id]
+              properties:
+                source_database_id: {type: string, format: uuid}
+                source_snapshot_id: {type: string, format: uuid, description: Compare against this snapshot of the source instead of its current schema.}
+                target_database_id: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Comparison
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  same: {type: boolean}
+                  source_hash: {type: string}
+                  target_hash: {type: string}
+                  warnings: {type: array, items: {type: string}}
+                  sql: {type: string, description: The migration script; empty when the schemas match.}
+                  changes: {type: array, items: {$ref: "#/components/schemas/SchemaChange"}}
+                  review: {type: integer, description: Steps left commented out or needing a manual change.}
 
   /v1/databases/{id}/index-insights:
     get:

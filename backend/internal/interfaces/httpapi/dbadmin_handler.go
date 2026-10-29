@@ -15,6 +15,7 @@ import (
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	backupcopyapp "github.com/Fleetdock/fleetdock/backend/internal/app/backupcopy"
 	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
+	schemahistoryapp "github.com/Fleetdock/fleetdock/backend/internal/app/schemahistory"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
@@ -28,6 +29,7 @@ type DBAdminHandler struct {
 	svc      *dbadminapp.Service
 	resolver *authzapp.Resolver
 	copies   *backupcopyapp.Service
+	schema   *schemahistoryapp.Service
 }
 
 // NewDBAdminHandler builds the handler.

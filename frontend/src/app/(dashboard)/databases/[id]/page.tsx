@@ -15,6 +15,7 @@ import {
 } from "@/components/connectivity";
 import { DatabaseBackups } from "@/components/backup/database-backups";
 import { GrantsSection } from "@/components/database/grants-section";
+import { SchemaHistorySection } from "@/components/database/schema-history";
 import { IndexHealthCard } from "@/components/database/index-health";
 import { ImportSQLModal } from "@/components/database/import-sql-modal";
 import { MoveDatabaseModal } from "@/components/database/move-database-modal";
@@ -79,7 +80,8 @@ function DatabaseDetail() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
-  const tab = sp.get("tab") === "users" ? "users" : "backups";
+  const tabParam = sp.get("tab");
+  const tab = tabParam === "users" || tabParam === "schema" ? tabParam : "backups";
 
   // Tables and the SQL console moved to the Data Browser; old links
   // (?tab=tables|query, ?schema=, ?table=) land there instead.
@@ -210,11 +212,16 @@ function DatabaseDetail() {
               tabs={[
                 { id: "backups", label: "Backups" },
                 { id: "users", label: "Access" },
+                { id: "schema", label: "Schema" },
               ]}
             />
 
             {tab === "backups" ? (
               <DatabaseBackups database={db} canBackup={canMove} />
+            ) : !hasCreds ? (
+              <NoLogin instance={instance} />
+            ) : tab === "schema" ? (
+              <SchemaHistorySection database={db} canWrite={canWrite} />
             ) : hasCreds ? (
               <GrantsSection databaseId={id} canWrite={canWrite} />
             ) : (

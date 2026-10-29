@@ -18,7 +18,9 @@ func (h *copyHook) OnCopyRestored(_ context.Context, _ uuid.UUID, ok bool, _ *st
 	h.restored = append(h.restored, ok)
 }
 
-func (h *copyHook) OnCopyDropped(_ context.Context, _ uuid.UUID, ok bool) { h.dropped = append(h.dropped, ok) }
+func (h *copyHook) OnCopyDropped(_ context.Context, _ uuid.UUID, ok bool) {
+	h.dropped = append(h.dropped, ok)
+}
 
 type recordingMover struct{ restores int }
 

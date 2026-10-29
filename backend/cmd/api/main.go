@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
 	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
@@ -37,6 +39,7 @@ import (
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
 	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
+	schemahistoryapp "github.com/Fleetdock/fleetdock/backend/internal/app/schemahistory"
 	secretsapp "github.com/Fleetdock/fleetdock/backend/internal/app/secrets"
 	serverapp "github.com/Fleetdock/fleetdock/backend/internal/app/server"
 	summaryapp "github.com/Fleetdock/fleetdock/backend/internal/app/summary"
@@ -172,15 +175,23 @@ func run() error {
 		dbadminSvc.SetJournal(rowChangeRepo)
 	}
 	catalogSvc := catalogapp.NewService(postgres.NewCatalogRepository(pool), dbadminSvc, cfg.CatalogRefreshInterval)
-	if catalogSvc.Enabled() {
-		dbadminSvc.SetSchemaChanged(catalogSvc.SchemaChanged)
-	}
 	summarySvc := summaryapp.NewService(statsRepo)
 	notifSender := notify.New(notify.SMTPConfig{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
 		Password: cfg.SMTPPassword, From: cfg.SMTPFrom,
 	})
 	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc)
+	schemaSvc := schemahistoryapp.NewService(postgres.NewSchemaHistoryRepository(pool), dbadminSvc, databaseRepo,
+		cfg.SchemaSnapshotInterval)
+	schemaSvc.SetNotifier(notifSvc)
+	// DDL made through Fleetdock refreshes the search catalog and, for
+	// watched databases, records the new schema.
+	dbadminSvc.SetSchemaChanged(func(id uuid.UUID) {
+		if catalogSvc.Enabled() {
+			catalogSvc.SchemaChanged(id)
+		}
+		schemaSvc.SchemaChanged(id)
+	})
 
 	// The probe keeps instance health and database lists current: every
 	// minute from the worker, and on demand ("Check now").
@@ -221,6 +232,7 @@ func run() error {
 			HousekeepingLock:   postgres.HousekeepingLock(pool),
 			Probe:              probeSvc,
 			Catalog:            catalogSvc,
+			SchemaHistory:      schemaSvc,
 			RowChanges:         rowChangeRepo,
 			BackupCopies:       copySvc,
 			RowChangeRetention: cfg.RowChangeRetention,
@@ -250,6 +262,7 @@ func run() error {
 	// HTTP layer.
 	dbadminHandler := httpapi.NewDBAdminHandler(dbadminSvc, resolver)
 	dbadminHandler.SetCopies(copySvc)
+	dbadminHandler.SetSchemaHistory(schemaSvc)
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Auth: httpapi.NewAuthHandler(authSvc, httpapi.SessionCookieConfig{
 			TTL: cfg.JWTTTL,

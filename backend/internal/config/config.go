@@ -87,6 +87,9 @@ type Config struct {
 	// CatalogRefreshInterval is how often each database's table and column
 	// names are re-read for fleet-wide schema search (0 disables it).
 	CatalogRefreshInterval time.Duration
+	// SchemaSnapshotInterval is how often watched databases' structure is
+	// checked for changes (0 disables the background checks).
+	SchemaSnapshotInterval time.Duration
 
 	// SMTP configures outbound email for notification channels. When
 	// SMTPHost is empty, email delivery is disabled.
@@ -250,6 +253,7 @@ func Load() (Config, error) {
 		MetricsRetention: getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
 
 		CatalogRefreshInterval: getenvDuration("FLEETDOCK_CATALOG_REFRESH_INTERVAL", 30*time.Minute),
+		SchemaSnapshotInterval: getenvDuration("FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL", 15*time.Minute),
 		RowChangeRetention:     getenvDuration("FLEETDOCK_ROW_CHANGE_RETENTION", 7*24*time.Hour),
 		BackupCopyTTL:          getenvDuration("FLEETDOCK_BACKUP_COPY_TTL", 2*time.Hour),
 		BackupCopyMaxBytes:     getenvInt64("FLEETDOCK_BACKUP_COPY_MAX_BYTES", 10<<30),
