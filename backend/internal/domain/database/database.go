@@ -3,6 +3,7 @@
 package database
 
 import (
+	"regexp"
 	"strings"
 	"time"
 
@@ -116,9 +117,26 @@ func NewDatabase(instanceID uuid.UUID, name, charset, collation string, labels m
 	}, nil
 }
 
+// scratchNameRe matches the temporary databases Fleetdock restores backups
+// into: fdv_<16 hex> (verification) and fds_<16 hex> (backup copies).
+var scratchNameRe = regexp.MustCompile(`^fd[vs]_[0-9a-f]{16}$`)
+
+// IsScratchName reports whether name is reserved for one of Fleetdock's
+// temporary restore targets. Such databases are never registered: not by
+// discovery, import or the user.
+func IsScratchName(name string) bool { return scratchNameRe.MatchString(name) }
+
+// ScratchName is the temporary database name for prefix (fdv or fds) and id.
+func ScratchName(prefix string, id uuid.UUID) string {
+	return prefix + "_" + strings.ReplaceAll(id.String(), "-", "")[:16]
+}
+
 func validateName(name string) error {
 	if name == "" {
 		return apperr.Invalid("name", "name is required")
+	}
+	if IsScratchName(name) {
+		return apperr.Invalid("name", "names like fdv_… and fds_… with 16 hex digits are reserved for Fleetdock's temporary backup restores")
 	}
 	if len(name) > 64 {
 		return apperr.Invalid("name", "name must be at most 64 characters")

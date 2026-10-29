@@ -62,7 +62,8 @@ func (f fakeEngine) ListDatabases(context.Context, engine.ConnParams) ([]engine.
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
-	return []engine.DatabaseInfo{{Name: "app", Charset: "utf8"}, {Name: "logs"}}, nil
+	// fdv_…: a backup verification's temporary database, never registered.
+	return []engine.DatabaseInfo{{Name: "app", Charset: "utf8"}, {Name: "fdv_0123abcd456789ef"}, {Name: "logs"}}, nil
 }
 
 func newInstance(engineName string, kind instancedom.Kind, port int) *instancedom.Instance {

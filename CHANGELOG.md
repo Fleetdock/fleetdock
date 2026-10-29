@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Backup verification no longer shows up as a database.** The temporary
+  `fdv_…` database a test restore uses was picked up by discovery while it
+  existed and then reported as missing once dropped. Names `fdv_`/`fds_`
+  followed by 16 hex digits are now reserved for Fleetdock's temporary
+  restores and never registered; ones registered before are removed from
+  the inventory.
 - **"The database rejected the login" in the data browser** when a
   Fleetdock-managed role was dropped or its password changed outside
   Fleetdock: the role is now repaired and the request retried, and a server

@@ -253,7 +253,7 @@ func (s *Service) Verify(ctx context.Context, backupID string, createdBy *uuid.U
 	if err != nil {
 		return nil, apperr.Internal(err)
 	}
-	scratch := "fdv_" + strings.ReplaceAll(b.ID.String(), "-", "")[:16]
+	scratch := databasedom.ScratchName("fdv", b.ID)
 	job, err := s.ops.Create(ctx, jobdom.TypeRestore, "backup", &b.ID, executorFor(inst), operationapp.Params{
 		InstanceID:     inst.ID.String(),
 		Database:       scratch,
