@@ -33,6 +33,8 @@ tags:
   - name: Destinations
   - name: Schedules
   - name: Moves
+  - name: Fleet
+    x-displayName: Fleet queries
   - name: Notifications
   - name: Agent
   - name: Install
@@ -97,6 +99,224 @@ components:
         ref_columns: {type: array, items: {type: string}}
         on_delete: {type: string, enum: ["", CASCADE, SET NULL, RESTRICT, NO ACTION]}
         on_update: {type: string, enum: ["", CASCADE, SET NULL, RESTRICT, NO ACTION]}
+        table:
+          type: string
+          description: The referencing table. Set only on incoming keys (referenced-by).
+    FleetRun:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        created_by: {type: string, format: uuid}
+        sql: {type: string}
+        writes: {type: boolean, description: The script has at least one statement that writes.}
+        status: {type: string, enum: [running, paused, canceling, succeeded, failed, canceled]}
+        concurrency: {type: integer}
+        stop_on_error: {type: boolean}
+        canary: {type: boolean, description: Run the first database alone and pause until resumed.}
+        timeout_seconds: {type: integer}
+        row_limit: {type: integer}
+        total: {type: integer}
+        succeeded: {type: integer}
+        failed: {type: integer}
+        skipped: {type: integer, description: Not run because an earlier database failed or the run was canceled.}
+        running: {type: integer}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+    FleetTarget:
+      type: object
+      properties:
+        position: {type: integer}
+        database_id: {type: string, format: uuid}
+        database_name: {type: string}
+        instance_name: {type: string}
+        engine: {type: string}
+        status: {type: string, enum: [pending, running, succeeded, failed, skipped, canceled, unknown]}
+        results:
+          type: object
+          description: The console results of the script on this database (rows trimmed to fit the run's storage limit).
+          properties:
+            results: {type: array, items: {type: object}}
+            error:
+              type: object
+              properties:
+                statement: {type: integer}
+                message: {type: string}
+            trimmed: {type: boolean}
+        rows_affected: {type: integer, format: int64}
+        error: {type: string}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+    SchemaWatch:
+      type: object
+      properties:
+        database_id: {type: string, format: uuid}
+        enabled: {type: boolean}
+        last_checked_at: {type: string, format: date-time}
+        last_error: {type: string}
+        updated_at: {type: string, format: date-time}
+    SchemaSnapshot:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        database_id: {type: string, format: uuid}
+        hash: {type: string, description: SHA-256 of the canonical structure; equal structures hash equally.}
+        summary:
+          type: object
+          properties:
+            counts:
+              type: object
+              properties:
+                tables: {type: integer}
+                views: {type: integer}
+                routines: {type: integer}
+                triggers: {type: integer}
+            changes:
+              type: object
+              description: Differences from the previous snapshot.
+              properties:
+                added: {type: integer}
+                removed: {type: integer}
+                changed: {type: integer}
+            highlights: {type: array, items: {type: string}}
+            truncated: {type: boolean}
+            stored: {type: boolean, description: False when the structure was too large to keep (hash only).}
+        previous_id: {type: string, format: uuid}
+        trigger: {type: string, enum: [scheduled, manual, ddl]}
+        taken_by: {type: string, format: uuid}
+        taken_at: {type: string, format: date-time}
+    SchemaChange:
+      type: object
+      properties:
+        kind: {type: string, enum: [table, column, index, constraint, options, view, routine, trigger, type, extension]}
+        op: {type: string, enum: [added, removed, changed]}
+        schema: {type: string}
+        table: {type: string}
+        name: {type: string}
+        before: {type: string, description: The definition before (or in the target).}
+        after: {type: string, description: The definition after (or in the source).}
+    BackupCopy:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        database_id: {type: string, format: uuid}
+        backup_id: {type: string, format: uuid}
+        instance_id: {type: string, format: uuid}
+        scratch_name: {type: string}
+        status: {type: string, enum: [restoring, ready, failed, dropping, dropped]}
+        job_id: {type: string, format: uuid}
+        error: {type: string}
+        ready_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        backup_created_at: {type: string, format: date-time}
+        created_by: {type: string, format: uuid}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    DiffCursor:
+      type: object
+      properties:
+        phase: {type: string, enum: [live, backup]}
+        after: {type: object, additionalProperties: true}
+    RowEditResult:
+      type: object
+      properties:
+        status: {type: string, enum: [inserted, updated, deleted]}
+        change_id: {type: string, format: uuid, description: The journal entry; absent when the journal is off.}
+        undoable: {type: boolean}
+        note: {type: string, description: Why the change cannot be undone, when it cannot.}
+    RowChange:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        database_id: {type: string, format: uuid}
+        table: {type: string}
+        op: {type: string, enum: [insert, update, delete]}
+        key: {type: object, additionalProperties: true}
+        before: {type: object, additionalProperties: true, nullable: true}
+        after: {type: object, additionalProperties: true, nullable: true}
+        columns: {type: array, items: {type: string}}
+        undoable: {type: boolean}
+        note: {type: string}
+        batch_id: {type: string, format: uuid}
+        source: {type: string, enum: [editor, undo, restore]}
+        user_id: {type: string, format: uuid}
+        user_email: {type: string}
+        undo_of: {type: string, format: uuid}
+        undone_at: {type: string, format: date-time}
+        undone_by: {type: string, format: uuid}
+        created_at: {type: string, format: date-time}
+    UndoResult:
+      type: object
+      properties:
+        change_id: {type: string, format: uuid}
+        ok: {type: boolean}
+        conflict: {type: boolean, description: The row changed since; retry with force to overwrite.}
+        error: {type: string}
+        undo: {$ref: "#/components/schemas/RowEditResult"}
+    IndexDef:
+      type: object
+      properties:
+        schema: {type: string}
+        table: {type: string}
+        name: {type: string}
+        columns: {type: array, items: {type: string}}
+        unique: {type: boolean}
+        primary: {type: boolean}
+        partial: {type: boolean}
+        expression: {type: boolean}
+        method: {type: string}
+        size_bytes: {type: integer}
+        scans: {type: integer, description: Absent when the server does not track usage.}
+    IndexFinding:
+      type: object
+      properties:
+        index: {$ref: "#/components/schemas/IndexDef"}
+        reason: {type: string}
+        covered_by: {type: string}
+        drop_sql: {type: string}
+    IndexInsights:
+      type: object
+      properties:
+        indexes: {type: array, items: {$ref: "#/components/schemas/IndexDef"}}
+        usage_available: {type: boolean}
+        stats_since: {type: string, format: date-time}
+        note: {type: string}
+        unused: {type: array, items: {$ref: "#/components/schemas/IndexFinding"}}
+        redundant: {type: array, items: {$ref: "#/components/schemas/IndexFinding"}}
+    SchemaSearchHit:
+      type: object
+      properties:
+        database_id: {type: string, format: uuid}
+        database: {type: string}
+        instance_id: {type: string, format: uuid}
+        instance: {type: string}
+        engine: {type: string}
+        schema: {type: string, description: PostgreSQL schema; absent on MySQL/MariaDB.}
+        table: {type: string}
+        kind: {type: string, enum: [table, view]}
+        column: {type: string, description: Set when the match is a column.}
+        type: {type: string, description: The column's type.}
+    ColumnCatalog:
+      type: object
+      properties:
+        truncated:
+          type: boolean
+          description: The database has more than 5000 tables or 100000 columns; only the first are listed.
+        tables:
+          type: array
+          items:
+            type: object
+            properties:
+              schema: {type: string, description: PostgreSQL schema; empty on MySQL/MariaDB.}
+              name: {type: string}
+              kind: {type: string, enum: [table, view]}
+              columns:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    type: {type: string}
     TableSpec:
       type: object
       properties:
@@ -590,6 +810,690 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/ForeignKey"}
+
+  /v1/databases/{id}/tables/{table}/referenced-by:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      summary: List incoming foreign keys
+      description: Foreign keys of tables in this database that reference the table. `table` names the referencing table.
+      responses:
+        "200":
+          description: Incoming foreign keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/ForeignKey"}
+
+  /v1/databases/{id}/columns:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: List every table's columns
+      description: >-
+        All tables and views of the database with their columns, in one call, as the data login sees them.
+        Used for SQL autocompletion.
+      responses:
+        "200":
+          description: Column catalog
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ColumnCatalog"}
+
+  /v1/databases/{id}/schema/snapshots:
+    get:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Schema history of a database
+      description: The database's watch setting and its snapshots, newest first (up to 200). Needs data access.
+      responses:
+        "200":
+          description: History
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  watch: {$ref: "#/components/schemas/SchemaWatch"}
+                  interval_seconds: {type: integer, description: How often watched databases are checked; 0 = only by hand.}
+                  items: {type: array, items: {$ref: "#/components/schemas/SchemaSnapshot"}}
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Snapshot the schema now
+      description: >-
+        Reads the database's structure with the instance's admin login and records it if it differs from the latest
+        snapshot (201); otherwise returns the latest snapshot (200).
+      responses:
+        "200":
+          description: Unchanged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshot: {$ref: "#/components/schemas/SchemaSnapshot"}
+                  created: {type: boolean}
+        "201":
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshot: {$ref: "#/components/schemas/SchemaSnapshot"}
+                  created: {type: boolean}
+
+  /v1/databases/{id}/schema/snapshots/{snapshotId}:
+    get:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: snapshotId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: One schema snapshot and what changed since the previous one
+      responses:
+        "200":
+          description: Snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshot: {$ref: "#/components/schemas/SchemaSnapshot"}
+                  previous: {$ref: "#/components/schemas/SchemaSnapshot"}
+                  changes: {type: array, items: {$ref: "#/components/schemas/SchemaChange"}}
+
+  /v1/databases/{id}/schema/watch:
+    put:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Turn schema history on or off
+      description: >-
+        A watched database is checked every FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL and after DDL made through Fleetdock; a
+        change records a snapshot and emits a database.schema_changed notification. Turning it on takes the first
+        snapshot right away. Needs database:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        "200":
+          description: Watch
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SchemaWatch"}
+
+  /v1/fleet-runs:
+    post:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      summary: Run a script on many databases
+      description: >-
+        Queues the script to run on each database (up to 500), a few at a time, in the background. Every database
+        needs the same access as the SQL console (database:read, database:write when the script writes, and
+        instance:write for system databases or admin-login instances), checked now and again just before it runs
+        there. A script that writes stops at the first failure and runs the first database alone, pausing until
+        resumed, unless stop_on_error / canary say otherwise.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sql, database_ids]
+              properties:
+                sql: {type: string}
+                database_ids: {type: array, items: {type: string, format: uuid}, maxItems: 500}
+                concurrency: {type: integer, minimum: 1, maximum: 16, default: 4}
+                stop_on_error: {type: boolean, description: Default true when the script writes.}
+                canary: {type: boolean, description: Default true when the script writes and there are several databases.}
+                timeout_seconds: {type: integer, minimum: 1, maximum: 600, default: 60}
+                row_limit: {type: integer, minimum: 1, maximum: 1000, default: 100}
+      responses:
+        "201":
+          description: Queued
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+    get:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      summary: Your recent fleet runs
+      responses:
+        "200":
+          description: Runs, newest first (up to 50)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/FleetRun"}}
+
+  /v1/fleet-runs/{id}:
+    get:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: A fleet run
+      description: Only the user who started a run can see it.
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+
+  /v1/fleet-runs/{id}/targets:
+    get:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: A fleet run's databases and their results
+      responses:
+        "200":
+          description: Targets in order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/FleetTarget"}}
+
+  /v1/fleet-runs/{id}/results.csv:
+    get:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Merged results as CSV
+      description: >-
+        The first result set of every database that returned rows, merged into one table whose columns are the union
+        of theirs, led by database and server.
+      responses:
+        "200":
+          description: CSV
+          content:
+            text/csv:
+              schema: {type: string}
+
+  /v1/fleet-runs/{id}/resume:
+    post:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Continue a run paused after its first database
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+        "409": {description: The run is not paused}
+
+  /v1/fleet-runs/{id}/cancel:
+    post:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Cancel a run
+      description: Databases not started are skipped; statements running are killed on their server.
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+        "409": {description: The run is over}
+
+  /v1/fleet-runs/{id}/retry:
+    post:
+      tags: [Fleet]
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      summary: Retry the databases that did not succeed
+      description: Re-queues a failed or canceled run's failed, skipped, canceled and interrupted databases.
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FleetRun"}
+        "409": {description: The run is still going, or nothing is left to retry}
+
+  /v1/schema/compare:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Compare two schemas and write the migration script
+      description: >-
+        Compares the target database with the source (a database as it is now, or one of its snapshots) and returns the
+        differences plus the DDL that makes the target match. Dropping tables and columns is left commented out for
+        review. Both databases must be on the same engine; both need database:read and data access, and are read as
+        the caller's data login sees them. Nothing is executed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_database_id, target_database_id]
+              properties:
+                source_database_id: {type: string, format: uuid}
+                source_snapshot_id: {type: string, format: uuid, description: Compare against this snapshot of the source instead of its current schema.}
+                target_database_id: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Comparison
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  same: {type: boolean}
+                  source_hash: {type: string}
+                  target_hash: {type: string}
+                  warnings: {type: array, items: {type: string}}
+                  sql: {type: string, description: The migration script; empty when the schemas match.}
+                  changes: {type: array, items: {$ref: "#/components/schemas/SchemaChange"}}
+                  review: {type: integer, description: Steps left commented out or needing a manual change.}
+
+  /v1/databases/{id}/index-insights:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Unused and redundant indexes
+      description: >-
+        Every index of the database with its size and how often it was used since statistics started
+        (pg_stat_user_indexes; performance_schema or, on MariaDB, userstat). Indexes never used, and indexes
+        whose columns repeat or are a leftmost prefix of another index on the same table, are listed with a
+        DROP statement to review and run in the console; nothing is dropped automatically. When the server
+        keeps no usage counters, usage_available is false and note says how to enable them.
+      responses:
+        "200":
+          description: Index insights
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/IndexInsights"}
+
+  /v1/databases/{id}/explain:
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Explain a statement
+      description: >-
+        Returns the plan of exactly one statement as JSON (PostgreSQL EXPLAIN FORMAT JSON, MySQL/MariaDB EXPLAIN
+        FORMAT=JSON). Without analyze nothing is executed; explaining a write still needs database:write. With
+        analyze (reads only) the statement runs in a read-only transaction that is rolled back, and the plan has
+        actual rows and timings — MySQL returns its EXPLAIN ANALYZE tree as text (format mysql-tree).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sql]
+              properties:
+                sql: {type: string}
+                analyze: {type: boolean, default: false}
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  format: {type: string, enum: [postgres, mysql, mariadb, mysql-tree]}
+                  analyzed: {type: boolean}
+                  plan: {description: The engine's JSON plan, as returned by the server.}
+                  text: {type: string, description: The plan as text (mysql-tree).}
+
+  /v1/instances/{id}/top-queries:
+    get:
+      tags: [Instances]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: database, in: query, schema: {type: string}, description: Only statements run in this database.}
+        - {name: sort, in: query, schema: {type: string, enum: [total, mean, calls], default: total}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      summary: Most expensive statements
+      description: >-
+        Normalized statements (literals replaced by placeholders) with call counts and time spent, from
+        pg_stat_statements or performance_schema. When the server does not collect them, available is false and
+        note says how to enable it.
+      responses:
+        "200":
+          description: Statement statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: {type: boolean}
+                  note: {type: string}
+                  stats_since: {type: string, format: date-time}
+                  queries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        database: {type: string}
+                        query: {type: string}
+                        calls: {type: integer}
+                        total_ms: {type: number}
+                        mean_ms: {type: number}
+                        rows: {type: integer}
+                        rows_examined: {type: integer, description: MySQL/MariaDB only.}
+                        no_index_used: {type: integer, description: Runs without a good index (MySQL/MariaDB).}
+                        cache_hit_pct: {type: number, description: Shared-buffer hit ratio (PostgreSQL).}
+
+  /v1/databases/{id}/changes:
+    get:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: table, in: query, schema: {type: string}}
+        - {name: batch_id, in: query, schema: {type: string, format: uuid}}
+        - {name: before, in: query, schema: {type: string, format: date-time}, description: Cursor - entries created before this time.}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      summary: Row change journal
+      description: >-
+        Data-browser edits of this database, newest first, with the row before and after (an update keeps only
+        the columns it set, plus the key). Values are null, text, or {"b64": "..."} for binary. Entries are kept
+        for FLEETDOCK_ROW_CHANGE_RETENTION. Requires the same access as browsing the database.
+      responses:
+        "200":
+          description: Journal entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/RowChange"}}
+
+  /v1/databases/{id}/changes/{changeId}/undo:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: changeId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Undo one row change
+      description: >-
+        Reverts the change if the row still looks as the change left it; otherwise the result has conflict=true and
+        nothing is written, unless force is set (which overwrites the later change). The undo is journaled too.
+        Requires database:write.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: {type: boolean, default: false}
+      responses:
+        "200":
+          description: Outcome
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UndoResult"}
+
+  /v1/databases/{id}/changes/undo:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Undo a whole save
+      description: Reverts every not yet undone change with this batch_id, newest first, and reports each. Requires database:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batch_id]
+              properties:
+                batch_id: {type: string, format: uuid}
+                force: {type: boolean, default: false}
+      responses:
+        "200":
+          description: One outcome per change
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/UndoResult"}}
+
+  /v1/databases/{id}/backup-copies:
+    get:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: List backup copies
+      description: The database's backups opened for comparison that are not dropped yet, newest first.
+      responses:
+        "200":
+          description: Copies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/BackupCopy"}}
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Open a backup for comparison
+      description: >-
+        Restores a completed backup of this database into a temporary database (fds_...) on the same instance,
+        kept for FLEETDOCK_BACKUP_COPY_TTL (2h by default, extendable up to 24h) and then dropped. One copy per
+        database at a time. Needs backup:write and data access to the database. Poll the copy until status is
+        ready (or failed).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [backup_id]
+              properties:
+                backup_id: {type: string, format: uuid}
+      responses:
+        "202":
+          description: Restoring
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BackupCopy"}
+
+  /v1/databases/{id}/backup-copies/{copyId}:
+    get:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Get a backup copy
+      responses:
+        "200":
+          description: Copy
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BackupCopy"}
+    delete:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Discard a backup copy
+      description: Drops the temporary database now (as soon as its restore ends, if it is still restoring).
+      responses:
+        "204":
+          description: Dropping
+
+  /v1/databases/{id}/backup-copies/{copyId}/extend:
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Keep a backup copy longer
+      description: Moves the expiry to one TTL from now, at most 24 hours after the copy became ready.
+      responses:
+        "200":
+          description: Copy
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BackupCopy"}
+
+  /v1/databases/{id}/backup-copies/{copyId}/diff:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Compare a table with the backup copy
+      description: >-
+        One step of a comparison by row key: up to 1000 rows per call. The first phase scans the live table and finds
+        rows added or changed since the backup; the second scans the copy and finds rows removed since. Call again with
+        `next` until it is absent. Only columns both sides have are compared. Needs data access to the database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [table]
+              properties:
+                table: {type: string}
+                cursor: {$ref: "#/components/schemas/DiffCursor"}
+      responses:
+        "200":
+          description: Differences found in this step
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns: {type: array, items: {type: string}}
+                  key: {type: array, items: {type: string}}
+                  scanned: {type: integer}
+                  warnings: {type: array, items: {type: string}}
+                  next: {$ref: "#/components/schemas/DiffCursor"}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: {type: string, enum: [added, removed, changed]}
+                        key: {type: object, additionalProperties: true}
+                        live: {type: array, items: {type: string, nullable: true}}
+                        backup: {type: array, items: {type: string, nullable: true}}
+                        changed: {type: array, items: {type: string}}
+                        live_hash: {type: string}
+
+  /v1/databases/{id}/backup-copies/{copyId}/restore-rows:
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
+      summary: Put rows back as they were in the backup
+      description: >-
+        Changed rows get the backup's values, removed rows are inserted again and added rows are deleted - each only if
+        it still looks as it did when compared (otherwise conflict). Every row is journaled under one batch_id, so the
+        whole restore can be undone from the change history. At most 200 rows per call. Requires database:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [table, rows]
+              properties:
+                table: {type: string}
+                rows:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key: {type: object, additionalProperties: true}
+                      kind: {type: string, enum: [added, removed, changed]}
+                      live_hash: {type: string}
+      responses:
+        "200":
+          description: One outcome per row
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id: {type: string, format: uuid}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: {type: object, additionalProperties: true}
+                        ok: {type: boolean}
+                        conflict: {type: boolean}
+                        error: {type: string}
+                        change_id: {type: string, format: uuid}
+
+  /v1/search/schema:
+    get:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Search table and column names across the fleet
+      description: >-
+        Matches table, view and column names in every database Fleetdock indexes (refreshed every
+        FLEETDOCK_CATALOG_REFRESH_INTERVAL and after DDL made through Fleetdock). Exact names rank first,
+        then prefixes, then substrings; tables before columns. Only databases the caller could open in the
+        data browser are included. Queries shorter than two characters return nothing.
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        "200":
+          description: Matches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/SchemaSearchHit"}
 
   /v1/databases/{id}/tables/{table}/indexes/drop:
     post:
@@ -1777,9 +2681,13 @@ paths:
               type: object
               properties:
                 values: {$ref: "#/components/schemas/RowValues"}
+                batch_id: {type: string, format: uuid, description: Groups the edits of one save for undo.}
       responses:
         "201":
-          description: Inserted
+          description: Inserted; the journal entry that can undo it
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RowEditResult"}
     patch:
       tags: [Data]
       security: [{bearerAuth: []}]
@@ -1799,9 +2707,13 @@ paths:
               properties:
                 key: {$ref: "#/components/schemas/RowValues"}
                 values: {$ref: "#/components/schemas/RowValues"}
+                batch_id: {type: string, format: uuid, description: Groups the edits of one save for undo.}
       responses:
         "200":
-          description: Updated
+          description: Updated; the journal entry that can undo it
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RowEditResult"}
 
   /v1/databases/{id}/tables/{table}/schema:
     get:
@@ -1861,9 +2773,13 @@ paths:
               type: object
               properties:
                 key: {$ref: "#/components/schemas/RowValues"}
+                batch_id: {type: string, format: uuid, description: Groups the edits of one save for undo.}
       responses:
         "200":
-          description: Deleted
+          description: Deleted; the journal entry that can undo it
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RowEditResult"}
 
   /v1/databases/{id}/tables/{table}/import:
     post:
@@ -1926,6 +2842,14 @@ paths:
         runs). A failing first statement is returned as an error; a later
         failure returns the earlier results plus `error`. Pass `query_id` (a
         UUID you generate) to be able to cancel the run.
+
+        With `preview: true` (database:write) the script is a dry run: it
+        runs in one transaction that is always rolled back, and only SELECT,
+        INSERT, UPDATE, DELETE, REPLACE and MERGE are allowed. Each write
+        reports its row count; a single-table UPDATE or DELETE also returns
+        a `sample` of up to 20 rows before and after. On MySQL/MariaDB a
+        database with non-transactional tables (MyISAM, Aria, MEMORY) cannot
+        be previewed. Previews are not kept in the history.
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       requestBody:
@@ -1938,6 +2862,7 @@ paths:
                 sql: {type: string}
                 limit: {type: integer, maximum: 1000, default: 100, description: Rows returned per statement}
                 query_id: {type: string, format: uuid}
+                preview: {type: boolean, default: false, description: Dry run in a transaction that is rolled back.}
       responses:
         "200":
           description: Results of the statements that ran
@@ -1958,6 +2883,23 @@ paths:
                         rows_affected: {type: integer, format: int64}
                         read_only: {type: boolean}
                         duration_ms: {type: integer, format: int64}
+                        notes: {type: array, items: {type: string}, description: Preview caveats.}
+                        sample:
+                          type: object
+                          description: Preview only - rows before and after (after is null when deleted).
+                          properties:
+                            table: {type: string}
+                            key: {type: array, items: {type: string}}
+                            columns: {type: array, items: {type: string}}
+                            truncated: {type: boolean}
+                            rows:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  before: {type: array, items: {type: string, nullable: true}}
+                                  after: {type: array, nullable: true, items: {type: string, nullable: true}}
+                  rolled_back: {type: boolean, description: A preview - nothing was saved.}
                   error:
                     type: object
                     properties:

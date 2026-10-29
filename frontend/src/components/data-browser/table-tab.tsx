@@ -18,13 +18,15 @@ import {
 } from "@/lib/data-browser/pending";
 import { load, save } from "@/lib/data-browser/storage";
 import { PAGE_SIZES, splitName, type Action, type OpenRequest, type Tab, type TableView } from "@/lib/data-browser/tabs";
-import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys } from "@/lib/hooks";
+import { fkByColumn, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
+import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys, useReferencedBy } from "@/lib/hooks";
 import type { ForeignKey, RowFilter, SortKey } from "@/lib/types";
 import {
   ClipboardCopy,
   Download,
   Filter,
   Lock,
+  History,
   PanelRight,
   Plus,
   RefreshCw,
@@ -32,9 +34,12 @@ import {
   SquareTerminal,
   Upload,
   X,
+  ArchiveRestore,
 } from "lucide-react";
 
 import { cellState, DataGrid, type Cell, type GridRow } from "./data-grid";
+import { BackupCompare } from "./backup-compare";
+import { RowHistory, useRowUndo } from "./row-history";
 
 const OP_LABEL: Record<string, string> = {
   eq: "=",
@@ -59,6 +64,7 @@ export function TableTab({
   tab,
   active,
   canWrite,
+  canBackup,
   dialect,
   dispatch,
   onDirty,
@@ -69,6 +75,7 @@ export function TableTab({
   tab: Tab;
   active: boolean;
   canWrite: boolean;
+  canBackup: boolean;
   dialect: Dialect;
   dispatch: Dispatch<Action>;
   onDirty: (id: string, changes: number) => void;
@@ -116,11 +123,9 @@ export function TableTab({
   );
   const { data, isLoading, error, isFetching, refetch } = useBrowseRows(databaseId, tab.name, req);
   const fkQuery = useForeignKeys(databaseId, tab.kind === "table" ? tab.name : "");
-  const fks = useMemo(() => {
-    const out: Record<string, ForeignKey> = {};
-    for (const fk of fkQuery.data ?? []) if (fk.columns.length === 1 && fk.ref_columns.length === 1) out[fk.columns[0]] = fk;
-    return out;
-  }, [fkQuery.data]);
+  const fks = useMemo(() => fkByColumn(fkQuery.data ?? []), [fkQuery.data]);
+  const incomingQuery = useReferencedBy(databaseId, tab.kind === "table" ? tab.name : "");
+  const incoming = useMemo(() => incomingQuery.data ?? [], [incomingQuery.data]);
 
   const { schema } = splitName(tab.name, dialect === "postgres");
   const quoted = quoteTable(tab.name, dialect, schema);
@@ -133,6 +138,7 @@ export function TableTab({
   const [saving, setSaving] = useState(false);
   const [review, setReview] = useState(false);
   const applyChanges = useApplyRowChanges(databaseId, tab.name);
+  const rowUndo = useRowUndo(databaseId);
 
   const columns = useMemo(() => data?.columns ?? [], [data]);
   const key = useMemo(() => data?.key ?? [], [data]);
@@ -232,25 +238,29 @@ export function TableTab({
     setView({ sort: next, page: 1 });
   }
 
-  function follow(fk: ForeignKey, value: string) {
-    const { label } = splitName(fk.ref_table, dialect === "postgres");
-    onOpen({
-      kind: "table",
-      name: fk.ref_table,
-      label,
-      view: { mode: "data", search: "", filters: [{ column: fk.ref_columns[0], op: "eq", value }] },
-    });
+  function openFiltered(table: string, filters: RowFilter[] | null) {
+    if (!filters) return;
+    const { label } = splitName(table, dialect === "postgres");
+    onOpen({ kind: "table", name: table, label, view: { mode: "data", search: "", filters } });
   }
+  const follow = (fk: ForeignKey, row: RowRecord) => openFiltered(fk.ref_table, followFilters(fk, row));
+  const referencing = (fk: ForeignKey, row: RowRecord) => openFiltered(fk.table ?? "", referencingFilters(fk, row));
 
   const doSave = useCallback(async () => {
     const mutations = toMutations(pending);
     if (mutations.length === 0 || saving) return;
     setSaving(true);
     try {
-      const results = await applyChanges(mutations);
+      const { results, batchId } = await applyChanges(mutations);
       pd({ type: "results", results });
       const failed = results.filter((r) => !r.ok).length;
-      if (failed === 0) push("success", `Saved ${results.length} change${results.length === 1 ? "" : "s"} to ${tab.label}`);
+      const undoable = results.some((r) => r.ok && r.undoable);
+      if (failed === 0)
+        push(
+          "success",
+          `Saved ${results.length} change${results.length === 1 ? "" : "s"} to ${tab.label}`,
+          undoable ? { label: "Undo", onClick: () => void rowUndo.run({ batchId }) } : undefined,
+        );
       else
         push(
           "error",
@@ -261,7 +271,7 @@ export function TableTab({
     } finally {
       setSaving(false);
     }
-  }, [pending, saving, applyChanges, push, tab.label]);
+  }, [pending, saving, applyChanges, push, tab.label, rowUndo]);
 
   async function discard() {
     if (count === 0) return;
@@ -292,6 +302,8 @@ export function TableTab({
   const [draftFilters, setDraftFilters] = useState<RowFilter[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [panel, setPanel] = useState(() => load("value-panel") === "1");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const togglePanel = () => {
     setPanel((v) => {
       save("value-panel", v ? null : "1");
@@ -379,6 +391,17 @@ export function TableTab({
             <button className="btn btn-ghost btn-icon" onClick={() => void refetch()} title="Refresh rows" aria-label="Refresh rows">
               <RefreshCw size={14} />
             </button>
+            {!isView ? (
+              <button
+                className={`btn btn-ghost btn-icon${historyOpen ? " btn-active" : ""}`}
+                onClick={() => setHistoryOpen((v) => !v)}
+                title="Change history: edits made here, with undo"
+                aria-label="Toggle change history"
+                aria-pressed={historyOpen}
+              >
+                <History size={15} />
+              </button>
+            ) : null}
             <button
               className={`btn btn-ghost btn-icon${panel ? " btn-active" : ""}`}
               onClick={togglePanel}
@@ -413,6 +436,12 @@ export function TableTab({
                 ),
             },
             { label: "Import CSV…", icon: <Upload size={15} />, hidden: !canWrite || isView, onSelect: () => setImportOpen(true) },
+            {
+              label: "Compare with a backup…",
+              icon: <ArchiveRestore size={15} />,
+              hidden: isView,
+              onSelect: () => setCompareOpen(true),
+            },
             {
               label: "Copy name",
               icon: <ClipboardCopy size={15} />,
@@ -537,6 +566,8 @@ export function TableTab({
                   addFilter(value === null ? { column, op: "is_null" } : { column, op: "eq", value })
                 }
                 onFollow={follow}
+                incoming={incoming}
+                onReferencing={referencing}
                 editRequest={editRequest}
                 onEditRequestDone={clearEditRequest}
                 emptyText={
@@ -556,9 +587,25 @@ export function TableTab({
               row={cursor ? rows[cursor.row] : undefined}
               col={cursor ? columns[cursor.col] : undefined}
               ci={cursor?.col ?? -1}
-              editable={cursor ? rows[cursor.row]?.kind === "new" || (editable && rows[cursor.row]?.kind === "data") : false}
+              editable={
+                cursor && !columns[cursor.col]?.generated
+                  ? rows[cursor.row]?.kind === "new" || (editable && rows[cursor.row]?.kind === "data")
+                  : false
+              }
               onApply={(v) => cursor && onEdit(cursor.row, cursor.col, v)}
               onClose={togglePanel}
+            />
+          ) : null}
+          {historyOpen ? (
+            <RowHistory databaseId={databaseId} table={tab.name} canWrite={canWrite} onClose={() => setHistoryOpen(false)} />
+          ) : null}
+          {compareOpen ? (
+            <BackupCompare
+              databaseId={databaseId}
+              table={tab.name}
+              canWrite={canWrite}
+              canBackup={canBackup}
+              onClose={() => setCompareOpen(false)}
             />
           ) : null}
         </div>

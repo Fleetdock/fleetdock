@@ -41,7 +41,8 @@ func (pg *Postgres) pgMeta(ctx context.Context, conn *pgx.Conn, name string) (*t
 	}
 	rows, err := conn.Query(ctx, `
 		SELECT a.attname, format_type(a.atttypid, a.atttypmod), NOT a.attnotnull,
-		       a.atthasdef OR NOT a.attnotnull OR a.attidentity <> '' OR a.attgenerated <> ''
+		       a.atthasdef OR NOT a.attnotnull OR a.attidentity <> '' OR a.attgenerated <> '',
+		       a.attgenerated <> '', a.attidentity = 'a'
 		FROM pg_attribute a
 		JOIN pg_class c ON c.oid = a.attrelid
 		JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -53,7 +54,7 @@ func (pg *Postgres) pgMeta(ctx context.Context, conn *pgx.Conn, name string) (*t
 	var cols []column
 	for rows.Next() {
 		var c column
-		if err := rows.Scan(&c.Name, &c.Type, &c.Nullable, &c.HasDefault); err != nil {
+		if err := rows.Scan(&c.Name, &c.Type, &c.Nullable, &c.HasDefault, &c.Generated, &c.IdentityAlways); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -153,57 +154,145 @@ func (pg *Postgres) BrowseRows(ctx context.Context, p ConnParams, database strin
 	return res, rows.Err()
 }
 
-func (pg *Postgres) mutate(ctx context.Context, p ConnParams, database, table string,
-	build func(meta *tableMeta) (string, []any, error)) error {
+// pgRowTx adapts a PostgreSQL transaction to the row-image logic.
+type pgRowTx struct{ tx pgx.Tx }
+
+func (t pgRowTx) read(ctx context.Context, m *tableMeta, key RowValues, forUpdate bool) (RowValues, error) {
+	return pgReadByKey(ctx, t.tx, m, key, forUpdate)
+}
+
+// pgQueryer is what both *pgx.Conn and pgx.Tx offer.
+type pgQueryer interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// pgReadByKey reads one row's full values by key, or nil if there is none.
+func pgReadByKey(ctx context.Context, q pgQueryer, m *tableMeta, key RowValues, forUpdate bool) (RowValues, error) {
+	sqlText, args, err := pgDialect.selectByKeySQL(m, key, forUpdate)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, sqlText, append([]any{pgText}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out RowValues
+	for rows.Next() {
+		if out != nil {
+			return nil, exactlyOne(2)
+		}
+		out = m.rowToValues(textRow(rows, 0))
+	}
+	return out, rows.Err()
+}
+
+func (t pgRowTx) exec(ctx context.Context, q string, args []any) (int64, error) {
+	tag, err := t.tx.Exec(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// insert returns the key columns as stored, which covers serial and
+// identity keys the INSERT left to the database.
+func (t pgRowTx) insert(ctx context.Context, m *tableMeta, q string, args []any) (int64, RowValues, error) {
+	if len(m.key) == 0 {
+		n, err := t.exec(ctx, q, args)
+		return n, nil, err
+	}
+	names := make([]string, len(m.key))
+	for i, k := range m.key {
+		names[i] = quotePGIdent(k)
+	}
+	rows, err := t.tx.Query(ctx, q+" RETURNING "+strings.Join(names, ", "), append([]any{pgText}, args...)...)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	var n int64
+	assigned := RowValues{}
+	for rows.Next() {
+		n++
+		for i, v := range textRow(rows, 0) {
+			assigned[m.key[i]] = v
+		}
+	}
+	return n, assigned, rows.Err()
+}
+
+// pgSessionSettings are the settings that change how values read as text.
+var pgSessionSettings = []string{"TimeZone", "DateStyle", "IntervalStyle"}
+
+func (pg *Postgres) rowTx(ctx context.Context, p ConnParams, database, table string, session map[string]string,
+	fn func(tx rowTx, meta *tableMeta) (*RowChange, error)) (*RowChange, error) {
 	if !identRe.MatchString(database) {
-		return fmt.Errorf("invalid database name")
+		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close(ctx)
 	meta, err := pg.pgMeta(ctx, conn, table)
 	if err != nil {
-		return err
-	}
-	q, args, err := build(meta)
-	if err != nil {
-		return err
+		return nil, err
 	}
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	tag, err := tx.Exec(ctx, q, args...)
+	settings := map[string]string{}
+	for _, name := range pgSessionSettings {
+		if v := session[name]; v != "" {
+			if _, err := tx.Exec(ctx, `SELECT set_config($1, $2, true)`, name, v); err != nil {
+				return nil, err
+			}
+		}
+		var cur string
+		if err := tx.QueryRow(ctx, `SELECT current_setting($1)`, name).Scan(&cur); err != nil {
+			return nil, err
+		}
+		settings[name] = cur
+	}
+	ch, err := fn(pgRowTx{tx}, meta)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := exactlyOne(tag.RowsAffected()); err != nil {
-		return err
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
 	}
-	return tx.Commit(ctx)
+	ch.Session = settings
+	return ch, nil
 }
 
 // InsertRow inserts one row; omitted columns take their defaults.
-func (pg *Postgres) InsertRow(ctx context.Context, p ConnParams, database, table string, values RowValues) error {
-	return pg.mutate(ctx, p, database, table, func(meta *tableMeta) (string, []any, error) {
-		return pgDialect.insertSQL(meta, values)
+func (pg *Postgres) InsertRow(ctx context.Context, p ConnParams, database, table string, values RowValues) (*RowChange, error) {
+	return pg.rowTx(ctx, p, database, table, nil, func(tx rowTx, meta *tableMeta) (*RowChange, error) {
+		return changeRow(ctx, pgDialect, tx, meta, "insert", nil, values)
 	})
 }
 
 // UpdateRow updates the row identified by key.
-func (pg *Postgres) UpdateRow(ctx context.Context, p ConnParams, database, table string, key, values RowValues) error {
-	return pg.mutate(ctx, p, database, table, func(meta *tableMeta) (string, []any, error) {
-		return pgDialect.updateSQL(meta, key, values)
+func (pg *Postgres) UpdateRow(ctx context.Context, p ConnParams, database, table string, key, values RowValues) (*RowChange, error) {
+	return pg.rowTx(ctx, p, database, table, nil, func(tx rowTx, meta *tableMeta) (*RowChange, error) {
+		return changeRow(ctx, pgDialect, tx, meta, "update", key, values)
 	})
 }
 
 // DeleteRow deletes the row identified by key.
-func (pg *Postgres) DeleteRow(ctx context.Context, p ConnParams, database, table string, key RowValues) error {
-	return pg.mutate(ctx, p, database, table, func(meta *tableMeta) (string, []any, error) {
-		return pgDialect.deleteSQL(meta, key)
+func (pg *Postgres) DeleteRow(ctx context.Context, p ConnParams, database, table string, key RowValues) (*RowChange, error) {
+	return pg.rowTx(ctx, p, database, table, nil, func(tx rowTx, meta *tableMeta) (*RowChange, error) {
+		return changeRow(ctx, pgDialect, tx, meta, "delete", key, nil)
+	})
+}
+
+// ApplyRowImage makes one row match an image (see ApplyRequest).
+func (pg *Postgres) ApplyRowImage(ctx context.Context, p ConnParams, database, table string, req ApplyRequest) (*RowChange, error) {
+	return pg.rowTx(ctx, p, database, table, req.Session, func(tx rowTx, meta *tableMeta) (*RowChange, error) {
+		return applyRow(ctx, pgDialect, tx, meta, req)
 	})
 }
 

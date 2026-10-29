@@ -34,6 +34,11 @@ func TestSplitStatements(t *testing.T) {
 			"DELIMITER //\nCREATE PROCEDURE p() BEGIN SELECT 1; SELECT 2; END//\nDELIMITER ;\nCALL p();",
 			[]string{"CREATE PROCEDURE p() BEGIN SELECT 1; SELECT 2; END", "CALL p()"},
 		},
+		{
+			"mysql delimiter after a comment",
+			"SELECT 1;\n-- Routines\nDELIMITER $$\nCREATE PROCEDURE p() BEGIN SELECT 1; END $$\nDELIMITER ;\n",
+			[]string{"SELECT 1", "CREATE PROCEDURE p() BEGIN SELECT 1; END"},
+		},
 		{"unterminated string keeps text", "SELECT 'abc", []string{"SELECT 'abc"}},
 	}
 	for _, tc := range cases {

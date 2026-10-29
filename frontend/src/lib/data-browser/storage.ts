@@ -77,3 +77,13 @@ function pushRecent(key: string, id: string, max: number) {
   const list = loadJSON(key, [], isStringArray).filter((x) => x !== id);
   save(key, JSON.stringify([id, ...list].slice(0, max)));
 }
+
+// A script handed to the Data Browser's SQL console (/data?db=…&query=draft),
+// e.g. a schema-comparison script. Read once, then cleared.
+export const stashQueryDraft = (databaseId: string, sql: string) => save(`draft:${databaseId}`, sql);
+
+export function takeQueryDraft(databaseId: string): string | null {
+  const sql = load(`draft:${databaseId}`);
+  save(`draft:${databaseId}`, null);
+  return sql;
+}

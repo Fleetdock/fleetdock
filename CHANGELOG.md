@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The SQL console now honours a `DELIMITER` line that follows a comment.
+- **Backup verification no longer shows up as a database.** The temporary
+  `fdv_…` database a test restore uses was picked up by discovery while it
+  existed and then reported as missing once dropped. Names `fdv_`/`fds_`
+  followed by 16 hex digits are now reserved for Fleetdock's temporary
+  restores and never registered; ones registered before are removed from
+  the inventory.
 - **"The database rejected the login" in the data browser** when a
   Fleetdock-managed role was dropped or its password changed outside
   Fleetdock: the role is now repaired and the request retried, and a server
@@ -76,6 +83,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Fleet query: one script, many databases.** The new *Fleet query* page
+  runs a SQL script on up to 500 databases in the background, a few at a
+  time, and merges the results into one table (with CSV export). Access is
+  checked per database when the run starts and again before each one runs;
+  scripts that write need a typed confirmation, run on one database first
+  and stop at the first failure by default. Runs can be canceled and
+  retried. `FLEETDOCK_FLEET_MAX_PARALLEL` (16) caps the work per process,
+  `FLEETDOCK_FLEET_RUN_RETENTION` (30 days) how long runs are kept. API:
+  `/v1/fleet-runs`.
+- **Schema history and drift.** Turn on *Track changes* on a database's new
+  **Schema** tab and every structural change — from Fleetdock, a migration
+  tool or someone's psql — is recorded as a snapshot with what changed, and
+  announced as a `database.schema_changed` notification. *Compare with…*
+  diffs two databases on the same engine and writes the DDL that aligns them
+  (destructive steps commented out for review); a snapshot can be compared
+  with the live schema to go back to it. Checks run every
+  `FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL` (15m). API:
+  `/v1/databases/{id}/schema/snapshots`, `/v1/databases/{id}/schema/watch`,
+  `POST /v1/schema/compare`.
+- **Compare a table with a backup, restore single rows.** *Compare with a
+  backup…* in the data browser restores a backup into a temporary `fds_…`
+  database on the same server, lists the rows changed, deleted or added since
+  (by primary key, in pages), and puts the picked rows back as they were.
+  Restores are journaled, so **Undo** reverts them. The copy is dropped after
+  `FLEETDOCK_BACKUP_COPY_TTL` (2h; extendable to 24h);
+  `FLEETDOCK_BACKUP_COPY_MAX_BYTES` caps the backup size. API:
+  `/v1/databases/{id}/backup-copies` (create, list, extend, discard, diff,
+  restore-rows).
+- **Preview writes in the SQL console.** A script with writes can be dry-run
+  first: it runs in one transaction that is always rolled back
+  (`POST /v1/databases/{id}/query` with `preview: true`), reporting rows
+  affected per statement and, for single-table UPDATE / DELETE, a sample of
+  up to 20 rows before and after; reads later in the script see the
+  preview's changes. Only statements a rollback fully undoes are allowed,
+  autocommit is off for the whole run on MySQL/MariaDB, and databases with
+  non-transactional tables are refused. Previews are not kept in the
+  history.
+- **Undo for the data browser.** Every insert, edit and delete made in the
+  data browser is journaled with the row before and after, captured in the
+  same transaction. Saving shows **Undo**; a table's **Change history** lists
+  the edits of the last week (`FLEETDOCK_ROW_CHANGE_RETENTION`) with undo per
+  row or per save. An undo first checks that the row still looks as the
+  edit left it and asks before overwriting a later change. Binary values,
+  identity and generated columns and the session time zone round-trip
+  exactly (`GET /v1/databases/{id}/changes`,
+  `POST /v1/databases/{id}/changes/{changeId}/undo`,
+  `POST /v1/databases/{id}/changes/undo`). Row edits now return the
+  journal entry, and generated columns are read-only in the grid.
+- **SQL autocompletion from the real schema.** The console completes the
+  database's tables, schemas and columns (with their types) and the
+  engine's keywords (`GET /v1/databases/{id}/columns`).
+- **Foreign keys both ways.** Composite foreign keys now link to their
+  referenced row, and a row's context menu opens the rows of other tables
+  that reference it (`GET /v1/databases/{id}/tables/{table}/referenced-by`).
+- **Find a table or column anywhere with Ctrl/Cmd+K.** A background loop
+  keeps an index of every reachable database's table and column names
+  (`FLEETDOCK_CATALOG_REFRESH_INTERVAL`, 30 minutes, and right after DDL
+  made through Fleetdock); `GET /v1/search/schema` returns only databases
+  the caller could open in the data browser.
+- **Explain and Analyze in the console.** A statement's plan is drawn as a
+  tree with expected and actual rows, time or cost per step, and warnings
+  for full scans, filesorts, temporary tables, disk spills and stale
+  statistics (`POST /v1/databases/{id}/explain`). Analyze runs reads only,
+  in a read-only transaction that is rolled back.
+- **Index health.** A database's page and each table's structure flag
+  indexes never used since statistics started and indexes made redundant
+  by another one, with the `DROP INDEX` statement to review
+  (`GET /v1/databases/{id}/index-insights`).
+- **Top queries.** An instance's monitoring lists its most expensive
+  statements by total time, time per run or frequency, from
+  `pg_stat_statements` or `performance_schema`, and explains how to turn
+  them on when they are off (`GET /v1/instances/{id}/top-queries`).
 - **Download a backup without backup storage.** "Back up now" on a database
   offers **Download to this computer**: the control plane runs the same dump
   as a stored backup and streams it to the browser as `<database>-<time>.sql.gz`.

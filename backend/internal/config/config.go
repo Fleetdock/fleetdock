@@ -76,6 +76,24 @@ type Config struct {
 	HeartbeatTimeout time.Duration
 	// MetricsRetention is how long server health-history samples are kept.
 	MetricsRetention time.Duration
+	// RowChangeRetention is how long data-browser edits stay in the change
+	// journal (and can be undone); 0 turns the journal off.
+	RowChangeRetention time.Duration
+	// BackupCopyTTL is how long a backup opened for comparison is kept;
+	// BackupCopyMaxBytes caps the compressed size of a backup that may be
+	// opened (0 = no cap).
+	BackupCopyTTL      time.Duration
+	BackupCopyMaxBytes int64
+	// CatalogRefreshInterval is how often each database's table and column
+	// names are re-read for fleet-wide schema search (0 disables it).
+	CatalogRefreshInterval time.Duration
+	// SchemaSnapshotInterval is how often watched databases' structure is
+	// checked for changes (0 disables the background checks).
+	SchemaSnapshotInterval time.Duration
+	// FleetMaxParallel caps the fleet-query targets this process runs at
+	// once; FleetRunRetention is how long finished runs are kept.
+	FleetMaxParallel  int
+	FleetRunRetention time.Duration
 
 	// SMTP configures outbound email for notification channels. When
 	// SMTPHost is empty, email delivery is disabled.
@@ -238,6 +256,14 @@ func Load() (Config, error) {
 		HeartbeatTimeout: getenvDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", 2*time.Minute),
 		MetricsRetention: getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
 
+		CatalogRefreshInterval: getenvDuration("FLEETDOCK_CATALOG_REFRESH_INTERVAL", 30*time.Minute),
+		SchemaSnapshotInterval: getenvDuration("FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL", 15*time.Minute),
+		FleetMaxParallel:       getenvInt("FLEETDOCK_FLEET_MAX_PARALLEL", 16),
+		FleetRunRetention:      getenvDuration("FLEETDOCK_FLEET_RUN_RETENTION", 30*24*time.Hour),
+		RowChangeRetention:     getenvDuration("FLEETDOCK_ROW_CHANGE_RETENTION", 7*24*time.Hour),
+		BackupCopyTTL:          getenvDuration("FLEETDOCK_BACKUP_COPY_TTL", 2*time.Hour),
+		BackupCopyMaxBytes:     getenvInt64("FLEETDOCK_BACKUP_COPY_MAX_BYTES", 10<<30),
+
 		SMTPHost:     os.Getenv("FLEETDOCK_SMTP_HOST"),
 		SMTPPort:     getenv("FLEETDOCK_SMTP_PORT", "587"),
 		SMTPUsername: os.Getenv("FLEETDOCK_SMTP_USERNAME"),
@@ -308,6 +334,15 @@ func getenvDuration(key string, def time.Duration) time.Duration {
 func getenvBool(key string, def bool) bool {
 	if v := os.Getenv(key); v != "" {
 		return v == "1" || strings.EqualFold(v, "true")
+	}
+	return def
+}
+
+func getenvInt64(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
 	}
 	return def
 }

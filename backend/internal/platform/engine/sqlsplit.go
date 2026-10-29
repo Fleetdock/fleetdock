@@ -25,8 +25,9 @@ func SplitStatements(script string) []string {
 	}
 
 	for i < len(s) {
-		// DELIMITER directive: at the start of a line, between statements.
-		if (i == 0 || s[i-1] == '\n') && strings.TrimSpace(cur.String()) == "" {
+		// DELIMITER directive: at the start of a line, between statements
+		// (comments may precede it).
+		if (i == 0 || s[i-1] == '\n') && leadingKeyword(cur.String()) == "" {
 			if d, n, ok := delimiterDirective(s[i:]); ok {
 				cur.Reset()
 				delim = d

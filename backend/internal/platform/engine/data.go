@@ -81,6 +81,8 @@ type BrowseColumn struct {
 	Nullable bool   `json:"nullable"`
 	// HasDefault means the column may be omitted on insert.
 	HasDefault bool `json:"has_default"`
+	// Generated columns are computed by the database and cannot be written.
+	Generated bool `json:"generated"`
 }
 
 // RowValues maps column name to value (nil = SQL NULL).
@@ -96,9 +98,14 @@ type ImportOptions struct {
 // DataEditor is the data-editing surface of an engine.
 type DataEditor interface {
 	BrowseRows(ctx context.Context, p ConnParams, database string, req BrowseRequest) (*BrowseResult, error)
-	InsertRow(ctx context.Context, p ConnParams, database, table string, values RowValues) error
-	UpdateRow(ctx context.Context, p ConnParams, database, table string, key, values RowValues) error
-	DeleteRow(ctx context.Context, p ConnParams, database, table string, key RowValues) error
+	// InsertRow, UpdateRow and DeleteRow change exactly one row and return
+	// what it looked like before and after (see RowChange).
+	InsertRow(ctx context.Context, p ConnParams, database, table string, values RowValues) (*RowChange, error)
+	UpdateRow(ctx context.Context, p ConnParams, database, table string, key, values RowValues) (*RowChange, error)
+	DeleteRow(ctx context.Context, p ConnParams, database, table string, key RowValues) (*RowChange, error)
+	// ApplyRowImage makes one row match an image: it undoes a change, or
+	// restores a row from a backup copy.
+	ApplyRowImage(ctx context.Context, p ConnParams, database, table string, req ApplyRequest) (*RowChange, error)
 	ImportCSV(ctx context.Context, p ConnParams, database, table string, r io.Reader, opts ImportOptions) (int64, error)
 }
 
@@ -137,6 +144,14 @@ type column struct {
 	Type       string
 	Nullable   bool
 	HasDefault bool
+	// Generated: computed by the database, never written.
+	Generated bool
+	// IdentityAlways: a PostgreSQL GENERATED ALWAYS AS IDENTITY column,
+	// which accepts an explicit value only with OVERRIDING SYSTEM VALUE.
+	IdentityAlways bool
+	// AutoIncrement: a MySQL AUTO_INCREMENT column, whose inserted value is
+	// LAST_INSERT_ID().
+	AutoIncrement bool
 }
 
 // tableMeta is a table's columns and row key.
@@ -497,7 +512,7 @@ func clampBrowse(req *BrowseRequest) {
 func browseColumns(m *tableMeta) []BrowseColumn {
 	out := make([]BrowseColumn, len(m.columns))
 	for i, c := range m.columns {
-		out[i] = BrowseColumn(c)
+		out[i] = BrowseColumn{Name: c.Name, Type: c.Type, Nullable: c.Nullable, HasDefault: c.HasDefault, Generated: c.Generated}
 	}
 	return out
 }

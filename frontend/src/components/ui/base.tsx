@@ -192,6 +192,10 @@ const STATUS_CLASS: Record<string, string> = {
   failed: "badge-red",
   error: "badge-red",
   missing: "badge-amber",
+  paused: "badge-amber",
+  canceling: "badge-amber",
+  unknown: "badge-amber",
+  skipped: "badge-gray",
 };
 
 // Plain-language labels and explanations for statuses whose raw value is

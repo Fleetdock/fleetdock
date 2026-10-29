@@ -1,11 +1,13 @@
 "use client";
 
 import { indentWithTab } from "@codemirror/commands";
-import { sql } from "@codemirror/lang-sql";
+import { MariaSQL, MySQL, PostgreSQL, sql } from "@codemirror/lang-sql";
 import { type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+
+import type { SqlCompletion } from "@/lib/sql-schema";
 
 function useIsDark() {
   const [dark, setDark] = useState(false);
@@ -61,6 +63,36 @@ function fleetdockEditorTheme(dark: boolean): Extension {
         padding: "0 8px 0 4px",
         minWidth: "2.25rem",
       },
+      ".cm-tooltip": {
+        backgroundColor: "var(--panel)",
+        color: "var(--fg)",
+        border: "1px solid var(--border)",
+        borderRadius: "6px",
+        boxShadow: "0 6px 20px rgb(0 0 0 / 0.12)",
+        overflow: "hidden",
+      },
+      ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        fontSize: "12.5px",
+        maxHeight: "16em",
+      },
+      ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+        padding: "2px 10px 2px 6px",
+      },
+      ".cm-tooltip-autocomplete ul li[aria-selected]": {
+        backgroundColor: dark ? "color-mix(in srgb, var(--accent) 35%, transparent)" : "color-mix(in srgb, var(--accent) 16%, transparent)",
+        color: "var(--fg)",
+      },
+      ".cm-completionDetail": {
+        color: "var(--muted)",
+        fontStyle: "normal",
+        marginLeft: "1em",
+      },
+      ".cm-completionMatchedText": {
+        textDecoration: "none",
+        fontWeight: 600,
+        color: "var(--accent)",
+      },
     },
     { dark },
   );
@@ -101,10 +133,36 @@ type SqlEditorProps = {
   minHeight?: string;
   /** Show the text without letting it be changed (object definitions). */
   readOnly?: boolean;
+  /** Engine of the database, for its keywords and identifier quoting. */
+  engine?: string;
+  /** Tables and columns to autocomplete; keywords complete without it. */
+  completion?: SqlCompletion;
 };
 
+function dialectFor(engine: string | undefined) {
+  switch (engine) {
+    case "postgres":
+      return PostgreSQL;
+    case "mariadb":
+      return MariaSQL;
+    case "mysql":
+      return MySQL;
+    default:
+      return undefined;
+  }
+}
+
 export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function SqlEditor(
-  { value, onChange, onRun, placeholder: placeholderText = "SELECT * FROM ...", minHeight = "200px", readOnly = false },
+  {
+    value,
+    onChange,
+    onRun,
+    placeholder: placeholderText = "SELECT * FROM ...",
+    minHeight = "200px",
+    readOnly = false,
+    engine,
+    completion,
+  },
   ref,
 ) {
   const dark = useIsDark();
@@ -117,7 +175,12 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
 
   const extensions = useMemo(() => {
     return [
-      sql(),
+      sql({
+        dialect: dialectFor(engine),
+        schema: completion?.schema,
+        defaultSchema: completion?.defaultSchema,
+        upperCaseKeywords: true,
+      }),
       lineNumbers(),
       EditorView.lineWrapping,
       placeholder(placeholderText),
@@ -132,7 +195,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
         },
       ]),
     ];
-  }, [placeholderText, onRun]);
+  }, [placeholderText, onRun, engine, completion]);
 
   const themeExtensions = useMemo(
     () => [fleetdockEditorTheme(dark), syntaxTheme(dark)],
@@ -158,7 +221,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
           indentOnInput: true,
           bracketMatching: true,
           closeBrackets: false,
-          autocompletion: false,
+          autocompletion: !readOnly,
           rectangularSelection: false,
           crosshairCursor: false,
           highlightSelectionMatches: false,

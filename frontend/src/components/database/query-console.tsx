@@ -2,8 +2,10 @@
 
 import { useErrorToast } from "@/components/toast";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 
+import { ExplainView } from "@/components/database/explain-view";
+import { PreviewSampleView } from "@/components/database/preview-sample";
 import { ExportButton } from "@/components/database/export-button";
 import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
 import {
@@ -21,12 +23,18 @@ import {
   useRunQuery,
   useSavedQueries,
   useSavedQueryMutations,
+  useExplain,
+  useSchemaColumns,
 } from "@/lib/hooks";
-import { splitStatements, writeStatements } from "@/lib/sql";
-import type { QueryOutput, QueryResult } from "@/lib/types";
+import { previewBlocker, splitStatements, writeStatements } from "@/lib/sql";
+import { sqlCompletion } from "@/lib/sql-schema";
+import type { ExplainResult, QueryOutput, QueryResult } from "@/lib/types";
 import {
   Bookmark,
+  FlaskConical,
+  Gauge,
   History,
+  ListTree,
   KeyRound,
   Play,
   Save,
@@ -42,13 +50,18 @@ export function QueryConsole({
   databaseId,
   canWrite,
   initialSql = "",
+  engine,
 }: {
   databaseId: string;
   canWrite: boolean;
+  /** Engine of the database ("postgres", "mysql", "mariadb"), for autocompletion. */
+  engine?: string;
   /** Text the editor starts with (a Data Browser "New query on this table"). */
   initialSql?: string;
 }) {
   const run = useRunQuery(databaseId);
+  const columns = useSchemaColumns(databaseId);
+  const completion = useMemo(() => sqlCompletion(columns.data, engine === "postgres"), [columns.data, engine]);
   const editorRef = useRef<SqlEditorHandle>(null);
   const [sql, setSql] = useState(initialSql);
   const [ranSql, setRanSql] = useState("");
@@ -57,10 +70,43 @@ export function QueryConsole({
   const [confirm, setConfirm] = useState<{
     sql: string;
     writes: string[];
+    /** The preview of this script, when it was previewed first. */
+    preview?: QueryOutput;
   } | null>(null);
   const [queryId, setQueryId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("none");
   const [saving, setSaving] = useState(false);
+  const explain = useExplain(databaseId);
+  const [plan, setPlan] = useState<ExplainResult | null>(null);
+
+  // Explain works on one statement: the selection, or the whole editor.
+  const explainTarget = (): string | null => {
+    const text = editorRef.current?.getQueryToRun() ?? sql.trim();
+    const stmts = splitStatements(text);
+    if (stmts.length !== 1) {
+      setError(stmts.length === 0 ? null : "Explain works on one statement — select the one to explain.");
+      return null;
+    }
+    return stmts[0];
+  };
+
+  async function onExplain(analyze: boolean) {
+    const stmt = explainTarget();
+    if (!stmt) return;
+    if (analyze && writeStatements(stmt).length > 0) {
+      setError("Only reads can be analyzed: analyzing runs the statement. Use Explain for writes.");
+      return;
+    }
+    setError(null);
+    try {
+      const res = await explain.mutateAsync({ sql: stmt, analyze });
+      setOutput(null);
+      setPlan(res);
+    } catch (err) {
+      setPlan(null);
+      setError(err instanceof ApiError ? err.message : "Explain failed");
+    }
+  }
 
   function onRun() {
     const text = editorRef.current?.getQueryToRun() ?? sql.trim();
@@ -79,7 +125,7 @@ export function QueryConsole({
     void execute(text);
   }
 
-  async function execute(text: string) {
+  async function execute(text: string, preview = false) {
     setError(null);
     setConfirm(null);
     const id = crypto.randomUUID();
@@ -89,8 +135,10 @@ export function QueryConsole({
         sql: text,
         limit: ROW_LIMIT,
         query_id: id,
+        preview,
       });
       setOutput(res);
+      setPlan(null);
       setRanSql(text);
     } catch (err) {
       setOutput(null);
@@ -98,6 +146,17 @@ export function QueryConsole({
     } finally {
       setQueryId(null);
     }
+  }
+
+  async function onPreview() {
+    const text = editorRef.current?.getQueryToRun() ?? sql.trim();
+    if (!text) return;
+    const blocked = previewBlocker(text);
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
+    await execute(text, true);
   }
 
   async function onCancel() {
@@ -134,6 +193,8 @@ export function QueryConsole({
         onRun={onRun}
         placeholder="SELECT * FROM ..."
         minHeight="220px"
+        engine={engine}
+        completion={completion}
       />
       <div
         className="flex justify-between items-center"
@@ -192,6 +253,32 @@ export function QueryConsole({
               <Square size={14} /> Cancel
             </button>
           ) : null}
+          {canWrite && writeStatements(sql).length > 0 ? (
+            <button
+              className="btn btn-sm"
+              onClick={() => void onPreview()}
+              disabled={run.isPending || explain.isPending}
+              title="Run the script in a transaction that is rolled back, and see what it would change"
+            >
+              <FlaskConical size={14} /> Preview
+            </button>
+          ) : null}
+          <button
+            className="btn btn-sm"
+            onClick={() => void onExplain(false)}
+            disabled={run.isPending || explain.isPending || !sql.trim()}
+            title="Show how the database would run this statement, without running it"
+          >
+            {explain.isPending ? <Spinner /> : <ListTree size={14} />} Explain
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => void onExplain(true)}
+            disabled={run.isPending || explain.isPending || !sql.trim()}
+            title="Run this read and show where the time went (rolled back)"
+          >
+            <Gauge size={14} /> Analyze
+          </button>
           <button
             className="btn btn-primary btn-sm"
             onClick={onRun}
@@ -211,11 +298,32 @@ export function QueryConsole({
 
       <ErrorText message={error ?? undefined} />
 
+      {plan ? <ExplainView result={plan} /> : null}
+
       {output ? (
         <div>
+          {output.rolled_back ? (
+            <div className="callout callout-info preview-banner" role="status">
+              <span>
+                <strong>Preview — rolled back, nothing was saved.</strong>{" "}
+                {previewSummary(output)}
+              </span>
+              {canWrite && ranSql ? (
+                <button className="btn btn-primary btn-sm" onClick={() => setConfirm({ sql: ranSql, writes: writeStatements(ranSql), preview: output })}>
+                  <Play size={14} /> Apply for real
+                </button>
+              ) : null}
+              <ul className="preview-notes">
+                {(output.results.find((r) => r.notes)?.notes ?? []).slice(1).map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {output.results.map((r, i) => (
             <QueryResultView
               key={i}
+              preview={output.rolled_back}
               result={r}
               label={
                 output.results.length > 1 || output.error
@@ -259,6 +367,12 @@ export function QueryConsole({
             <p style={{ marginTop: 0 }}>
               This script will modify the database. There is no undo.
             </p>
+            {confirm?.preview ? (
+              <p className="callout callout-warning">
+                <strong>Preview:</strong> {previewSummary(confirm.preview)} Data may have changed since, so the
+                real run can differ.
+              </p>
+            ) : null}
             <pre
               className="card"
               style={{
@@ -492,9 +606,12 @@ function SaveQueryModal({
 function QueryResultView({
   result,
   label,
+  preview = false,
 }: {
   result: QueryResult;
   label?: string;
+  /** Part of a rolled-back preview. */
+  preview?: boolean;
 }) {
   const header = label ? <span className="font-medium">{label} · </span> : null;
   if (result.columns.length === 0) {
@@ -506,9 +623,10 @@ function QueryResultView({
         <span className="flex items-center gap-2 text-sm">
           <KeyRound size={15} /> {header}
           {result.rows_affected.toLocaleString()} row
-          {result.rows_affected === 1 ? "" : "s"} affected
+          {result.rows_affected === 1 ? "" : "s"} {preview ? "would be affected" : "affected"}
           <span className="muted">· {result.duration_ms} ms</span>
         </span>
+        {result.sample ? <PreviewSampleView sample={result.sample} /> : null}
       </div>
     );
   }
@@ -568,4 +686,14 @@ function QueryResultView({
       </div>
     </div>
   );
+}
+
+/** previewSummary: "would change 2 rows (statement 1), delete 1 row (statement 3)." */
+function previewSummary(out: QueryOutput): string {
+  const parts = out.results
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !r.read_only)
+    .map(({ r, i }) => `${r.rows_affected.toLocaleString()} row${r.rows_affected === 1 ? "" : "s"} (statement ${i + 1})`);
+  if (out.error) return `Statement ${out.error.statement} would fail: ${out.error.message}`;
+  return parts.length ? `It would change ${parts.join(", ")}.` : "It would change no rows.";
 }

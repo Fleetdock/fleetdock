@@ -192,6 +192,9 @@ func (s *Service) discover(ctx context.Context, inst *instancedom.Instance, eng 
 	}
 	seen := make([]databasedom.Observed, 0, len(listed))
 	for _, d := range listed {
+		if databasedom.IsScratchName(d.Name) {
+			continue // a temporary backup restore, never registered
+		}
 		st := stats[d.Name]
 		seen = append(seen, databasedom.Observed{
 			Name: d.Name, Charset: d.Charset, Collation: d.Collation,

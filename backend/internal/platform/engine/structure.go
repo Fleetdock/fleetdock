@@ -86,7 +86,10 @@ type IndexSpec struct {
 
 // ForeignKey is an existing foreign key.
 type ForeignKey struct {
-	Name       string   `json:"name"`
+	Name string `json:"name"`
+	// Table is the referencing table; set only on incoming keys
+	// (Catalog.ReferencedBy), where it differs from the table asked about.
+	Table      string   `json:"table,omitempty"`
 	Columns    []string `json:"columns"`
 	RefTable   string   `json:"ref_table"`
 	RefColumns []string `json:"ref_columns"`

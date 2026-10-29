@@ -86,13 +86,78 @@ Backend (Go):
   - data: filtered, sorted, searchable browser; insert/edit/delete rows by
     primary key (exactly one row or nothing); CSV import and export; SQL file
     import;
+  - undo: every insert, edit and delete made in the data browser is kept in a
+    change journal with the row before and after (for
+    `FLEETDOCK_ROW_CHANGE_RETENTION`, a week by default). **Undo** right after
+    saving, or later from a table's **Change history**, per row or per save;
+    if the row changed since, Fleetdock asks before overwriting that change.
+    Undo does not revert what triggers or cascading deletes did, and changes
+    made in the SQL console or by CSV import are not journaled;
+  - compare with a backup: a table's **Compare with a backup…** restores a
+    chosen backup into a temporary database on the same server (named
+    `fds_…`, dropped after `FLEETDOCK_BACKUP_COPY_TTL`, two hours by default;
+    **Keep longer** extends it up to a day), then lists the rows changed,
+    deleted or added since, by primary key. Picked rows are put back as they
+    were in the backup, under a check that each still looks as compared, and
+    the restore is journaled as one save, so **Undo** reverts it. Opening a
+    backup needs `backup:write`; restoring rows needs `database:write`. The
+    copy uses disk on the production server for as long as it is kept, and
+    backups larger than `FLEETDOCK_BACKUP_COPY_MAX_BYTES` are refused;
+  - schema history: a database's **Schema** tab records every structure it
+    has had once **Track changes** is on (checked every
+    `FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL`, 15 minutes by default, and right
+    after DDL made through Fleetdock): a timeline of what was added, removed
+    or changed (tables, columns, indexes, constraints, views, routines,
+    triggers, PostgreSQL enum types and extensions), whoever made the change.
+    A change emits a `database.schema_changed` notification. **Go back to the
+    version before this…** writes the script that returns the schema to an
+    earlier snapshot (structure only: data in dropped tables or columns is
+    not brought back);
+  - schema comparison: **Compare with…** diffs the structure of two databases
+    on the same engine and writes the DDL that makes one match the other;
+    it opens in the SQL console to run with the usual confirmation. Dropping
+    tables and columns is left commented out for review; what cannot be
+    generated (a changed generation expression, re-ordered enum labels,
+    repartitioning) is described in a `-- manual:` comment;
   - structure without SQL: create/alter/rename/truncate/drop tables, columns,
     indexes and foreign keys; views, routines, triggers, sequences and events;
   - SQL console: multi-statement scripts on one session, confirmation before
     writes, cancel, per-user history and saved queries;
-  - monitoring: live sessions (cancel/terminate), status counters,
-    configuration; a per-minute health probe fills instance health and
-    database sizes and connection counts.
+  - preview: **Preview** dry-runs a script with writes in one transaction
+    that is always rolled back, showing how many rows each statement would
+    change and, for a single-table UPDATE or DELETE, up to 20 rows before and
+    after; **Apply for real** then runs it with the usual confirmation. Only
+    SELECT, INSERT, UPDATE, DELETE, REPLACE and MERGE can be previewed
+    (no DDL, transaction control, SET or CALL); on MySQL/MariaDB a database
+    with MyISAM, Aria or MEMORY tables cannot be previewed. Triggers still
+    fire and sequence / AUTO_INCREMENT counters still advance;
+  - fleet query: **Fleet query** runs one SQL script on many databases
+    (up to 500, picked by name pattern, server and engine) in the
+    background, a few at a time, and merges what they return into one table
+    with the database and server in front (CSV download too). Each database
+    needs the same access as the SQL console, checked when the run starts
+    and again just before it runs there. A script that writes asks for a
+    typed confirmation, runs on the first database alone and waits for you
+    to continue, and stops at the first failure (both can be turned off).
+    Runs can be canceled (running statements are killed) and failed ones
+    retried; a database whose run was interrupted is marked "unknown" and
+    never re-run on its own. Only the user who started a run sees it; runs
+    are kept for `FLEETDOCK_FLEET_RUN_RETENTION` (30 days);
+  - monitoring: live sessions (cancel/terminate), the most expensive
+    statements (`pg_stat_statements` / `performance_schema`), status
+    counters, configuration; a per-minute health probe fills instance health
+    and database sizes and connection counts;
+  - performance: the console's **Explain** draws a statement's plan as a
+    tree (nothing runs) and **Analyze** runs a read in a rolled-back,
+    read-only transaction to show where the time went, flagging full scans,
+    filesorts and stale statistics; **Index health** lists unused indexes
+    and indexes made redundant by another one, with the `DROP INDEX` to
+    review — Fleetdock never drops them itself;
+  - navigation: the SQL editor autocompletes the database's real tables and
+    columns; foreign keys (composite ones too) link to the referenced row,
+    and a row's menu opens the rows of other tables that reference it;
+    Ctrl/Cmd+K finds a table or column by name across every database of
+    the fleet (only databases you may open are shown).
 
   The login that the data browser, SQL console, exports and SQL imports use
   is chosen per instance (**Data browsing connects as**, in the instance's

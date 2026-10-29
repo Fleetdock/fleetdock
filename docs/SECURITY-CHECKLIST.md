@@ -116,3 +116,29 @@ FLEETDOCK_ENV=production FLEETDOCK_DATABASE_URL=postgres://x:x@localhost/x \
 ```
 
 Run from `backend/` after cloning the repo.
+
+## Data kept by the change journal
+
+The data browser's undo keeps a copy of every row it edits — including the
+full contents of deleted rows — in the metadata database for
+`FLEETDOCK_ROW_CHANGE_RETENTION` (7 days by default). Treat metadata backups
+accordingly, shorten the retention if the edited tables hold sensitive data,
+or set it to `0` to keep no copies (and lose undo). The journal is readable
+only by users who may browse that database.
+
+*Compare with a backup* restores a backup into a temporary `fds_…` database
+on the same server as the live one, readable by the instance's admin login,
+until it is discarded or `FLEETDOCK_BACKUP_COPY_TTL` passes. Only users with
+`backup:write` on the database can open one.
+
+Schema history reads a watched database's structure (never its rows) with
+the instance's admin login and keeps it in the metadata database; anyone who
+may browse the database can see it. Schema comparison reads both databases
+as the caller's own data login.
+
+A fleet query runs in the background as the user who started it: before
+each database, Fleetdock rebuilds that user's current permissions (limited
+to the API token's scopes when it was started with one) and skips the
+database if they no longer allow it — a suspended user's runs stop. Up to
+the row limit of each database's results is kept in the metadata database
+for `FLEETDOCK_FLEET_RUN_RETENTION`, visible only to that user.
