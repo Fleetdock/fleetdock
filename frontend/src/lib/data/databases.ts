@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import type {
   ColumnCatalog,
+  SchemaSearchHit,
   HistoryEntry,
   QueryOutput,
   SavedQuery,
@@ -506,6 +507,21 @@ export function useReferencedBy(databaseId: string, table: string) {
         .get<{ items: ForeignKey[] }>(`/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/referenced-by`)
         .then((r) => r.items),
     enabled: Boolean(databaseId && table),
+    retry: false,
+  });
+}
+
+// useSchemaSearch finds tables and columns by name across every database the
+// caller may open (GET /v1/search/schema). Queries under two characters skip
+// the request.
+export function useSchemaSearch(q: string, enabled = true) {
+  const term = q.trim();
+  return useQuery({
+    queryKey: ["schema-search", term],
+    queryFn: () =>
+      api.get<{ items: SchemaSearchHit[] }>(`/v1/search/schema?q=${encodeURIComponent(term)}&limit=20`).then((r) => r.items),
+    enabled: enabled && term.length >= 2,
+    staleTime: 30_000,
     retry: false,
   });
 }

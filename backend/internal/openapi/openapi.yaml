@@ -100,6 +100,19 @@ components:
         table:
           type: string
           description: The referencing table. Set only on incoming keys (referenced-by).
+    SchemaSearchHit:
+      type: object
+      properties:
+        database_id: {type: string, format: uuid}
+        database: {type: string}
+        instance_id: {type: string, format: uuid}
+        instance: {type: string}
+        engine: {type: string}
+        schema: {type: string, description: PostgreSQL schema; absent on MySQL/MariaDB.}
+        table: {type: string}
+        kind: {type: string, enum: [table, view]}
+        column: {type: string, description: Set when the match is a column.}
+        type: {type: string, description: The column's type.}
     ColumnCatalog:
       type: object
       properties:
@@ -652,6 +665,31 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ColumnCatalog"}
+
+  /v1/search/schema:
+    get:
+      tags: [Databases]
+      security: [{bearerAuth: []}]
+      summary: Search table and column names across the fleet
+      description: >-
+        Matches table, view and column names in every database Fleetdock indexes (refreshed every
+        FLEETDOCK_CATALOG_REFRESH_INTERVAL and after DDL made through Fleetdock). Exact names rank first,
+        then prefixes, then substrings; tables before columns. Only databases the caller could open in the
+        data browser are included. Queries shorter than two characters return nothing.
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        "200":
+          description: Matches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/SchemaSearchHit"}
 
   /v1/databases/{id}/tables/{table}/indexes/drop:
     post:

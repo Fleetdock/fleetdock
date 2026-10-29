@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	catalogapp "github.com/Fleetdock/fleetdock/backend/internal/app/catalog"
 	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
 	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
@@ -49,6 +50,10 @@ type Deps struct {
 	// housekeeping pass so only one replica runs schedules, retention and
 	// alerts. ok=false means another replica holds it this round.
 	HousekeepingLock func(ctx context.Context) (release func(), ok bool, err error)
+	// Catalog, when set and enabled, refreshes the fleet-wide schema
+	// catalog on its own loop, under CatalogLock (one replica at a time).
+	Catalog     *catalogapp.Service
+	CatalogLock func(ctx context.Context) (release func(), ok bool, err error)
 }
 
 // jobTimeout bounds one control-plane operation; stuckAfter is how long a
@@ -76,6 +81,9 @@ func (w *Worker) Run(ctx context.Context) {
 	defer fast.Stop()
 
 	slog.Info("operations worker started")
+	if w.deps.Catalog != nil && w.deps.Catalog.Enabled() {
+		go w.catalogLoop(ctx)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -95,13 +103,18 @@ func (w *Worker) Run(ctx context.Context) {
 // locked runs fn under the housekeeping lock (when configured) and never lets
 // a panic in it take the API process down.
 func (w *Worker) locked(ctx context.Context, fn func(context.Context)) {
+	w.withLock(ctx, w.deps.HousekeepingLock, fn)
+}
+
+// withLock runs fn under lock (when set), recovering panics.
+func (w *Worker) withLock(ctx context.Context, lock func(context.Context) (func(), bool, error), fn func(context.Context)) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("worker housekeeping panicked", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 		}
 	}()
-	if w.deps.HousekeepingLock != nil {
-		release, ok, err := w.deps.HousekeepingLock(ctx)
+	if lock != nil {
+		release, ok, err := lock(ctx)
 		if err != nil {
 			slog.Error("housekeeping lock", "error", err.Error())
 			return
@@ -112,6 +125,22 @@ func (w *Worker) locked(ctx context.Context, fn func(context.Context)) {
 		defer release()
 	}
 	fn(ctx)
+}
+
+// catalogLoop refreshes stale schema catalogs once a minute. It runs on its
+// own goroutine because a pass connects to many databases and must not hold
+// up job claiming or alerts.
+func (w *Worker) catalogLoop(ctx context.Context) {
+	tick := time.NewTicker(time.Minute)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			w.withLock(ctx, w.deps.CatalogLock, func(ctx context.Context) { w.deps.Catalog.RefreshDue(ctx) })
+		}
+	}
 }
 
 // evaluateAndDispatch runs alert evaluation then delivers queued notifications.

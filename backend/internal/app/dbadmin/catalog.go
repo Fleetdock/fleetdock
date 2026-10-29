@@ -3,6 +3,8 @@ package dbadminapp
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
 	dbaccessdom "github.com/Fleetdock/fleetdock/backend/internal/domain/dbaccess"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
@@ -46,4 +48,28 @@ func (s *Service) ReferencedBy(ctx context.Context, databaseID, table string) ([
 			return err
 		})
 	return out, err
+}
+
+// SetSchemaChanged registers a callback for DDL made through Fleetdock (the
+// structure editor). It must not block: it runs on the request path.
+func (s *Service) SetSchemaChanged(fn func(databaseID uuid.UUID)) { s.schemaChanged = fn }
+
+// AdminColumns reads a database's column catalog with the instance's admin
+// login. It feeds the background fleet-wide catalog, which indexes every
+// table once; search results are filtered per user afterwards.
+func (s *Service) AdminColumns(ctx context.Context, databaseID uuid.UUID) (*engine.ColumnCatalog, error) {
+	db, err := s.databases.GetByID(ctx, databaseID)
+	if err != nil {
+		return nil, err
+	}
+	_, admin, conn, err := s.target(ctx, db.InstanceID.String())
+	if err != nil {
+		return nil, err
+	}
+	cat, err := catalog(admin)
+	if err != nil {
+		return nil, err
+	}
+	conn.Database = db.Name
+	return cat.Columns(ctx, conn, db.Name)
 }

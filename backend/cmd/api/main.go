@@ -22,6 +22,7 @@ import (
 	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	backupapp "github.com/Fleetdock/fleetdock/backend/internal/app/backup"
+	catalogapp "github.com/Fleetdock/fleetdock/backend/internal/app/catalog"
 	consoleapp "github.com/Fleetdock/fleetdock/backend/internal/app/console"
 	databaseapp "github.com/Fleetdock/fleetdock/backend/internal/app/database"
 	dbaccessapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbaccess"
@@ -165,6 +166,10 @@ func run() error {
 	opsSvc.SetAccessRoleResolver(dbadminSvc.WriteRoleCredentials)
 	consoleRepo := postgres.NewConsoleRepository(pool)
 	dbadminSvc.SetHistory(consoleRepo)
+	catalogSvc := catalogapp.NewService(postgres.NewCatalogRepository(pool), dbadminSvc, cfg.CatalogRefreshInterval)
+	if catalogSvc.Enabled() {
+		dbadminSvc.SetSchemaChanged(catalogSvc.SchemaChanged)
+	}
 	summarySvc := summaryapp.NewService(statsRepo)
 	notifSender := notify.New(notify.SMTPConfig{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
@@ -205,6 +210,8 @@ func run() error {
 			MetricsRetention: cfg.MetricsRetention,
 			HousekeepingLock: postgres.HousekeepingLock(pool),
 			Probe:            probeSvc,
+			Catalog:          catalogSvc,
+			CatalogLock:      postgres.CatalogLock(pool),
 		}).Run(ctx)
 	}
 
@@ -246,6 +253,7 @@ func run() error {
 		Moves:             httpapi.NewMoveHandler(moveSvc, resolver),
 		Destinations:      httpapi.NewDestinationHandler(destSvc),
 		DBAdmin:           httpapi.NewDBAdminHandler(dbadminSvc, resolver),
+		Search:            httpapi.NewSearchHandler(catalogSvc, dbadminSvc, resolver),
 		Console:           httpapi.NewConsoleHandler(consoleapp.NewService(consoleRepo), resolver),
 		Connectivity:      httpapi.NewConnectivityHandler(endpointSvc),
 		DBCredentials:     httpapi.NewDBCredentialHandler(credentialSvc),

@@ -57,6 +57,8 @@ type Service struct {
 	secrets   Secrets
 	access    Access
 	history   History
+	// schemaChanged, when set, is told about DDL made through Fleetdock.
+	schemaChanged func(databaseID uuid.UUID)
 
 	runningMu sync.Mutex
 	running   map[string]*runningQuery
@@ -841,6 +843,9 @@ func (s *Service) withStructure(ctx context.Context, databaseID string,
 				return err
 			}
 			s.refreshReadGrants(ctx, db)
+			if s.schemaChanged != nil {
+				s.schemaChanged(db.ID)
+			}
 			return nil
 		})
 }

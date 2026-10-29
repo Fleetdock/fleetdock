@@ -31,6 +31,7 @@ type RouterDeps struct {
 	Install       *InstallHandler
 	Notifications *NotificationHandler
 	Overview      *OverviewHandler
+	Search        *SearchHandler
 	Docs          *DocsHandler
 	Authn         *Authenticator
 	// Resolver resolves resource scope ancestry for per-resource authorization.
@@ -201,6 +202,8 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/referenced-by", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ReferencedBy))
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
 	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
+	// Fleet-wide schema search; hits are filtered per database in the handler.
+	mux.HandleFunc("GET /v1/search/schema", requireAnyPerm("database:read", d.Search.Schema))
 	// SQL console: any writes are gated inside the handler by database:write.
 	mux.HandleFunc("POST /v1/databases/{id}/query", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Query))
 	// One-off dump streamed to the client; needs the same right as "back up now".

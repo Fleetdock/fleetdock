@@ -76,6 +76,9 @@ type Config struct {
 	HeartbeatTimeout time.Duration
 	// MetricsRetention is how long server health-history samples are kept.
 	MetricsRetention time.Duration
+	// CatalogRefreshInterval is how often each database's table and column
+	// names are re-read for fleet-wide schema search (0 disables it).
+	CatalogRefreshInterval time.Duration
 
 	// SMTP configures outbound email for notification channels. When
 	// SMTPHost is empty, email delivery is disabled.
@@ -237,6 +240,8 @@ func Load() (Config, error) {
 		WorkerEnabled:    getenvBool("FLEETDOCK_WORKER_ENABLED", true),
 		HeartbeatTimeout: getenvDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", 2*time.Minute),
 		MetricsRetention: getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
+
+		CatalogRefreshInterval: getenvDuration("FLEETDOCK_CATALOG_REFRESH_INTERVAL", 30*time.Minute),
 
 		SMTPHost:     os.Getenv("FLEETDOCK_SMTP_HOST"),
 		SMTPPort:     getenv("FLEETDOCK_SMTP_PORT", "587"),

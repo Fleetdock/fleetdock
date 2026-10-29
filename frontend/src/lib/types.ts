@@ -806,3 +806,19 @@ export interface ColumnCatalog {
     columns: { name: string; type: string }[];
   }[];
 }
+
+/** SchemaSearchHit is a table or column found by the fleet-wide schema search. */
+export interface SchemaSearchHit {
+  database_id: string;
+  database: string;
+  instance_id: string;
+  instance: string;
+  engine: string;
+  /** PostgreSQL schema; absent on MySQL/MariaDB. */
+  schema?: string;
+  table: string;
+  kind: "table" | "view";
+  /** Set when the match is a column. */
+  column?: string;
+  type?: string;
+}
