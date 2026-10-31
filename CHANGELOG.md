@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Databases with `-` in their names are managed.** Applications that name
+  databases after UUIDs (`tenant_ffc07774-1db5-…`) had those databases
+  skipped by discovery without a warning, and refused by grants, the data
+  browser and backups. Database names may now contain `-` anywhere but the
+  first character. Charset, collation and role names keep the stricter rule.
+
 - **"The database rejected the login" in the data browser** when a
   Fleetdock-managed role was dropped or its password changed outside
   Fleetdock: the role is now repaired and the request retried, and a server

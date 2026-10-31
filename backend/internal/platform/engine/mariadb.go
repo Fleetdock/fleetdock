@@ -33,6 +33,16 @@ type MariaDB struct{}
 
 var identRe = regexp.MustCompile(`^[A-Za-z0-9_$]+$`)
 
+// dbNameRe is identRe plus '-', for database names only: applications such as
+// multi-tenant frameworks name databases after UUIDs (tenant_<uuid>). Database
+// names are always quoted in SQL or passed as a single argv entry, never through
+// a shell; a leading '-' is refused so dump/restore tools can't read the name
+// as an option.
+var dbNameRe = regexp.MustCompile(`^[A-Za-z0-9_$][A-Za-z0-9_$-]*$`)
+
+// validDBName reports whether name is a database name Fleetdock can manage.
+func validDBName(name string) bool { return len(name) <= 64 && dbNameRe.MatchString(name) }
+
 // dsn builds the driver DSN. It goes through mysql.Config rather than string
 // formatting so passwords containing '@', '/' or '?' cannot corrupt it.
 func (m *MariaDB) dsn(p ConnParams) string { return m.config(p).FormatDSN() }
@@ -133,7 +143,7 @@ func (m *MariaDB) ListDatabases(ctx context.Context, p ConnParams) ([]DatabaseIn
 
 // CreateDatabase creates a database; identifiers are validated, not escaped.
 func (m *MariaDB) CreateDatabase(ctx context.Context, p ConnParams, name, charset, collation string) error {
-	if !identRe.MatchString(name) {
+	if !validDBName(name) {
 		return fmt.Errorf("invalid database name %q", name)
 	}
 	if charset == "" {
@@ -157,7 +167,7 @@ func (m *MariaDB) CreateDatabase(ctx context.Context, p ConnParams, name, charse
 
 // DropDatabase drops a database by validated identifier.
 func (m *MariaDB) DropDatabase(ctx context.Context, p ConnParams, name string) error {
-	if !identRe.MatchString(name) {
+	if !validDBName(name) {
 		return fmt.Errorf("invalid database name %q", name)
 	}
 	if systemDatabase("mysql", name) {

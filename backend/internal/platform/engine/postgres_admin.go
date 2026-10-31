@@ -308,7 +308,7 @@ func (pg *Postgres) UserGrants(ctx context.Context, p ConnParams, user, host str
 // SchemaGrants returns per-role privileges on the connected database and all of
 // its non-system schemas.
 func (pg *Postgres) SchemaGrants(ctx context.Context, p ConnParams, database string) ([]SchemaGrant, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -384,7 +384,7 @@ func (pg *Postgres) Grant(ctx context.Context, p ConnParams, user, host, databas
 	if !validPGRole(user) {
 		return fmt.Errorf("invalid role name")
 	}
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return fmt.Errorf("invalid database name")
 	}
 	privs, err := validatePrivileges(privileges)
@@ -420,7 +420,7 @@ func (pg *Postgres) Revoke(ctx context.Context, p ConnParams, user, host, databa
 	if !validPGRole(user) {
 		return fmt.Errorf("invalid role name")
 	}
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -526,7 +526,7 @@ func joinSet(m map[string]struct{}) string {
 
 // ListTables returns user table metadata for a database.
 func (pg *Postgres) ListTables(ctx context.Context, p ConnParams, database string) ([]TableInfo, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -569,7 +569,7 @@ func (pg *Postgres) ListTables(ctx context.Context, p ConnParams, database strin
 
 // TableRows returns one page of a table's data with stringified values.
 func (pg *Postgres) TableRows(ctx context.Context, p ConnParams, database, table string, limit, offset int) (*RowsPage, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if !validTableName(table) {
@@ -623,7 +623,7 @@ func (pg *Postgres) TableRows(ctx context.Context, p ConnParams, database, table
 
 // TableSchema returns a table's columns, indexes and reconstructed DDL.
 func (pg *Postgres) TableSchema(ctx context.Context, p ConnParams, database, table string) (*TableSchema, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if !validTableName(table) {
@@ -828,7 +828,7 @@ func (pg *Postgres) Query(ctx context.Context, p ConnParams, database, sqlText s
 // QueryBatch runs statements in order on one session and stops at the first
 // error; see MariaDB.QueryBatch.
 func (pg *Postgres) QueryBatch(ctx context.Context, p ConnParams, database string, stmts []string, limit int, allowWrite bool, onSession func(id int64)) ([]QueryResult, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if err := checkBatch(stmts, allowWrite); err != nil {
@@ -911,7 +911,7 @@ func (pg *Postgres) runStatement(ctx context.Context, conn *pgx.Conn, stmt strin
 
 // ExportCSV streams a whole table or a read-only query to w as CSV.
 func (pg *Postgres) ExportCSV(ctx context.Context, p ConnParams, database, table, query string, w io.Writer, onStart func()) (int64, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return 0, fmt.Errorf("invalid database name")
 	}
 	var sqlText string
