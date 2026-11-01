@@ -24,7 +24,10 @@ const apiTokenPrefix = "fleetd_"
 type Principal struct {
 	UserID uuid.UUID
 	Email  string
-	grants []authz.Grant
+	// TokenID is the API token the request authenticated with; nil for a
+	// dashboard session.
+	TokenID *uuid.UUID
+	grants  []authz.Grant
 	// scopes are the API token's scopes (nil for a session or an unscoped
 	// token): work done later on the principal's behalf keeps them.
 	scopes []string
@@ -208,6 +211,7 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 	}
 
 	var userID uuid.UUID
+	var tokenID *uuid.UUID
 	var tokenScopes []string // when non-empty, restrict grants to these permissions
 	jwtEpoch := -1           // >= 0 only for JWT sessions, enforced against the user's current epoch
 
@@ -218,6 +222,10 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 		}
 		userID = lookup.UserID
 		tokenScopes = lookup.Scopes
+		if lookup.ID != uuid.Nil {
+			id := lookup.ID
+			tokenID = &id
+		}
 	} else {
 		sub, epoch, err := s.jwt.Verify(credential)
 		if err != nil {
@@ -230,7 +238,12 @@ func (s *Service) Principal(ctx context.Context, credential string) (*Principal,
 		jwtEpoch = epoch
 	}
 
-	return s.principalFor(ctx, userID, tokenScopes, jwtEpoch)
+	p, err := s.principalFor(ctx, userID, tokenScopes, jwtEpoch)
+	if err != nil {
+		return nil, err
+	}
+	p.TokenID = tokenID
+	return p, nil
 }
 
 // PrincipalForUser rebuilds a user's principal for work done later on their

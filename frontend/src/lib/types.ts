@@ -1143,3 +1143,26 @@ export interface CreateFleetRunInput {
   timeout_seconds?: number;
   row_limit?: number;
 }
+
+/** AuditEvent is one entry of the audit log (GET /v1/audit-events). */
+export interface AuditEvent {
+  id: string;
+  created_at: string;
+  actor_user_id?: string;
+  actor_email?: string;
+  actor_kind: "user" | "api_token" | "system" | "anonymous";
+  token_id?: string;
+  ip?: string;
+  user_agent?: string;
+  action: string;
+  outcome: "success" | "denied" | "failure";
+  resource_type: string;
+  resource_id?: string;
+  resource_name?: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditPage {
+  items: AuditEvent[];
+  next_cursor?: string;
+}

@@ -60,9 +60,11 @@ function TopbarCrumbs() {
   if (!section) return null;
   const page =
     section.pages.length > 1
-      ? section.pages.find(
-          (p) => pathname === p.href || pathname.startsWith(`${p.href}/`),
-        )
+      ? // The most specific page: /activity/audit is "Audit log", not "Tasks".
+        (section.pages.find((p) => pathname === p.href) ??
+        [...section.pages]
+          .sort((a, b) => b.href.length - a.href.length)
+          .find((p) => pathname.startsWith(`${p.href}/`)))
       : undefined;
   const sectionHref = section.pages.some((p) => p.href === section.href)
     ? section.href

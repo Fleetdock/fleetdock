@@ -87,6 +87,9 @@ Backend (Go):
   - data: filtered, sorted, searchable browser; insert/edit/delete rows by
     primary key (exactly one row or nothing); CSV import and export; SQL file
     import;
+  - ER diagram: a database's **Diagram** tab draws its tables, columns,
+    keys and foreign keys, laid out automatically, with search, a
+    neighbours view and PNG/SVG export (`GET /v1/databases/{id}/diagram`);
   - undo: every insert, edit and delete made in the data browser is kept in a
     change journal with the row before and after (for
     `FLEETDOCK_ROW_CHANGE_RETENTION`, a week by default). **Undo** right after
@@ -212,6 +215,17 @@ views/routines, SQL console, per-database users & grants with grant/revoke).
   on server metrics (CPU, memory %, disk %, connections). Backup failures and
   offline servers notify automatically; the worker evaluates rules and delivers
   events via a transactional outbox. Managed on the **Notifications** page.
+- **Audit log** — Activity → **Audit log** lists who did what: sign-ins
+  (and failed ones), users, roles, grants and tokens, servers, database
+  servers and databases, backups, storage and schedules, notification
+  settings, SQL that writes, data-browser edits and undo, structure
+  changes, exports and dumps. Each event has the user (or API token, or the
+  CLI), IP address, client, resource and outcome; requests refused for lack
+  of permission are kept as *denied*. Filter by period, kind of action, user
+  and result, open an event for its details (the script, for SQL), or export
+  CSV. A database's menu opens its own events. Needs `audit:read` (owners
+  and admins); kept for `FLEETDOCK_AUDIT_RETENTION` (365 days)
+  (`GET /v1/audit-events`).
 - **Metrics history** — every heartbeat is stored as a time-series sample and
   charted (CPU/memory/disk/connections) on each server's detail page
   (`GET /v1/servers/{id}/metrics`).

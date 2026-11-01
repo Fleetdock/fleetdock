@@ -79,6 +79,9 @@ type Config struct {
 	// RowChangeRetention is how long data-browser edits stay in the change
 	// journal (and can be undone); 0 turns the journal off.
 	RowChangeRetention time.Duration
+	// AuditRetention is how long audit log events are kept; 0 keeps them
+	// forever.
+	AuditRetention time.Duration
 	// BackupCopyTTL is how long a backup opened for comparison is kept;
 	// BackupCopyMaxBytes caps the compressed size of a backup that may be
 	// opened (0 = no cap).
@@ -266,6 +269,7 @@ func Load() (Config, error) {
 		FleetMaxParallel:       getenvInt("FLEETDOCK_FLEET_MAX_PARALLEL", 16),
 		FleetRunRetention:      getenvDuration("FLEETDOCK_FLEET_RUN_RETENTION", 30*24*time.Hour),
 		RowChangeRetention:     getenvDuration("FLEETDOCK_ROW_CHANGE_RETENTION", 7*24*time.Hour),
+		AuditRetention:         getenvDuration("FLEETDOCK_AUDIT_RETENTION", 365*24*time.Hour),
 		BackupCopyTTL:          getenvDuration("FLEETDOCK_BACKUP_COPY_TTL", 2*time.Hour),
 		BackupCopyMaxBytes:     getenvInt64("FLEETDOCK_BACKUP_COPY_MAX_BYTES", 10<<30),
 

@@ -41,7 +41,7 @@ import {
 import { engineLabel } from "@/lib/engines";
 import { formatBytes as formatBytesOr } from "@/lib/format";
 
-import { useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
+import { useCan, useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
 
 import {
   Activity,
@@ -50,6 +50,7 @@ import {
   Eye,
   FileUp,
   HardDrive,
+  ScrollText,
   SquareTerminal,
   Table2,
   Trash2,
@@ -82,6 +83,7 @@ function DatabaseDetail() {
   const scope = { databaseId: id, serverId: instance?.server_id ?? undefined };
   const canWrite = canOn("database:write", scope);
   const canMove = canOn("backup:write", scope);
+  const canAudit = useCan()("audit:read");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -164,21 +166,31 @@ function DatabaseDetail() {
                 Open Data Browser
               </ButtonLink>
             ) : null}
-            {canWrite && !db.system ? (
+            {(canWrite && !db.system) || canAudit ? (
               <Menu
                 label="More database actions"
                 items={[
                   {
+                    label: "Audit log",
+                    icon: <ScrollText size={15} />,
+                    onSelect: () =>
+                      router.push(
+                        `/activity/audit?${new URLSearchParams({ resource_id: id, resource: db.name, period: "all" }).toString()}`,
+                      ),
+                    hidden: !canAudit,
+                  },
+                  {
                     label: "Import SQL",
                     icon: <FileUp size={15} />,
                     onSelect: () => setImportOpen(true),
-                    hidden: !(canMove && hasCreds),
+                    hidden: !(canWrite && !db.system && canMove && hasCreds),
                   },
                   {
                     label: "Remove database",
                     icon: <Trash2 size={15} />,
                     onSelect: () => setDeleteOpen(true),
                     danger: true,
+                    hidden: !(canWrite && !db.system),
                   },
                 ]}
               />

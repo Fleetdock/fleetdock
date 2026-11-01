@@ -36,6 +36,8 @@ tags:
   - name: Fleet
     x-displayName: Fleet queries
   - name: Notifications
+  - name: Audit
+    x-displayName: Audit log
   - name: Agent
   - name: Install
   - name: Docs
@@ -319,6 +321,37 @@ components:
                     type: {type: string}
                     nullable: {type: boolean}
                     primary_key: {type: boolean, description: Part of the table's primary key.}
+    AuditEvent:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        created_at: {type: string, format: date-time}
+        actor_user_id: {type: string, format: uuid, description: Absent for the system and for failed logins, and once the user is deleted.}
+        actor_email: {type: string, description: The user's email at the time; kept after the user is deleted.}
+        actor_kind:
+          type: string
+          enum: [user, api_token, system, anonymous]
+          description: How the actor authenticated. `system` is the CLI; `anonymous` a failed login.
+        token_id: {type: string, format: uuid, description: The API token used, when actor_kind is api_token.}
+        ip: {type: string}
+        user_agent: {type: string}
+        action:
+          type: string
+          description: >-
+            What was done, as `<category>.<verb>`: auth.login, user.create, database.delete, sql.execute,
+            data.row_update, backup.restore, api_token.create, and so on.
+        outcome:
+          type: string
+          enum: [success, denied, failure]
+          description: "`denied`: refused for lack of permission. `failure`: a failed login."
+        resource_type: {type: string, description: "user, role, server, instance, database, backup, backup_destination, backup_schedule, notification_channel, alert_rule, api_token, agent_token, fleet_run, operation"}
+        resource_id: {type: string, format: uuid}
+        resource_name: {type: string, description: The resource's name when the event was recorded.}
+        metadata:
+          type: object
+          description: >-
+            Secret-free details: the table for data and structure changes, the script (first 4 KB) and statement
+            counts for sql.execute, and the like.
     Diagram:
       type: object
       properties:
@@ -3275,6 +3308,48 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /v1/audit-events:
+    get:
+      tags: [Audit]
+      security: [{bearerAuth: []}]
+      summary: List audit events
+      description: >-
+        Who did what, newest first: sign-ins, access changes, changes to servers, databases, backups and
+        notifications, writes from the SQL console and the data browser, structure changes and data exports.
+        Requests refused for lack of permission are listed as `denied`. Needs `audit:read` (owners and admins).
+        Events are kept for `FLEETDOCK_AUDIT_RETENTION` (365 days by default).
+      parameters:
+        - {name: actor, in: query, schema: {type: string, format: uuid}, description: Only events by this user.}
+        - name: action
+          in: query
+          schema: {type: string}
+          description: An exact action (`user.delete`), or a category ending with a dot (`user.`).
+        - {name: resource_type, in: query, schema: {type: string}}
+        - {name: resource_id, in: query, schema: {type: string, format: uuid}}
+        - {name: outcome, in: query, schema: {type: string, enum: [success, denied, failure]}}
+        - {name: since, in: query, schema: {type: string, format: date-time}, description: Only events at or after this time.}
+        - {name: until, in: query, schema: {type: string, format: date-time}, description: Only events before this time.}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - {name: cursor, in: query, schema: {type: string}, description: next_cursor from the previous page.}
+        - name: format
+          in: query
+          schema: {type: string, enum: [csv]}
+          description: "`csv` downloads every matching event (up to 10000) as a CSV file instead of a page."
+      responses:
+        "200":
+          description: A page of events (or a CSV file with format=csv)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/AuditEvent"}
+                  next_cursor: {type: string, description: Absent on the last page.}
+            text/csv:
+              schema: {type: string}
 
   /v1/tokens:
     get:

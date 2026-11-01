@@ -132,7 +132,15 @@ export const NAV: NavSection[] = [
     Icon: Activity,
     href: "/activity",
     match: ["/activity"],
-    pages: [{ href: "/activity", label: "Activity", requires: [{ perm: "operation:read", scoped: true }], keywords: "operations jobs logs history" }],
+    pages: [
+      { href: "/activity", label: "Tasks", requires: [{ perm: "operation:read", scoped: true }], keywords: "operations jobs logs history" },
+      {
+        href: "/activity/audit",
+        label: "Audit log",
+        requires: [{ perm: "audit:read" }],
+        keywords: "audit trail who changed security sign-in login events compliance",
+      },
+    ],
   },
   {
     label: "Access",

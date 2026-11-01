@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 
+	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 )
@@ -68,9 +70,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.Authenticate(r.Context(), req.Email, req.Password)
 	if err != nil {
+		// Logged as a failed login with the email that was tried.
+		auditapp.SetActor(r.Context(), nil, strings.ToLower(strings.TrimSpace(req.Email)))
+		auditapp.Fail(r.Context())
 		writeError(w, err)
 		return
 	}
+	auditapp.SetActor(r.Context(), &res.User.ID, res.User.Email)
 	h.cookie.set(w, r, res.Token)
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token: res.Token,

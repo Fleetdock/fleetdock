@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
 )
@@ -43,6 +44,9 @@ type RouterDeps struct {
 	// TrustProxyHeaders lets the login rate limiter read the client IP from
 	// X-Forwarded-For (set only when behind a trusted reverse proxy).
 	TrustProxyHeaders bool
+	// Audit records the audited routes (audit_routes.go) and backs the
+	// audit log API; nil disables both.
+	Audit *auditapp.Service
 	// Ready reports whether dependencies (the metadata database) are healthy.
 	Ready func(ctx context.Context) error
 	// UI, when non-nil, serves every path the API does not own: the bundled
@@ -301,14 +305,19 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/tokens", requirePerm("token:read", d.Tokens.List))
 	mux.HandleFunc("DELETE /v1/tokens/{id}", requirePerm("token:write", d.Tokens.Revoke))
 
+	// Audit log
+	auditHandler := &AuditHandler{svc: d.Audit}
+	mux.HandleFunc("GET /v1/audit-events", requirePerm("audit:read", auditHandler.List))
+
 	// Middleware order (outermost first):
-	// logging -> recover -> [UI split] -> security headers -> CORS -> auth -> mux.
+	// logging -> recover -> [UI split] -> security headers -> CORS -> auth -> audit -> mux.
 	//
 	// CORS and the API's Cache-Control: no-store stay strictly inside the API
 	// branch. The dashboard is served from this same origin so it needs no
 	// preflight handling, and Next's own immutable caching for /_next/static
 	// must survive — see uiproxy.Handler for the headers it does get.
-	api := securityHeaders(cors(d.CORSOrigin, d.CORSCredentials, d.Authn.Middleware(mux)))
+	audit := &auditLog{svc: d.Audit, mux: mux, routes: auditRoutes, trustProxy: d.TrustProxyHeaders}
+	api := securityHeaders(cors(d.CORSOrigin, d.CORSCredentials, d.Authn.Middleware(audit.Handler(mux))))
 	if d.UI == nil {
 		return requestLogger(recoverer(api))
 	}

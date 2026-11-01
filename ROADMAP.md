@@ -85,7 +85,7 @@ What ships in each release and what we are building next. For release mechanics 
 | httpOnly cookie sessions (replace localStorage JWT) | done | `SameSite=Strict` cookie + CSRF header |
 | Per-server agent token revoke / rotate | done | Re-enroll the same server with a bound install command |
 | Sandboxed agent systemd unit | done | Agent still runs as root (Docker) |
-| Expose `audit_events` in API and dashboard | todo | Recorded today, readable only via `fleetdock psql` |
+| Expose `audit_events` in API and dashboard | done | Activity → Audit log, `GET /v1/audit-events`, CSV export, retention |
 | SSO / OIDC | todo | Enterprise login |
 | 2FA / MFA | todo | Admin accounts |
 | Cloudflare Tunnel / TCP proxy for external DBs | todo | No open DB ports from internet |
