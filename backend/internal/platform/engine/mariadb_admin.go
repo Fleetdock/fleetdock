@@ -605,7 +605,12 @@ func (m *MariaDB) ExportCSV(ctx context.Context, p ConnParams, database, table, 
 	default:
 		return 0, fmt.Errorf("either a table or a query is required")
 	}
+	return m.streamCSV(ctx, p, database, sqlText, nil, w, onStart)
+}
 
+// streamCSV runs a read-only statement in a read-only transaction and writes
+// its rows to w as CSV, up to maxExportRows.
+func (m *MariaDB) streamCSV(ctx context.Context, p ConnParams, database, sqlText string, args []any, w io.Writer, onStart func()) (int64, error) {
 	p.Database = database
 	db, closeSession, err := m.session(ctx, p)
 	if err != nil {
@@ -619,7 +624,7 @@ func (m *MariaDB) ExportCSV(ctx context.Context, p ConnParams, database, table, 
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.QueryContext(ctx, sqlText)
+	rows, err := tx.QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return 0, err
 	}

@@ -154,6 +154,31 @@ func (pg *Postgres) BrowseRows(ctx context.Context, p ConnParams, database strin
 	return res, rows.Err()
 }
 
+// ExportRowsCSV streams the rows the browse request selects as CSV.
+func (pg *Postgres) ExportRowsCSV(ctx context.Context, p ConnParams, database string, req BrowseRequest, w io.Writer, onStart func()) (int64, error) {
+	if !validDBName(database) {
+		return 0, fmt.Errorf("invalid database name")
+	}
+	conn, err := pg.connect(ctx, p, database)
+	if err != nil {
+		return 0, err
+	}
+	meta, err := pg.pgMeta(ctx, conn, req.Table)
+	_ = conn.Close(ctx)
+	if err != nil {
+		return 0, err
+	}
+	where, args, err := pgDialect.where(meta, req, nil)
+	if err != nil {
+		return 0, err
+	}
+	order, err := pgDialect.orderBy(meta, req.Sort)
+	if err != nil {
+		return 0, err
+	}
+	return pg.streamCSV(ctx, p, database, "SELECT * FROM "+meta.qualified+where+order, args, w, onStart)
+}
+
 // pgRowTx adapts a PostgreSQL transaction to the row-image logic.
 type pgRowTx struct{ tx pgx.Tx }
 

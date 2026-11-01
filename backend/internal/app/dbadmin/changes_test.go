@@ -33,6 +33,10 @@ func (e *editorClient) BrowseRows(context.Context, engine.ConnParams, string, en
 	return nil, nil
 }
 
+func (e *editorClient) ExportRowsCSV(context.Context, engine.ConnParams, string, engine.BrowseRequest, io.Writer, func()) (int64, error) {
+	return 0, nil
+}
+
 func (e *editorClient) ImportCSV(context.Context, engine.ConnParams, string, string, io.Reader, engine.ImportOptions) (int64, error) {
 	return 0, nil
 }

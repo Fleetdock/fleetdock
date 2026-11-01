@@ -26,6 +26,7 @@ export function TabBar({
   onMove,
   onNewQuery,
   leading,
+  trailing,
 }: {
   tabs: Tab[];
   active: string | null;
@@ -37,6 +38,8 @@ export function TabBar({
   onNewQuery: () => void;
   /** Controls shown before the tabs (sidebar toggle). */
   leading?: ReactNode;
+  /** Controls at the end of the bar (full screen, theme). */
+  trailing?: ReactNode;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ id: string; over: number | null } | null>(null);
@@ -171,6 +174,7 @@ export function TabBar({
       <IconButton label="New SQL query" noTooltip title="New SQL query" className="dbx-tab-new" onClick={onNewQuery}>
         <Plus size={15} aria-hidden />
       </IconButton>
+      {trailing ? <div className="dbx-tabbar-trailing">{trailing}</div> : null}
       {ctx.element}
     </div>
   );

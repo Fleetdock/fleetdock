@@ -1,10 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useToast } from "@/components/toast";
 import { Button, IconButton, Input, Spinner } from "@/components/ui";
 import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells";
+import { collapsedSchemas, saveCollapsedSchemas } from "@/lib/data-browser/storage";
 import { objectName, type OpenRequest } from "@/lib/data-browser/tabs";
 import { formatBytes } from "@/lib/format";
 import { exportTableCSV } from "@/lib/hooks";
@@ -20,6 +22,7 @@ import {
   FunctionSquare,
   Layers,
   ListOrdered,
+  Network,
   Plus,
   RefreshCw,
   Search,
@@ -141,8 +144,15 @@ export const ObjectTree = forwardRef<
   },
   ref,
 ) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Folded schema groups are remembered per database.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(collapsedSchemas(databaseId)));
+  const [collapsedFor, setCollapsedFor] = useState(databaseId);
+  if (collapsedFor !== databaseId) {
+    setCollapsedFor(databaseId);
+    setCollapsed(new Set(collapsedSchemas(databaseId)));
+  }
   const [cursor, setCursor] = useState(-1);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -339,6 +349,7 @@ export const ObjectTree = forwardRef<
                 const next = new Set(prev);
                 if (next.has(s)) next.delete(s);
                 else next.add(s);
+                saveCollapsedSchemas(databaseId, [...next]);
                 return next;
               })
             }
@@ -418,6 +429,12 @@ export const ObjectTree = forwardRef<
               <Plus size={15} aria-hidden />
             </IconButton>
           ) : null}
+          <IconButton
+            label="ER diagram"
+            onClick={() => router.push(`/databases/${encodeURIComponent(databaseId)}/diagram`)}
+          >
+            <Network size={14} aria-hidden />
+          </IconButton>
           <IconButton label="Refresh the list" onClick={onRefresh} disabled={refreshing}>
             <RefreshCw size={14} aria-hidden className={refreshing ? "spin-icon" : undefined} />
           </IconButton>

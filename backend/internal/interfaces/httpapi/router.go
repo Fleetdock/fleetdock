@@ -192,6 +192,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/rows", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.TableRows))
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/schema", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.TableSchema))
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/export", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ExportTable))
+	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/export", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ExportRows))
 	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/browse", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.BrowseRows))
 	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/rows", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.InsertRow))
 	mux.HandleFunc("PATCH /v1/databases/{id}/tables/{table}/rows", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.UpdateRow))

@@ -388,6 +388,30 @@ func (h *DBAdminHandler) ExportTable(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ExportRows handles POST /v1/databases/{id}/tables/{table}/export: the
+// table's rows as the data browser selects them (filters, search, sort), as
+// CSV. The GET form exports the whole table.
+func (h *DBAdminHandler) ExportRows(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.interactive(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	var req engine.BrowseRequest
+	if r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	req.Table = r.PathValue("table")
+	if len(req.Filters) > 0 || req.Search != "" {
+		auditapp.AddMeta(r.Context(), "filtered", true)
+	}
+	h.streamCSV(w, csvFilename(req.Table), func(onStart func()) (int64, error) {
+		return h.svc.ExportRowsCSV(r.Context(), r.PathValue("id"), req, w, onStart)
+	})
+}
+
 // ExportQuery handles POST /v1/databases/{id}/export, streaming a read-only
 // query's result set as CSV.
 func (h *DBAdminHandler) ExportQuery(w http.ResponseWriter, r *http.Request) {

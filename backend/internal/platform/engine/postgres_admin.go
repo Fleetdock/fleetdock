@@ -938,7 +938,12 @@ func (pg *Postgres) ExportCSV(ctx context.Context, p ConnParams, database, table
 	default:
 		return 0, fmt.Errorf("either a table or a query is required")
 	}
+	return pg.streamCSV(ctx, p, database, sqlText, nil, w, onStart)
+}
 
+// streamCSV runs a read-only statement in a read-only transaction and writes
+// its rows to w as CSV, up to maxExportRows.
+func (pg *Postgres) streamCSV(ctx context.Context, p ConnParams, database, sqlText string, args []any, w io.Writer, onStart func()) (int64, error) {
 	conn, err := pg.connect(ctx, p, database)
 	if err != nil {
 		return 0, err
@@ -951,7 +956,7 @@ func (pg *Postgres) ExportCSV(ctx context.Context, p ConnParams, database, table
 	}
 	defer tx.Rollback(ctx)
 
-	rows, err := tx.Query(ctx, sqlText, pgText)
+	rows, err := tx.Query(ctx, sqlText, append([]any{pgText}, args...)...)
 	if err != nil {
 		return 0, err
 	}

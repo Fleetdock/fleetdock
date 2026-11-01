@@ -20,6 +20,10 @@ export interface TableView {
   pageSize: number;
   /** Column widths in px, by column name. */
   widths: Record<string, number>;
+  /** Columns hidden from the grid, by name. */
+  hidden?: string[];
+  /** How many of the visible columns stay put while scrolling sideways. */
+  frozen?: number;
 }
 
 export interface Tab {
@@ -52,7 +56,7 @@ export interface Workspace {
 export const emptyWorkspace: Workspace = { tabs: [], active: null, seq: 0 };
 
 export function defaultView(): TableView {
-  return { mode: "data", search: "", filters: [], sort: [], page: 1, pageSize: DEFAULT_PAGE_SIZE, widths: {} };
+  return { mode: "data", search: "", filters: [], sort: [], page: 1, pageSize: DEFAULT_PAGE_SIZE, widths: {}, hidden: [], frozen: 0 };
 }
 
 export const tabId = (kind: TabKind, name: string) => `${kind}:${name}`;
@@ -224,7 +228,12 @@ export function reducer(ws: Workspace, a: Action): Workspace {
 // ---- persistence ----
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const FILTER_OPS = new Set(["eq", "ne", "lt", "lte", "gt", "gte", "contains", "starts_with", "is_null", "not_null"]);
+const FILTER_OPS = new Set([
+  "eq", "ne", "lt", "lte", "gt", "gte",
+  "contains", "not_contains", "starts_with", "ends_with",
+  "in", "not_in", "between",
+  "is_null", "not_null",
+]);
 
 function parseView(v: unknown): TableView {
   const d = defaultView();
@@ -236,7 +245,8 @@ function parseView(v: unknown): TableView {
           typeof f.column === "string" &&
           typeof f.op === "string" &&
           FILTER_OPS.has(f.op) &&
-          (f.value === undefined || f.value === null || typeof f.value === "string"),
+          (f.value === undefined || f.value === null || typeof f.value === "string") &&
+          (f.values === undefined || (Array.isArray(f.values) && f.values.every((x) => typeof x === "string"))),
       )
     : [];
   const sort = Array.isArray(v.sort)
@@ -256,7 +266,31 @@ function parseView(v: unknown): TableView {
     page: typeof v.page === "number" && v.page >= 1 ? Math.floor(v.page) : 1,
     pageSize: PAGE_SIZES.includes(v.pageSize as (typeof PAGE_SIZES)[number]) ? (v.pageSize as number) : d.pageSize,
     widths,
+    hidden: Array.isArray(v.hidden) ? v.hidden.filter((h): h is string => typeof h === "string").slice(0, 500) : [],
+    frozen: typeof v.frozen === "number" && v.frozen > 0 ? Math.min(20, Math.floor(v.frozen)) : 0,
   };
+}
+
+/**
+ * visibleColumns lists the indexes of the columns to draw, in order. It never
+ * returns an empty list for a table that has columns: hiding everything would
+ * leave nothing to click to get them back.
+ */
+export function visibleColumns(names: string[], hidden: string[] | undefined): number[] {
+  const h = new Set(hidden ?? []);
+  const vis = names.map((_, i) => i).filter((i) => !h.has(names[i]));
+  return vis.length || names.length === 0 ? vis : [0];
+}
+
+/** frozenOffsets gives the sticky left offset of each frozen column, after the row-number column. */
+export function frozenOffsets(widths: number[], frozen: number, start: number): number[] {
+  const out: number[] = [];
+  let left = start;
+  for (let i = 0; i < Math.min(frozen, widths.length); i++) {
+    out.push(left);
+    left += widths[i];
+  }
+  return out;
 }
 
 /** parseWorkspace restores a persisted workspace, dropping anything malformed. */
@@ -294,4 +328,27 @@ export function parseWorkspace(raw: string | null): Workspace {
 
 export function serializeWorkspace(ws: Workspace): string {
   return JSON.stringify(ws);
+}
+
+/** Above this many rows the grid draws only the rows in view (plus a margin). */
+export const VIRTUAL_FROM = 150;
+
+/**
+ * virtualWindow picks the rows to draw: those in the viewport plus overscan
+ * rows above and below. end is exclusive.
+ */
+export function virtualWindow(
+  count: number,
+  rowHeight: number,
+  scrollTop: number,
+  viewport: number,
+  overscan = 20,
+): { start: number; end: number } {
+  if (count <= 0 || rowHeight <= 0) return { start: 0, end: count };
+  const first = Math.min(count - 1, Math.floor(Math.max(0, scrollTop) / rowHeight));
+  const visible = Math.ceil(Math.max(viewport, rowHeight) / rowHeight);
+  return {
+    start: Math.max(0, first - overscan),
+    end: Math.min(count, first + visible + overscan),
+  };
 }

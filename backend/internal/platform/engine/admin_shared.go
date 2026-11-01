@@ -192,11 +192,14 @@ func checkBatch(stmts []string, allowWrite bool) error {
 	return nil
 }
 
+// MaxQueryRows caps the rows a console statement returns.
+const MaxQueryRows = 5000
+
 func clampQueryLimit(limit int) int {
-	if limit <= 0 || limit > 1000 {
+	if limit <= 0 {
 		return 100
 	}
-	return limit
+	return min(limit, MaxQueryRows)
 }
 
 func singleResult(rs []QueryResult, err error) (*QueryResult, error) {

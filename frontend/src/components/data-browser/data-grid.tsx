@@ -14,6 +14,7 @@ import {
   type Dialect,
 } from "@/lib/data-browser/cells";
 import { describeFilters, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
+import { frozenOffsets, VIRTUAL_FROM, virtualWindow, visibleColumns } from "@/lib/data-browser/tabs";
 import type { BrowseColumn, ForeignKey, RowValues, SortKey } from "@/lib/types";
 import {
   AlertCircle,
@@ -24,9 +25,11 @@ import {
   CopyPlus,
   CornerDownRight,
   Eraser,
+  EyeOff,
   Filter,
   KeyRound,
   Link2,
+  Pin,
   RotateCcw,
   Trash2,
   Undo2,
@@ -102,7 +105,8 @@ export type GridProps = {
   onDeleteRows: (rows: number[]) => void;
   onRestoreRows: (rows: number[]) => void;
   onDuplicate: (row: number) => void;
-  onFilterBy: (column: string, value: string | null) => void;
+  /** Absent for query results, which cannot be filtered. */
+  onFilterBy?: (column: string, value: string | null) => void;
   onFollow: (fk: ForeignKey, row: RowRecord) => void;
   /** Foreign keys of other tables that reference this one. */
   incoming: ForeignKey[];
@@ -111,6 +115,16 @@ export type GridProps = {
   /** Open this cell's editor as soon as it is on screen (a just-added row). */
   editRequest: Cell | null;
   onEditRequestDone: () => void;
+  /** Columns hidden by name, and how many visible ones stay put when scrolling sideways. */
+  hidden?: string[];
+  frozen?: number;
+  onHideColumn?: (column: string) => void;
+  onFreeze?: (count: number) => void;
+  /** Shift+Enter: show the cursor's row in full. */
+  onRowDetail?: () => void;
+  /** Header menu: start a filter on this column in the filter editor. */
+  onFilterColumn?: (column: string) => void;
+  density?: "compact" | "comfortable";
 };
 
 export function DataGrid(props: GridProps) {
@@ -135,6 +149,15 @@ export function DataGrid(props: GridProps) {
   const ctx = useContextMenu();
   const { push } = useToast();
   const kinds = useMemo(() => columns.map((c) => cellKind(c.type)), [columns]);
+  // Indexes of the columns drawn, in order; cells keep their index into
+  // columns so row values and edits are unaffected by hiding.
+  const hiddenKey = (props.hidden ?? []).join("\u0000");
+  const vis = useMemo(
+    () => visibleColumns(columns.map((c) => c.name), props.hidden),
+    // hiddenKey stands for props.hidden.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [columns, hiddenKey],
+  );
 
   // Starting widths are estimated once per column set, so paging does not
   // make columns jump.
@@ -152,7 +175,17 @@ export function DataGrid(props: GridProps) {
     setEstimates({ key: colKey, widths: estimated });
   }
   const widthOf = (name: string) => live[name] ?? props.widths[name] ?? estimated[name] ?? 140;
-  const total = ROWNUM_WIDTH + columns.reduce((s, c) => s + widthOf(c.name), 0);
+  const total = ROWNUM_WIDTH + vis.reduce((s, i) => s + widthOf(columns[i].name), 0);
+  const frozen = Math.min(props.frozen ?? 0, Math.max(0, vis.length - 1));
+  const lefts = frozenOffsets(
+    vis.slice(0, frozen).map((i) => widthOf(columns[i].name)),
+    frozen,
+    ROWNUM_WIDTH,
+  );
+  const leftsKey = lefts.join(",");
+  // Stable for the memoized rows unless the offsets really change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableLefts = useMemo(() => lefts, [leftsKey]);
 
   const canEditRow = useCallback(
     (r: number) => {
@@ -163,13 +196,55 @@ export function DataGrid(props: GridProps) {
     [rows, editable],
   );
 
+  // ---- virtualization: long pages draw only the rows in view ----
+  const virtual = rows.length > VIRTUAL_FROM;
+  const [viewport, setViewport] = useState({ top: 0, height: 800 });
+  const [metrics, setMetrics] = useState({ row: 30, head: 44 });
+  const frame = useRef(0);
+  const onScroll = useCallback(() => {
+    if (!virtual) return;
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      const el = scroller.current;
+      if (el) setViewport({ top: el.scrollTop, height: el.clientHeight });
+    });
+  }, [virtual]);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !virtual) return;
+    const ro = new ResizeObserver(() => setViewport({ top: el.scrollTop, height: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [virtual]);
+  // Row and header heights follow the density and the font; measure them.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const tr = el?.querySelector<HTMLElement>("tbody tr.dbx-row");
+    const head = el?.querySelector<HTMLElement>("thead");
+    if (!tr || !head) return;
+    const row = tr.getBoundingClientRect().height;
+    const h = head.getBoundingClientRect().height;
+    if (row > 0 && (Math.abs(row - metrics.row) > 0.5 || Math.abs(h - metrics.head) > 0.5)) setMetrics({ row, head: h });
+  }, [rows, props.density, metrics.row, metrics.head]);
+  const win = virtual
+    ? virtualWindow(rows.length, metrics.row, viewport.top - metrics.head, viewport.height)
+    : { start: 0, end: rows.length };
+
   // Keep the cursor cell in view while moving with the keyboard.
   useEffect(() => {
     if (!cursor) return;
-    scroller.current
-      ?.querySelector(`[data-cell="${cursor.row}:${cursor.col}"]`)
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [cursor]);
+    const el = scroller.current;
+    const cell = el?.querySelector(`[data-cell="${cursor.row}:${cursor.col}"]`);
+    if (cell) {
+      cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+    } else if (el && virtual) {
+      // Not drawn yet: scroll its row into view; the next render draws it.
+      const top = cursor.row * metrics.row;
+      if (top < el.scrollTop) el.scrollTop = top;
+      else if (top + metrics.row > el.scrollTop + el.clientHeight - metrics.head)
+        el.scrollTop = top + metrics.row - el.clientHeight + metrics.head;
+    }
+  }, [cursor, virtual, metrics]);
 
   function startEdit(r: number, c: number, text?: string) {
     if (!canEditRow(r)) return;
@@ -193,9 +268,10 @@ export function DataGrid(props: GridProps) {
     setEditing(null);
     const wasNull = initial === "\u0000null";
     if (!(wasNull && text === "") && text !== initial) props.onEdit(row, col, text);
+    const pos = vis.indexOf(col);
     if (move === "down" && row + 1 < rows.length) setCursor({ row: row + 1, col });
-    else if (move === "right" && col + 1 < columns.length) setCursor({ row, col: col + 1 });
-    else if (move === "left" && col > 0) setCursor({ row, col: col - 1 });
+    else if (move === "right" && pos + 1 < vis.length) setCursor({ row, col: vis[pos + 1] });
+    else if (move === "left" && pos > 0) setCursor({ row, col: vis[pos - 1] });
     scroller.current?.focus({ preventScroll: true });
   }
 
@@ -236,8 +312,10 @@ export function DataGrid(props: GridProps) {
       setSelected(new Set(rows.map((_, i) => i)));
       return;
     }
-    if (rows.length === 0 || columns.length === 0) return;
-    const cur = cursor ?? { row: 0, col: 0 };
+    if (rows.length === 0 || vis.length === 0) return;
+    const cur = cursor ?? { row: 0, col: vis[0] };
+    const pos = Math.max(0, vis.indexOf(cur.col));
+    const at = (p: number) => vis[Math.max(0, Math.min(vis.length - 1, p))];
     const move = (row: number, col: number) => {
       e.preventDefault();
       const next = { row: Math.max(0, Math.min(rows.length - 1, row)), col: Math.max(0, Math.min(columns.length - 1, col)) };
@@ -259,21 +337,29 @@ export function DataGrid(props: GridProps) {
       case "ArrowUp":
         return move(cur.row - 1, cur.col);
       case "ArrowRight":
-        return move(cur.row, cursor ? cur.col + 1 : 0);
+        return move(cur.row, cursor ? at(pos + 1) : vis[0]);
       case "ArrowLeft":
-        return move(cur.row, cur.col - 1);
+        return move(cur.row, at(pos - 1));
       case "Home":
-        return move(mod ? 0 : cur.row, 0);
+        return move(mod ? 0 : cur.row, vis[0]);
       case "End":
-        return move(mod ? rows.length - 1 : cur.row, columns.length - 1);
+        return move(mod ? rows.length - 1 : cur.row, vis[vis.length - 1]);
       case "PageDown":
+        if (e.altKey) return; // Alt+PageDown turns the page (table tab)
         return move(cur.row + 15, cur.col);
       case "PageUp":
+        if (e.altKey) return;
         return move(cur.row - 15, cur.col);
       case "Tab":
         if (!cursor) return;
-        return move(cur.row, cur.col + (e.shiftKey ? -1 : 1));
+        return move(cur.row, at(pos + (e.shiftKey ? -1 : 1)));
       case "Enter":
+        if (e.shiftKey && cursor && props.onRowDetail) {
+          e.preventDefault();
+          props.onRowDetail();
+          return;
+        }
+      // falls through
       case "F2":
         if (cursor) {
           e.preventDefault();
@@ -353,8 +439,8 @@ export function DataGrid(props: GridProps) {
       {
         label: st.value === null ? `Filter: ${col.name} is NULL` : `Filter: ${col.name} = ${short(st.value)}`,
         icon: <Filter size={14} />,
-        hidden: st.isDefault || row.kind === "new",
-        onSelect: () => props.onFilterBy(col.name, st.value),
+        hidden: st.isDefault || row.kind === "new" || !props.onFilterBy,
+        onSelect: () => props.onFilterBy?.(col.name, st.value),
       },
       {
         label: `Open referenced row in ${fk?.ref_table}`,
@@ -402,8 +488,35 @@ export function DataGrid(props: GridProps) {
         onSelect: () => props.onSort(col.name, "clear", true),
       },
       "separator",
-      { label: "Filter: is NULL", icon: <Filter size={14} />, hidden: !col.nullable, onSelect: () => props.onFilterBy(col.name, null) },
+      {
+        label: "Filter…",
+        icon: <Filter size={14} />,
+        hidden: !props.onFilterColumn,
+        onSelect: () => props.onFilterColumn?.(col.name),
+      },
+      { label: "Filter: is NULL", hidden: !col.nullable || !props.onFilterBy, onSelect: () => props.onFilterBy?.(col.name, null) },
       { label: "Fit width to content", onSelect: () => autoFit(col) },
+      "separator",
+      {
+        label: "Hide column",
+        icon: <EyeOff size={14} />,
+        hidden: !props.onHideColumn || vis.length <= 1,
+        onSelect: () => props.onHideColumn?.(col.name),
+      },
+      {
+        label: frozen > 0 && vis.indexOf(columns.indexOf(col)) === frozen - 1 ? "Unfreeze columns" : "Freeze columns up to here",
+        icon: <Pin size={14} />,
+        hidden: !props.onFreeze || vis.indexOf(columns.indexOf(col)) >= vis.length - 1,
+        onSelect: () => {
+          const p = vis.indexOf(columns.indexOf(col)) + 1;
+          props.onFreeze?.(frozen === p ? 0 : p);
+        },
+      },
+      {
+        label: "Unfreeze columns",
+        hidden: !props.onFreeze || frozen === 0 || vis.indexOf(columns.indexOf(col)) === frozen - 1,
+        onSelect: () => props.onFreeze?.(0),
+      },
       { label: "Copy column name", icon: <ClipboardCopy size={14} />, onSelect: () => copy(col.name, col.name) },
     ]);
   }
@@ -461,19 +574,20 @@ export function DataGrid(props: GridProps) {
 
   return (
     <div
-      className="dbx-grid"
+      className={`dbx-grid${props.density === "comfortable" ? " is-comfortable" : ""}`}
       ref={scroller}
       tabIndex={0}
       role="grid"
       aria-rowcount={rows.length}
-      aria-colcount={columns.length}
+      aria-colcount={vis.length}
       onKeyDown={onKeyDown}
+      onScroll={onScroll}
     >
       <table className="dbx-table" style={{ width: total }}>
         <colgroup>
           <col style={{ width: ROWNUM_WIDTH }} />
-          {columns.map((c) => (
-            <col key={c.name} style={{ width: widthOf(c.name) }} />
+          {vis.map((i) => (
+            <col key={columns[i].name} style={{ width: widthOf(columns[i].name) }} />
           ))}
         </colgroup>
         <thead>
@@ -481,7 +595,8 @@ export function DataGrid(props: GridProps) {
             <th className="dbx-rownum dbx-corner" scope="col">
               <span className="sr-only">Row</span>
             </th>
-            {columns.map((c, ci) => {
+            {vis.map((ci, pos) => {
+              const c = columns[ci];
               const si = sortIndex(c.name);
               const s = si >= 0 ? props.sort[si] : null;
               const isKey = keyCols.includes(c.name);
@@ -490,7 +605,8 @@ export function DataGrid(props: GridProps) {
                 <th
                   key={c.name}
                   scope="col"
-                  className={`dbx-th${kinds[ci] === "number" ? " num" : ""}`}
+                  className={`dbx-th${kinds[ci] === "number" ? " num" : ""}${pos < frozen ? " is-frozen" : ""}${pos === frozen - 1 ? " is-frozen-edge" : ""}`}
+                  style={pos < frozen ? { left: lefts[pos] } : undefined}
                   aria-sort={s ? (s.desc ? "descending" : "ascending") : undefined}
                   onContextMenu={(e) => headerMenu(e, c)}
                 >
@@ -528,28 +644,43 @@ export function DataGrid(props: GridProps) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, r) => (
-            <GridRowView
-              key={row.kind === "new" ? row.id : `d${row.index}`}
-              row={row}
-              r={r}
-              num={row.kind === "new" ? null : props.offset + row.index + 1}
-              columns={columns}
-              kinds={kinds}
-              fks={props.fks}
-              cursorCol={cursor?.row === r ? cursor.col : -1}
-              selected={selected.has(r)}
-              editing={editing?.row === r ? editing : null}
-              onEditText={onEditText}
-              onCommit={commitEdit}
-              onCancel={cancelEdit}
-              onCellDown={onCellDown}
-              onCellDouble={onCellDouble}
-              onCellMenu={onCellMenu}
-              onRowNumber={onNum}
-              onFollow={onFollow}
-            />
-          ))}
+          {win.start > 0 ? (
+            <tr className="dbx-spacer" aria-hidden>
+              <td colSpan={vis.length + 1} style={{ height: win.start * metrics.row }} />
+            </tr>
+          ) : null}
+          {rows.slice(win.start, win.end).map((row, k) => {
+            const r = win.start + k;
+            return (
+              <GridRowView
+                key={row.kind === "new" ? row.id : `d${row.index}`}
+                row={row}
+                r={r}
+                num={row.kind === "new" ? null : props.offset + row.index + 1}
+                columns={columns}
+                vis={vis}
+                lefts={stableLefts}
+                kinds={kinds}
+                fks={props.fks}
+                cursorCol={cursor?.row === r ? cursor.col : -1}
+                selected={selected.has(r)}
+                editing={editing?.row === r ? editing : null}
+                onEditText={onEditText}
+                onCommit={commitEdit}
+                onCancel={cancelEdit}
+                onCellDown={onCellDown}
+                onCellDouble={onCellDouble}
+                onCellMenu={onCellMenu}
+                onRowNumber={onNum}
+                onFollow={onFollow}
+              />
+            );
+          })}
+          {win.end < rows.length ? (
+            <tr className="dbx-spacer" aria-hidden>
+              <td colSpan={vis.length + 1} style={{ height: (rows.length - win.end) * metrics.row }} />
+            </tr>
+          ) : null}
         </tbody>
       </table>
       {rows.length === 0 ? <div className="dbx-grid-empty">{props.emptyText}</div> : null}
@@ -565,6 +696,10 @@ type RowViewProps = {
   r: number;
   num: number | null;
   columns: BrowseColumn[];
+  /** Column indexes to draw, in order. */
+  vis: number[];
+  /** Sticky left offsets of the frozen (first) visible columns. */
+  lefts: number[];
   kinds: CellKind[];
   fks: Record<string, ForeignKey>;
   cursorCol: number;
@@ -603,7 +738,8 @@ const GridRowView = memo(
           {row.error ? <AlertCircle size={12} className="dbx-row-error" /> : null}
           {p.num === null ? <span className="dbx-new-mark">new</span> : p.num}
         </th>
-        {p.columns.map((c, ci) => {
+        {p.vis.map((ci, pos) => {
+          const c = p.columns[ci];
           const st = cellState(row, c, ci);
           const kind = p.kinds[ci];
           const isCursor = p.cursorCol === ci;
@@ -616,6 +752,8 @@ const GridRowView = memo(
             st.changed ? "is-changed" : "",
             isCursor ? "is-cursor" : "",
             ed ? "is-editing" : "",
+            pos < p.lefts.length ? "is-frozen" : "",
+            pos === p.lefts.length - 1 ? "is-frozen-edge" : "",
           ]
             .filter(Boolean)
             .join(" ");
@@ -623,6 +761,7 @@ const GridRowView = memo(
             <td
               key={c.name}
               className={cls}
+              style={pos < p.lefts.length ? { left: p.lefts[pos] } : undefined}
               data-cell={`${r}:${ci}`}
               onMouseDown={() => p.onCellDown(r, ci)}
               onDoubleClick={() => p.onCellDouble(r, ci)}
@@ -687,6 +826,8 @@ const GridRowView = memo(
     a.r === b.r &&
     a.num === b.num &&
     a.columns === b.columns &&
+    a.vis === b.vis &&
+    a.lefts === b.lefts &&
     a.kinds === b.kinds &&
     a.fks === b.fks &&
     a.cursorCol === b.cursorCol &&

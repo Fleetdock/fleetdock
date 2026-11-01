@@ -87,6 +87,7 @@ var auditRoutes = map[string]auditRoute{
 	"POST /v1/databases/{id}/changes/{changeId}/undo":             {action: "data.undo", resourceType: "database", idParam: "id"},
 	"POST /v1/databases/{id}/backup-copies/{copyId}/restore-rows": {action: "data.restore_rows", resourceType: "database", idParam: "id"},
 	"GET /v1/databases/{id}/tables/{table}/export":                {action: "data.export", resourceType: "database", idParam: "id"},
+	"POST /v1/databases/{id}/tables/{table}/export":               {action: "data.export", resourceType: "database", idParam: "id"},
 	"POST /v1/databases/{id}/export":                              {action: "data.export", resourceType: "database", idParam: "id"},
 	"GET /v1/databases/{id}/dump":                                 {action: "data.dump", resourceType: "database", idParam: "id"},
 	"POST /v1/databases/{id}/tables":                              {action: "table.create", resourceType: "database", idParam: "id"},

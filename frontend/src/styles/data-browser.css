@@ -480,6 +480,18 @@
     white-space: nowrap;
     overflow: hidden;
   }
+  .dbx-chip .dbx-chip-edit {
+    color: inherit;
+    line-height: inherit;
+    padding: 0;
+    font: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dbx-chip .dbx-chip-edit:hover {
+    text-decoration: underline;
+  }
   .dbx-chip button {
     border: 0;
     background: none;
@@ -523,8 +535,10 @@
   .dbx-structure,
   .dbx-query {
     flex: 1;
-    overflow: auto;
-    padding: 1rem;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   /* grid */
@@ -771,6 +785,11 @@
   .dbx-cell:hover .dbx-fk,
   .dbx-cell.is-cursor .dbx-fk {
     display: inline-flex;
+  }
+  /* Right-aligned numbers move aside for the button instead of hiding under it. */
+  .dbx-cell.num:hover:has(.dbx-fk),
+  .dbx-cell.num.is-cursor:has(.dbx-fk) {
+    padding-right: 1.85rem;
   }
   .dbx-grid-empty {
     padding: 2.5rem 1rem;
@@ -1090,5 +1109,264 @@
   .dbx-history-diff ins {
     color: var(--success);
     text-decoration: none;
+  }
+
+  /* Full screen and theme controls at the end of the tab bar. */
+  .dbx-tabbar-trailing {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0 0.35rem;
+    border-left: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  /* Frozen columns stay put when scrolling sideways (offsets set inline). */
+  .dbx-cell.is-frozen {
+    position: sticky;
+    z-index: 1;
+  }
+  .dbx-th.is-frozen {
+    z-index: 3;
+  }
+  .dbx-cell.is-frozen-edge,
+  .dbx-th.is-frozen-edge {
+    border-right: 2px solid var(--border-strong);
+  }
+  /* Comfortable density: taller rows. */
+  .dbx-grid.is-comfortable .dbx-cell {
+    height: 2.4rem;
+  }
+
+  /* Popovers anchored to toolbar buttons (Columns, header filter). */
+  .dbx-popover-root {
+    position: relative;
+    display: inline-flex;
+  }
+  .dbx-popover {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 40;
+    min-width: 16rem;
+    max-width: min(24rem, 92vw);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: 0.5rem;
+  }
+  .dbx-popover.is-right {
+    left: auto;
+    right: 0;
+  }
+  .dbx-columns-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 18rem;
+    overflow: auto;
+  }
+  .dbx-columns-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-sm);
+    cursor: pointer;
+    min-width: 0;
+  }
+  .dbx-columns-item:hover {
+    background: var(--panel-2);
+  }
+  .dbx-columns-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    margin-top: 0.4rem;
+    padding-top: 0.4rem;
+  }
+
+  /* Row panel: the whole row as a form. */
+  .dbx-rowpanel {
+    width: 24rem;
+  }
+  .dbx-rowpanel-list {
+    margin: 0;
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  .dbx-rowpanel-field {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .dbx-rowpanel-field.is-changed {
+    background: color-mix(in srgb, var(--warning) 12%, transparent);
+  }
+  .dbx-rowpanel-field dt {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    min-width: 0;
+    margin-bottom: 0.2rem;
+  }
+  .dbx-rowpanel-field dd {
+    margin: 0;
+  }
+  .dbx-rowpanel-value {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+  .dbx-rowpanel-pre {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    max-height: 9rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono-stack);
+    font-size: 0.76rem;
+  }
+  .dbx-rowpanel-actions {
+    display: inline-flex;
+    gap: 0.1rem;
+    margin-left: auto;
+    flex-shrink: 0;
+    opacity: 0.55;
+  }
+  .dbx-rowpanel-field:hover .dbx-rowpanel-actions,
+  .dbx-rowpanel-field:focus-within .dbx-rowpanel-actions {
+    opacity: 1;
+  }
+  .dbx-rowpanel-edit {
+    font-family: var(--font-mono-stack);
+    font-size: 0.76rem;
+    height: auto;
+    resize: vertical;
+  }
+
+  /* SQL console: editor above, results below, a draggable split between. */
+  .dbx-console {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .dbx-console-top {
+    flex: 0 0 38%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .dbx-console-editor {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .dbx-console-editor .sql-editor,
+  .dbx-console-editor .cm-theme,
+  .dbx-console-editor .cm-theme-light,
+  .dbx-console-editor .cm-editor {
+    height: 100%;
+  }
+  .dbx-console-editor .sql-editor {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    border-top: 0;
+  }
+  .dbx-console-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    background: var(--panel);
+  }
+  .dbx-console-split {
+    flex: none;
+    height: 7px;
+    cursor: row-resize;
+    touch-action: none;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .dbx-console-split:hover,
+  .dbx-console-split:focus-visible {
+    background: color-mix(in srgb, var(--accent) 35%, var(--panel-2));
+    outline: none;
+  }
+  .dbx-console-results {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  .dbx-console-empty {
+    margin: auto;
+  }
+  .dbx-result {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex: none;
+  }
+  .dbx-result-grid {
+    height: 22rem;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  /* One result set: it takes the whole results area. */
+  .dbx-console-results.is-single .dbx-result {
+    flex: 1;
+    min-height: 12rem;
+  }
+  .dbx-console-results.is-single .dbx-result-grid {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+
+  /* Placeholder rows standing in for rows the virtual grid does not draw. */
+  .dbx-table .dbx-spacer td {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  /* First load of a table: the grid's outline. */
+  .dbx-grid-skeleton {
+    flex: 1;
+    overflow: hidden;
+  }
+  .dbx-grid-skeleton-head,
+  .dbx-grid-skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: 2.5rem;
+    padding: 0 1rem 0 4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .dbx-grid-skeleton-head {
+    height: 2.6rem;
+    background: var(--panel-2);
+  }
+  .dbx-grid-skeleton-row {
+    height: 1.85rem;
   }
 }

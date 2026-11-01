@@ -8,22 +8,11 @@ import { useRowMutations } from "@/lib/hooks";
 import type { BrowseColumn, BrowseResult, FilterOp, RowFilter } from "@/lib/types";
 import { Plus, X } from "lucide-react";
 
+import { arityOf, OPS } from "@/lib/data-browser/filters";
+
 // Row filtering, CSV import and the row-range label for Data Browser table tabs.
 
-export const OPS: { op: FilterOp; label: string; needsValue: boolean }[] = [
-  { op: "eq", label: "=", needsValue: true },
-  { op: "ne", label: "≠", needsValue: true },
-  { op: "lt", label: "<", needsValue: true },
-  { op: "lte", label: "≤", needsValue: true },
-  { op: "gt", label: ">", needsValue: true },
-  { op: "gte", label: "≥", needsValue: true },
-  { op: "contains", label: "contains", needsValue: true },
-  { op: "starts_with", label: "starts with", needsValue: true },
-  { op: "is_null", label: "is NULL", needsValue: false },
-  { op: "not_null", label: "is not NULL", needsValue: false },
-];
-
-export const needsValue = (op: FilterOp) => OPS.find((o) => o.op === op)?.needsValue ?? true;
+export { OPS, needsValue } from "@/lib/data-browser/filters";
 
 export function RowRange({ data, offset }: { data: BrowseResult; offset: number }) {
   if (data.rows.length === 0) return null;
@@ -41,46 +30,86 @@ export function FilterEditor({
   filters,
   onChange,
   onApply,
+  focus,
 }: {
   columns: BrowseColumn[];
   filters: RowFilter[];
   onChange: (f: RowFilter[]) => void;
   onApply: (e?: FormEvent) => void;
+  /** Index of the filter to put the cursor in (a chip that was clicked, a column picked from its header). */
+  focus?: number;
 }) {
   const set = (i: number, patch: Partial<RowFilter>) =>
     onChange(filters.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  const setOp = (i: number, op: FilterOp) => {
+    const f = filters[i];
+    const a = arityOf(op);
+    // Carry the typed operand across operators where it still makes sense.
+    const text = f.value ?? f.values?.[0] ?? "";
+    set(i, a === "range" ? { op, value: undefined, values: [text, f.values?.[1] ?? ""] } : { op, value: text, values: undefined });
+  };
   return (
     <form className="card p-[.7rem] mb-[.6rem]" onSubmit={onApply}>
-      {filters.map((f, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2 mb-[.4rem]">
-          <Select className="w-50" aria-label="Column" value={f.column} onChange={(e) => set(i, { column: e.target.value })}>
-            {columns.map((c) => (
-              <option key={c.name} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-          <Select className="w-35" aria-label="Condition" value={f.op} onChange={(e) => set(i, { op: e.target.value as FilterOp })}>
-            {OPS.map((o) => (
-              <option key={o.op} value={o.op}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          {needsValue(f.op) ? (
-            <Input
-              className="flex-[1_1_180px]"
-              aria-label="Value"
-              value={f.value ?? ""}
-              onChange={(e) => set(i, { value: e.target.value })}
-              placeholder="value"
-            />
-          ) : null}
-          <IconButton label="Remove filter" onClick={() => onChange(filters.filter((_, j) => j !== i))}>
-            <X size={14} aria-hidden />
-          </IconButton>
-        </div>
-      ))}
+      {filters.map((f, i) => {
+        const a = arityOf(f.op);
+        return (
+          <div key={i} className="flex flex-wrap items-center gap-2 mb-[.4rem]">
+            <Select className="w-50" aria-label="Column" value={f.column} onChange={(e) => set(i, { column: e.target.value })}>
+              {columns.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            <Select className="w-40" aria-label="Condition" value={f.op} onChange={(e) => setOp(i, e.target.value as FilterOp)}>
+              {OPS.map((o) => (
+                <option key={o.op} value={o.op}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+            {a === "one" ? (
+              <Input
+                className="flex-[1_1_180px]"
+                aria-label="Value"
+                value={f.value ?? ""}
+                autoFocus={focus === i}
+                onChange={(e) => set(i, { value: e.target.value })}
+                placeholder="value"
+              />
+            ) : a === "list" ? (
+              <Input
+                className="flex-[1_1_220px]"
+                aria-label="Values, separated by commas"
+                value={f.value ?? ""}
+                autoFocus={focus === i}
+                onChange={(e) => set(i, { value: e.target.value })}
+                placeholder="a, b, c"
+              />
+            ) : a === "range" ? (
+              <span className="flex items-center gap-1.5 flex-[1_1_220px]">
+                <Input
+                  aria-label="From"
+                  value={f.values?.[0] ?? ""}
+                  autoFocus={focus === i}
+                  onChange={(e) => set(i, { values: [e.target.value, f.values?.[1] ?? ""] })}
+                  placeholder="from"
+                />
+                <span className="muted text-sm">and</span>
+                <Input
+                  aria-label="To"
+                  value={f.values?.[1] ?? ""}
+                  onChange={(e) => set(i, { values: [f.values?.[0] ?? "", e.target.value] })}
+                  placeholder="to"
+                />
+              </span>
+            ) : null}
+            <IconButton label="Remove filter" onClick={() => onChange(filters.filter((_, j) => j !== i))}>
+              <X size={14} aria-hidden />
+            </IconButton>
+          </div>
+        );
+      })}
       <div className="flex items-center gap-2">
         <Button
           size="sm"
@@ -92,6 +121,7 @@ export function FilterEditor({
         <Button type="submit" size="sm" variant="primary">
           Apply
         </Button>
+        <span className="muted text-xs hide-sm">All filters must match. Lists take commas or one value per line.</span>
       </div>
     </form>
   );

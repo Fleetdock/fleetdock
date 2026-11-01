@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 
-import { Badge, Button, ErrorText, Field, Modal, SectionHeader, Select } from "@/components/ui";
+import { Badge, Button, ErrorText, Field, Modal, Select } from "@/components/ui";
 
 import { ApiError } from "@/lib/api";
 import {
@@ -107,22 +107,17 @@ export function GrantsSection({
 
   return (
     <div>
-      <SectionHeader
-        title="Access"
-        description="Accounts with privileges on this database (live)."
-        actions={
-          canWrite ? (
-            <Button
-              size="sm"
-              variant="primary"
-              icon={<Plus size={15} aria-hidden />}
-              onClick={() => setGrantOpen(true)}
-            >
-              Grant access
-            </Button>
-          ) : null
-        }
-      />
+      {/* Under the page's Access tab, so no second heading: one line of
+          context and the action. */}
+      <div className="toolbar">
+        <p className="text-sm muted m-0">Database accounts with privileges on this database, read live from the server.</p>
+        <div className="toolbar-spacer" />
+        {canWrite ? (
+          <Button size="sm" variant="primary" icon={<Plus size={15} aria-hidden />} onClick={() => setGrantOpen(true)}>
+            Grant access
+          </Button>
+        ) : null}
+      </div>
 
       <DataTable<SchemaGrant>
         columns={columns}

@@ -16,8 +16,7 @@ import {
 import { DatabaseBackups } from "@/components/backup/database-backups";
 import { GrantsSection } from "@/components/database/grants-section";
 import { SchemaHistorySection } from "@/components/database/schema-history";
-import { ERDiagram } from "@/components/database/er-diagram";
-import { IndexHealthCard } from "@/components/database/index-health";
+import { DatabaseOverview } from "@/components/database/overview";
 import { ImportSQLModal } from "@/components/database/import-sql-modal";
 import { MoveDatabaseModal } from "@/components/database/move-database-modal";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
@@ -26,19 +25,17 @@ import {
   Button,
   ButtonLink,
   Callout,
-  DetailSkeleton,
-  EmptyState,
-  KeyValueList,
+  HeaderSkeleton,
   Menu,
   PageHeader,
   QueryError,
   QueryTabs,
   Skeleton,
+  StatStripSkeleton,
   StatTile,
   StatusBadge,
   Time,
 } from "@/components/ui";
-import { engineLabel } from "@/lib/engines";
 import { formatBytes as formatBytesOr } from "@/lib/format";
 
 import { useCan, useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
@@ -46,20 +43,27 @@ import { useCan, useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/ho
 import {
   Activity,
   ArrowRightLeft,
-  Database,
   Eye,
   FileUp,
   HardDrive,
+  Network,
   ScrollText,
-  SquareTerminal,
   Table2,
   Trash2,
-  Users,
 } from "lucide-react";
 
 const formatBytes = (n: number) => formatBytesOr(n, "0 B");
 
-const TAB_LABEL = { backups: "Backups", users: "Access", schema: "Schema", diagram: "Diagram" } as const;
+const TAB_LABEL = {
+  overview: "Overview",
+  connection: "Connection",
+  backups: "Backups",
+  users: "Access",
+  schema: "Schema",
+} as const;
+type Tab = keyof typeof TAB_LABEL;
+// These read the database itself, so they need the server's admin login.
+const NEEDS_LOGIN: Tab[] = ["users", "schema"];
 
 export default function DatabaseDetailPage() {
   return (
@@ -92,14 +96,17 @@ function DatabaseDetail() {
   const pathname = usePathname();
   const sp = useSearchParams();
   const tabParam = sp.get("tab");
-  const tab =
-    tabParam === "users" || tabParam === "schema" || tabParam === "diagram" ? tabParam : "backups";
+  const requested: Tab = tabParam && tabParam in TAB_LABEL ? (tabParam as Tab) : "overview";
 
   // Tables and the SQL console moved to the Data Browser; old links
   // (?tab=tables|query, ?schema=, ?table=) land there instead.
   const legacyTab = sp.get("tab");
   const legacyTable = sp.get("table");
   const legacy = legacyTab === "tables" || legacyTab === "query" || sp.has("schema") || legacyTable !== null;
+  // The diagram has its own full-screen page now.
+  useEffect(() => {
+    if (legacyTab === "diagram") router.replace(`/databases/${encodeURIComponent(id)}/diagram`);
+  }, [legacyTab, id, router]);
   useEffect(() => {
     if (!legacy) return;
     const q = new URLSearchParams({ db: id });
@@ -126,7 +133,8 @@ function DatabaseDetail() {
   const hasCreds = instance?.has_credentials ?? false;
   const dbParam = encodeURIComponent(id);
   const browserHref = `/data?db=${dbParam}`;
-  const queryHref = `/data?db=${dbParam}&query=new`;
+  const tab: Tab = !hasCreds && NEEDS_LOGIN.includes(requested) ? "overview" : requested;
+  const tabHref = (t: string) => (t === "overview" ? pathname : `${pathname}?tab=${t}`);
 
   return (
     <div>
@@ -149,13 +157,10 @@ function DatabaseDetail() {
         }
         actions={
           <>
-            {canMove && !db.system ? (
-              <Button
-                icon={<ArrowRightLeft size={15} aria-hidden />}
-                onClick={() => setMoveOpen(true)}
-              >
-                Copy / move
-              </Button>
+            {hasCreds ? (
+              <ButtonLink href={`/databases/${dbParam}/diagram`} icon={<Network size={15} aria-hidden />}>
+                Diagram
+              </ButtonLink>
             ) : null}
             {hasCreds ? (
               <ButtonLink
@@ -166,7 +171,7 @@ function DatabaseDetail() {
                 Open Data Browser
               </ButtonLink>
             ) : null}
-            {(canWrite && !db.system) || canAudit ? (
+            {(canWrite && !db.system) || canAudit || (canMove && !db.system) ? (
               <Menu
                 label="More database actions"
                 items={[
@@ -178,6 +183,12 @@ function DatabaseDetail() {
                         `/activity/audit?${new URLSearchParams({ resource_id: id, resource: db.name, period: "all" }).toString()}`,
                       ),
                     hidden: !canAudit,
+                  },
+                  {
+                    label: "Copy or move",
+                    icon: <ArrowRightLeft size={15} />,
+                    onSelect: () => setMoveOpen(true),
+                    hidden: !(canMove && !db.system),
                   },
                   {
                     label: "Import SQL",
@@ -227,116 +238,53 @@ function DatabaseDetail() {
         browserHref={browserHref}
       />
 
-      <div className="detail-grid">
-        <div className="detail-main">
-          {!hasCreds ? (
-            <Callout tone="info" title="Fleetdock can't log in to this database server yet.">
-              Add an admin login on{" "}
-              {instance ? (
-                <Link href={`/instances/${instance.id}`} className="link">
-                  {instance.name}
-                </Link>
-              ) : (
-                "the database server's page"
-              )}{" "}
-              to browse tables, import SQL and manage access.
-            </Callout>
-          ) : null}
+      {!hasCreds ? (
+        <Callout tone="info" title="Fleetdock can't log in to this database server yet.">
+          Add an admin login on{" "}
+          {instance ? (
+            <Link href={`/instances/${instance.id}`} className="link">
+              {instance.name}
+            </Link>
+          ) : (
+            "the database server's page"
+          )}{" "}
+          to browse tables, see the diagram and schema history, and manage access.
+        </Callout>
+      ) : null}
 
-          <ConnectivitySection databaseId={id} databaseName={db.name} canWrite={canWrite} />
-          <CredentialsSection databaseId={id} canWrite={canWrite} />
+      <section className="section">
+        <QueryTabs
+          label="Database sections"
+          panelId="database-tabpanel"
+          // replace, not push: arrow keys move between tabs, and each
+          // move must not leave a history entry.
+          onSelect={(t) => router.replace(tabHref(t), { scroll: false })}
+          tabs={[
+            { id: "overview", label: "Overview" },
+            { id: "connection", label: "Connection" },
+            { id: "backups", label: "Backups" },
+            { id: "users", label: "Access", hidden: !hasCreds },
+            { id: "schema", label: "Schema", hidden: !hasCreds },
+          ]}
+        />
 
-          <section className="section">
-            <QueryTabs
-              label="Database sections"
-              panelId="database-tabpanel"
-              // replace, not push: arrow keys move between tabs, and each
-              // move must not leave a history entry.
-              onSelect={(t) => router.replace(t === "backups" ? pathname : `${pathname}?tab=${t}`, { scroll: false })}
-              tabs={[
-                { id: "backups", label: "Backups" },
-                { id: "users", label: "Access" },
-                { id: "schema", label: "Schema" },
-                { id: "diagram", label: "Diagram" },
-              ]}
-            />
-
-            <div id="database-tabpanel" role="tabpanel" aria-label={TAB_LABEL[tab]}>
-              {tab === "backups" ? (
-                <DatabaseBackups database={db} canBackup={canMove} />
-              ) : !hasCreds ? (
-                <NoLogin instance={instance} />
-              ) : tab === "schema" ? (
-                <SchemaHistorySection database={db} canWrite={canWrite} />
-              ) : tab === "diagram" ? (
-                <ERDiagram database={db} />
-              ) : (
-                <GrantsSection databaseId={id} canWrite={canWrite} />
-              )}
-            </div>
-          </section>
+        <div id="database-tabpanel" role="tabpanel" aria-label={TAB_LABEL[tab]} className="db-tab-panel">
+          {tab === "overview" ? (
+            <DatabaseOverview database={db} hasCreds={hasCreds} canBackup={canMove} tabHref={tabHref} />
+          ) : tab === "connection" ? (
+            <>
+              <ConnectivitySection databaseId={id} databaseName={db.name} canWrite={canWrite} />
+              <CredentialsSection databaseId={id} canWrite={canWrite} />
+            </>
+          ) : tab === "backups" ? (
+            <DatabaseBackups database={db} canBackup={canMove} />
+          ) : tab === "schema" ? (
+            <SchemaHistorySection database={db} canWrite={canWrite} />
+          ) : (
+            <GrantsSection databaseId={id} canWrite={canWrite} />
+          )}
         </div>
-
-        <aside className="detail-aside" aria-label="Database details">
-          <div className="card panel aside-card">
-            <h2 className="panel-title">Details</h2>
-            <KeyValueList
-              items={[
-                {
-                  label: "Server",
-                  value: instance ? (
-                    <Link href={`/instances/${instance.id}`} className="link">
-                      {instance.name}
-                    </Link>
-                  ) : (
-                    db.instance_id.slice(0, 8)
-                  ),
-                },
-                { label: "Engine", value: instance ? engineLabel(instance.engine) : "—" },
-                { label: "Charset", value: db.charset || "—", mono: true },
-                { label: "Collation", value: db.collation || "—", mono: true },
-                { label: "Created", value: <Time value={db.created_at} /> },
-                { label: "Updated", value: <Time value={db.updated_at} /> },
-                { label: "Tags", value: db.tags.join(", "), hidden: db.tags.length === 0 },
-              ]}
-            />
-          </div>
-
-          {hasCreds ? <IndexHealthCard databaseId={id} browserHref={browserHref} /> : null}
-
-          <div className="card panel aside-card">
-            <h2 className="panel-title">Quick links</h2>
-            <ul className="quick-links">
-              {hasCreds ? (
-                <>
-                  <li>
-                    <Link href={browserHref}>
-                      <Table2 size={15} aria-hidden /> Browse tables and views
-                    </Link>
-                  </li>
-                  <li>
-                    <Link href={queryHref}>
-                      <SquareTerminal size={15} aria-hidden /> New SQL query
-                    </Link>
-                  </li>
-                </>
-              ) : null}
-              {instance ? (
-                <li>
-                  <Link href={`/instances/${instance.id}`}>
-                    <Database size={15} aria-hidden /> Database server {instance.name}
-                  </Link>
-                </li>
-              ) : null}
-              <li>
-                <Link href={`${pathname}?tab=users`}>
-                  <Users size={15} aria-hidden /> Users and privileges
-                </Link>
-              </li>
-            </ul>
-          </div>
-        </aside>
-      </div>
+      </section>
 
       <DeleteDatabaseModal
         database={deleteOpen ? db : null}
@@ -355,25 +303,6 @@ function DatabaseDetail() {
         />
       ) : null}
     </div>
-  );
-}
-
-type InstanceRefLike = { id: string; name: string } | undefined;
-
-/** NoLogin explains that browsing needs the server's admin login first. */
-function NoLogin({ instance }: { instance: InstanceRefLike }) {
-  return (
-    <EmptyState
-      title="Fleetdock can't log in to this database server yet"
-      hint="Add an admin login on the database server's page to browse tables and manage access."
-      action={
-        instance ? (
-          <ButtonLink href={`/instances/${instance.id}`}>
-            Open {instance.name}
-          </ButtonLink>
-        ) : undefined
-      }
-    />
   );
 }
 
@@ -424,7 +353,27 @@ function SummaryStrip({
   );
 }
 
-/** DatabaseDetailSkeleton mirrors the page layout while the database loads. */
+/** DatabaseDetailSkeleton mirrors the page layout while the database loads: header, figures, tabs, cards. */
 function DatabaseDetailSkeleton() {
-  return <DetailSkeleton label="Loading database" />;
+  return (
+    <div role="status" aria-label="Loading database">
+      <HeaderSkeleton breadcrumbs />
+      <StatStripSkeleton />
+      <div className="flex gap-6 mb-4" aria-hidden>
+        {[5, 6.5, 4.5, 4, 4].map((w, i) => (
+          <Skeleton key={i} width={`${w}rem`} height="1.1rem" />
+        ))}
+      </div>
+      <div className="db-overview" aria-hidden>
+        {[0, 1].map((i) => (
+          <div key={i} className="card panel stack-sm">
+            <Skeleton width="30%" height=".9rem" />
+            <Skeleton width="80%" />
+            <Skeleton width="65%" />
+            <Skeleton width="72%" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

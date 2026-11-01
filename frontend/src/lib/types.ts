@@ -724,12 +724,16 @@ export interface Setting {
 // ---- Data editing ----
 export type FilterOp =
   | "eq" | "ne" | "lt" | "lte" | "gt" | "gte"
-  | "contains" | "starts_with" | "is_null" | "not_null";
+  | "contains" | "not_contains" | "starts_with" | "ends_with"
+  | "in" | "not_in" | "between"
+  | "is_null" | "not_null";
 
 export interface RowFilter {
   column: string;
   op: FilterOp;
   value?: string | null;
+  /** in / not_in: the list; between: [from, to]. */
+  values?: string[];
 }
 
 export interface SortKey {

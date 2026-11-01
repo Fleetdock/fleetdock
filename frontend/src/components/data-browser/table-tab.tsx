@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
 
 import { useConfirm } from "@/components/confirm";
-import { FilterEditor, ImportCSV, needsValue, RowRange } from "./row-tools";
+import { FilterEditor, ImportCSV, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
 import { useToast } from "@/components/toast";
 import {
@@ -17,6 +17,7 @@ import {
   Pagination,
   SegmentedControl,
   Select,
+  Skeleton,
   Spinner,
   Textarea,
 } from "@/components/ui";
@@ -32,6 +33,7 @@ import {
 import { load, save } from "@/lib/data-browser/storage";
 import { PAGE_SIZES, splitName, type Action, type OpenRequest, type Tab, type TableView } from "@/lib/data-browser/tabs";
 import { fkByColumn, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
+import { describeValue, filterFor, fromDraft, opLabel, toDraft } from "@/lib/data-browser/filters";
 import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys, useReferencedBy } from "@/lib/hooks";
 import type { ForeignKey, RowFilter, SortKey } from "@/lib/types";
 import {
@@ -41,6 +43,8 @@ import {
   Lock,
   History,
   PanelRight,
+  Rows2,
+  Rows3,
   Plus,
   RefreshCw,
   Search,
@@ -53,19 +57,9 @@ import {
 import { cellState, DataGrid, type Cell, type GridRow } from "./data-grid";
 import { BackupCompare } from "./backup-compare";
 import { RowHistory, useRowUndo } from "./row-history";
+import { ColumnsMenu } from "./columns-menu";
+import { RowPanel } from "./row-panel";
 
-const OP_LABEL: Record<string, string> = {
-  eq: "=",
-  ne: "≠",
-  lt: "<",
-  lte: "≤",
-  gt: ">",
-  gte: "≥",
-  contains: "contains",
-  starts_with: "starts with",
-  is_null: "is NULL",
-  not_null: "is not NULL",
-};
 
 /**
  * TableTab is one open table or view: its rows in an editable grid with
@@ -310,19 +304,65 @@ export function TableTab({
     return () => window.removeEventListener("keydown", onKey);
   }, [active, doSave]);
 
+  // Alt+PageDown / Alt+PageUp turn the page of the active tab.
+  const pageRef = useRef({ page: view.page, more: false });
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || (e.key !== "PageDown" && e.key !== "PageUp")) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const { page, more } = pageRef.current;
+      if (e.key === "PageDown" && more) setView({ page: page + 1 });
+      else if (e.key === "PageUp" && page > 1) setView({ page: page - 1 });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, setView]);
+
   // ---- toolbar state ----
   const [showFilters, setShowFilters] = useState(false);
   const [draftFilters, setDraftFilters] = useState<RowFilter[]>([]);
+  const [filterFocus, setFilterFocus] = useState<number | undefined>(undefined);
+  /** openFilters shows the editor on the current filters, plus one to add, focused. */
+  const openFilters = (focus?: number, add?: RowFilter) => {
+    const draft = view.filters.map(toDraft);
+    if (add) draft.push(add);
+    if (draft.length === 0) draft.push({ column: columns[0]?.name ?? "", op: "eq", value: "" });
+    setDraftFilters(draft);
+    setFilterFocus(add ? draft.length - 1 : focus);
+    setShowFilters(true);
+  };
   const [importOpen, setImportOpen] = useState(false);
-  const [panel, setPanel] = useState(() => load("value-panel") === "1");
+  // The right-hand panel: one cell in full, or the whole row as a form.
+  const [side, setSide] = useState<"none" | "value" | "row">(() => {
+    const v = load("value-panel");
+    return v === "1" ? "value" : v === "row" ? "row" : "none";
+  });
+  const panel = side === "value";
+  const showSide = (next: "value" | "row") =>
+    setSide((cur) => {
+      const v = cur === next ? "none" : next;
+      save("value-panel", v === "none" ? null : v === "value" ? "1" : "row");
+      return v;
+    });
+  const togglePanel = () => showSide("value");
+  const toggleRowPanel = () => showSide("row");
+  const openRowPanel = () => {
+    if (side !== "row") showSide("row");
+  };
+  const [density, setDensity] = useState<"compact" | "comfortable">(() =>
+    load("density") === "comfortable" ? "comfortable" : "compact",
+  );
+  const toggleDensity = () =>
+    setDensity((d) => {
+      const next = d === "compact" ? "comfortable" : "compact";
+      save("density", next === "compact" ? null : next);
+      return next;
+    });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
-  const togglePanel = () => {
-    setPanel((v) => {
-      save("value-panel", v ? null : "1");
-      return !v;
-    });
-  };
 
   const readOnlyReason = isView
     ? "Views are read-only."
@@ -336,6 +376,9 @@ export function TableTab({
   const hasFullPage = (data?.rows.length ?? 0) === view.pageSize;
   const knownPages = data && data.total > 0 ? Math.ceil(data.total / view.pageSize) : 0;
   const pageCount = Math.max(knownPages, hasFullPage ? view.page + 1 : view.page);
+  useEffect(() => {
+    pageRef.current = { page: view.page, more: view.page < pageCount };
+  });
   const filtered = view.filters.length > 0 || view.search !== "";
 
   const counts = {
@@ -385,14 +428,16 @@ export function TableTab({
               active={view.filters.length > 0}
               icon={<Filter size={14} aria-hidden />}
               aria-expanded={showFilters}
-              onClick={() => {
-                setDraftFilters(view.filters.length ? view.filters : [{ column: columns[0]?.name ?? "", op: "eq", value: "" }]);
-                setShowFilters((v) => !v);
-              }}
+              onClick={() => (showFilters ? setShowFilters(false) : openFilters())}
               disabled={columns.length === 0}
             >
               Filter{view.filters.length ? ` · ${view.filters.length}` : ""}
             </Button>
+            <ColumnsMenu
+              columns={columns}
+              hidden={view.hidden ?? []}
+              onChange={(hidden) => setView({ hidden, frozen: Math.min(view.frozen ?? 0, columns.length - hidden.length - 1) }, false)}
+            />
           </>
         ) : null}
         <div className="flex-1" />
@@ -430,6 +475,16 @@ export function TableTab({
             >
               <PanelRight size={15} aria-hidden />
             </IconButton>
+            <IconButton
+              noTooltip
+              label="Toggle row panel"
+              active={side === "row"}
+              onClick={toggleRowPanel}
+              title="Row panel: the selected row as a form (Shift+Enter)"
+              aria-pressed={side === "row"}
+            >
+              <Rows3 size={15} aria-hidden />
+            </IconButton>
             {editable ? (
               <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={addRow}>
                 Row
@@ -446,12 +501,11 @@ export function TableTab({
               onSelect: () => onNewQuery(`SELECT *\nFROM ${quoted}\nLIMIT 100;`),
             },
             {
-              label: "Export CSV",
+              label: filtered ? "Export matching rows (CSV)" : "Export all rows (CSV)",
               icon: <Download size={15} />,
-              hidden: isView,
               onSelect: () =>
-                void exportTableCSV(databaseId, tab.name).catch((err: unknown) =>
-                  push("error", err instanceof Error ? err.message : "Export failed"),
+                void exportTableCSV(databaseId, tab.name, { filters: view.filters, sort: view.sort, search: view.search }).catch(
+                  (err: unknown) => push("error", err instanceof Error ? err.message : "Export failed"),
                 ),
             },
             { label: "Import CSV…", icon: <Upload size={15} />, hidden: !canWrite || isView, onSelect: () => setImportOpen(true) },
@@ -466,6 +520,12 @@ export function TableTab({
               icon: <ClipboardCopy size={15} />,
               onSelect: () => void navigator.clipboard?.writeText(tab.name),
             },
+            {
+              label: density === "compact" ? "Taller rows" : "Compact rows",
+              icon: <Rows2 size={15} />,
+              hidden: view.mode !== "data",
+              onSelect: toggleDensity,
+            },
           ]}
         />
       </div>
@@ -476,10 +536,11 @@ export function TableTab({
             columns={columns}
             filters={draftFilters}
             onChange={setDraftFilters}
+            focus={filterFocus}
             onApply={(e) => {
               e?.preventDefault();
               setView({
-                filters: draftFilters.filter((f) => f.column && (!needsValue(f.op) || (f.value ?? "") !== "")),
+                filters: draftFilters.map(fromDraft).filter((f): f is RowFilter => f !== null),
                 page: 1,
               });
               setShowFilters(false);
@@ -492,8 +553,10 @@ export function TableTab({
         <div className="dbx-chips">
           {view.filters.map((f, i) => (
             <span key={i} className="dbx-chip">
-              <span className="font-medium">{f.column}</span> {OP_LABEL[f.op]}
-              {needsValue(f.op) ? <span className="mono"> {f.value}</span> : null}
+              <button type="button" className="dbx-chip-edit" onClick={() => openFilters(i)} title="Edit this filter">
+                <span className="font-medium">{f.column}</span> {opLabel(f.op)}
+                {describeValue(f) ? <span className="mono"> {describeValue(f)}</span> : null}
+              </button>
               <button
                 aria-label="Remove filter"
                 onClick={() => setView({ filters: view.filters.filter((_, j) => j !== i), page: 1 })}
@@ -529,9 +592,7 @@ export function TableTab({
         <div className="dbx-body">
           <div className="dbx-grid-wrap">
             {isLoading ? (
-              <div className="dbx-center">
-                <Spinner /> Loading rows…
-              </div>
+              <GridSkeleton />
             ) : error ? (
               <div className="dbx-center">
                 <EmptyState
@@ -587,6 +648,16 @@ export function TableTab({
                 onReferencing={referencing}
                 editRequest={editRequest}
                 onEditRequestDone={clearEditRequest}
+                hidden={view.hidden}
+                frozen={view.frozen}
+                onHideColumn={(name) => setView({ hidden: [...(view.hidden ?? []), name] }, false)}
+                onFreeze={(frozen) => setView({ frozen }, false)}
+                onRowDetail={openRowPanel}
+                onFilterColumn={(name) => {
+                  const c = columns.find((x) => x.name === name);
+                  openFilters(undefined, filterFor(name, c ? cellKind(c.type) === "text" : false));
+                }}
+                density={density}
                 emptyText={
                   filtered
                     ? "No rows match the search or filters."
@@ -611,6 +682,25 @@ export function TableTab({
               }
               onApply={(v) => cursor && onEdit(cursor.row, cursor.col, v)}
               onClose={togglePanel}
+            />
+          ) : null}
+          {side === "row" ? (
+            <RowPanel
+              row={cursor ? rows[cursor.row] : undefined}
+              label={(() => {
+                const r = cursor ? rows[cursor.row] : undefined;
+                return !r ? "Row" : r.kind === "new" ? "New row" : `Row ${offset + r.index + 1}`;
+              })()}
+              columns={columns}
+              keyCols={key}
+              editable={(() => {
+                const r = cursor ? rows[cursor.row] : undefined;
+                return r?.kind === "new" || (editable && r?.kind === "data" && !r.deleted);
+              })()}
+              onApply={(ci, v) => cursor && onEdit(cursor.row, ci, v)}
+              onPrev={cursor && cursor.row > 0 ? () => setCursor({ row: cursor.row - 1, col: cursor.col }) : undefined}
+              onNext={cursor && cursor.row + 1 < rows.length ? () => setCursor({ row: cursor.row + 1, col: cursor.col }) : undefined}
+              onClose={toggleRowPanel}
             />
           ) : null}
           {historyOpen ? (
@@ -719,6 +809,26 @@ export function TableTab({
         </Modal>
       ) : null}
       {importOpen ? <ImportCSV databaseId={databaseId} table={tab.name} onClose={() => setImportOpen(false)} /> : null}
+    </div>
+  );
+}
+
+/** GridSkeleton stands in for the grid while the first page of rows loads. */
+function GridSkeleton() {
+  return (
+    <div className="dbx-grid-skeleton" role="status" aria-label="Loading rows">
+      <div className="dbx-grid-skeleton-head" aria-hidden>
+        {[7, 10, 6, 9, 8].map((w, i) => (
+          <Skeleton key={i} width={`${w}rem`} height=".8rem" />
+        ))}
+      </div>
+      {Array.from({ length: 12 }, (_, r) => (
+        <div key={r} className="dbx-grid-skeleton-row" aria-hidden>
+          {[5, 9, 4, 7, 6].map((w, i) => (
+            <Skeleton key={i} width={`${w + ((r * 3 + i) % 4)}rem`} height=".7rem" />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

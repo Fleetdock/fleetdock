@@ -1524,6 +1524,11 @@
     height: calc(100dvh - var(--topbar-h));
     overflow: hidden;
   }
+  /* Full screen: no top bar above it. */
+  .app-main.app-main-focus {
+    height: 100vh;
+    height: 100dvh;
+  }
 
   /* topbar */
   .topbar {
@@ -1864,6 +1869,10 @@
   @media (max-width: 600px) {
     .form-grid {
       grid-template-columns: 1fr;
+    }
+    /* Two figures per row on phones instead of a tall single column. */
+    .stat-strip {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .modal {
       padding: 1rem;

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **ER diagram.** A database's new **Diagram** tab draws its tables and
+- **ER diagram.** A database's **Diagram** page draws its tables and
   views with their columns, primary keys and row estimates, and every
   foreign key between them, laid out automatically. Click a table to
   highlight its relations, double-click it (or its name) to open it in the
@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (1–3 steps), narrow a PostgreSQL database to one schema, and download the
   diagram as PNG or SVG. Positions you drag are kept in the browser.
   Databases with more than 150 tables open on their most connected table.
+  The diagram has its own page (`/databases/{id}/diagram`) that uses the
+  whole window, opened from the database page's **Diagram** button or the
+  data browser's table list.
   API: `GET /v1/databases/{id}/diagram`; the column catalog
   (`GET /v1/databases/{id}/columns`) now also reports `nullable` and
   `primary_key`.
@@ -33,12 +36,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`audit:read`). Events are kept for `FLEETDOCK_AUDIT_RETENTION` (365
   days; `0` keeps them). `fleetdock reset-admin-password` is recorded too.
   API: `GET /v1/audit-events`.
+- **Data browser full screen.** A button at the end of the tab bar, or
+  Alt+Shift+F, hides Fleetdock's sidebar and top bar; remembered per
+  browser. In full screen the bar also offers the browser's own full
+  screen and the theme switch.
+- **Columns, frozen columns, a row panel, taller rows.** Choose which
+  columns the grid shows (Columns menu, or Hide column in a header's menu)
+  and freeze the first ones while scrolling sideways; both stay with the
+  tab. The row panel (Shift+Enter) shows the selected row as a form, every
+  column in full and editable. More → Taller rows switches the density.
+- **More filter conditions, from any column.** *is one of*, *is none of*,
+  *between*, *ends with* and *doesn't contain* join the conditions; a
+  column header's menu starts a filter on it, and clicking a filter chip
+  edits it. API: `in`, `not_in`, `between`, `ends_with`, `not_contains`,
+  with `values[]` for lists and ranges.
+- **Export what you see.** Export CSV in the data browser downloads the
+  rows its filters, search and sort select (all rows without filters).
+  API: `POST /v1/databases/{id}/tables/{table}/export` with a browse
+  request.
+- **Keyboard.** The `?` help lists the data browser's shortcuts;
+  Alt+PageDown / Alt+PageUp turn the page of rows.
+
+### Changed
+
+- **The database page is organised in tabs**: Overview (details, how to
+  connect, last backup and schedule, index health), Connection (private and
+  public access, app credentials), Backups, Access and Schema. Tabs that
+  need the server login are hidden without one; Copy or move moved into the
+  ⋯ menu. `?tab=diagram` links open the diagram page.
+- **SQL console.** The editor and the results split the tab, with a
+  separator to drag. Results use the data browser's grid (keyboard, copy as
+  TSV/JSON/INSERT, resizable columns, sorting). Choose 200, 1,000 or 5,000
+  rows per statement; the API now caps the console at 5,000 rows instead of
+  falling back to 100 above 1,000.
+- Pages of more than 150 rows draw only the rows in view, so 500-row pages
+  scroll smoothly; the first load of a table shows the grid's outline.
 
 ### Fixed
 
 - **Deleting a user who appears in the audit trail failed** with "table
   audit_events is append-only": unlinking their events on delete counted
   as changing them. Their events now stay, with their email.
+- A right-click that scrolled a half-visible column or cell into view
+  closed the menu it had just opened.
+- Numbers in foreign-key columns no longer hide under the follow button.
 
 ## [0.9.0] - 2026-11-01
 

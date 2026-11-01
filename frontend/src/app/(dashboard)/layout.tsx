@@ -12,6 +12,7 @@ import { Button, PageSkeleton, Skeleton } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { clearLegacyToken } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
+import { useChromeHidden } from "@/lib/focus-mode";
 import { useMe, useOperationToasts } from "@/lib/hooks";
 
 // OperationToasts subscribes to operation-completion toasts. It renders nothing
@@ -28,6 +29,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   // The session is an httpOnly cookie, so ask the API who we are. A 401 sends
   // the browser to /login (see lib/api.ts).
   const me = useMe();
+  // Full-screen workspaces (the ER diagram, the data browser in full screen)
+  // render without the sidebar and the top bar.
+  const chromeHidden = useChromeHidden(pathname);
 
   useEffect(() => {
     clearLegacyToken();
@@ -68,14 +72,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </a>
       <OperationToasts />
       <CommandPalette />
-      <Sidebar open={navOpen} onClose={closeNav} />
+      {chromeHidden ? null : <Sidebar open={navOpen} onClose={closeNav} />}
       <div className="app-column">
-        <Topbar onOpenNav={() => setNavOpen(true)} />
+        {chromeHidden ? null : <Topbar onOpenNav={() => setNavOpen(true)} />}
         <main
           id="main"
-          // The Data Browser is a full-bleed workspace with its own scrolling panes.
+          // The Data Browser and the diagram are full-bleed workspaces with
+          // their own scrolling panes.
           className={
-            pathname === "/data" ? "app-main app-main-wide" : "app-main"
+            chromeHidden
+              ? "app-main app-main-wide app-main-focus"
+              : pathname === "/data"
+                ? "app-main app-main-wide"
+                : "app-main"
           }
           tabIndex={-1}
         >

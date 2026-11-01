@@ -9,36 +9,18 @@ import {
   ChevronRight,
   LogOut,
   Menu as MenuIcon,
-  Moon,
   Search,
-  Sun,
   UserRound,
 } from "lucide-react";
 
 import { openCommandPalette } from "@/components/command-palette";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { RunningOps } from "@/components/running-ops";
 import { useActiveSection } from "@/components/sidebar";
 import { IconButton, Menu } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 
-function useTheme(): [boolean, () => void] {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
-  const toggle = () => {
-    const next = !document.documentElement.classList.contains("dark");
-    document.documentElement.classList.toggle("dark", next);
-    try {
-      localStorage.setItem("theme", next ? "dark" : "light");
-    } catch {
-      /* storage unavailable */
-    }
-    setDark(next);
-  };
-  return [dark, toggle];
-}
 
 // useIsMac picks the shortcut label shown on the search button.
 function useIsMac(): boolean {
@@ -111,7 +93,6 @@ export function Topbar({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: me } = useMe();
-  const [dark, toggleTheme] = useTheme();
   const mac = useIsMac();
 
   async function logout() {
@@ -151,17 +132,7 @@ export function Topbar({
         </button>
         {extra}
         <RunningOps />
-        <IconButton
-          label={dark ? "Switch to light theme" : "Switch to dark theme"}
-          size="md"
-          onClick={toggleTheme}
-        >
-          {dark ? (
-            <Sun size={17} aria-hidden />
-          ) : (
-            <Moon size={17} aria-hidden />
-          )}
-        </IconButton>
+        <ThemeToggle />
         <Menu
           label="Account"
           trigger={

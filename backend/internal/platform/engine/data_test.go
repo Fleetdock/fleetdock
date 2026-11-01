@@ -194,3 +194,54 @@ func TestStructureValidation(t *testing.T) {
 		t.Error("arbitrary default expression accepted")
 	}
 }
+
+func TestBrowseWhereListAndRangeOperators(t *testing.T) {
+	m := testMeta(quotePGIdent)
+	where, args, err := pgDialect.where(m, BrowseRequest{Filters: []Filter{
+		{Column: "id", Op: OpIn, Values: []string{"1", "2", "3"}},
+		{Column: "id", Op: OpBetween, Values: []string{"10", "20"}},
+		{Column: "name", Op: OpNotIn, Values: []string{"x"}},
+		{Column: "name", Op: OpEndsWith, Value: ptrS("son")},
+		{Column: "email", Op: OpNotContains, Value: ptrS("50%")},
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"id" IN (($1::text)::integer, ($2::text)::integer, ($3::text)::integer)`,
+		`"id" BETWEEN ($4::text)::integer AND ($5::text)::integer`,
+		`"name" NOT IN (`,
+		`NOT ILIKE`,
+	} {
+		if !strings.Contains(where, want) {
+			t.Errorf("where %q lacks %q", where, want)
+		}
+	}
+	if len(args) != 8 || args[7] != `50\%` {
+		t.Errorf("args = %v", args)
+	}
+
+	// MySQL placeholders are positional: one argument per use, in order.
+	mw, margs, err := mysqlDialect.where(testMeta(quoteMySQLIdent), BrowseRequest{Filters: []Filter{
+		{Column: "id", Op: OpBetween, Values: []string{"1", "9"}},
+		{Column: "name", Op: OpIn, Values: []string{"a", "b"}},
+	}}, nil)
+	if err != nil || strings.Count(mw, "?") != 4 || len(margs) != 4 || margs[0] != "1" || margs[3] != "b" {
+		t.Errorf("mysql where = %q args %v err %v", mw, margs, err)
+	}
+}
+
+func TestBrowseWhereRejectsBadOperands(t *testing.T) {
+	m := testMeta(quoteMySQLIdent)
+	many := make([]string, MaxFilterValues+1)
+	for _, f := range []Filter{
+		{Column: "id", Op: OpIn},
+		{Column: "id", Op: OpIn, Values: many},
+		{Column: "id", Op: OpBetween, Values: []string{"1"}},
+		{Column: "name", Op: OpEndsWith},
+	} {
+		if _, _, err := mysqlDialect.where(m, BrowseRequest{Filters: []Filter{f}}, nil); err == nil {
+			t.Errorf("accepted %+v", f)
+		}
+	}
+}
