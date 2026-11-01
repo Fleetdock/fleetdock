@@ -28,7 +28,8 @@ services:
       <<: *demo-secrets
       FLEETDOCK_HTTP_ADDR: ":8080"
       FLEETDOCK_DATABASE_URL: postgres://fleetdock:fleetdock@metadata:5432/fleetdock?sslmode=disable
-      FLEETDOCK_ENV: production
+      # Not "production": that mode refuses the published demo secrets above.
+      FLEETDOCK_ENV: demo
       FLEETDOCK_PUBLIC_URL: http://localhost:${FLEETDOCK_DEMO_PORT:-18080}
       FLEETDOCK_CORS_ORIGIN: http://localhost:${FLEETDOCK_DEMO_PORT:-18080}
       FLEETDOCK_WORKER_ENABLED: "true"
@@ -187,7 +188,7 @@ services:
 
   # S3-compatible backup storage (SeaweedFS). The bucket is created on start.
   s3:
-    image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:4.50
     command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -master.volumeSizeLimitMB=256
     configs:
       - source: s3_identities
@@ -199,7 +200,7 @@ services:
       retries: 40
 
   s3-init:
-    image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:4.50
     depends_on:
       s3:
         condition: service_healthy

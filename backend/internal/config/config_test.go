@@ -88,3 +88,19 @@ func TestMetadataDBAddr(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateSecrets_ProductionRejectsDemoSecrets(t *testing.T) {
+	cfg := Config{
+		Env:           "production",
+		JWTSecret:     "demo-only-jwt-secret-not-for-production-0000000000",
+		EncryptionKey: "demo-only-encryption-key-not-for-production-00000",
+		AdminPassword: "fleetdock-demo-password",
+	}
+	if err := cfg.ValidateSecrets(nil); err == nil || !strings.Contains(err.Error(), "insecure default") {
+		t.Fatalf("production with the demo stack's secrets: %v", err)
+	}
+	cfg.Env = "demo"
+	if err := cfg.ValidateSecrets(func(string) {}); err != nil {
+		t.Fatalf("demo env: %v", err)
+	}
+}

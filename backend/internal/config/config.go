@@ -145,10 +145,15 @@ func (c Config) IsProduction() bool { return c.Env == "production" }
 
 // ValidateSecrets warns about (dev) or refuses (production) insecure defaults.
 func (c Config) ValidateSecrets(warn func(name string)) error {
+	// Published values: the built-in defaults, and the demo stack's secrets
+	// (deploy/demo), which are marked "not-for-production".
+	published := func(v string) bool { return strings.Contains(v, "not-for-production") }
 	insecure := map[string]bool{
-		"FLEETDOCK_JWT_SECRET":     c.JWTSecret == "dev-insecure-change-me" || c.JWTSecret == "change-me-in-production",
-		"FLEETDOCK_ENCRYPTION_KEY": c.EncryptionKey == "dev-insecure-encryption-key" || c.EncryptionKey == "change-me-in-production",
-		"FLEETDOCK_ADMIN_PASSWORD": c.AdminPassword == "admin12345",
+		"FLEETDOCK_JWT_SECRET": c.JWTSecret == "dev-insecure-change-me" || c.JWTSecret == "change-me-in-production" ||
+			published(c.JWTSecret),
+		"FLEETDOCK_ENCRYPTION_KEY": c.EncryptionKey == "dev-insecure-encryption-key" || c.EncryptionKey == "change-me-in-production" ||
+			published(c.EncryptionKey),
+		"FLEETDOCK_ADMIN_PASSWORD": c.AdminPassword == "admin12345" || c.AdminPassword == "fleetdock-demo-password",
 	}
 	for name, bad := range insecure {
 		if !bad {
