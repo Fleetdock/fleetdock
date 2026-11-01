@@ -3,12 +3,18 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
+	auditdom "github.com/Fleetdock/fleetdock/backend/internal/domain/audit"
 	"github.com/Fleetdock/fleetdock/backend/internal/infra/postgres"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/auth"
 )
@@ -53,15 +59,24 @@ func resetPassword(args []string) error {
 	}
 	defer pool.Close()
 
-	tag, err := pool.Exec(ctx, `
+	var userID uuid.UUID
+	err = pool.QueryRow(ctx, `
 		UPDATE users SET password_hash = $2, status = 'active',
 			token_epoch = token_epoch + 1, version = version + 1
-		WHERE lower(email) = $1`, email, hash)
+		WHERE lower(email) = $1 RETURNING id`, email, hash).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("no user with email %q", email)
+	}
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("no user with email %q", email)
+	// Recorded as done by the system: whoever ran the command had shell
+	// access to the host, not a Fleetdock session.
+	if err := auditapp.NewService(postgres.NewAuditRepository(pool)).Append(ctx, &auditdom.Event{
+		ActorKind: auditdom.ActorSystem, Action: "user.password_reset", ResourceType: "user",
+		ResourceID: &userID, ResourceName: email,
+	}, map[string]any{"via": "cli"}); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: the audit event was not recorded:", err)
 	}
 	if generated {
 		fmt.Println(password)

@@ -24,6 +24,7 @@ type Token struct {
 
 // Lookup is the result of resolving a presented token hash.
 type Lookup struct {
+	ID     uuid.UUID
 	UserID uuid.UUID
 	Scopes []string
 }

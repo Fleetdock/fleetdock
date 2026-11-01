@@ -82,12 +82,12 @@ func (r *TokenRepository) Revoke(ctx context.Context, userID, id uuid.UUID) erro
 
 func (r *TokenRepository) ResolveHash(ctx context.Context, hash string) (tokendom.Lookup, error) {
 	const q = `
-		SELECT user_id, scopes FROM api_tokens
+		SELECT id, user_id, scopes FROM api_tokens
 		WHERE token_hash = $1
 		  AND revoked_at IS NULL
 		  AND (expires_at IS NULL OR expires_at > now())`
 	var l tokendom.Lookup
-	if err := r.pool.QueryRow(ctx, q, hash).Scan(&l.UserID, &l.Scopes); err != nil {
+	if err := r.pool.QueryRow(ctx, q, hash).Scan(&l.ID, &l.UserID, &l.Scopes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return tokendom.Lookup{}, apperr.NotFound("token not found")
 		}

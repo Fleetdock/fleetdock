@@ -16,6 +16,7 @@ import {
 import { DatabaseBackups } from "@/components/backup/database-backups";
 import { GrantsSection } from "@/components/database/grants-section";
 import { SchemaHistorySection } from "@/components/database/schema-history";
+import { ERDiagram } from "@/components/database/er-diagram";
 import { IndexHealthCard } from "@/components/database/index-health";
 import { ImportSQLModal } from "@/components/database/import-sql-modal";
 import { MoveDatabaseModal } from "@/components/database/move-database-modal";
@@ -40,7 +41,7 @@ import {
 import { engineLabel } from "@/lib/engines";
 import { formatBytes as formatBytesOr } from "@/lib/format";
 
-import { useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
+import { useCan, useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
 
 import {
   Activity,
@@ -49,6 +50,7 @@ import {
   Eye,
   FileUp,
   HardDrive,
+  ScrollText,
   SquareTerminal,
   Table2,
   Trash2,
@@ -57,7 +59,7 @@ import {
 
 const formatBytes = (n: number) => formatBytesOr(n, "0 B");
 
-const TAB_LABEL = { backups: "Backups", users: "Access", schema: "Schema" } as const;
+const TAB_LABEL = { backups: "Backups", users: "Access", schema: "Schema", diagram: "Diagram" } as const;
 
 export default function DatabaseDetailPage() {
   return (
@@ -81,6 +83,7 @@ function DatabaseDetail() {
   const scope = { databaseId: id, serverId: instance?.server_id ?? undefined };
   const canWrite = canOn("database:write", scope);
   const canMove = canOn("backup:write", scope);
+  const canAudit = useCan()("audit:read");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -89,7 +92,8 @@ function DatabaseDetail() {
   const pathname = usePathname();
   const sp = useSearchParams();
   const tabParam = sp.get("tab");
-  const tab = tabParam === "users" || tabParam === "schema" ? tabParam : "backups";
+  const tab =
+    tabParam === "users" || tabParam === "schema" || tabParam === "diagram" ? tabParam : "backups";
 
   // Tables and the SQL console moved to the Data Browser; old links
   // (?tab=tables|query, ?schema=, ?table=) land there instead.
@@ -162,21 +166,31 @@ function DatabaseDetail() {
                 Open Data Browser
               </ButtonLink>
             ) : null}
-            {canWrite && !db.system ? (
+            {(canWrite && !db.system) || canAudit ? (
               <Menu
                 label="More database actions"
                 items={[
                   {
+                    label: "Audit log",
+                    icon: <ScrollText size={15} />,
+                    onSelect: () =>
+                      router.push(
+                        `/activity/audit?${new URLSearchParams({ resource_id: id, resource: db.name, period: "all" }).toString()}`,
+                      ),
+                    hidden: !canAudit,
+                  },
+                  {
                     label: "Import SQL",
                     icon: <FileUp size={15} />,
                     onSelect: () => setImportOpen(true),
-                    hidden: !(canMove && hasCreds),
+                    hidden: !(canWrite && !db.system && canMove && hasCreds),
                   },
                   {
                     label: "Remove database",
                     icon: <Trash2 size={15} />,
                     onSelect: () => setDeleteOpen(true),
                     danger: true,
+                    hidden: !(canWrite && !db.system),
                   },
                 ]}
               />
@@ -243,6 +257,7 @@ function DatabaseDetail() {
                 { id: "backups", label: "Backups" },
                 { id: "users", label: "Access" },
                 { id: "schema", label: "Schema" },
+                { id: "diagram", label: "Diagram" },
               ]}
             />
 
@@ -253,6 +268,8 @@ function DatabaseDetail() {
                 <NoLogin instance={instance} />
               ) : tab === "schema" ? (
                 <SchemaHistorySection database={db} canWrite={canWrite} />
+              ) : tab === "diagram" ? (
+                <ERDiagram database={db} />
               ) : (
                 <GrantsSection databaseId={id} canWrite={canWrite} />
               )}

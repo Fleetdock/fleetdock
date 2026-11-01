@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	backupcopyapp "github.com/Fleetdock/fleetdock/backend/internal/app/backupcopy"
 	catalogapp "github.com/Fleetdock/fleetdock/backend/internal/app/catalog"
 	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
@@ -57,6 +58,9 @@ type Deps struct {
 	// RowChangeRetention.
 	RowChanges         rowchangedom.Repository
 	RowChangeRetention time.Duration
+	// Audit is the audit log, pruned after AuditRetention (0 keeps it).
+	Audit          *auditapp.Service
+	AuditRetention time.Duration
 	// BackupCopies drops expired backup copies.
 	BackupCopies *backupcopyapp.Service
 	// Catalog, when set and enabled, refreshes the fleet-wide schema
@@ -238,6 +242,15 @@ func (w *Worker) housekeeping(ctx context.Context) {
 			slog.Error("prune row changes", "error", err.Error())
 		} else if n > 0 {
 			slog.Info("pruned row changes", "count", n)
+		}
+	}
+
+	// Audit log retention.
+	if w.deps.Audit != nil && w.deps.AuditRetention > 0 {
+		if n, err := w.deps.Audit.Prune(ctx, w.deps.AuditRetention, time.Now()); err != nil {
+			slog.Error("prune audit events", "error", err.Error())
+		} else if n > 0 {
+			slog.Info("pruned audit events", "count", n)
 		}
 	}
 

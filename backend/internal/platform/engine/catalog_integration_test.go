@@ -48,6 +48,8 @@ func TestIntegrationCatalog(t *testing.T) {
 				"CREATE TABLE notes (id int PRIMARY KEY, region varchar(10), num int, " +
 					"CONSTRAINT fk_notes_order FOREIGN KEY (region, num) REFERENCES orders (region, num))",
 				"CREATE VIEW open_orders AS SELECT region, num FROM orders",
+				"CREATE TABLE staff (id int PRIMARY KEY, manager_id int, " +
+					"CONSTRAINT fk_staff_manager FOREIGN KEY (manager_id) REFERENCES staff (id) ON DELETE SET NULL)",
 			} {
 				mustQuery(t, c.eng, root, db, stmt, true)
 			}
@@ -60,13 +62,17 @@ func TestIntegrationCatalog(t *testing.T) {
 			for _, tb := range cat.Tables {
 				byName[tb.Name] = tb
 			}
-			if len(byName) != 4 || cat.Truncated {
+			if len(byName) != 5 || cat.Truncated {
 				t.Fatalf("tables = %+v, truncated %v", cat.Tables, cat.Truncated)
 			}
 			orders := byName["orders"]
 			if orders.Kind != "table" || len(orders.Columns) != 3 || orders.Columns[0].Name != "region" ||
 				orders.Columns[1].Name != "num" || orders.Columns[2].Name != "note" {
 				t.Errorf("orders = %+v", orders)
+			}
+			if c := orders.Columns; !c[0].PrimaryKey || !c[1].PrimaryKey || c[2].PrimaryKey ||
+				c[0].Nullable || !c[2].Nullable {
+				t.Errorf("orders keys/nullability = %+v", c)
 			}
 			if byName["open_orders"].Kind != "view" {
 				t.Errorf("open_orders kind = %q", byName["open_orders"].Kind)
@@ -95,6 +101,47 @@ func TestIntegrationCatalog(t *testing.T) {
 				len(items.Columns) != 2 || items.Columns[0] != "o_region" || items.Columns[1] != "o_num" ||
 				items.RefColumns[0] != "region" || items.RefColumns[1] != "num" {
 				t.Errorf("items fk = %+v", items)
+			}
+			q := func(n string) string {
+				if isPG {
+					return "public." + n
+				}
+				return n
+			}
+			rels, truncated, err := c.eng.Relations(ctx, root, db)
+			if err != nil || truncated {
+				t.Fatalf("relations: %v, truncated %v", err, truncated)
+			}
+			if len(rels) != 3 {
+				t.Fatalf("relations = %+v", rels)
+			}
+			// Ordered by referencing table, then constraint name.
+			if r := rels[0]; r.Table != q("items") || r.Name != "fk_items_order" || r.RefTable != q("orders") ||
+				len(r.Columns) != 2 || r.Columns[1] != "o_num" || r.RefColumns[1] != "num" {
+				t.Errorf("items relation = %+v", r)
+			}
+			if r := rels[2]; r.Table != q("staff") || r.RefTable != q("staff") || r.Columns[0] != "manager_id" ||
+				r.RefColumns[0] != "id" || r.OnDelete != "SET NULL" {
+				t.Errorf("self relation = %+v", r)
+			}
+			if isPG {
+				// Keys across schemas, and none duplicated onto partitions.
+				for _, stmt := range []string{
+					"CREATE SCHEMA billing",
+					"CREATE TABLE billing.invoices (id int PRIMARY KEY, staff_id int REFERENCES public.staff (id))",
+					"CREATE TABLE billing.lines (inv int REFERENCES billing.invoices (id), at date NOT NULL) PARTITION BY RANGE (at)",
+					"CREATE TABLE billing.lines_2026 PARTITION OF billing.lines FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')",
+				} {
+					mustQuery(t, c.eng, root, db, stmt, true)
+				}
+				rels, _, err = c.eng.Relations(ctx, root, db)
+				if err != nil || len(rels) != 5 {
+					t.Fatalf("relations with billing = %+v, %v", rels, err)
+				}
+				if rels[0].Table != "billing.invoices" || rels[0].RefTable != "public.staff" ||
+					rels[1].Table != "billing.lines" || rels[1].RefTable != "billing.invoices" {
+					t.Errorf("cross-schema relations = %+v", rels[:2])
+				}
 			}
 			none, err := c.eng.ReferencedBy(ctx, root, db, map[bool]string{true: "public.notes", false: "notes"}[isPG])
 			if err != nil || len(none) != 0 {

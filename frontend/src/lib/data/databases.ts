@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import type {
   ColumnCatalog,
+  Diagram,
   RowChange,
   RowEditResult,
   UndoResult,
@@ -251,7 +252,10 @@ export function useRunQuery(databaseId: string) {
     onSettled: (_out, _err, input) => {
       qc.invalidateQueries({ queryKey: ["query-history", databaseId] });
       // A script that wrote may have changed the schema autocompletion uses.
-      if (writeStatements(input.sql).length > 0) qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
+      if (writeStatements(input.sql).length > 0) {
+        qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
+        qc.invalidateQueries({ queryKey: ["diagram", databaseId] });
+      }
     },
   });
 }
@@ -609,6 +613,18 @@ export function useSchemaColumns(databaseId: string) {
   });
 }
 
+// useDiagram loads a database's tables, columns and foreign keys for its ER
+// diagram (GET /v1/databases/{id}/diagram).
+export function useDiagram(databaseId: string) {
+  return useQuery({
+    queryKey: ["diagram", databaseId],
+    queryFn: () => api.get<Diagram>(`/v1/databases/${databaseId}/diagram`),
+    enabled: Boolean(databaseId),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function useDBObjects(databaseId: string) {
   return useQuery({
     queryKey: ["db-objects", databaseId],
@@ -631,6 +647,7 @@ export function useStructureMutations(databaseId: string, table = "") {
     qc.invalidateQueries({ queryKey: ["db-objects", databaseId] });
     qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
     qc.invalidateQueries({ queryKey: ["index-insights", databaseId] });
+    qc.invalidateQueries({ queryKey: ["diagram", databaseId] });
   };
   const createTable = useMutation({ mutationFn: (spec: TableSpec) => api.post(base, spec), onSuccess: invalidate });
   const alter = useMutation({ mutationFn: (ops: AlterOp[]) => api.patch(t, { ops }), onSuccess: invalidate });
