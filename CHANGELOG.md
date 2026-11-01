@@ -7,86 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-01
+
 ### Security
 
-- **The dashboard session is an httpOnly cookie.** Login sets a
-  `fleetdock_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` over
-  HTTPS) instead of the dashboard keeping the JWT in `localStorage`, so
-  injected script can no longer read the session. Cookie-authenticated
-  requests that change state must send `X-Fleetdock-CSRF: 1`. API clients keep
-  using `Authorization: Bearer`; the login response still carries the token.
-  Signing out clears the cookie, and a token left in `localStorage` by an
-  earlier release is removed.
-- **Revoke and rotate a server's agent token.** A server's page has *Rotate
-  agent token* and *Revoke agent token*
-  (`POST /v1/servers/{id}/agent-token/rotate`,
-  `DELETE /v1/servers/{id}/agent-token`). Revoking cuts the agent off at once;
-  rotating also returns a single-use install command that re-enrolls the same
-  server with a fresh token. Unused install commands are listed on the Servers
-  page and can be revoked.
-- **The agent's systemd unit is sandboxed.** The agent still runs as root
-  (Docker provisioning needs it), now with `NoNewPrivileges`, `ProtectSystem`,
-  `ProtectHome`, `PrivateTmp`, kernel and control-group protections and a
-  `0077` umask. Re-run the install command on a server to pick up the new unit.
-
-### Changed
-
-- **Database page redesign.** Headline figures (size, tables, views, open
-  connections) across the top; connection details, public access,
-  application credentials and backups/access in the main column; details and
-  quick links alongside. Connection details include a copyable,
-  credential-free connection URL, and gateway warnings are shown as callouts
-  with plain-language TLS status.
-
-- **Choose the login used for data browsing.** The data browser, SQL
-  console, exports and SQL imports used to connect as roles Fleetdock created
-  on the database server without asking (`fleetdock_ro_*` /
-  `fleetdock_rw_*`). Each instance now has a **Data browsing connects as**
-  setting: its admin login (the default, limited to instance administrators),
-  a dedicated login you provide, or the Fleetdock-managed roles. Instances
-  that already have managed roles keep using them.
-
-### Fixed
-
-- **Databases with `-` in their names are managed.** Applications that name
-  databases after UUIDs (`tenant_ffc07774-1db5-…`) had those databases
-  skipped by discovery without a warning, and refused by grants, the data
-  browser and backups. Database names may now contain `-` anywhere but the
-  first character. Charset, collation and role names keep the stricter rule.
-
-- The SQL console now honours a `DELIMITER` line that follows a comment.
-- **Backup verification no longer shows up as a database.** The temporary
-  `fdv_…` database a test restore uses was picked up by discovery while it
-  existed and then reported as missing once dropped. Names `fdv_`/`fds_`
-  followed by 16 hex digits are now reserved for Fleetdock's temporary
-  restores and never registered; ones registered before are removed from
-  the inventory.
-
-- **"The database rejected the login" in the data browser** when a
-  Fleetdock-managed role was dropped or its password changed outside
-  Fleetdock: the role is now repaired and the request retried, and a server
-  that still refuses it gets an error naming the role.
-
-- **Installer on macOS and WSL refuses `sudo`.** Docker Desktop runs as the
-  logged-in user and a local install lives in their home folder; under
-  `sudo` it went to `/opt/fleetdock` as root, next to the user's own
-  `~/.fleetdock`, and the two fought over the same containers.
-- **A fresh install no longer starts over an earlier install's data.** When
-  Docker still holds Fleetdock's database volume but no `.env` was found, the
-  installer stops and says where the old configuration is (or how to discard
-  the data), instead of generating new keys that cannot open it — which left
-  the control plane crash-looping.
-- **An existing install is upgraded where it is.** The installer looks for
-  the caller's own install first (`~/.fleetdock`, or `/opt/fleetdock` for
-  root) and says so when the one it finds belongs to another user.
-- **`--port` works on upgrades**, moving an existing local install to the new
-  port; a local install from before local mode is made private to the computer
-  (127.0.0.1) as a new one would be.
-- **A busy port is no longer a dead end.** Run in a terminal, a local install
-  offers the next free port instead of stopping.
-- The installer warns about an older `fleetdock` command from an earlier
-  install that would run instead of the new one, and shows the control
-  plane's log when the stack fails to start.
+- **Next.js 16.4.3.** The dashboard was on Next.js 16.4.0, affected by
+  GHSA-2464-fhr4-w9xw (unauthenticated remote code execution in the image
+  optimizer with SVG files), GHSA-673q-mjm6-r5xr and GHSA-p3m5-59mp-jv5r.
+- **Go 1.26.10.** Builds use Go 1.26.10 and golang.org/x/net 0.62.0, which fix
+  standard-library vulnerabilities in `net/http`, `crypto/tls`, `crypto/x509`
+  and `mime/multipart`.
+- **Production refuses the demo stack's secrets.** `FLEETDOCK_ENV=production`
+  now also rejects secrets marked `not-for-production` and the demo admin
+  password, so a copy of the demo compose file cannot run with published
+  keys.
 
 ### Added
 
@@ -162,6 +96,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   statements by total time, time per run or frequency, from
   `pg_stat_statements` or `performance_schema`, and explains how to turn
   them on when they are off (`GET /v1/instances/{id}/top-queries`).
+- **Demo stack.** `deploy/demo` starts a throwaway install with sample
+  MariaDB, MySQL and PostgreSQL databases bound to 127.0.0.1;
+  `scripts/screenshots.sh` builds it, seeds it and captures the screenshots
+  used in the README and on fleetdock.dev.
+
+### Changed
+
+- **A refreshed dashboard.** Every page is rebuilt on one design system
+  (shared tokens, controls, tables and charts) with the Geist typeface,
+  bundled with the image. Charts have time axes, tabs work with the arrow
+  keys, toasts wait while you hover or focus them, and pages show loading,
+  error and not-found states of their own.
+
+### Fixed
+
+- **Databases with `-` in their names are managed.** Applications that name
+  databases after UUIDs (`tenant_ffc07774-1db5-…`) had those databases
+  skipped by discovery without a warning, and refused by grants, the data
+  browser and backups. Database names may now contain `-` anywhere but the
+  first character. Charset, collation and role names keep the stricter rule.
+  Thanks to @shahawiz (#67).
+- The SQL console now honours a `DELIMITER` line that follows a comment.
+- **Backup verification no longer shows up as a database.** The temporary
+  `fdv_…` database a test restore uses was picked up by discovery while it
+  existed and then reported as missing once dropped. Names `fdv_`/`fds_`
+  followed by 16 hex digits are now reserved for Fleetdock's temporary
+  restores and never registered; ones registered before are removed from
+  the inventory.
+- **Long statements on MySQL and MariaDB no longer fail after 30 seconds.**
+  The driver's per-read timeout cut off any statement that returned nothing
+  for 30 seconds (a slow `UPDATE`, an `ALTER` on a big table) with "invalid
+  connection", whatever its own limit. It now outlasts the statement's
+  timeout.
+- **MySQL and MariaDB through an SSH tunnel.** Connections failed with
+  "invalid connection" because the tunnel rejected I/O deadlines. Deadlines
+  are now emulated, so a bastion that stops answering still times out
+  instead of blocking.
+- **Database discovery is no longer cancelled by slow size queries.** The
+  probe saves an instance's database list before collecting sizes, each with
+  its own deadline, so instances with many tables (or behind an SSH tunnel)
+  have their databases discovered.
+
+## [0.8.1 – 0.8.5]
+
+These versions were tagged without their own changelog sections; their
+changes are collected here.
+
+### Security
+
+- **The dashboard session is an httpOnly cookie.** Login sets a
+  `fleetdock_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` over
+  HTTPS) instead of the dashboard keeping the JWT in `localStorage`, so
+  injected script can no longer read the session. Cookie-authenticated
+  requests that change state must send `X-Fleetdock-CSRF: 1`. API clients keep
+  using `Authorization: Bearer`; the login response still carries the token.
+  Signing out clears the cookie, and a token left in `localStorage` by an
+  earlier release is removed.
+- **Revoke and rotate a server's agent token.** A server's page has *Rotate
+  agent token* and *Revoke agent token*
+  (`POST /v1/servers/{id}/agent-token/rotate`,
+  `DELETE /v1/servers/{id}/agent-token`). Revoking cuts the agent off at once;
+  rotating also returns a single-use install command that re-enrolls the same
+  server with a fresh token. Unused install commands are listed on the Servers
+  page and can be revoked.
+- **The agent's systemd unit is sandboxed.** The agent still runs as root
+  (Docker provisioning needs it), now with `NoNewPrivileges`, `ProtectSystem`,
+  `ProtectHome`, `PrivateTmp`, kernel and control-group protections and a
+  `0077` umask. Re-run the install command on a server to pick up the new unit.
+
+### Changed
+
+- **Database page redesign.** Headline figures (size, tables, views, open
+  connections) across the top; connection details, public access,
+  application credentials and backups/access in the main column; details and
+  quick links alongside. Connection details include a copyable,
+  credential-free connection URL, and gateway warnings are shown as callouts
+  with plain-language TLS status.
+
+- **Choose the login used for data browsing.** The data browser, SQL
+  console, exports and SQL imports used to connect as roles Fleetdock created
+  on the database server without asking (`fleetdock_ro_*` /
+  `fleetdock_rw_*`). Each instance now has a **Data browsing connects as**
+  setting: its admin login (the default, limited to instance administrators),
+  a dedicated login you provide, or the Fleetdock-managed roles. Instances
+  that already have managed roles keep using them.
+
+### Fixed
+
+- **"The database rejected the login" in the data browser** when a
+  Fleetdock-managed role was dropped or its password changed outside
+  Fleetdock: the role is now repaired and the request retried, and a server
+  that still refuses it gets an error naming the role.
+
+- **Installer on macOS and WSL refuses `sudo`.** Docker Desktop runs as the
+  logged-in user and a local install lives in their home folder; under
+  `sudo` it went to `/opt/fleetdock` as root, next to the user's own
+  `~/.fleetdock`, and the two fought over the same containers.
+- **A fresh install no longer starts over an earlier install's data.** When
+  Docker still holds Fleetdock's database volume but no `.env` was found, the
+  installer stops and says where the old configuration is (or how to discard
+  the data), instead of generating new keys that cannot open it — which left
+  the control plane crash-looping.
+- **An existing install is upgraded where it is.** The installer looks for
+  the caller's own install first (`~/.fleetdock`, or `/opt/fleetdock` for
+  root) and says so when the one it finds belongs to another user.
+- **`--port` works on upgrades**, moving an existing local install to the new
+  port; a local install from before local mode is made private to the computer
+  (127.0.0.1) as a new one would be.
+- **A busy port is no longer a dead end.** Run in a terminal, a local install
+  offers the next free port instead of stopping.
+- The installer warns about an older `fleetdock` command from an earlier
+  install that would run instead of the new one, and shows the control
+  plane's log when the stack fails to start.
+
+### Added
+
 - **Download a backup without backup storage.** "Back up now" on a database
   offers **Download to this computer**: the control plane runs the same dump
   as a stored backup and streams it to the browser as `<database>-<time>.sql.gz`.
