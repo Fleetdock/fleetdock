@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -263,22 +264,118 @@ type tunnelConn struct {
 	net.Conn
 	client *ssh.Client
 	once   sync.Once
+
+	mu       sync.Mutex
+	timer    *time.Timer // fires at the earliest pending deadline
+	expired  bool
+	deadline struct{ read, write time.Time }
 }
 
 func (t *tunnelConn) Close() error {
+	t.mu.Lock()
+	if t.timer != nil {
+		t.timer.Stop()
+	}
+	t.mu.Unlock()
 	err := t.Conn.Close()
 	t.once.Do(func() { _ = t.client.Close() })
 	return err
 }
 
-// SSH direct-tcpip channels do not implement deadlines: SetReadDeadline and
-// SetWriteDeadline return "deadline not supported". Database drivers treat
-// that error as a broken connection (the MySQL driver reports it as
-// "invalid connection") before any query runs. Accept the call and leave the
-// channel without a deadline so the session can proceed.
-func (t *tunnelConn) SetDeadline(time.Time) error      { return nil }
-func (t *tunnelConn) SetReadDeadline(time.Time) error  { return nil }
-func (t *tunnelConn) SetWriteDeadline(time.Time) error { return nil }
+// SSH direct-tcpip channels do not implement deadlines (SetReadDeadline
+// returns "deadline not supported", which drivers take for a broken
+// connection), and a read blocked on a channel cannot be interrupted. So
+// deadlines are emulated: when one passes, the channel is closed, which ends
+// any blocked read or write, and they report os.ErrDeadlineExceeded. Unlike
+// a TCP socket the connection cannot be used again after that; database
+// drivers discard a connection that timed out anyway. Without this, a
+// bastion that stops answering would block a query past every timeout.
+func (t *tunnelConn) SetDeadline(at time.Time) error {
+	return t.setDeadlines(at, at, true, true)
+}
+
+func (t *tunnelConn) SetReadDeadline(at time.Time) error {
+	return t.setDeadlines(at, time.Time{}, true, false)
+}
+
+func (t *tunnelConn) SetWriteDeadline(at time.Time) error {
+	return t.setDeadlines(time.Time{}, at, false, true)
+}
+
+func (t *tunnelConn) setDeadlines(read, write time.Time, setRead, setWrite bool) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if setRead {
+		t.deadline.read = read
+	}
+	if setWrite {
+		t.deadline.write = write
+	}
+	if t.timer != nil {
+		t.timer.Stop()
+		t.timer = nil
+	}
+	if t.expired {
+		return nil
+	}
+	next := earliest(t.deadline.read, t.deadline.write)
+	if next.IsZero() {
+		return nil
+	}
+	wait := time.Until(next)
+	if wait <= 0 {
+		t.expireLocked()
+		return nil
+	}
+	t.timer = time.AfterFunc(wait, func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		// A deadline moved meanwhile re-armed the timer; only fire if one
+		// has really passed.
+		if n := earliest(t.deadline.read, t.deadline.write); !n.IsZero() && !time.Now().Before(n) {
+			t.expireLocked()
+		}
+	})
+	return nil
+}
+
+func (t *tunnelConn) expireLocked() {
+	t.expired = true
+	_ = t.Conn.Close()
+}
+
+func (t *tunnelConn) timedOut() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.expired
+}
+
+func (t *tunnelConn) Read(b []byte) (int, error) {
+	n, err := t.Conn.Read(b)
+	if err != nil && t.timedOut() {
+		err = os.ErrDeadlineExceeded
+	}
+	return n, err
+}
+
+func (t *tunnelConn) Write(b []byte) (int, error) {
+	n, err := t.Conn.Write(b)
+	if err != nil && t.timedOut() {
+		err = os.ErrDeadlineExceeded
+	}
+	return n, err
+}
+
+// earliest returns the earlier non-zero time (zero when both are zero).
+func earliest(a, b time.Time) time.Time {
+	switch {
+	case a.IsZero():
+		return b
+	case b.IsZero() || a.Before(b):
+		return a
+	}
+	return b
+}
 
 // Forward listens on an ephemeral 127.0.0.1 port and forwards every accepted
 // connection to dbAddr through one SSH session. The returned close function
