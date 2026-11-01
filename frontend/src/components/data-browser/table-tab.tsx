@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
 
 import { useConfirm } from "@/components/confirm";
-import { FilterEditor, ImportCSV, needsValue, RowRange } from "./row-tools";
+import { FilterEditor, ImportCSV, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
 import { useToast } from "@/components/toast";
 import {
@@ -32,6 +32,7 @@ import {
 import { load, save } from "@/lib/data-browser/storage";
 import { PAGE_SIZES, splitName, type Action, type OpenRequest, type Tab, type TableView } from "@/lib/data-browser/tabs";
 import { fkByColumn, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
+import { describeValue, filterFor, fromDraft, opLabel, toDraft } from "@/lib/data-browser/filters";
 import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys, useReferencedBy } from "@/lib/hooks";
 import type { ForeignKey, RowFilter, SortKey } from "@/lib/types";
 import {
@@ -58,18 +59,6 @@ import { RowHistory, useRowUndo } from "./row-history";
 import { ColumnsMenu } from "./columns-menu";
 import { RowPanel } from "./row-panel";
 
-const OP_LABEL: Record<string, string> = {
-  eq: "=",
-  ne: "≠",
-  lt: "<",
-  lte: "≤",
-  gt: ">",
-  gte: "≥",
-  contains: "contains",
-  starts_with: "starts with",
-  is_null: "is NULL",
-  not_null: "is not NULL",
-};
 
 /**
  * TableTab is one open table or view: its rows in an editable grid with
@@ -317,6 +306,16 @@ export function TableTab({
   // ---- toolbar state ----
   const [showFilters, setShowFilters] = useState(false);
   const [draftFilters, setDraftFilters] = useState<RowFilter[]>([]);
+  const [filterFocus, setFilterFocus] = useState<number | undefined>(undefined);
+  /** openFilters shows the editor on the current filters, plus one to add, focused. */
+  const openFilters = (focus?: number, add?: RowFilter) => {
+    const draft = view.filters.map(toDraft);
+    if (add) draft.push(add);
+    if (draft.length === 0) draft.push({ column: columns[0]?.name ?? "", op: "eq", value: "" });
+    setDraftFilters(draft);
+    setFilterFocus(add ? draft.length - 1 : focus);
+    setShowFilters(true);
+  };
   const [importOpen, setImportOpen] = useState(false);
   // The right-hand panel: one cell in full, or the whole row as a form.
   const [side, setSide] = useState<"none" | "value" | "row">(() => {
@@ -408,10 +407,7 @@ export function TableTab({
               active={view.filters.length > 0}
               icon={<Filter size={14} aria-hidden />}
               aria-expanded={showFilters}
-              onClick={() => {
-                setDraftFilters(view.filters.length ? view.filters : [{ column: columns[0]?.name ?? "", op: "eq", value: "" }]);
-                setShowFilters((v) => !v);
-              }}
+              onClick={() => (showFilters ? setShowFilters(false) : openFilters())}
               disabled={columns.length === 0}
             >
               Filter{view.filters.length ? ` · ${view.filters.length}` : ""}
@@ -484,12 +480,11 @@ export function TableTab({
               onSelect: () => onNewQuery(`SELECT *\nFROM ${quoted}\nLIMIT 100;`),
             },
             {
-              label: "Export CSV",
+              label: filtered ? "Export matching rows (CSV)" : "Export all rows (CSV)",
               icon: <Download size={15} />,
-              hidden: isView,
               onSelect: () =>
-                void exportTableCSV(databaseId, tab.name).catch((err: unknown) =>
-                  push("error", err instanceof Error ? err.message : "Export failed"),
+                void exportTableCSV(databaseId, tab.name, { filters: view.filters, sort: view.sort, search: view.search }).catch(
+                  (err: unknown) => push("error", err instanceof Error ? err.message : "Export failed"),
                 ),
             },
             { label: "Import CSV…", icon: <Upload size={15} />, hidden: !canWrite || isView, onSelect: () => setImportOpen(true) },
@@ -520,10 +515,11 @@ export function TableTab({
             columns={columns}
             filters={draftFilters}
             onChange={setDraftFilters}
+            focus={filterFocus}
             onApply={(e) => {
               e?.preventDefault();
               setView({
-                filters: draftFilters.filter((f) => f.column && (!needsValue(f.op) || (f.value ?? "") !== "")),
+                filters: draftFilters.map(fromDraft).filter((f): f is RowFilter => f !== null),
                 page: 1,
               });
               setShowFilters(false);
@@ -536,8 +532,10 @@ export function TableTab({
         <div className="dbx-chips">
           {view.filters.map((f, i) => (
             <span key={i} className="dbx-chip">
-              <span className="font-medium">{f.column}</span> {OP_LABEL[f.op]}
-              {needsValue(f.op) ? <span className="mono"> {f.value}</span> : null}
+              <button type="button" className="dbx-chip-edit" onClick={() => openFilters(i)} title="Edit this filter">
+                <span className="font-medium">{f.column}</span> {opLabel(f.op)}
+                {describeValue(f) ? <span className="mono"> {describeValue(f)}</span> : null}
+              </button>
               <button
                 aria-label="Remove filter"
                 onClick={() => setView({ filters: view.filters.filter((_, j) => j !== i), page: 1 })}
@@ -636,6 +634,10 @@ export function TableTab({
                 onHideColumn={(name) => setView({ hidden: [...(view.hidden ?? []), name] }, false)}
                 onFreeze={(frozen) => setView({ frozen }, false)}
                 onRowDetail={openRowPanel}
+                onFilterColumn={(name) => {
+                  const c = columns.find((x) => x.name === name);
+                  openFilters(undefined, filterFor(name, c ? cellKind(c.type) === "text" : false));
+                }}
                 density={density}
                 emptyText={
                   filtered

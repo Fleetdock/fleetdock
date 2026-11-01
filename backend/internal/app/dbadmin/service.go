@@ -679,6 +679,22 @@ func (s *Service) ExportTableCSV(ctx context.Context, databaseID, table string, 
 	return n, err
 }
 
+// ExportRowsCSV streams the rows a browse request selects (filters, search,
+// sort) to w as CSV: what the data browser shows, without paging.
+func (s *Service) ExportRowsCSV(ctx context.Context, databaseID string, req engine.BrowseRequest, w io.Writer, onStart func()) (int64, error) {
+	var n int64
+	err := s.scoped(ctx, databaseID, dbaccessdom.ModeRead, exportTimeout,
+		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) (err error) {
+			ed, err := dataEditor(admin)
+			if err != nil {
+				return err
+			}
+			n, err = ed.ExportRowsCSV(ctx, conn, db.Name, req, w, onceStart(onStart))
+			return err
+		})
+	return n, err
+}
+
 // ExportQueryCSV streams a read-only query's result to w as CSV.
 func (s *Service) ExportQueryCSV(ctx context.Context, databaseID, sql string, w io.Writer, onStart func()) (int64, error) {
 	var n int64

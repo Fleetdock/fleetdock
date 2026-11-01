@@ -224,6 +224,28 @@ func (t mysqlRowTx) insert(ctx context.Context, m *tableMeta, q string, args []a
 	return n, assigned, nil
 }
 
+// ExportRowsCSV streams the rows the browse request selects as CSV.
+func (m *MariaDB) ExportRowsCSV(ctx context.Context, p ConnParams, database string, req BrowseRequest, w io.Writer, onStart func()) (int64, error) {
+	conn, closeSession, err := m.session(ctx, p)
+	if err != nil {
+		return 0, err
+	}
+	meta, err := mysqlMeta(ctx, conn, database, req.Table)
+	closeSession()
+	if err != nil {
+		return 0, err
+	}
+	where, args, err := mysqlDialect.where(meta, req, nil)
+	if err != nil {
+		return 0, err
+	}
+	order, err := mysqlDialect.orderBy(meta, req.Sort)
+	if err != nil {
+		return 0, err
+	}
+	return m.streamCSV(ctx, p, database, "SELECT * FROM "+meta.qualified+where+order, args, w, onStart)
+}
+
 // rowTx runs fn on one session inside a transaction, with the table's
 // metadata, and commits if it succeeds. session reports the settings the
 // row values are read and written under.

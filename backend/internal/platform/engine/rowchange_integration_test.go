@@ -5,6 +5,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -136,6 +137,41 @@ func TestIntegrationRowChanges(t *testing.T) {
 				if (col.Name == "upper_name") != col.Generated {
 					t.Errorf("column %s generated = %v", col.Name, col.Generated)
 				}
+			}
+
+			// List and range filters, and the CSV export of what they select.
+			for _, n := range []string{"ann", "bob", "cid", "dora"} {
+				mustQuery(t, c.eng, root, db, "INSERT INTO people (name) VALUES ('"+n+"')", true)
+			}
+			sel := BrowseRequest{Table: c.table, Limit: 50, Filters: []Filter{
+				{Column: "name", Op: OpIn, Values: []string{"ann", "bob", "dora", "zed"}},
+				{Column: "name", Op: OpBetween, Values: []string{"b", "e"}},
+				{Column: "name", Op: OpNotContains, Value: ptrS("o")},
+			}, Sort: []SortKey{{Column: "name", Desc: true}}}
+			br, err = c.eng.BrowseRows(ctx, root, db, sel)
+			must("browse filtered", err)
+			if len(br.Rows) != 0 {
+				// bob and dora contain "o"; ann is outside b..e.
+				t.Errorf("filtered rows = %d, want 0", len(br.Rows))
+			}
+			sel.Filters = sel.Filters[:2]
+			br, err = c.eng.BrowseRows(ctx, root, db, sel)
+			must("browse in+between", err)
+			if len(br.Rows) != 2 {
+				t.Fatalf("in+between rows = %d, want 2 (bob, dora)", len(br.Rows))
+			}
+			var csvOut strings.Builder
+			n, err := c.eng.ExportRowsCSV(ctx, root, db, sel, &csvOut, nil)
+			must("export rows", err)
+			lines := strings.Split(strings.TrimSpace(csvOut.String()), "\n")
+			if n != 2 || len(lines) != 3 || !strings.Contains(lines[1], "dora") || !strings.Contains(lines[2], "bob") {
+				t.Errorf("export = %d rows: %q", n, csvOut.String())
+			}
+			sel.Filters = []Filter{{Column: "name", Op: OpEndsWith, Value: ptrS("ra")}}
+			br, err = c.eng.BrowseRows(ctx, root, db, sel)
+			must("browse ends_with", err)
+			if len(br.Rows) != 1 {
+				t.Errorf("ends_with rows = %d, want 1", len(br.Rows))
 			}
 		})
 	}

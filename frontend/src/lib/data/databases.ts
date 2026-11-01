@@ -8,6 +8,8 @@ import { api, download } from "../api";
 import type {
   ColumnCatalog,
   Diagram,
+  RowFilter,
+  SortKey,
   RowChange,
   RowEditResult,
   UndoResult,
@@ -309,11 +311,15 @@ export function useSavedQueryMutations(databaseId: string) {
   return { create, update, remove };
 }
 
-// exportTableCSV streams a whole table to a CSV download.
-export function exportTableCSV(databaseId: string, table: string) {
-  return download(
-    `/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/export`,
-  );
+// exportTableCSV streams a table's rows to a CSV download: those the data
+// browser's filters, search and sort select, or the whole table without them.
+export function exportTableCSV(
+  databaseId: string,
+  table: string,
+  view?: { filters: RowFilter[]; sort: SortKey[]; search: string },
+) {
+  const path = `/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/export`;
+  return view ? download(path, { method: "POST", body: view }) : download(path);
 }
 
 // exportQueryCSV streams a read-only query's result set to a CSV download.

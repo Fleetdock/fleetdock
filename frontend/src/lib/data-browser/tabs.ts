@@ -228,7 +228,12 @@ export function reducer(ws: Workspace, a: Action): Workspace {
 // ---- persistence ----
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const FILTER_OPS = new Set(["eq", "ne", "lt", "lte", "gt", "gte", "contains", "starts_with", "is_null", "not_null"]);
+const FILTER_OPS = new Set([
+  "eq", "ne", "lt", "lte", "gt", "gte",
+  "contains", "not_contains", "starts_with", "ends_with",
+  "in", "not_in", "between",
+  "is_null", "not_null",
+]);
 
 function parseView(v: unknown): TableView {
   const d = defaultView();
@@ -240,7 +245,8 @@ function parseView(v: unknown): TableView {
           typeof f.column === "string" &&
           typeof f.op === "string" &&
           FILTER_OPS.has(f.op) &&
-          (f.value === undefined || f.value === null || typeof f.value === "string"),
+          (f.value === undefined || f.value === null || typeof f.value === "string") &&
+          (f.values === undefined || (Array.isArray(f.values) && f.values.every((x) => typeof x === "string"))),
       )
     : [];
   const sort = Array.isArray(v.sort)

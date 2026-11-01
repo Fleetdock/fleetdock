@@ -24,16 +24,21 @@ import (
 type FilterOp string
 
 const (
-	OpEq         FilterOp = "eq"
-	OpNe         FilterOp = "ne"
-	OpLt         FilterOp = "lt"
-	OpLte        FilterOp = "lte"
-	OpGt         FilterOp = "gt"
-	OpGte        FilterOp = "gte"
-	OpContains   FilterOp = "contains"
-	OpStartsWith FilterOp = "starts_with"
-	OpIsNull     FilterOp = "is_null"
-	OpNotNull    FilterOp = "not_null"
+	OpEq          FilterOp = "eq"
+	OpNe          FilterOp = "ne"
+	OpLt          FilterOp = "lt"
+	OpLte         FilterOp = "lte"
+	OpGt          FilterOp = "gt"
+	OpGte         FilterOp = "gte"
+	OpContains    FilterOp = "contains"
+	OpStartsWith  FilterOp = "starts_with"
+	OpEndsWith    FilterOp = "ends_with"
+	OpNotContains FilterOp = "not_contains"
+	OpIn          FilterOp = "in"
+	OpNotIn       FilterOp = "not_in"
+	OpBetween     FilterOp = "between"
+	OpIsNull      FilterOp = "is_null"
+	OpNotNull     FilterOp = "not_null"
 )
 
 // Filter restricts browsed rows by one column.
@@ -41,7 +46,13 @@ type Filter struct {
 	Column string   `json:"column"`
 	Op     FilterOp `json:"op"`
 	Value  *string  `json:"value"`
+	// Values are the operands of in / not_in (1 to MaxFilterValues) and
+	// between (exactly two: low, high).
+	Values []string `json:"values,omitempty"`
 }
+
+// MaxFilterValues caps the list of an in / not_in filter.
+const MaxFilterValues = 1000
 
 // SortKey orders browsed rows by one column.
 type SortKey struct {
@@ -107,6 +118,9 @@ type DataEditor interface {
 	// restores a row from a backup copy.
 	ApplyRowImage(ctx context.Context, p ConnParams, database, table string, req ApplyRequest) (*RowChange, error)
 	ImportCSV(ctx context.Context, p ConnParams, database, table string, r io.Reader, opts ImportOptions) (int64, error)
+	// ExportRowsCSV streams the rows a browse request selects (its filters,
+	// search and sort; not its page) to w as CSV, up to maxExportRows.
+	ExportRowsCSV(ctx context.Context, p ConnParams, database string, req BrowseRequest, w io.Writer, onStart func()) (int64, error)
 }
 
 // DataEditorFor returns the data-editing surface for the engine name.
@@ -220,16 +234,49 @@ func (d dialect) where(m *tableMeta, req BrowseRequest, args []any) (string, []a
 			conds = append(conds, q+" IS NULL")
 		case OpNotNull:
 			conds = append(conds, q+" IS NOT NULL")
-		case OpContains, OpStartsWith:
+		case OpContains, OpStartsWith, OpEndsWith, OpNotContains:
 			if f.Value == nil {
 				return "", nil, fmt.Errorf("filter on %q needs a value", f.Column)
 			}
 			args = append(args, escapeLike(*f.Value))
-			pattern := d.concat(d.param(len(args), column{Type: "text"}), "'%'")
-			if f.Op == OpContains {
-				pattern = d.concat("'%'", d.param(len(args), column{Type: "text"}), "'%'")
+			p := d.param(len(args), column{Type: "text"})
+			var pattern string
+			switch f.Op {
+			case OpStartsWith:
+				pattern = d.concat(p, "'%'")
+			case OpEndsWith:
+				pattern = d.concat("'%'", p)
+			default:
+				pattern = d.concat("'%'", p, "'%'")
 			}
-			conds = append(conds, fmt.Sprintf("%s %s %s", d.text(q), d.like, pattern))
+			not := ""
+			if f.Op == OpNotContains {
+				not = "NOT "
+			}
+			conds = append(conds, fmt.Sprintf("%s %s%s %s", d.text(q), not, d.like, pattern))
+		case OpIn, OpNotIn:
+			if len(f.Values) == 0 || len(f.Values) > MaxFilterValues {
+				return "", nil, fmt.Errorf("filter on %q needs 1 to %d values", f.Column, MaxFilterValues)
+			}
+			ps := make([]string, len(f.Values))
+			for i, v := range f.Values {
+				args = append(args, v)
+				ps[i] = d.param(len(args), col)
+			}
+			op := "IN"
+			if f.Op == OpNotIn {
+				op = "NOT IN"
+			}
+			conds = append(conds, fmt.Sprintf("%s %s (%s)", q, op, strings.Join(ps, ", ")))
+		case OpBetween:
+			if len(f.Values) != 2 {
+				return "", nil, fmt.Errorf("filter on %q needs two values (from, to)", f.Column)
+			}
+			args = append(args, f.Values[0])
+			lo := d.param(len(args), col)
+			args = append(args, f.Values[1])
+			hi := d.param(len(args), col)
+			conds = append(conds, fmt.Sprintf("%s BETWEEN %s AND %s", q, lo, hi))
 		default:
 			op, ok := opSQL[f.Op]
 			if !ok {

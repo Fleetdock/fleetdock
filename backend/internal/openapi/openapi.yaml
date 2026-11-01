@@ -413,8 +413,12 @@ components:
               column: {type: string}
               op:
                 type: string
-                enum: [eq, ne, lt, lte, gt, gte, contains, starts_with, is_null, not_null]
-              value: {type: string, nullable: true}
+                enum: [eq, ne, lt, lte, gt, gte, contains, not_contains, starts_with, ends_with, in, not_in, between, is_null, not_null]
+              value: {type: string, nullable: true, description: The operand of comparison and text operators.}
+              values:
+                type: array
+                items: {type: string}
+                description: The list of in / not_in (1 to 1000 values), or the two bounds of between (inclusive).
         sort:
           type: array
           items:
@@ -2909,6 +2913,26 @@ paths:
       responses:
         "200":
           description: Export URL
+    post:
+      tags: [DBAdmin]
+      security: [{bearerAuth: []}]
+      summary: Export the selected rows as CSV
+      description: >-
+        Streams the rows a browse request selects — its filters, search and sort, not its page — as CSV, up to the
+        export row limit. This is what the data browser's Export CSV downloads. Requires database:read.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/TableName"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowseRequest"}
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema: {type: string}
 
   /v1/databases/{id}/query:
     post:

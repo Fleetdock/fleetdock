@@ -121,6 +121,8 @@ export type GridProps = {
   onFreeze?: (count: number) => void;
   /** Shift+Enter: show the cursor's row in full. */
   onRowDetail?: () => void;
+  /** Header menu: start a filter on this column in the filter editor. */
+  onFilterColumn?: (column: string) => void;
   density?: "compact" | "comfortable";
 };
 
@@ -441,7 +443,13 @@ export function DataGrid(props: GridProps) {
         onSelect: () => props.onSort(col.name, "clear", true),
       },
       "separator",
-      { label: "Filter: is NULL", icon: <Filter size={14} />, hidden: !col.nullable, onSelect: () => props.onFilterBy(col.name, null) },
+      {
+        label: "Filter…",
+        icon: <Filter size={14} />,
+        hidden: !props.onFilterColumn,
+        onSelect: () => props.onFilterColumn?.(col.name),
+      },
+      { label: "Filter: is NULL", hidden: !col.nullable, onSelect: () => props.onFilterBy(col.name, null) },
       { label: "Fit width to content", onSelect: () => autoFit(col) },
       "separator",
       {
