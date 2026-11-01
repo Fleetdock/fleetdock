@@ -17,6 +17,7 @@ import {
   Pagination,
   SegmentedControl,
   Select,
+  Skeleton,
   Spinner,
   Textarea,
 } from "@/components/ui";
@@ -303,6 +304,23 @@ export function TableTab({
     return () => window.removeEventListener("keydown", onKey);
   }, [active, doSave]);
 
+  // Alt+PageDown / Alt+PageUp turn the page of the active tab.
+  const pageRef = useRef({ page: view.page, more: false });
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || (e.key !== "PageDown" && e.key !== "PageUp")) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const { page, more } = pageRef.current;
+      if (e.key === "PageDown" && more) setView({ page: page + 1 });
+      else if (e.key === "PageUp" && page > 1) setView({ page: page - 1 });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, setView]);
+
   // ---- toolbar state ----
   const [showFilters, setShowFilters] = useState(false);
   const [draftFilters, setDraftFilters] = useState<RowFilter[]>([]);
@@ -358,6 +376,9 @@ export function TableTab({
   const hasFullPage = (data?.rows.length ?? 0) === view.pageSize;
   const knownPages = data && data.total > 0 ? Math.ceil(data.total / view.pageSize) : 0;
   const pageCount = Math.max(knownPages, hasFullPage ? view.page + 1 : view.page);
+  useEffect(() => {
+    pageRef.current = { page: view.page, more: view.page < pageCount };
+  });
   const filtered = view.filters.length > 0 || view.search !== "";
 
   const counts = {
@@ -571,9 +592,7 @@ export function TableTab({
         <div className="dbx-body">
           <div className="dbx-grid-wrap">
             {isLoading ? (
-              <div className="dbx-center">
-                <Spinner /> Loading rows…
-              </div>
+              <GridSkeleton />
             ) : error ? (
               <div className="dbx-center">
                 <EmptyState
@@ -790,6 +809,26 @@ export function TableTab({
         </Modal>
       ) : null}
       {importOpen ? <ImportCSV databaseId={databaseId} table={tab.name} onClose={() => setImportOpen(false)} /> : null}
+    </div>
+  );
+}
+
+/** GridSkeleton stands in for the grid while the first page of rows loads. */
+function GridSkeleton() {
+  return (
+    <div className="dbx-grid-skeleton" role="status" aria-label="Loading rows">
+      <div className="dbx-grid-skeleton-head" aria-hidden>
+        {[7, 10, 6, 9, 8].map((w, i) => (
+          <Skeleton key={i} width={`${w}rem`} height=".8rem" />
+        ))}
+      </div>
+      {Array.from({ length: 12 }, (_, r) => (
+        <div key={r} className="dbx-grid-skeleton-row" aria-hidden>
+          {[5, 9, 4, 7, 6].map((w, i) => (
+            <Skeleton key={i} width={`${w + ((r * 3 + i) % 4)}rem`} height=".7rem" />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { Columns3, Database, Eye, FileText, HardDrive, Server, Table2, type Luci
 
 import { useVisibleSections } from "@/components/sidebar";
 import { Modal } from "@/components/ui";
+import { DATA_BROWSER_SHORTCUTS } from "@/lib/data-browser/shortcuts";
 import { schemaHitHref } from "@/lib/schema-search";
 import { useCanAny, useDatabases, useInstances, useSchemaSearch, useServers } from "@/lib/hooks";
 
@@ -269,6 +270,16 @@ function ShortcutHelp() {
     [[["g", "p"]], "Your profile"],
     [[["Esc"]], "Close a dialog or menu"],
   ];
+  return (
+    <>
+      <ShortcutTable rows={rows} />
+      <h3 className="panel-title mt-4">Data browser</h3>
+      <ShortcutTable rows={DATA_BROWSER_SHORTCUTS.map((s) => [s.keys, s.label])} />
+    </>
+  );
+}
+
+function ShortcutTable({ rows }: { rows: [string[][], string][] }) {
   return (
     <table className="table">
       <tbody>

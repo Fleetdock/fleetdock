@@ -1341,4 +1341,32 @@
     height: auto;
     min-height: 0;
   }
+
+  /* Placeholder rows standing in for rows the virtual grid does not draw. */
+  .dbx-table .dbx-spacer td {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  /* First load of a table: the grid's outline. */
+  .dbx-grid-skeleton {
+    flex: 1;
+    overflow: hidden;
+  }
+  .dbx-grid-skeleton-head,
+  .dbx-grid-skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: 2.5rem;
+    padding: 0 1rem 0 4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .dbx-grid-skeleton-head {
+    height: 2.6rem;
+    background: var(--panel-2);
+  }
+  .dbx-grid-skeleton-row {
+    height: 1.85rem;
+  }
 }

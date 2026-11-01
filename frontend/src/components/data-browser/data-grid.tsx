@@ -14,7 +14,7 @@ import {
   type Dialect,
 } from "@/lib/data-browser/cells";
 import { describeFilters, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
-import { frozenOffsets, visibleColumns } from "@/lib/data-browser/tabs";
+import { frozenOffsets, VIRTUAL_FROM, virtualWindow, visibleColumns } from "@/lib/data-browser/tabs";
 import type { BrowseColumn, ForeignKey, RowValues, SortKey } from "@/lib/types";
 import {
   AlertCircle,
@@ -196,13 +196,55 @@ export function DataGrid(props: GridProps) {
     [rows, editable],
   );
 
+  // ---- virtualization: long pages draw only the rows in view ----
+  const virtual = rows.length > VIRTUAL_FROM;
+  const [viewport, setViewport] = useState({ top: 0, height: 800 });
+  const [metrics, setMetrics] = useState({ row: 30, head: 44 });
+  const frame = useRef(0);
+  const onScroll = useCallback(() => {
+    if (!virtual) return;
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      const el = scroller.current;
+      if (el) setViewport({ top: el.scrollTop, height: el.clientHeight });
+    });
+  }, [virtual]);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !virtual) return;
+    const ro = new ResizeObserver(() => setViewport({ top: el.scrollTop, height: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [virtual]);
+  // Row and header heights follow the density and the font; measure them.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const tr = el?.querySelector<HTMLElement>("tbody tr.dbx-row");
+    const head = el?.querySelector<HTMLElement>("thead");
+    if (!tr || !head) return;
+    const row = tr.getBoundingClientRect().height;
+    const h = head.getBoundingClientRect().height;
+    if (row > 0 && (Math.abs(row - metrics.row) > 0.5 || Math.abs(h - metrics.head) > 0.5)) setMetrics({ row, head: h });
+  }, [rows, props.density, metrics.row, metrics.head]);
+  const win = virtual
+    ? virtualWindow(rows.length, metrics.row, viewport.top - metrics.head, viewport.height)
+    : { start: 0, end: rows.length };
+
   // Keep the cursor cell in view while moving with the keyboard.
   useEffect(() => {
     if (!cursor) return;
-    scroller.current
-      ?.querySelector(`[data-cell="${cursor.row}:${cursor.col}"]`)
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [cursor]);
+    const el = scroller.current;
+    const cell = el?.querySelector(`[data-cell="${cursor.row}:${cursor.col}"]`);
+    if (cell) {
+      cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+    } else if (el && virtual) {
+      // Not drawn yet: scroll its row into view; the next render draws it.
+      const top = cursor.row * metrics.row;
+      if (top < el.scrollTop) el.scrollTop = top;
+      else if (top + metrics.row > el.scrollTop + el.clientHeight - metrics.head)
+        el.scrollTop = top + metrics.row - el.clientHeight + metrics.head;
+    }
+  }, [cursor, virtual, metrics]);
 
   function startEdit(r: number, c: number, text?: string) {
     if (!canEditRow(r)) return;
@@ -303,8 +345,10 @@ export function DataGrid(props: GridProps) {
       case "End":
         return move(mod ? rows.length - 1 : cur.row, vis[vis.length - 1]);
       case "PageDown":
+        if (e.altKey) return; // Alt+PageDown turns the page (table tab)
         return move(cur.row + 15, cur.col);
       case "PageUp":
+        if (e.altKey) return;
         return move(cur.row - 15, cur.col);
       case "Tab":
         if (!cursor) return;
@@ -537,6 +581,7 @@ export function DataGrid(props: GridProps) {
       aria-rowcount={rows.length}
       aria-colcount={vis.length}
       onKeyDown={onKeyDown}
+      onScroll={onScroll}
     >
       <table className="dbx-table" style={{ width: total }}>
         <colgroup>
@@ -599,30 +644,43 @@ export function DataGrid(props: GridProps) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, r) => (
-            <GridRowView
-              key={row.kind === "new" ? row.id : `d${row.index}`}
-              row={row}
-              r={r}
-              num={row.kind === "new" ? null : props.offset + row.index + 1}
-              columns={columns}
-              vis={vis}
-              lefts={stableLefts}
-              kinds={kinds}
-              fks={props.fks}
-              cursorCol={cursor?.row === r ? cursor.col : -1}
-              selected={selected.has(r)}
-              editing={editing?.row === r ? editing : null}
-              onEditText={onEditText}
-              onCommit={commitEdit}
-              onCancel={cancelEdit}
-              onCellDown={onCellDown}
-              onCellDouble={onCellDouble}
-              onCellMenu={onCellMenu}
-              onRowNumber={onNum}
-              onFollow={onFollow}
-            />
-          ))}
+          {win.start > 0 ? (
+            <tr className="dbx-spacer" aria-hidden>
+              <td colSpan={vis.length + 1} style={{ height: win.start * metrics.row }} />
+            </tr>
+          ) : null}
+          {rows.slice(win.start, win.end).map((row, k) => {
+            const r = win.start + k;
+            return (
+              <GridRowView
+                key={row.kind === "new" ? row.id : `d${row.index}`}
+                row={row}
+                r={r}
+                num={row.kind === "new" ? null : props.offset + row.index + 1}
+                columns={columns}
+                vis={vis}
+                lefts={stableLefts}
+                kinds={kinds}
+                fks={props.fks}
+                cursorCol={cursor?.row === r ? cursor.col : -1}
+                selected={selected.has(r)}
+                editing={editing?.row === r ? editing : null}
+                onEditText={onEditText}
+                onCommit={commitEdit}
+                onCancel={cancelEdit}
+                onCellDown={onCellDown}
+                onCellDouble={onCellDouble}
+                onCellMenu={onCellMenu}
+                onRowNumber={onNum}
+                onFollow={onFollow}
+              />
+            );
+          })}
+          {win.end < rows.length ? (
+            <tr className="dbx-spacer" aria-hidden>
+              <td colSpan={vis.length + 1} style={{ height: (rows.length - win.end) * metrics.row }} />
+            </tr>
+          ) : null}
         </tbody>
       </table>
       {rows.length === 0 ? <div className="dbx-grid-empty">{props.emptyText}</div> : null}

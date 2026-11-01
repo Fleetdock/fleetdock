@@ -6,6 +6,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, 
 import { useToast } from "@/components/toast";
 import { Button, IconButton, Input, Spinner } from "@/components/ui";
 import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells";
+import { collapsedSchemas, saveCollapsedSchemas } from "@/lib/data-browser/storage";
 import { objectName, type OpenRequest } from "@/lib/data-browser/tabs";
 import { formatBytes } from "@/lib/format";
 import { exportTableCSV } from "@/lib/hooks";
@@ -145,7 +146,13 @@ export const ObjectTree = forwardRef<
 ) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Folded schema groups are remembered per database.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(collapsedSchemas(databaseId)));
+  const [collapsedFor, setCollapsedFor] = useState(databaseId);
+  if (collapsedFor !== databaseId) {
+    setCollapsedFor(databaseId);
+    setCollapsed(new Set(collapsedSchemas(databaseId)));
+  }
   const [cursor, setCursor] = useState(-1);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -342,6 +349,7 @@ export const ObjectTree = forwardRef<
                 const next = new Set(prev);
                 if (next.has(s)) next.delete(s);
                 else next.add(s);
+                saveCollapsedSchemas(databaseId, [...next]);
                 return next;
               })
             }

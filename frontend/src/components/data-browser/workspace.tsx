@@ -30,6 +30,7 @@ import {
   type OpenRequest,
   type Tab,
 } from "@/lib/data-browser/tabs";
+import { DATA_BROWSER_SHORTCUTS } from "@/lib/data-browser/shortcuts";
 import { isFocusShortcut, useBrowserFullscreen, useDataBrowserFocus, useFullscreenSupported } from "@/lib/focus-mode";
 import { useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
@@ -595,14 +596,10 @@ function Welcome({
 }) {
   const [recent, setRecent] = useState<RecentTable[]>([]);
   useEffect(() => setRecent(recentTables(db.id)), [db.id]);
-  const shortcuts: [string, string][] = [
-    ["Ctrl P", "Find a table"],
-    ["Alt N", "New SQL query"],
-    ["Alt [ / ]", "Previous / next tab"],
-    ["Alt 1…9", "Go to tab"],
-    ["Alt W", "Close tab"],
-    ["Ctrl S", "Save changes"],
-  ];
+  const shortcuts: [string, string][] = DATA_BROWSER_SHORTCUTS.filter((s) => s.welcome).map((s) => [
+    s.keys.map((k) => k.join(" ")).join(" / "),
+    s.label,
+  ]);
   return (
     <div className="dbx-welcome">
       <div className="dbx-welcome-icon">

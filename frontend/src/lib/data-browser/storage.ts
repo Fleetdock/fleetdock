@@ -87,3 +87,12 @@ export function takeQueryDraft(databaseId: string): string | null {
   save(`draft:${databaseId}`, null);
   return sql;
 }
+
+/** collapsedSchemas are the PostgreSQL schema groups folded in a database's table tree. */
+export function collapsedSchemas(databaseId: string): string[] {
+  return loadJSON(`collapsed-schemas:${databaseId}`, [], isStringArray);
+}
+
+export function saveCollapsedSchemas(databaseId: string, schemas: string[]) {
+  save(`collapsed-schemas:${databaseId}`, schemas.length ? JSON.stringify(schemas.slice(0, 200)) : null);
+}

@@ -7,6 +7,7 @@ import {
   parseWorkspace,
   reducer,
   serializeWorkspace,
+  virtualWindow,
   visibleColumns,
   type Action,
   type Workspace,
@@ -161,5 +162,15 @@ describe("columns", () => {
     expect(frozenOffsets([100, 80, 120], 2, 52)).toEqual([52, 152]);
     expect(frozenOffsets([100], 3, 52)).toEqual([52]);
     expect(frozenOffsets([100], 0, 52)).toEqual([]);
+  });
+});
+
+describe("virtual window", () => {
+  it("draws the rows in view plus a margin", () => {
+    expect(virtualWindow(500, 30, 0, 600, 10)).toEqual({ start: 0, end: 30 });
+    expect(virtualWindow(500, 30, 3000, 600, 10)).toEqual({ start: 90, end: 130 });
+    // Scrolled past the end (the page just got shorter): the last rows.
+    expect(virtualWindow(500, 30, 99999, 600, 10)).toEqual({ start: 489, end: 500 });
+    expect(virtualWindow(0, 30, 0, 600)).toEqual({ start: 0, end: 0 });
   });
 });

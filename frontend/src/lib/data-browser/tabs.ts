@@ -329,3 +329,26 @@ export function parseWorkspace(raw: string | null): Workspace {
 export function serializeWorkspace(ws: Workspace): string {
   return JSON.stringify(ws);
 }
+
+/** Above this many rows the grid draws only the rows in view (plus a margin). */
+export const VIRTUAL_FROM = 150;
+
+/**
+ * virtualWindow picks the rows to draw: those in the viewport plus overscan
+ * rows above and below. end is exclusive.
+ */
+export function virtualWindow(
+  count: number,
+  rowHeight: number,
+  scrollTop: number,
+  viewport: number,
+  overscan = 20,
+): { start: number; end: number } {
+  if (count <= 0 || rowHeight <= 0) return { start: 0, end: count };
+  const first = Math.min(count - 1, Math.floor(Math.max(0, scrollTop) / rowHeight));
+  const visible = Math.ceil(Math.max(viewport, rowHeight) / rowHeight);
+  return {
+    start: Math.max(0, first - overscan),
+    end: Math.min(count, first + visible + overscan),
+  };
+}
