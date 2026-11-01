@@ -127,7 +127,7 @@ func (pg *Postgres) applyPGProfile(ctx context.Context, p ConnParams, user, data
 	if !validPGRole(user) {
 		return fmt.Errorf("invalid role name")
 	}
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)

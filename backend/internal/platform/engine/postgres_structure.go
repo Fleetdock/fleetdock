@@ -62,7 +62,7 @@ func pgColumnDef(c ColumnSpec) (string, error) {
 // so a multi-step change applies completely or not at all.
 func (pg *Postgres) ddlTx(ctx context.Context, p ConnParams, database string,
 	build func(ctx context.Context, conn *pgx.Conn) ([]string, error)) error {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -328,7 +328,7 @@ func (pg *Postgres) DropIndex(ctx context.Context, p ConnParams, database, table
 
 // ForeignKeys lists a table's outgoing foreign keys.
 func (pg *Postgres) ForeignKeys(ctx context.Context, p ConnParams, database, table string) ([]ForeignKey, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -379,7 +379,7 @@ func (pg *Postgres) ForeignKeys(ctx context.Context, p ConnParams, database, tab
 // Objects lists views, materialized views, functions, procedures, triggers and
 // sequences outside the system schemas.
 func (pg *Postgres) Objects(ctx context.Context, p ConnParams, database string) ([]DBObject, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)

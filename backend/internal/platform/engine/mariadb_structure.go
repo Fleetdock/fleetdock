@@ -109,7 +109,7 @@ func mysqlColumnDefKeep(c ColumnSpec, keep *keptDefault) (string, error) {
 }
 
 func (m *MariaDB) qualified(database, table string) (string, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return "", fmt.Errorf("invalid database name")
 	}
 	if !validTableName(table) {
@@ -395,7 +395,7 @@ func (m *MariaDB) ForeignKeys(ctx context.Context, p ConnParams, database, table
 
 // Objects lists views, routines, triggers, events and (MariaDB) sequences.
 func (m *MariaDB) Objects(ctx context.Context, p ConnParams, database string) ([]DBObject, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	db, err := m.open(p)

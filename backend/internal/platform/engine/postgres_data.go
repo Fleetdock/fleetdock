@@ -100,7 +100,7 @@ func (pg *Postgres) pgMeta(ctx context.Context, conn *pgx.Conn, name string) (*t
 
 // BrowseRows returns a filtered, sorted page of a table.
 func (pg *Postgres) BrowseRows(ctx context.Context, p ConnParams, database string, req BrowseRequest) (*BrowseResult, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	clampBrowse(&req)
@@ -155,7 +155,7 @@ func (pg *Postgres) BrowseRows(ctx context.Context, p ConnParams, database strin
 
 func (pg *Postgres) mutate(ctx context.Context, p ConnParams, database, table string,
 	build func(meta *tableMeta) (string, []any, error)) error {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -209,7 +209,7 @@ func (pg *Postgres) DeleteRow(ctx context.Context, p ConnParams, database, table
 
 // ImportCSV loads a CSV into the table in one transaction (all or nothing).
 func (pg *Postgres) ImportCSV(ctx context.Context, p ConnParams, database, table string, r io.Reader, opts ImportOptions) (int64, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return 0, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)

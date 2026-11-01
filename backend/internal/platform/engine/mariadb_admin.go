@@ -139,7 +139,7 @@ func (m *MariaDB) UserGrants(ctx context.Context, p ConnParams, user, host strin
 
 // SchemaGrants returns per-account privileges on one schema.
 func (m *MariaDB) SchemaGrants(ctx context.Context, p ConnParams, database string) ([]SchemaGrant, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	db, err := m.open(p)
@@ -200,7 +200,7 @@ func (m *MariaDB) Grant(ctx context.Context, p ConnParams, user, host, database 
 	if err := m.validateAccount(user, host); err != nil {
 		return err
 	}
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return fmt.Errorf("invalid database name")
 	}
 	privs, err := validatePrivileges(privileges)
@@ -226,7 +226,7 @@ func (m *MariaDB) Revoke(ctx context.Context, p ConnParams, user, host, database
 	if err := m.validateAccount(user, host); err != nil {
 		return err
 	}
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return fmt.Errorf("invalid database name")
 	}
 	db, err := m.open(p)
@@ -269,7 +269,7 @@ func validatePrivileges(privs []string) ([]string, error) {
 
 // ListTables returns table metadata for a database.
 func (m *MariaDB) ListTables(ctx context.Context, p ConnParams, database string) ([]TableInfo, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	db, err := m.open(p)
@@ -328,7 +328,7 @@ func (m *MariaDB) session(ctx context.Context, p ConnParams) (*sql.Conn, func(),
 
 // TableRows returns one page of a table's data with stringified values.
 func (m *MariaDB) TableRows(ctx context.Context, p ConnParams, database, table string, limit, offset int) (*RowsPage, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if !validTableName(table) {
@@ -391,7 +391,7 @@ func (m *MariaDB) TableRows(ctx context.Context, p ConnParams, database, table s
 
 // TableSchema returns a table's columns, indexes and CREATE DDL.
 func (m *MariaDB) TableSchema(ctx context.Context, p ConnParams, database, table string) (*TableSchema, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if !validTableName(table) {
@@ -491,7 +491,7 @@ func (m *MariaDB) Query(ctx context.Context, p ConnParams, database, sqlText str
 // error, returning the results so far. Without allowWrite every statement
 // must be a read and runs in a READ ONLY transaction.
 func (m *MariaDB) QueryBatch(ctx context.Context, p ConnParams, database string, stmts []string, limit int, allowWrite bool, onSession func(id int64)) ([]QueryResult, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if err := checkBatch(stmts, allowWrite); err != nil {
@@ -587,7 +587,7 @@ func (m *MariaDB) runStatement(ctx context.Context, conn *sql.Conn, stmt string,
 
 // ExportCSV streams a whole table or a read-only query to w as CSV.
 func (m *MariaDB) ExportCSV(ctx context.Context, p ConnParams, database, table, query string, w io.Writer, onStart func()) (int64, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return 0, fmt.Errorf("invalid database name")
 	}
 	var sqlText string
