@@ -25,7 +25,7 @@ func pgNotExtension(catalog, oidCol string) string {
 // name in a definition comes out schema-qualified, the same whichever role
 // reads it. Partitions are left out (their parent is read).
 func (pg *Postgres) ReadSchema(ctx context.Context, p ConnParams, database string) (*schemadiff.Schema, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)

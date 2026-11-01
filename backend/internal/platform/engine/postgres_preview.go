@@ -14,7 +14,7 @@ var _ Previewer = (*Postgres)(nil)
 // back. PostgreSQL rolls back DDL too, but the allowlist keeps previews to
 // statements whose effects a rollback fully undoes.
 func (pg *Postgres) PreviewBatch(ctx context.Context, p ConnParams, database string, stmts []string, limit int, onSession func(id int64)) ([]QueryResult, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if err := checkBatch(stmts, true); err != nil {

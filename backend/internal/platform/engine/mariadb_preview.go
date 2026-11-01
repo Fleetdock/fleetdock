@@ -17,7 +17,7 @@ var _ Previewer = (*MariaDB)(nil)
 // statements committed; refused when the database has tables whose engine
 // cannot roll back (MyISAM, Aria, MEMORY…).
 func (m *MariaDB) PreviewBatch(ctx context.Context, p ConnParams, database string, stmts []string, limit int, onSession func(id int64)) ([]QueryResult, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if err := checkBatch(stmts, true); err != nil {

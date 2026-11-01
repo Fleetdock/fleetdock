@@ -68,7 +68,7 @@ func (m *MariaDB) GetRows(ctx context.Context, p ConnParams, database, table str
 // backup copy's events would otherwise keep running, possibly writing to
 // other databases). It returns how many it disabled.
 func (m *MariaDB) DisableEvents(ctx context.Context, p ConnParams, database string) (int, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return 0, fmt.Errorf("invalid database name")
 	}
 	db, err := m.open(p)

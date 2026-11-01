@@ -9,7 +9,7 @@ var _ RowReader = (*Postgres)(nil)
 
 func (pg *Postgres) readRows(ctx context.Context, p ConnParams, database, table string,
 	build func(meta *tableMeta) (string, []any, error), limit int) (*ScanPage, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)

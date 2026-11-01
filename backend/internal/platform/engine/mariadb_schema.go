@@ -23,7 +23,7 @@ var (
 // view bodies are dropped, so the same structure in two databases compares
 // equal.
 func (m *MariaDB) ReadSchema(ctx context.Context, p ConnParams, database string) (*schemadiff.Schema, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	db, err := m.open(p)

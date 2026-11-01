@@ -38,7 +38,7 @@ func mysqlStatsSince(ctx context.Context, db *sql.DB) *time.Time {
 // by default, from the user-statistics plugin's INDEX_STATISTICS when
 // userstat=1; otherwise usage is reported unavailable.
 func (m *MariaDB) IndexReport(ctx context.Context, p ConnParams, database string) (*IndexReport, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	db, err := m.open(p)
@@ -232,7 +232,7 @@ func (m *MariaDB) TopQueries(ctx context.Context, p ConnParams, req TopQueriesRe
 // FORMAT=JSON or MySQL's EXPLAIN ANALYZE (tree text) executes the statement
 // inside a read-only transaction that is rolled back.
 func (m *MariaDB) Explain(ctx context.Context, p ConnParams, database, stmt string, analyze bool) (*ExplainResult, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	stmt, err := explainable(stmt)

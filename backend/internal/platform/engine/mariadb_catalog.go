@@ -12,7 +12,7 @@ var _ Catalog = (*MariaDB)(nil)
 // Columns lists the database's tables and views with their columns from
 // information_schema, which already hides objects the login cannot read.
 func (m *MariaDB) Columns(ctx context.Context, p ConnParams, database string) (*ColumnCatalog, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	db, err := m.open(p)

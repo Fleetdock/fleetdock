@@ -27,9 +27,10 @@ func TestIntegrationRowReader(t *testing.T) {
 			ctx := context.Background()
 			root := itParams(t, c.env, c.user)
 			waitReady(t, c.eng, root)
-			const db = "fd_it_reader"
-			mustQuery(t, c.eng, root, c.maint, "DROP DATABASE IF EXISTS "+db, true)
-			mustQuery(t, c.eng, root, c.maint, "CREATE DATABASE "+db, true)
+			// A '-' in the name: database names may contain one.
+			const db = "fd-it-reader"
+			mustQuery(t, c.eng, root, c.maint, "DROP DATABASE IF EXISTS "+quoteDB(c.maint, db), true)
+			mustQuery(t, c.eng, root, c.maint, "CREATE DATABASE "+quoteDB(c.maint, db), true)
 			mustQuery(t, c.eng, root, db, c.ddl, true)
 			// Mixed case on a case-insensitive key: the database's order,
 			// not Go's byte order, must drive the scan.
@@ -78,4 +79,13 @@ func TestIntegrationRowReader(t *testing.T) {
 			}
 		})
 	}
+}
+
+// quoteDB quotes a test database name for the engine whose maintenance
+// database is maint.
+func quoteDB(maint, name string) string {
+	if maint == "postgres" {
+		return `"` + name + `"`
+	}
+	return "`" + name + "`"
 }

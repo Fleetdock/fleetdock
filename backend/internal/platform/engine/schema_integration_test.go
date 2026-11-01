@@ -70,10 +70,10 @@ func TestIntegrationSchemaRoundTrip(t *testing.T) {
 			ctx := context.Background()
 			root := itParams(t, c.env, c.user)
 			waitReady(t, c.eng, root)
-			const sa, sb = "fd_it_schema_a", "fd_it_schema_b"
+			const sa, sb = "fd-it-schema-a", "fd-it-schema-b"
 			for db, ddl := range map[string][]string{sa: c.source, sb: c.target} {
-				mustQuery(t, c.eng, root, c.maint, "DROP DATABASE IF EXISTS "+db, true)
-				mustQuery(t, c.eng, root, c.maint, "CREATE DATABASE "+db, true)
+				mustQuery(t, c.eng, root, c.maint, "DROP DATABASE IF EXISTS "+quoteDB(c.maint, db), true)
+				mustQuery(t, c.eng, root, c.maint, "CREATE DATABASE "+quoteDB(c.maint, db), true)
 				for _, s := range ddl {
 					mustQuery(t, c.eng, root, db, s, true)
 				}

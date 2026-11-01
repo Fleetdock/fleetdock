@@ -15,7 +15,7 @@ var _ Insights = (*Postgres)(nil)
 // IndexReport lists the database's indexes with pg_stat_user_indexes scan
 // counts, which PostgreSQL always collects.
 func (pg *Postgres) IndexReport(ctx context.Context, p ConnParams, database string) (*IndexReport, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -86,7 +86,7 @@ func (pg *Postgres) TopQueries(ctx context.Context, p ConnParams, req TopQueries
 	req = req.normalized()
 	out := &TopQueries{Queries: []TopQuery{}}
 	candidates := []string{"postgres"}
-	if req.Database != "" && req.Database != "postgres" && identRe.MatchString(req.Database) {
+	if req.Database != "" && req.Database != "postgres" && validDBName(req.Database) {
 		candidates = append(candidates, req.Database)
 	}
 	for _, dbName := range candidates {
@@ -161,7 +161,7 @@ func (pg *Postgres) topQueries(ctx context.Context, conn *pgx.Conn, req TopQueri
 // Explain runs EXPLAIN (FORMAT JSON). With analyze it runs EXPLAIN (ANALYZE,
 // BUFFERS) inside a read-only transaction that is rolled back.
 func (pg *Postgres) Explain(ctx context.Context, p ConnParams, database, stmt string, analyze bool) (*ExplainResult, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	stmt, err := explainable(stmt)

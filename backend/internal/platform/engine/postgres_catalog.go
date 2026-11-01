@@ -18,7 +18,7 @@ func pgUserSchema(col string) string {
 // is listed), as are relations the login has no privilege on — pg_catalog
 // lists them all, unlike information_schema.
 func (pg *Postgres) Columns(ctx context.Context, p ConnParams, database string) (*ColumnCatalog, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -59,7 +59,7 @@ func (pg *Postgres) Columns(ctx context.Context, p ConnParams, database string) 
 // ReferencedBy lists the foreign keys that reference table. Referencing
 // tables are named "schema.table", as everywhere on PostgreSQL.
 func (pg *Postgres) ReferencedBy(ctx context.Context, p ConnParams, database, table string) ([]ForeignKey, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if !validTableName(table) {
