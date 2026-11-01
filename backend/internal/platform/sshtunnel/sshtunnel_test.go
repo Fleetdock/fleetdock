@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -66,6 +67,13 @@ func TestDialPasswordPinsHostKey(t *testing.T) {
 	c, err := Dial(context.Background(), cfg, "tcp", db)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Drivers set I/O deadlines; the raw SSH channel rejects them.
+	if err := c.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	if err := c.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("SetWriteDeadline: %v", err)
 	}
 	roundTrip(t, c)
 	_ = c.Close()

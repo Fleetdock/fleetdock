@@ -271,6 +271,15 @@ func (t *tunnelConn) Close() error {
 	return err
 }
 
+// SSH direct-tcpip channels do not implement deadlines: SetReadDeadline and
+// SetWriteDeadline return "deadline not supported". Database drivers treat
+// that error as a broken connection (the MySQL driver reports it as
+// "invalid connection") before any query runs. Accept the call and leave the
+// channel without a deadline so the session can proceed.
+func (t *tunnelConn) SetDeadline(time.Time) error      { return nil }
+func (t *tunnelConn) SetReadDeadline(time.Time) error  { return nil }
+func (t *tunnelConn) SetWriteDeadline(time.Time) error { return nil }
+
 // Forward listens on an ephemeral 127.0.0.1 port and forwards every accepted
 // connection to dbAddr through one SSH session. The returned close function
 // stops the listener and tears the session down.
