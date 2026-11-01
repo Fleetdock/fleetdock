@@ -3,6 +3,7 @@ package probeapp
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -147,4 +148,72 @@ func TestProbe_UnreachableManagedAsksAgentAtMostHourly(t *testing.T) {
 	if requests != 2 {
 		t.Errorf("requests after 61 min = %d, want 2", requests)
 	}
+}
+
+// blockingStats lists databases immediately and holds DatabaseStats until its
+// context ends, standing in for a size query that outlasts the health check.
+type blockingStats struct {
+	fakeEngine
+	note func(string)
+}
+
+func (blockingStats) Processes(context.Context, engine.ConnParams) ([]engine.Process, error) {
+	return nil, nil
+}
+func (blockingStats) KillProcess(context.Context, engine.ConnParams, int64, bool) error {
+	return nil
+}
+func (blockingStats) ServerStatus(context.Context, engine.ConnParams) ([]engine.Setting, error) {
+	return nil, nil
+}
+func (blockingStats) Variables(context.Context, engine.ConnParams) ([]engine.Setting, error) {
+	return nil, nil
+}
+func (b blockingStats) DatabaseStats(ctx context.Context, _ engine.ConnParams) ([]engine.DatabaseStat, error) {
+	b.note("stats")
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestProbe_SavesDatabaseListBeforeSlowStats(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	note := func(step string) {
+		mu.Lock()
+		order = append(order, step)
+		mu.Unlock()
+	}
+	engine.Register("probe-slow-stats", blockingStats{note: note})
+	rec := &fakeReconciler{}
+	svc := NewService(&healthRepo{got: map[uuid.UUID]instancedom.Health{}}, &notifyingReconciler{
+		fakeReconciler: rec,
+		note:           note,
+	}, addrServers{}, pw{})
+	svc.statsTimeout = 30 * time.Millisecond
+
+	svc.Probe(context.Background(), newInstance("probe-slow-stats", instancedom.KindExternal, 5432))
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) < 2 || order[0] != "save" || order[1] != "stats" {
+		t.Fatalf("order = %v, want save before stats", order)
+	}
+	if len(rec.calls) == 0 || len(rec.calls[0]) != 2 || rec.calls[0][0].Name != "app" {
+		t.Fatalf("first reconcile = %+v", rec.calls)
+	}
+}
+
+// notifyingReconciler records when the database list is written.
+type notifyingReconciler struct {
+	*fakeReconciler
+	note func(string)
+	once bool
+}
+
+func (n *notifyingReconciler) Reconcile(ctx context.Context, id uuid.UUID, seen []databasedom.Observed, now time.Time) (databasedom.ReconcileResult, error) {
+	if !n.once {
+		n.once = true
+		n.note("save")
+	}
+	return n.fakeReconciler.Reconcile(ctx, id, seen, now)
 }

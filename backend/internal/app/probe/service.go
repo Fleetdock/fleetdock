@@ -46,14 +46,16 @@ type AgentImporter interface {
 
 // Service runs probes.
 type Service struct {
-	instances instancedom.Repository
-	dbs       Reconciler
-	servers   dbtarget.Servers
-	secrets   Secrets
-	notify    Emitter
-	importer  AgentImporter
-	timeout   time.Duration
-	parallel  int
+	instances       instancedom.Repository
+	dbs             Reconciler
+	servers         dbtarget.Servers
+	secrets         Secrets
+	notify          Emitter
+	importer        AgentImporter
+	timeout         time.Duration
+	discoverTimeout time.Duration
+	statsTimeout    time.Duration
+	parallel        int
 
 	// agentImportEvery bounds how often an unreachable managed instance's
 	// agent is asked for its database list (each request is an operation).
@@ -67,7 +69,8 @@ type Service struct {
 func NewService(instances instancedom.Repository, dbs Reconciler, servers dbtarget.Servers, secrets Secrets) *Service {
 	return &Service{
 		instances: instances, dbs: dbs, servers: servers, secrets: secrets,
-		timeout: 10 * time.Second, parallel: 8,
+		timeout: 10 * time.Second, discoverTimeout: 45 * time.Second, statsTimeout: 20 * time.Second,
+		parallel:         8,
 		agentImportEvery: time.Hour,
 		lastAgentImport:  map[uuid.UUID]time.Time{},
 		now:              time.Now,
@@ -137,17 +140,18 @@ func (s *Service) ProbeOne(ctx context.Context, id string) (instancedom.Health, 
 }
 
 // Probe checks one instance, reconciles its databases and records the result.
+// The reachability check and database discovery have separate deadlines: a
+// slow size query must not cancel the import of the database list.
 func (s *Service) Probe(ctx context.Context, inst *instancedom.Instance) instancedom.Health {
-	ctx, cancel := context.WithTimeout(ctx, s.timeout)
-	defer cancel()
-
 	h := instancedom.Health{CheckedAt: s.now().UTC()}
-	conn, eng, mon, err := s.connect(ctx, inst)
+	pingCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	conn, eng, mon, err := s.connect(pingCtx, inst)
 	if err == nil {
 		start := time.Now()
-		h.Version, err = eng.Ping(ctx, conn)
+		h.Version, err = eng.Ping(pingCtx, conn)
 		h.LatencyMS = time.Since(start).Milliseconds()
 	}
+	cancel()
 	switch {
 	case err == nil:
 		h.Status = instancedom.HealthHealthy
@@ -173,23 +177,43 @@ func (s *Service) Probe(ctx context.Context, inst *instancedom.Instance) instanc
 	return h
 }
 
-// discover lists the instance's databases and reconciles them.
+// discover lists the instance's databases and reconciles them. The list is
+// saved before usage stats are collected: those queries walk every table and,
+// over an SSH tunnel, can outlast the health check.
 func (s *Service) discover(ctx context.Context, inst *instancedom.Instance, eng engine.Client, mon engine.Monitor, conn engine.ConnParams) {
-	listed, err := eng.ListDatabases(ctx, conn)
+	listCtx, cancel := context.WithTimeout(ctx, s.discoverTimeout)
+	listed, err := eng.ListDatabases(listCtx, conn)
+	cancel()
 	if err != nil {
 		// Without a trustworthy list, reconciling could wrongly mark
 		// everything missing; skip this round.
 		slog.Warn("list databases", "instance_id", inst.ID, "error", err.Error())
 		return
 	}
-	stats := map[string]engine.DatabaseStat{}
-	if mon != nil {
-		if st, err := mon.DatabaseStats(ctx, conn); err == nil {
-			for _, x := range st {
-				stats[x.Name] = x
-			}
-		}
+	seen := observations(inst, listed, nil)
+	if !s.reconcile(ctx, inst, seen) {
+		return
 	}
+	if mon == nil || len(seen) == 0 {
+		return
+	}
+	statsCtx, cancel := context.WithTimeout(ctx, s.statsTimeout)
+	st, err := mon.DatabaseStats(statsCtx, conn)
+	cancel()
+	if err != nil {
+		slog.Warn("database stats", "instance_id", inst.ID, "error", err.Error())
+		return
+	}
+	stats := make(map[string]engine.DatabaseStat, len(st))
+	for _, x := range st {
+		stats[x.Name] = x
+	}
+	s.reconcile(ctx, inst, observations(inst, listed, stats))
+}
+
+// observations turns an engine listing into the rows reconcile stores.
+// stats may be nil; sizes are filled in on a later pass.
+func observations(inst *instancedom.Instance, listed []engine.DatabaseInfo, stats map[string]engine.DatabaseStat) []databasedom.Observed {
 	seen := make([]databasedom.Observed, 0, len(listed))
 	for _, d := range listed {
 		if databasedom.IsScratchName(d.Name) {
@@ -202,10 +226,17 @@ func (s *Service) discover(ctx context.Context, inst *instancedom.Instance, eng 
 			SizeBytes: st.SizeBytes, Connections: st.Connections,
 		})
 	}
-	res, err := s.dbs.Reconcile(ctx, inst.ID, seen, s.now())
+	return seen
+}
+
+// reconcile writes one observation pass. It reports whether the write landed.
+func (s *Service) reconcile(ctx context.Context, inst *instancedom.Instance, seen []databasedom.Observed) bool {
+	saveCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	res, err := s.dbs.Reconcile(saveCtx, inst.ID, seen, s.now())
 	if err != nil {
 		slog.Warn("reconcile databases", "instance_id", inst.ID, "error", err.Error())
-		return
+		return false
 	}
 	if len(res.Added) > 0 {
 		slog.Info("discovered databases", "instance_id", inst.ID, "names", strings.Join(res.Added, ","))
@@ -216,6 +247,7 @@ func (s *Service) discover(ctx context.Context, inst *instancedom.Instance, eng 
 				inst.Name, strings.Join(res.Missing, ", ")),
 			"warning", "instance", inst.ID)
 	}
+	return true
 }
 
 // requestAgentImport asks the agent of a managed instance the control plane
