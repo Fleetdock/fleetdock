@@ -13,7 +13,7 @@ import { PublicEndpointCard } from "./public-endpoint-card";
 const TERMINAL = ["succeeded", "failed", "canceled"];
 
 /** connectionURL builds a credential-free URL apps can start from. */
-function connectionURL(protocol: string, host: string, port: number, database?: string): string {
+export function connectionURL(protocol: string, host: string, port: number, database?: string): string {
   const scheme = protocol === "postgresql" ? "postgresql" : "mysql";
   const db = database ? `/${encodeURIComponent(database)}` : "";
   return `${scheme}://${host}:${port}${db}`;

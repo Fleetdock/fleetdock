@@ -17,11 +17,11 @@ import {
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
-import { Crosshair, Download, LayoutGrid, Search } from "lucide-react";
+import { Crosshair, Download, LayoutGrid, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button, Callout, Menu, SearchInput, SegmentedControl, Select, Toolbar } from "@/components/ui";
+import { Button, Callout, HelpText, IconButton, Menu, SearchInput, SegmentedControl, Select, Toolbar } from "@/components/ui";
 import { loadJSON, save as saveStorage } from "@/lib/data-browser/storage";
 import { friendlyError } from "@/lib/errors";
 import type { Diagram } from "@/lib/types";
@@ -316,25 +316,24 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
     }
   };
 
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const notices = [
+    data.truncated
+      ? { id: "truncated", tone: "warning" as const, dismissible: true, text: "Only part of this database is shown: it has more tables, columns or foreign keys than the diagram reads at once." }
+      : null,
+    large && mode === "focus"
+      ? { id: "large", tone: "info" as const, dismissible: true, text: `This database has ${g.tables.size} tables, so the diagram starts with one table and its neighbours. Search for a table to move the focus, or show all tables.` }
+      : null,
+    notice ? { id: `notice:${notice}`, tone: "warning" as const, dismissible: true, text: notice } : null,
+    layoutError ? { id: "layout", tone: "danger" as const, dismissible: false, text: layoutError } : null,
+  ].filter((n): n is NonNullable<typeof n> => n !== null && !dismissed.includes(n.id));
+
   const counts = `${visible.length} of ${g.tables.size} table${g.tables.size === 1 ? "" : "s"} · ${relations.length} relation${relations.length === 1 ? "" : "s"}`;
   const tableOptions = useMemo(() => [...g.tables.keys()].sort(), [g]);
 
   return (
-    <div className="erd stack-sm">
-      {data.truncated ? (
-        <Callout tone="warning" title="Only part of this database is shown">
-          It has more tables, columns or foreign keys than the diagram reads at once.
-        </Callout>
-      ) : null}
-      {large && mode === "focus" ? (
-        <Callout tone="info">
-          This database has {g.tables.size} tables, so the diagram starts with one table and its neighbours. Search for
-          a table to move the focus, or show all tables.
-        </Callout>
-      ) : null}
-      {notice ? <Callout tone="warning">{notice}</Callout> : null}
-
-      <Toolbar>
+    <div className="erd">
+      <Toolbar className="erd-toolbar">
         <form onSubmit={onSearch} role="search" className="erd-search">
           <SearchInput
             icon={<Search size={15} aria-hidden />}
@@ -385,6 +384,11 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
         ) : null}
         <div className="toolbar-spacer" />
         <span className="text-xs text-muted num">{counts}</span>
+        <HelpText label="How to read the diagram">
+          Arrows point from the referencing table to the one it references; dashed lines are optional (nullable)
+          keys. Click a table to highlight its relations, double-click it to open it in the data browser.
+          {persistent ? " Positions you drag are kept in this browser." : ""}
+        </HelpText>
         {selected && (mode === "all" || selected !== focus) ? (
           <Button
             size="sm"
@@ -411,9 +415,26 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
         />
       </Toolbar>
 
-      {layoutError ? <Callout tone="danger">{layoutError}</Callout> : null}
-
-      <div ref={wrapper} className="erd-canvas card" aria-label={`Entity-relationship diagram of ${databaseName}`}>
+      {notices.length > 0 ? (
+        <div className="erd-notices">
+          {notices.map((n) => (
+            <Callout
+              key={n.id}
+              tone={n.tone}
+              actions={
+                n.dismissible ? (
+                  <IconButton label="Dismiss" onClick={() => setDismissed((d) => [...d, n.id])}>
+                    <X size={15} aria-hidden />
+                  </IconButton>
+                ) : undefined
+              }
+            >
+              {n.text}
+            </Callout>
+          ))}
+        </div>
+      ) : null}
+      <div ref={wrapper} className="erd-canvas" aria-label={`Entity-relationship diagram of ${databaseName}`}>
         <ReactFlow<TableNodeType, Edge>
           nodes={nodes}
           edges={edges}
@@ -435,11 +456,6 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
           {nodes.length > 12 ? <MiniMap pannable zoomable className="erd-minimap" /> : null}
         </ReactFlow>
       </div>
-      <p className="text-xs text-muted">
-        Arrows point from the referencing table to the one it references; dashed lines are optional (nullable) keys.
-        Click a table to highlight its relations, double-click to open it in the data browser.
-        {persistent ? " Positions you drag are kept in this browser." : ""}
-      </p>
     </div>
   );
 }

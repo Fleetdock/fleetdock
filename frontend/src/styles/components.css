@@ -1524,6 +1524,11 @@
     height: calc(100dvh - var(--topbar-h));
     overflow: hidden;
   }
+  /* Full screen: no top bar above it. */
+  .app-main.app-main-focus {
+    height: 100vh;
+    height: 100dvh;
+  }
 
   /* topbar */
   .topbar {

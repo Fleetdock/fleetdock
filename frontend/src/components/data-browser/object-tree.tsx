@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useToast } from "@/components/toast";
@@ -20,6 +21,7 @@ import {
   FunctionSquare,
   Layers,
   ListOrdered,
+  Network,
   Plus,
   RefreshCw,
   Search,
@@ -141,6 +143,7 @@ export const ObjectTree = forwardRef<
   },
   ref,
 ) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [cursor, setCursor] = useState(-1);
@@ -418,6 +421,12 @@ export const ObjectTree = forwardRef<
               <Plus size={15} aria-hidden />
             </IconButton>
           ) : null}
+          <IconButton
+            label="ER diagram"
+            onClick={() => router.push(`/databases/${encodeURIComponent(databaseId)}/diagram`)}
+          >
+            <Network size={14} aria-hidden />
+          </IconButton>
           <IconButton label="Refresh the list" onClick={onRefresh} disabled={refreshing}>
             <RefreshCw size={14} aria-hidden className={refreshing ? "spin-icon" : undefined} />
           </IconButton>
