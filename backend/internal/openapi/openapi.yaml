@@ -2966,7 +2966,7 @@ paths:
               type: object
               properties:
                 sql: {type: string}
-                limit: {type: integer, maximum: 1000, default: 100, description: Rows returned per statement}
+                limit: {type: integer, maximum: 5000, default: 100, description: Rows returned per statement (larger values are capped at 5000)}
                 query_id: {type: string, format: uuid}
                 preview: {type: boolean, default: false, description: Dry run in a transaction that is rolled back.}
       responses:

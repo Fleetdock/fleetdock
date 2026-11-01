@@ -105,7 +105,8 @@ export type GridProps = {
   onDeleteRows: (rows: number[]) => void;
   onRestoreRows: (rows: number[]) => void;
   onDuplicate: (row: number) => void;
-  onFilterBy: (column: string, value: string | null) => void;
+  /** Absent for query results, which cannot be filtered. */
+  onFilterBy?: (column: string, value: string | null) => void;
   onFollow: (fk: ForeignKey, row: RowRecord) => void;
   /** Foreign keys of other tables that reference this one. */
   incoming: ForeignKey[];
@@ -394,8 +395,8 @@ export function DataGrid(props: GridProps) {
       {
         label: st.value === null ? `Filter: ${col.name} is NULL` : `Filter: ${col.name} = ${short(st.value)}`,
         icon: <Filter size={14} />,
-        hidden: st.isDefault || row.kind === "new",
-        onSelect: () => props.onFilterBy(col.name, st.value),
+        hidden: st.isDefault || row.kind === "new" || !props.onFilterBy,
+        onSelect: () => props.onFilterBy?.(col.name, st.value),
       },
       {
         label: `Open referenced row in ${fk?.ref_table}`,
@@ -449,7 +450,7 @@ export function DataGrid(props: GridProps) {
         hidden: !props.onFilterColumn,
         onSelect: () => props.onFilterColumn?.(col.name),
       },
-      { label: "Filter: is NULL", hidden: !col.nullable, onSelect: () => props.onFilterBy(col.name, null) },
+      { label: "Filter: is NULL", hidden: !col.nullable || !props.onFilterBy, onSelect: () => props.onFilterBy?.(col.name, null) },
       { label: "Fit width to content", onSelect: () => autoFit(col) },
       "separator",
       {
