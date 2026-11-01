@@ -441,21 +441,21 @@ func TestIntegrationDataEditing(t *testing.T) {
 
 			// Single-row edits.
 			newNote := "edited"
-			if err := c.eng.UpdateRow(ctx, root, "fd_it_data", c.table, RowValues{"id": &annID}, RowValues{"note": &newNote, "age": nil}); err != nil {
+			if _, err := c.eng.UpdateRow(ctx, root, "fd_it_data", c.table, RowValues{"id": &annID}, RowValues{"note": &newNote, "age": nil}); err != nil {
 				t.Fatalf("update: %v", err)
 			}
-			if err := c.eng.UpdateRow(ctx, root, "fd_it_data", c.table, RowValues{"id": &annID}, RowValues{"note": &newNote}); err != nil {
+			if _, err := c.eng.UpdateRow(ctx, root, "fd_it_data", c.table, RowValues{"id": &annID}, RowValues{"note": &newNote}); err != nil {
 				t.Errorf("re-saving identical values must still match one row: %v", err)
 			}
 			missing := "999999"
-			if err := c.eng.UpdateRow(ctx, root, "fd_it_data", c.table, RowValues{"id": &missing}, RowValues{"note": &newNote}); err == nil {
+			if _, err := c.eng.UpdateRow(ctx, root, "fd_it_data", c.table, RowValues{"id": &missing}, RowValues{"note": &newNote}); err == nil {
 				t.Error("update of a missing row should fail")
 			}
 			name, ag := "dee", "55"
-			if err := c.eng.InsertRow(ctx, root, "fd_it_data", c.table, RowValues{"name": &name, "age": &ag}); err != nil {
+			if _, err := c.eng.InsertRow(ctx, root, "fd_it_data", c.table, RowValues{"name": &name, "age": &ag}); err != nil {
 				t.Fatalf("insert: %v", err)
 			}
-			if err := c.eng.DeleteRow(ctx, root, "fd_it_data", c.table, RowValues{"id": &annID}); err != nil {
+			if _, err := c.eng.DeleteRow(ctx, root, "fd_it_data", c.table, RowValues{"id": &annID}); err != nil {
 				t.Fatalf("delete: %v", err)
 			}
 			nullFilter := BrowseRequest{Table: c.table, Filters: []Filter{{Column: "age", Op: OpIsNull}}}
@@ -467,7 +467,7 @@ func TestIntegrationDataEditing(t *testing.T) {
 
 			// Keyless tables are browse-only.
 			one := "1"
-			if err := c.eng.DeleteRow(ctx, root, "fd_it_data", nokey, RowValues{"a": &one}); err == nil {
+			if _, err := c.eng.DeleteRow(ctx, root, "fd_it_data", nokey, RowValues{"a": &one}); err == nil {
 				t.Error("delete on a keyless table should be refused")
 			}
 		})

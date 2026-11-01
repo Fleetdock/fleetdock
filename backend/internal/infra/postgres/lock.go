@@ -11,6 +11,7 @@ import (
 const (
 	lockKeyMigrations   int64 = 0x666c6474_00000001 // "fldt" + 1
 	lockKeyHousekeeping int64 = 0x666c6474_00000002
+	lockKeyCatalog      int64 = 0x666c6474_00000003
 )
 
 // TryLock takes a session-level advisory lock on its own pooled connection,
@@ -40,6 +41,14 @@ func TryLock(ctx context.Context, pool *pgxpool.Pool, key int64) (release func()
 func HousekeepingLock(pool *pgxpool.Pool) func(context.Context) (func(), bool, error) {
 	return func(ctx context.Context) (func(), bool, error) {
 		return TryLock(ctx, pool, lockKeyHousekeeping)
+	}
+}
+
+// CatalogLock is TryLock for the schema-catalog refresh loop. It is separate
+// from the housekeeping lock so a slow catalog pass never delays schedules.
+func CatalogLock(pool *pgxpool.Pool) func(context.Context) (func(), bool, error) {
+	return func(ctx context.Context) (func(), bool, error) {
+		return TryLock(ctx, pool, lockKeyCatalog)
 	}
 }
 

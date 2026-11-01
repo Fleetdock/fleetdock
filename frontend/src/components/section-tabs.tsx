@@ -1,10 +1,11 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
 import { useVisibleSections } from "@/components/sidebar";
-import { EmptyState, Spinner, TabNav } from "@/components/ui";
+import { ButtonLink, EmptyState, PageSkeleton, TabNav } from "@/components/ui";
 import { useMe } from "@/lib/hooks";
 import { NAV } from "@/lib/nav";
 
@@ -34,17 +35,19 @@ export function SectionIndex({ section }: { section: string }) {
   }, [router, target]);
 
   if (isLoading || target) {
-    return (
-      <div className="flex items-center gap-2 muted text-sm">
-        <Spinner /> Loading…
-      </div>
-    );
+    return <PageSkeleton label="Loading" />;
   }
   const all = NAV.find((s) => s.label === section);
   return (
     <EmptyState
+      icon={<Lock size={22} />}
       title={`You don't have access to ${section}`}
       hint={`Ask an administrator for access to ${all?.pages.map((p) => p.label.toLowerCase()).join(" or ") ?? "this section"}.`}
+      action={
+        <ButtonLink href="/dashboard" variant="primary">
+          Back to Overview
+        </ButtonLink>
+      }
     />
   );
 }

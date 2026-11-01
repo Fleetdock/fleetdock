@@ -1,8 +1,8 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ChevronRight } from "lucide-react";
 
 export type Crumb = { label: string; href?: string };
 
@@ -16,7 +16,11 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
           const last = i === items.length - 1;
           return (
             <li key={`${c.label}-${i}`}>
-              {c.href && !last ? <Link href={c.href}>{c.label}</Link> : <span aria-current={last ? "page" : undefined}>{c.label}</span>}
+              {c.href && !last ? (
+                <Link href={c.href}>{c.label}</Link>
+              ) : (
+                <span aria-current={last ? "page" : undefined}>{c.label}</span>
+              )}
               {!last ? <ChevronRight size={13} aria-hidden /> : null}
             </li>
           );
@@ -47,12 +51,14 @@ export function PageHeader({
     <header className="page-header">
       {breadcrumbs ? <Breadcrumbs items={breadcrumbs} /> : null}
       <div className="page-header-row">
-        <div style={{ minWidth: 0 }}>
-          <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-            <h1 className="text-xl font-semibold">{title}</h1>
+        <div className="page-header-main">
+          <div className="page-title-row">
+            <h1 className="page-title">{title}</h1>
             {badges}
           </div>
-          {description ? <p className="muted text-sm" style={{ marginTop: ".2rem" }}>{description}</p> : null}
+          {description ? (
+            <p className="page-description">{description}</p>
+          ) : null}
         </div>
         {actions ? <div className="page-header-actions">{actions}</div> : null}
       </div>

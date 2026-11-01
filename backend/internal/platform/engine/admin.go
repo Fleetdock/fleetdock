@@ -76,6 +76,9 @@ type QueryResult struct {
 	RowsAffected int64       `json:"rows_affected"` // for write statements
 	ReadOnly     bool        `json:"read_only"`     // whether it ran as a read-only statement
 	DurationMS   int64       `json:"duration_ms"`
+	// Sample and Notes are set by a preview (PreviewBatch).
+	Sample *PreviewSample `json:"sample,omitempty"`
+	Notes  []string       `json:"notes,omitempty"`
 }
 
 // Admin is the set of live administration operations the dashboard uses

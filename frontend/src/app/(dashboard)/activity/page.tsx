@@ -1,11 +1,11 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { ChevronRight } from "lucide-react";
 import { DataTable } from "@/components/data-table";
-import { PageHeader, StatusBadge, Time } from "@/components/ui";
+import { ButtonLink, PageHeader, Select, StatusBadge, Time } from "@/components/ui";
 import { LIST_PAGE_SIZE, useOperations } from "@/lib/hooks";
 import { operationLabel, resourceHref } from "@/lib/operations";
 import { friendlyError } from "@/lib/errors";
@@ -14,7 +14,7 @@ import type { Operation } from "@/lib/types";
 export default function OperationsPage() {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
-  const { data, isLoading, error } = useOperations({ status: status || undefined, page });
+  const { data, isLoading, error, refetch } = useOperations({ status: status || undefined, page });
 
   return (
     <div>
@@ -57,7 +57,7 @@ export default function OperationsPage() {
             className: "muted",
             hideOnMobile: true,
             render: (op) => (
-              <span className="truncate" style={{ maxWidth: 320, display: "block" }} title={op.error ?? undefined}>
+              <span className="truncate block max-w-80" title={op.error ?? undefined}>
                 {op.error ?? ""}
               </span>
             ),
@@ -75,9 +75,14 @@ export default function OperationsPage() {
             header: "",
             align: "right",
             render: (op) => (
-              <Link href={`/activity/${op.id}`} className="btn btn-ghost btn-sm" aria-label={`Open ${operationLabel(op.type)}`}>
-                <ChevronRight size={15} />
-              </Link>
+              <ButtonLink
+                href={`/activity/${op.id}`}
+                variant="ghost"
+                size="sm"
+                className="btn-icon"
+                aria-label={`Open ${operationLabel(op.type)}`}
+                icon={<ChevronRight size={15} aria-hidden />}
+              />
             ),
           },
         ]}
@@ -86,12 +91,17 @@ export default function OperationsPage() {
         isLoading={isLoading}
         error={error ? friendlyError(error) : undefined}
         errorTitle="Could not load activity"
-        emptyTitle="Nothing here yet"
-        emptyHint="Backups, new databases and other tasks appear here."
+        onRetry={() => void refetch()}
+        emptyTitle={status ? "No tasks with this status" : "Nothing here yet"}
+        emptyHint={
+          status
+            ? "Try another status, or show all tasks."
+            : "Backups, new databases and other tasks appear here as soon as they start."
+        }
         toolbar={
-          <select
-            className="input"
-            style={{ width: "11rem" }}
+          <Select
+            size="sm"
+            className="w-44"
             aria-label="Filter by status"
             value={status}
             onChange={(e) => {
@@ -104,7 +114,7 @@ export default function OperationsPage() {
             <option value="running">Running</option>
             <option value="succeeded">Succeeded</option>
             <option value="failed">Failed</option>
-          </select>
+          </Select>
         }
         pagination={{
           page,

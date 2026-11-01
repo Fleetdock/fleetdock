@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
-import { ErrorText, Field, Modal } from "@/components/ui";
+import { Button, ErrorText, Field, Input, Modal, Select } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useCreateDatabase } from "@/lib/hooks";
 
@@ -44,8 +44,7 @@ export function CreateDatabaseModal({
       <form onSubmit={onSubmit}>
         {presetInstance ? null : (
           <Field label="Database server">
-            <select
-              className="input"
+            <Select
               value={instanceId}
               onChange={(e) => setInstanceId(e.target.value)}
               required
@@ -58,12 +57,11 @@ export function CreateDatabaseModal({
                   {i.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
         )}
         <Field label="Name" hint="Letters, digits and underscores.">
-          <input
-            className="input"
+          <Input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -75,22 +73,16 @@ export function CreateDatabaseModal({
           <p className="text-sm muted">Connect a database server first.</p>
         ) : null}
         <ErrorText message={error ?? undefined} />
-        <div
-          className="flex justify-end items-center gap-2"
-          style={{ marginTop: ".5rem" }}
-        >
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
             type="submit"
-            className="btn btn-primary"
-            disabled={
-              create.isPending || (!presetInstance && instances.length === 0)
-            }
+            variant="primary"
+            loading={create.isPending}
+            disabled={!presetInstance && instances.length === 0}
           >
             {create.isPending ? "Creating…" : "Create"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 
 import { ColumnFields, emptyColumn } from "@/components/database/column-editor";
-import { ErrorText, Field, Modal } from "@/components/ui";
+import { Button, ErrorText, Field, IconButton, Input, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useStructureMutations } from "@/lib/hooks";
 import type { ColumnSpec } from "@/lib/types";
@@ -52,15 +52,15 @@ export function CreateTableModal({
     <Modal open onClose={onClose} title={schema ? `Create table in ${schema}` : "Create table"}>
       <form onSubmit={onSubmit}>
         <Field label="Table name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
         </Field>
-        <p className="text-sm muted" style={{ margin: ".2rem 0 .4rem" }}>
+        <p className="text-sm muted mt-1 mb-1.5">
           Columns
         </p>
-        <div style={{ maxHeight: "45vh", overflowY: "auto" }}>
+        <div className="max-h-[45vh] overflow-y-auto">
           {columns.map((c, i) => (
             <div key={i} className="flex items-start gap-2">
-              <div style={{ flex: 1 }}>
+              <div className="flex-1">
                 <ColumnFields
                   compact
                   value={c}
@@ -70,7 +70,7 @@ export function CreateTableModal({
                   }}
                 />
               </div>
-              <label className="flex items-center gap-1 text-sm" style={{ marginTop: ".45rem" }} title="Part of the primary key">
+              <label className="flex items-center gap-1 text-sm mt-2" title="Part of the primary key">
                 <input
                   type="checkbox"
                   checked={pk.includes(c.name) && c.name !== ""}
@@ -78,37 +78,35 @@ export function CreateTableModal({
                 />
                 PK
               </label>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                aria-label="Remove column"
+              <IconButton
+                label="Remove column"
                 disabled={columns.length === 1}
                 onClick={() => {
                   setColumns((prev) => prev.filter((_, j) => j !== i));
                   setPk((prev) => prev.filter((p) => p !== c.name));
                 }}
               >
-                <X size={14} />
-              </button>
+                <X size={14} aria-hidden />
+              </IconButton>
             </div>
           ))}
         </div>
-        <button type="button" className="btn btn-sm" onClick={() => setColumns((prev) => [...prev, emptyColumn()])}>
-          <Plus size={14} /> Add column
-        </button>
+        <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setColumns((prev) => [...prev, emptyColumn()])}>
+          Add column
+        </Button>
         {pk.length === 0 ? (
           <p className="text-sm muted">
             Without a primary key, rows of this table can&apos;t be edited one by one in the data browser.
           </p>
         ) : null}
         <ErrorText message={error ?? undefined} />
-        <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-          <button className="btn btn-primary" type="submit" disabled={createTable.isPending}>
-            {createTable.isPending ? "Creating…" : "Create table"}
-          </button>
-          <button className="btn" type="button" onClick={onClose} disabled={createTable.isPending}>
+        <div className="modal-actions">
+          <Button onClick={onClose} disabled={createTable.isPending}>
             Cancel
-          </button>
+          </Button>
+          <Button type="submit" variant="primary" loading={createTable.isPending}>
+            {createTable.isPending ? "Creating…" : "Create table"}
+          </Button>
         </div>
       </form>
     </Modal>

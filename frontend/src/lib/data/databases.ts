@@ -6,6 +6,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, download } from "../api";
 import type {
+  ColumnCatalog,
+  RowChange,
+  RowEditResult,
+  UndoResult,
+  IndexInsights,
+  ExplainResult,
+  SchemaSearchHit,
   HistoryEntry,
   QueryOutput,
   SavedQuery,
@@ -34,6 +41,7 @@ import type {
   RunQueryInput,
 } from "../types";
 import type { Mutation, MutationResult } from "../data-browser/pending";
+import { writeStatements } from "../sql";
 import { pageQS } from "./core";
 
 // ---- Databases ----
@@ -240,7 +248,20 @@ export function useRunQuery(databaseId: string) {
   return useMutation({
     mutationFn: (input: RunQueryInput) =>
       api.post<QueryOutput>(`/v1/databases/${databaseId}/query`, input),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["query-history", databaseId] }),
+    onSettled: (_out, _err, input) => {
+      qc.invalidateQueries({ queryKey: ["query-history", databaseId] });
+      // A script that wrote may have changed the schema autocompletion uses.
+      if (writeStatements(input.sql).length > 0) qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
+    },
+  });
+}
+
+// useExplain asks for a statement's plan; analyze runs it read-only and
+// rolls it back.
+export function useExplain(databaseId: string) {
+  return useMutation({
+    mutationFn: (input: { sql: string; analyze: boolean }) =>
+      api.post<ExplainResult>(`/v1/databases/${databaseId}/explain`, input),
   });
 }
 
@@ -453,18 +474,26 @@ export function useRowMutations(databaseId: string, table: string) {
 // endpoints, one row at a time (each in its own transaction server-side), and
 // reports every outcome so failures can stay on screen. The table is
 // refreshed once at the end rather than after every row.
+export interface AppliedChanges {
+  results: MutationResult[];
+  /** Groups this save's changes in the journal; undo it with useUndoBatch. */
+  batchId: string;
+}
+
 export function useApplyRowChanges(databaseId: string, table: string) {
   const qc = useQueryClient();
   return useCallback(
-    async (mutations: Mutation[]): Promise<MutationResult[]> => {
+    async (mutations: Mutation[]): Promise<AppliedChanges> => {
       const path = rowsPath(databaseId, table);
+      const batchId = crypto.randomUUID();
       const results: MutationResult[] = [];
       for (const m of mutations) {
         try {
-          if (m.kind === "delete") await api.post<void>(`${path}/delete`, { key: m.key });
-          else if (m.kind === "update") await api.patch<void>(path, { key: m.key, values: m.values });
-          else await api.post<void>(path, { values: m.values });
-          results.push({ kind: m.kind, id: m.id, ok: true });
+          let res: RowEditResult;
+          if (m.kind === "delete") res = await api.post<RowEditResult>(`${path}/delete`, { key: m.key, batch_id: batchId });
+          else if (m.kind === "update") res = await api.patch<RowEditResult>(path, { key: m.key, values: m.values, batch_id: batchId });
+          else res = await api.post<RowEditResult>(path, { values: m.values, batch_id: batchId });
+          results.push({ kind: m.kind, id: m.id, ok: true, changeId: res?.change_id, undoable: res?.undoable });
         } catch (err) {
           results.push({ kind: m.kind, id: m.id, ok: false, error: err instanceof Error ? err.message : "Failed" });
         }
@@ -472,11 +501,49 @@ export function useApplyRowChanges(databaseId: string, table: string) {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["browse-rows", databaseId, table] }),
         qc.invalidateQueries({ queryKey: ["tables", databaseId] }),
+        qc.invalidateQueries({ queryKey: ["row-changes", databaseId] }),
       ]);
-      return results;
+      return { results, batchId };
     },
     [qc, databaseId, table],
   );
+}
+
+// useRowChanges lists the change journal of a table, newest first.
+export function useRowChanges(databaseId: string, table: string, enabled = true) {
+  return useQuery({
+    queryKey: ["row-changes", databaseId, table],
+    queryFn: () =>
+      api
+        .get<{ items: RowChange[] }>(`/v1/databases/${databaseId}/changes?table=${encodeURIComponent(table)}&limit=100`)
+        .then((r) => r.items),
+    enabled: Boolean(databaseId && table) && enabled,
+    retry: false,
+  });
+}
+
+// useUndo reverts one change (changeId) or a whole save (batchId).
+export function useUndo(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { changeId?: string; batchId?: string; force?: boolean }): Promise<UndoResult[]> => {
+      if (input.changeId) {
+        const r = await api.post<UndoResult>(`/v1/databases/${databaseId}/changes/${input.changeId}/undo`, { force: input.force ?? false });
+        return [r];
+      }
+      const r = await api.post<{ items: UndoResult[] }>(`/v1/databases/${databaseId}/changes/undo`, {
+        batch_id: input.batchId,
+        force: input.force ?? false,
+      });
+      return r.items;
+    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["row-changes", databaseId] }),
+        qc.invalidateQueries({ queryKey: ["browse-rows", databaseId] }),
+        qc.invalidateQueries({ queryKey: ["tables", databaseId] }),
+      ]),
+  });
 }
 
 // ---- Structure ----
@@ -488,6 +555,56 @@ export function useForeignKeys(databaseId: string, table: string) {
         .get<{ items: ForeignKey[] }>(`/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/foreign-keys`)
         .then((r) => r.items),
     enabled: Boolean(databaseId && table),
+    retry: false,
+  });
+}
+
+export function useReferencedBy(databaseId: string, table: string) {
+  return useQuery({
+    queryKey: ["foreign-keys", databaseId, table, "incoming"],
+    queryFn: () =>
+      api
+        .get<{ items: ForeignKey[] }>(`/v1/databases/${databaseId}/tables/${encodeURIComponent(table)}/referenced-by`)
+        .then((r) => r.items),
+    enabled: Boolean(databaseId && table),
+    retry: false,
+  });
+}
+
+// useSchemaSearch finds tables and columns by name across every database the
+// caller may open (GET /v1/search/schema). Queries under two characters skip
+// the request.
+export function useSchemaSearch(q: string, enabled = true) {
+  const term = q.trim();
+  return useQuery({
+    queryKey: ["schema-search", term],
+    queryFn: () =>
+      api.get<{ items: SchemaSearchHit[] }>(`/v1/search/schema?q=${encodeURIComponent(term)}&limit=20`).then((r) => r.items),
+    enabled: enabled && term.length >= 2,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export function useIndexInsights(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["index-insights", databaseId],
+    queryFn: () => api.get<IndexInsights>(`/v1/databases/${databaseId}/index-insights`),
+    enabled: Boolean(databaseId) && enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+// useSchemaColumns loads every table's columns for SQL autocompletion. The
+// catalog changes rarely, so it is cached for a few minutes and refreshed after
+// DDL from the structure editor or the console.
+export function useSchemaColumns(databaseId: string) {
+  return useQuery({
+    queryKey: ["schema-columns", databaseId],
+    queryFn: () => api.get<ColumnCatalog>(`/v1/databases/${databaseId}/columns`),
+    enabled: Boolean(databaseId),
+    staleTime: 5 * 60_000,
     retry: false,
   });
 }
@@ -512,6 +629,8 @@ export function useStructureMutations(databaseId: string, table = "") {
     qc.invalidateQueries({ queryKey: ["foreign-keys", databaseId] });
     qc.invalidateQueries({ queryKey: ["browse-rows", databaseId] });
     qc.invalidateQueries({ queryKey: ["db-objects", databaseId] });
+    qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
+    qc.invalidateQueries({ queryKey: ["index-insights", databaseId] });
   };
   const createTable = useMutation({ mutationFn: (spec: TableSpec) => api.post(base, spec), onSuccess: invalidate });
   const alter = useMutation({ mutationFn: (ops: AlterOp[]) => api.patch(t, { ops }), onSuccess: invalidate });

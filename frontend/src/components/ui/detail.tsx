@@ -25,12 +25,14 @@ export function SectionHeader({
 }) {
   return (
     <div className="section-header">
-      <div style={{ minWidth: 0 }}>
+      <div className="min-w-0">
         <Heading className="section-header-title">
           {icon ? <span className="section-header-icon">{icon}</span> : null}
           {title}
         </Heading>
-        {description ? <p className="section-header-description">{description}</p> : null}
+        {description ? (
+          <p className="section-header-description">{description}</p>
+        ) : null}
       </div>
       {actions ? <div className="section-header-actions">{actions}</div> : null}
     </div>
@@ -60,8 +62,16 @@ export function KeyValueList({ items }: { items: KeyValueItem[] }) {
           <div key={i.label} className="kv-row">
             <dt>{i.label}</dt>
             <dd>
-              <span className={i.mono ? "mono kv-mono" : undefined}>{i.value}</span>
-              {i.copy ? <CopyButton value={i.copy} label="Copy" className="btn btn-ghost btn-sm kv-copy" /> : null}
+              <span className={i.mono ? "mono kv-mono" : undefined}>
+                {i.value}
+              </span>
+              {i.copy ? (
+                <CopyButton
+                  value={i.copy}
+                  label="Copy"
+                  className="btn btn-ghost btn-sm kv-copy"
+                />
+              ) : null}
             </dd>
           </div>
         ))}
@@ -79,12 +89,15 @@ export function StatTile({
   hint,
   href,
   icon,
+  hintTone,
 }: {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
   href?: string;
   icon?: ReactNode;
+  /** Colour the hint when it reports a problem. */
+  hintTone?: "warning" | "danger";
 }) {
   const body = (
     <>
@@ -93,7 +106,11 @@ export function StatTile({
         {label}
       </div>
       <div className="stat-tile-value">{value}</div>
-      {hint ? <div className="stat-tile-hint">{hint}</div> : null}
+      {hint ? (
+        <div className={`stat-tile-hint${hintTone ? ` is-${hintTone}` : ""}`}>
+          {hint}
+        </div>
+      ) : null}
     </>
   );
   return href ? (

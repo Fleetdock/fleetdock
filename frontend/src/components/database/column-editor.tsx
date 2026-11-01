@@ -1,5 +1,6 @@
 "use client";
 
+import { Input, cx } from "@/components/ui";
 import type { ColumnSpec } from "@/lib/types";
 
 /** Common column types offered as suggestions; any allowlisted type works. */
@@ -54,22 +55,17 @@ export function ColumnFields({
   const set = (patch: Partial<ColumnSpec>) => onChange({ ...value, ...patch });
   const hasDefault = value.default !== null && value.default !== undefined;
   return (
-    <div
-      className="flex items-center gap-2"
-      style={{ flexWrap: "wrap", marginBottom: compact ? ".35rem" : ".6rem" }}
-    >
-      <input
-        className="input"
-        style={{ width: 170 }}
+    <div className={cx("flex flex-wrap items-center gap-2", compact ? "mb-1.5" : "mb-2.5")}>
+      <Input
+        className="w-[170px]"
         placeholder="column name"
         value={value.name}
         onChange={(e) => set({ name: e.target.value })}
         aria-label="Column name"
         required
       />
-      <input
-        className="input"
-        style={{ width: 160 }}
+      <Input
+        className="w-40"
         list="fd-column-types"
         placeholder="type"
         value={value.type}
@@ -119,9 +115,8 @@ export function ColumnFields({
           </label>
           {hasDefault ? (
             <>
-              <input
-                className="input"
-                style={{ width: 160 }}
+              <Input
+                className="w-40"
                 placeholder={
                   value.default_is_expression ? "CURRENT_TIMESTAMP" : "value"
                 }

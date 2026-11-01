@@ -17,10 +17,18 @@ import {
 } from "@/components/database/instance-group";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import {
+  Badge,
+  Button,
+  ButtonLink,
   EmptyState,
   PageHeader,
+  PageSkeleton,
+  QueryError,
+  SearchInput,
+  SegmentedControl,
   StatusBadge,
   TableSkeleton,
+  Toolbar,
 } from "@/components/ui";
 import { friendlyError } from "@/lib/errors";
 import { formatBytes } from "@/lib/format";
@@ -35,7 +43,7 @@ import type { Database } from "@/lib/types";
 
 export default function DatabasesPage() {
   return (
-    <Suspense fallback={<TableSkeleton />}>
+    <Suspense fallback={<PageSkeleton label="Loading databases" />}>
       <Databases />
     </Suspense>
   );
@@ -59,6 +67,7 @@ function Databases() {
     data: instances,
     isLoading: instancesLoading,
     error: instancesError,
+    refetch: refetchInstances,
   } = useInstances(undefined, undefined, undefined, canInstances);
   const { data: servers } = useServers(undefined, undefined, canAny("server:read"));
   const serverName = useMemo(
@@ -106,17 +115,21 @@ function Databases() {
       actions={
         <>
           {canAddServer ? (
-            <button className="btn" onClick={() => setWizardOpen(true)}>
-              <Plus size={16} /> Connect database server
-            </button>
+            <Button
+              icon={<Plus size={16} aria-hidden />}
+              onClick={() => setWizardOpen(true)}
+            >
+              Connect database server
+            </Button>
           ) : null}
           {canWrite && writable.length > 0 ? (
-            <button
-              className="btn btn-primary"
+            <Button
+              variant="primary"
+              icon={<Plus size={16} aria-hidden />}
               onClick={() => setCreateFor(null)}
             >
-              <Plus size={16} /> Create database
-            </button>
+              Create database
+            </Button>
           ) : null}
         </>
       }
@@ -144,31 +157,33 @@ function Databases() {
   );
 
   const searchBox = (placeholder: string) => (
-    <div className="search-box">
-      <Search size={16} aria-hidden />
-      <input
-        className="input"
-        type="search"
-        placeholder={placeholder}
-        aria-label="Search databases"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-    </div>
+    <SearchInput
+      icon={<Search size={16} aria-hidden />}
+      placeholder={placeholder}
+      aria-label="Search databases"
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+    />
   );
 
   let content: React.ReactNode;
   if (!canInstances) {
     content = (
       <>
-        <div style={{ marginBottom: ".9rem" }}>{searchBox("Search databases…")}</div>
+        <Toolbar>{searchBox("Search databases…")}</Toolbar>
         <AllDatabases search={search} actions={actions} />
       </>
     );
   } else if (instancesLoading) {
     content = <TableSkeleton />;
   } else if (instancesError) {
-    content = <EmptyState title="Could not load your database servers" hint={friendlyError(instancesError)} />;
+    content = (
+      <QueryError
+        error={instancesError}
+        what="server list"
+        onRetry={() => void refetchInstances()}
+      />
+    );
   } else if (instanceList.length === 0) {
     const noServers = (servers?.items.length ?? 0) === 0;
     content = (
@@ -183,13 +198,15 @@ function Databases() {
         action={
           canAddServer ? (
             <>
-              <button className="btn btn-primary" onClick={() => setWizardOpen(true)}>
-                <Plus size={16} /> Connect database server
-              </button>
+              <Button
+                variant="primary"
+                icon={<Plus size={16} aria-hidden />}
+                onClick={() => setWizardOpen(true)}
+              >
+                Connect database server
+              </Button>
               {noServers ? (
-                <Link href="/servers" className="btn">
-                  Connect a machine
-                </Link>
+                <ButtonLink href="/servers">Connect a machine</ButtonLink>
               ) : null}
             </>
           ) : undefined
@@ -199,17 +216,18 @@ function Databases() {
   } else {
     content = (
       <>
-        <div className="flex items-center gap-2" style={{ marginBottom: ".9rem", flexWrap: "wrap" }}>
+        <Toolbar>
           {searchBox(view === "all" ? "Search databases…" : "Search servers and databases…")}
-          <div className="segmented" role="group" aria-label="View">
-            <button type="button" aria-pressed={view === "grouped"} onClick={() => setView("grouped")}>
-              By server
-            </button>
-            <button type="button" aria-pressed={view === "all"} onClick={() => setView("all")}>
-              All databases
-            </button>
-          </div>
-        </div>
+          <SegmentedControl
+            label="View"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "grouped", label: "By server" },
+              { value: "all", label: "All databases" },
+            ]}
+          />
+        </Toolbar>
         {view === "grouped" ? (
           <div className="flex flex-col gap-3">
             {instanceList.map((inst) => (
@@ -263,7 +281,7 @@ function AllDatabases({
           <Link href={`/databases/${d.id}`} className="link-plain">
             {d.name}
           </Link>
-          {d.system ? <span className="badge badge-gray">system</span> : null}
+          {d.system ? <Badge>system</Badge> : null}
         </span>
       ),
     },
@@ -289,7 +307,7 @@ function AllDatabases({
       id: "size",
       header: "Size",
       align: "right",
-      className: "muted",
+      className: "muted num",
       hideOnMobile: true,
       render: (d) => formatBytes(d.size_bytes),
     },

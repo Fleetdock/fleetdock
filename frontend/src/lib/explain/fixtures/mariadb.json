@@ -1,0 +1,40 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost": 0.018438808,
+    "nested_loop": [
+      {
+        "read_sorted_file": {
+          "filesort": {
+            "sort_key": "i.sku",
+            "table": {
+              "table_name": "i",
+              "access_type": "ALL",
+              "possible_keys": ["ix_items_region", "ix_items_region_num"],
+              "loops": 1,
+              "rows": 4,
+              "cost": 0.0115068,
+              "filtered": 100,
+              "attached_condition": "i.qty > 1 and i.o_region is not null and i.o_num is not null"
+            }
+          }
+        }
+      },
+      {
+        "table": {
+          "table_name": "o",
+          "access_type": "eq_ref",
+          "possible_keys": ["PRIMARY"],
+          "key": "PRIMARY",
+          "key_length": "46",
+          "used_key_parts": ["region", "num"],
+          "ref": ["shop.i.o_region", "shop.i.o_num"],
+          "loops": 4,
+          "rows": 1,
+          "cost": 0.00439696,
+          "filtered": 100
+        }
+      }
+    ]
+  }
+}

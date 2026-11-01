@@ -1,0 +1,75 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {
+      "query_cost": "1.80"
+    },
+    "ordering_operation": {
+      "using_filesort": true,
+      "cost_info": {
+        "sort_cost": "1.00"
+      },
+      "nested_loop": [
+        {
+          "table": {
+            "table_name": "i",
+            "access_type": "ALL",
+            "possible_keys": [
+              "o_region"
+            ],
+            "rows_examined_per_scan": 2,
+            "rows_produced_per_join": 1,
+            "filtered": "50.00",
+            "cost_info": {
+              "read_cost": "0.35",
+              "eval_cost": "0.10",
+              "prefix_cost": "0.45",
+              "data_read_per_join": "136"
+            },
+            "used_columns": [
+              "id",
+              "o_region",
+              "o_num",
+              "sku",
+              "qty"
+            ],
+            "attached_condition": "((`shop`.`i`.`qty` > 1) and ((`shop`.`i`.`o_region` is not null) and (`shop`.`i`.`o_num` is not null)))"
+          }
+        },
+        {
+          "table": {
+            "table_name": "o",
+            "access_type": "eq_ref",
+            "possible_keys": [
+              "PRIMARY"
+            ],
+            "key": "PRIMARY",
+            "used_key_parts": [
+              "region",
+              "num"
+            ],
+            "key_length": "46",
+            "ref": [
+              "shop.i.o_region",
+              "shop.i.o_num"
+            ],
+            "rows_examined_per_scan": 1,
+            "rows_produced_per_join": 1,
+            "filtered": "100.00",
+            "cost_info": {
+              "read_cost": "0.25",
+              "eval_cost": "0.10",
+              "prefix_cost": "0.80",
+              "data_read_per_join": "248"
+            },
+            "used_columns": [
+              "region",
+              "num",
+              "customer"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

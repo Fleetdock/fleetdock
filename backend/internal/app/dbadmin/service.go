@@ -25,6 +25,7 @@ import (
 	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
 	dbaccessdom "github.com/Fleetdock/fleetdock/backend/internal/domain/dbaccess"
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
+	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
@@ -57,6 +58,12 @@ type Service struct {
 	secrets   Secrets
 	access    Access
 	history   History
+	// schemaChanged, when set, is told about DDL made through Fleetdock.
+	schemaChanged func(databaseID uuid.UUID)
+	// journal, when set, records data-browser row changes for undo.
+	journal rowchangedom.Repository
+	// copies, when set, finds backup copies to compare tables with.
+	copies CopyLookup
 
 	runningMu sync.Mutex
 	running   map[string]*runningQuery
@@ -142,6 +149,19 @@ type DataAccessInfo struct {
 	// it reaches every database on the instance, so it too requires
 	// instance-level rights.
 	Mode instancedom.DataAccess
+}
+
+// NeedsInstanceWrite reports whether interactive work on the database
+// requires instance:write on its instance, and the message to refuse with.
+func (i DataAccessInfo) NeedsInstanceWrite() (bool, string) {
+	switch {
+	case i.System:
+		return true, "system databases can only be opened by instance administrators"
+	case i.Mode == instancedom.DataAccessAdmin:
+		return true, "this instance's data is accessed with its admin login, so only instance administrators " +
+			"can open it; an administrator can set a separate data login in the instance settings"
+	}
+	return false, ""
 }
 
 // DataAccess reports a database's instance, whether it is a system database,
@@ -435,6 +455,11 @@ type QueryInput struct {
 	// QueryID, when set, registers the run so its owner can cancel it.
 	QueryID string
 	UserID  uuid.UUID
+	// Preview dry-runs a script with writes: one transaction, rolled back.
+	// It needs AllowWrite and is not recorded in the history.
+	Preview bool
+	// Timeout bounds the run (0 = the console's default).
+	Timeout time.Duration
 }
 
 // BatchFailure says which statement of a run failed (1-based) and why.
@@ -449,6 +474,8 @@ type BatchFailure struct {
 type QueryOutput struct {
 	Results []engine.QueryResult `json:"results"`
 	Error   *BatchFailure        `json:"error,omitempty"`
+	// RolledBack: a preview; nothing was saved.
+	RolledBack bool `json:"rolled_back,omitempty"`
 }
 
 // Query runs a console script. Reads run as the read-only role; a script with
@@ -468,6 +495,16 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 			mode = dbaccessdom.ModeWrite
 		}
 	}
+	if in.Preview {
+		if mode != dbaccessdom.ModeWrite {
+			return nil, apperr.Invalid("sql", "nothing to preview: the script only reads; run it instead")
+		}
+		for i, st := range stmts {
+			if err := engine.PreviewBlocker(st); err != nil {
+				return nil, apperr.Invalid("sql", fmt.Sprintf("statement %d: %s", i+1, err.Error()))
+			}
+		}
+	}
 
 	ctx, done := s.track(ctx, in)
 	defer done()
@@ -475,10 +512,24 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 	start := time.Now()
 	out := &QueryOutput{Results: []engine.QueryResult{}}
 	var batchErr error
-	err := s.scoped(ctx, in.DatabaseID, mode, queryTimeout,
+	timeout := queryTimeout
+	if in.Timeout > 0 {
+		timeout = in.Timeout
+	}
+	err := s.scoped(ctx, in.DatabaseID, mode, timeout,
 		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			res, err := admin.QueryBatch(ctx, conn, db.Name, stmts, in.Limit, mode == dbaccessdom.ModeWrite,
-				func(pid int64) { s.setSessionID(in.QueryID, pid) })
+			onSession := func(pid int64) { s.setSessionID(in.QueryID, pid) }
+			var res []engine.QueryResult
+			var err error
+			if in.Preview {
+				pv, ok := admin.(engine.Previewer)
+				if !ok {
+					return apperr.Invalid("engine", "this engine does not support previews")
+				}
+				res, err = pv.PreviewBatch(ctx, conn, db.Name, stmts, in.Limit, onSession)
+			} else {
+				res, err = admin.QueryBatch(ctx, conn, db.Name, stmts, in.Limit, mode == dbaccessdom.ModeWrite, onSession)
+			}
 			out.Results = res
 			var be *engine.BatchError
 			if errors.As(err, &be) && be.Index > 0 {
@@ -489,7 +540,10 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 			}
 			return err
 		})
-	s.recordHistory(in, len(stmts), out, time.Since(start), firstErr(err, batchErr))
+	if !in.Preview {
+		s.recordHistory(in, len(stmts), out, time.Since(start), firstErr(err, batchErr))
+	}
+	out.RolledBack = in.Preview
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil, apperr.Conflict("the query was cancelled")
@@ -758,42 +812,6 @@ func (s *Service) BrowseRows(ctx context.Context, databaseID string, req engine.
 	return res, err
 }
 
-// InsertRow inserts one row.
-func (s *Service) InsertRow(ctx context.Context, databaseID, table string, values engine.RowValues) error {
-	return s.scoped(ctx, databaseID, dbaccessdom.ModeWrite, opTimeout,
-		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			ed, err := dataEditor(admin)
-			if err != nil {
-				return err
-			}
-			return ed.InsertRow(ctx, conn, db.Name, table, values)
-		})
-}
-
-// UpdateRow updates the row identified by key.
-func (s *Service) UpdateRow(ctx context.Context, databaseID, table string, key, values engine.RowValues) error {
-	return s.scoped(ctx, databaseID, dbaccessdom.ModeWrite, opTimeout,
-		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			ed, err := dataEditor(admin)
-			if err != nil {
-				return err
-			}
-			return ed.UpdateRow(ctx, conn, db.Name, table, key, values)
-		})
-}
-
-// DeleteRow deletes the row identified by key.
-func (s *Service) DeleteRow(ctx context.Context, databaseID, table string, key engine.RowValues) error {
-	return s.scoped(ctx, databaseID, dbaccessdom.ModeWrite, opTimeout,
-		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			ed, err := dataEditor(admin)
-			if err != nil {
-				return err
-			}
-			return ed.DeleteRow(ctx, conn, db.Name, table, key)
-		})
-}
-
 // ImportCSV loads a CSV into a table, all or nothing. The reader is consumed
 // once, so a permission-denied retry is not attempted after reading began.
 func (s *Service) ImportCSV(ctx context.Context, databaseID, table string, r io.Reader, opts engine.ImportOptions) (int64, error) {
@@ -841,6 +859,9 @@ func (s *Service) withStructure(ctx context.Context, databaseID string,
 				return err
 			}
 			s.refreshReadGrants(ctx, db)
+			if s.schemaChanged != nil {
+				s.schemaChanged(db.ID)
+			}
 			return nil
 		})
 }

@@ -9,9 +9,11 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -66,6 +68,14 @@ func TestDialPasswordPinsHostKey(t *testing.T) {
 	c, err := Dial(context.Background(), cfg, "tcp", db)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Drivers set I/O deadlines; the raw SSH channel rejects them, so the
+	// tunnel emulates them.
+	if err := c.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	if err := c.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("SetWriteDeadline: %v", err)
 	}
 	roundTrip(t, c)
 	_ = c.Close()
@@ -214,5 +224,59 @@ func TestCredentialsRoundTrip(t *testing.T) {
 	out, err := UnmarshalCredentials(b)
 	if err != nil || out != in {
 		t.Fatalf("round trip = %+v, %v", out, err)
+	}
+}
+
+// A deadline ends a read the database never answers (a silent echo here),
+// as a socket deadline would; clearing one leaves the connection usable.
+func TestDialDeadlineEndsBlockedRead(t *testing.T) {
+	srv := sshtunneltest.Start(t, sshtunneltest.HostKey(t), "pw", nil)
+	cfg := cfgFor(srv)
+	cfg.Password = "pw"
+	db := startEcho(t)
+
+	c, err := Dial(context.Background(), cfg, "tcp", db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	// Set and clear: no effect.
+	if err := c.SetDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	roundTrip(t, c)
+
+	// Nothing written, so nothing comes back: the read must end at the
+	// deadline instead of blocking forever.
+	if err := c.SetReadDeadline(time.Now().Add(150 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.Read(make([]byte, 1))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatalf("read err = %v, want deadline exceeded", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("read blocked past its deadline")
+	}
+
+	// A deadline already in the past fails at once too.
+	c2, err := Dial(context.Background(), cfg, "tcp", db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	_ = c2.SetWriteDeadline(time.Now().Add(-time.Second))
+	if _, err := c2.Write([]byte("x")); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("write err = %v, want deadline exceeded", err)
 	}
 }

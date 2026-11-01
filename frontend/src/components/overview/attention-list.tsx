@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
-
 import { AlertOctagon, AlertTriangle, CheckCircle2, ChevronRight } from "lucide-react";
+import Link from "next/link";
 
 import { Time } from "@/components/ui";
 import { operationLabel, resourceHref } from "@/lib/operations";
@@ -43,7 +42,7 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
             ) : (
               <AlertTriangle size={18} className="attention-warning" aria-label="Warning" />
             )}
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="flex-1 min-w-0">
               <div>
                 <span className="font-medium">{TITLE[a.kind]}</span>
                 <span className="muted"> · {name}</span>

@@ -6,7 +6,20 @@ import { useConfirm } from "@/components/confirm";
 import { FilterEditor, ImportCSV, needsValue, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
 import { useToast } from "@/components/toast";
-import { EmptyState, Menu, Modal, Pagination, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  IconButton,
+  Input,
+  Menu,
+  Modal,
+  Pagination,
+  SegmentedControl,
+  Select,
+  Spinner,
+  Textarea,
+} from "@/components/ui";
 import { cellKind, isTruncated, mutationSQL, prettyValue, quoteTable, type Dialect } from "@/lib/data-browser/cells";
 import {
   changeCount,
@@ -18,13 +31,15 @@ import {
 } from "@/lib/data-browser/pending";
 import { load, save } from "@/lib/data-browser/storage";
 import { PAGE_SIZES, splitName, type Action, type OpenRequest, type Tab, type TableView } from "@/lib/data-browser/tabs";
-import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys } from "@/lib/hooks";
+import { fkByColumn, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
+import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys, useReferencedBy } from "@/lib/hooks";
 import type { ForeignKey, RowFilter, SortKey } from "@/lib/types";
 import {
   ClipboardCopy,
   Download,
   Filter,
   Lock,
+  History,
   PanelRight,
   Plus,
   RefreshCw,
@@ -32,9 +47,12 @@ import {
   SquareTerminal,
   Upload,
   X,
+  ArchiveRestore,
 } from "lucide-react";
 
 import { cellState, DataGrid, type Cell, type GridRow } from "./data-grid";
+import { BackupCompare } from "./backup-compare";
+import { RowHistory, useRowUndo } from "./row-history";
 
 const OP_LABEL: Record<string, string> = {
   eq: "=",
@@ -59,6 +77,7 @@ export function TableTab({
   tab,
   active,
   canWrite,
+  canBackup,
   dialect,
   dispatch,
   onDirty,
@@ -69,6 +88,7 @@ export function TableTab({
   tab: Tab;
   active: boolean;
   canWrite: boolean;
+  canBackup: boolean;
   dialect: Dialect;
   dispatch: Dispatch<Action>;
   onDirty: (id: string, changes: number) => void;
@@ -116,11 +136,9 @@ export function TableTab({
   );
   const { data, isLoading, error, isFetching, refetch } = useBrowseRows(databaseId, tab.name, req);
   const fkQuery = useForeignKeys(databaseId, tab.kind === "table" ? tab.name : "");
-  const fks = useMemo(() => {
-    const out: Record<string, ForeignKey> = {};
-    for (const fk of fkQuery.data ?? []) if (fk.columns.length === 1 && fk.ref_columns.length === 1) out[fk.columns[0]] = fk;
-    return out;
-  }, [fkQuery.data]);
+  const fks = useMemo(() => fkByColumn(fkQuery.data ?? []), [fkQuery.data]);
+  const incomingQuery = useReferencedBy(databaseId, tab.kind === "table" ? tab.name : "");
+  const incoming = useMemo(() => incomingQuery.data ?? [], [incomingQuery.data]);
 
   const { schema } = splitName(tab.name, dialect === "postgres");
   const quoted = quoteTable(tab.name, dialect, schema);
@@ -133,6 +151,7 @@ export function TableTab({
   const [saving, setSaving] = useState(false);
   const [review, setReview] = useState(false);
   const applyChanges = useApplyRowChanges(databaseId, tab.name);
+  const rowUndo = useRowUndo(databaseId);
 
   const columns = useMemo(() => data?.columns ?? [], [data]);
   const key = useMemo(() => data?.key ?? [], [data]);
@@ -232,25 +251,29 @@ export function TableTab({
     setView({ sort: next, page: 1 });
   }
 
-  function follow(fk: ForeignKey, value: string) {
-    const { label } = splitName(fk.ref_table, dialect === "postgres");
-    onOpen({
-      kind: "table",
-      name: fk.ref_table,
-      label,
-      view: { mode: "data", search: "", filters: [{ column: fk.ref_columns[0], op: "eq", value }] },
-    });
+  function openFiltered(table: string, filters: RowFilter[] | null) {
+    if (!filters) return;
+    const { label } = splitName(table, dialect === "postgres");
+    onOpen({ kind: "table", name: table, label, view: { mode: "data", search: "", filters } });
   }
+  const follow = (fk: ForeignKey, row: RowRecord) => openFiltered(fk.ref_table, followFilters(fk, row));
+  const referencing = (fk: ForeignKey, row: RowRecord) => openFiltered(fk.table ?? "", referencingFilters(fk, row));
 
   const doSave = useCallback(async () => {
     const mutations = toMutations(pending);
     if (mutations.length === 0 || saving) return;
     setSaving(true);
     try {
-      const results = await applyChanges(mutations);
+      const { results, batchId } = await applyChanges(mutations);
       pd({ type: "results", results });
       const failed = results.filter((r) => !r.ok).length;
-      if (failed === 0) push("success", `Saved ${results.length} change${results.length === 1 ? "" : "s"} to ${tab.label}`);
+      const undoable = results.some((r) => r.ok && r.undoable);
+      if (failed === 0)
+        push(
+          "success",
+          `Saved ${results.length} change${results.length === 1 ? "" : "s"} to ${tab.label}`,
+          undoable ? { label: "Undo", onClick: () => void rowUndo.run({ batchId }) } : undefined,
+        );
       else
         push(
           "error",
@@ -261,7 +284,7 @@ export function TableTab({
     } finally {
       setSaving(false);
     }
-  }, [pending, saving, applyChanges, push, tab.label]);
+  }, [pending, saving, applyChanges, push, tab.label, rowUndo]);
 
   async function discard() {
     if (count === 0) return;
@@ -292,6 +315,8 @@ export function TableTab({
   const [draftFilters, setDraftFilters] = useState<RowFilter[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [panel, setPanel] = useState(() => load("value-panel") === "1");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const togglePanel = () => {
     setPanel((v) => {
       save("value-panel", v ? null : "1");
@@ -323,20 +348,21 @@ export function TableTab({
   return (
     <div className="dbx-pane">
       <div className="dbx-toolbar">
-        <div className="segmented dbx-seg" role="group" aria-label="View">
-          <button aria-pressed={view.mode === "data"} onClick={() => setView({ mode: "data" }, false)}>
-            Data
-          </button>
-          <button aria-pressed={view.mode === "structure"} onClick={() => setView({ mode: "structure" }, false)}>
-            Structure
-          </button>
-        </div>
+        <SegmentedControl
+          className="dbx-seg"
+          label="View"
+          value={view.mode}
+          onChange={(mode) => setView({ mode }, false)}
+          options={[
+            { value: "data", label: "Data" },
+            { value: "structure", label: "Structure" },
+          ]}
+        />
         {view.mode === "data" ? (
           <>
             <div className="dbx-search dbx-toolbar-search">
-              <Search size={14} />
-              <input
-                className="input"
+              <Search size={14} aria-hidden />
+              <Input
                 placeholder="Search all columns…"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
@@ -354,8 +380,10 @@ export function TableTab({
                 </button>
               ) : null}
             </div>
-            <button
-              className={`btn btn-sm${view.filters.length ? " btn-active" : ""}`}
+            <Button
+              size="sm"
+              active={view.filters.length > 0}
+              icon={<Filter size={14} aria-hidden />}
               aria-expanded={showFilters}
               onClick={() => {
                 setDraftFilters(view.filters.length ? view.filters : [{ column: columns[0]?.name ?? "", op: "eq", value: "" }]);
@@ -363,35 +391,49 @@ export function TableTab({
               }}
               disabled={columns.length === 0}
             >
-              <Filter size={14} /> Filter{view.filters.length ? ` · ${view.filters.length}` : ""}
-            </button>
+              Filter{view.filters.length ? ` · ${view.filters.length}` : ""}
+            </Button>
           </>
         ) : null}
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
         {readOnlyReason ? (
-          <span className="badge dbx-readonly" title={readOnlyReason}>
-            <Lock size={11} /> Read-only
-          </span>
+          <Badge className="dbx-readonly" title={readOnlyReason}>
+            <Lock size={11} aria-hidden /> Read-only
+          </Badge>
         ) : null}
         {isFetching && !isLoading ? <Spinner label="Refreshing" /> : null}
         {view.mode === "data" ? (
           <>
-            <button className="btn btn-ghost btn-icon" onClick={() => void refetch()} title="Refresh rows" aria-label="Refresh rows">
-              <RefreshCw size={14} />
-            </button>
-            <button
-              className={`btn btn-ghost btn-icon${panel ? " btn-active" : ""}`}
+            <IconButton label="Refresh rows" onClick={() => void refetch()}>
+              <RefreshCw size={14} aria-hidden />
+            </IconButton>
+            {/* noTooltip + title: the native title says more than the accessible name. */}
+            {!isView ? (
+              <IconButton
+                noTooltip
+                label="Toggle change history"
+                active={historyOpen}
+                onClick={() => setHistoryOpen((v) => !v)}
+                title="Change history: edits made here, with undo"
+                aria-pressed={historyOpen}
+              >
+                <History size={15} aria-hidden />
+              </IconButton>
+            ) : null}
+            <IconButton
+              noTooltip
+              label="Toggle value panel"
+              active={panel}
               onClick={togglePanel}
               title="Value panel: see and edit the selected cell in full"
-              aria-label="Toggle value panel"
               aria-pressed={panel}
             >
-              <PanelRight size={15} />
-            </button>
+              <PanelRight size={15} aria-hidden />
+            </IconButton>
             {editable ? (
-              <button className="btn btn-sm btn-primary" onClick={addRow}>
-                <Plus size={14} /> Row
-              </button>
+              <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={addRow}>
+                Row
+              </Button>
             ) : null}
           </>
         ) : null}
@@ -413,6 +455,12 @@ export function TableTab({
                 ),
             },
             { label: "Import CSV…", icon: <Upload size={15} />, hidden: !canWrite || isView, onSelect: () => setImportOpen(true) },
+            {
+              label: "Compare with a backup…",
+              icon: <ArchiveRestore size={15} />,
+              hidden: isView,
+              onSelect: () => setCompareOpen(true),
+            },
             {
               label: "Copy name",
               icon: <ClipboardCopy size={15} />,
@@ -454,9 +502,9 @@ export function TableTab({
               </button>
             </span>
           ))}
-          <button className="btn btn-ghost btn-sm" onClick={() => setView({ filters: [], page: 1 })}>
+          <Button variant="ghost" size="sm" onClick={() => setView({ filters: [], page: 1 })}>
             Clear filters
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -490,9 +538,7 @@ export function TableTab({
                   title="Could not load rows"
                   hint={(error as Error).message}
                   action={
-                    <button className="btn" onClick={() => void refetch()}>
-                      Try again
-                    </button>
+                    <Button onClick={() => void refetch()}>Try again</Button>
                   }
                 />
               </div>
@@ -537,6 +583,8 @@ export function TableTab({
                   addFilter(value === null ? { column, op: "is_null" } : { column, op: "eq", value })
                 }
                 onFollow={follow}
+                incoming={incoming}
+                onReferencing={referencing}
                 editRequest={editRequest}
                 onEditRequestDone={clearEditRequest}
                 emptyText={
@@ -556,9 +604,25 @@ export function TableTab({
               row={cursor ? rows[cursor.row] : undefined}
               col={cursor ? columns[cursor.col] : undefined}
               ci={cursor?.col ?? -1}
-              editable={cursor ? rows[cursor.row]?.kind === "new" || (editable && rows[cursor.row]?.kind === "data") : false}
+              editable={
+                cursor && !columns[cursor.col]?.generated
+                  ? rows[cursor.row]?.kind === "new" || (editable && rows[cursor.row]?.kind === "data")
+                  : false
+              }
               onApply={(v) => cursor && onEdit(cursor.row, cursor.col, v)}
               onClose={togglePanel}
+            />
+          ) : null}
+          {historyOpen ? (
+            <RowHistory databaseId={databaseId} table={tab.name} canWrite={canWrite} onClose={() => setHistoryOpen(false)} />
+          ) : null}
+          {compareOpen ? (
+            <BackupCompare
+              databaseId={databaseId}
+              table={tab.name}
+              canWrite={canWrite}
+              canBackup={canBackup}
+              onClose={() => setCompareOpen(false)}
             />
           ) : null}
         </div>
@@ -578,23 +642,23 @@ export function TableTab({
             ]
               .filter(Boolean)
               .join(" · ")}
-            {counts.failed ? <span style={{ color: "var(--danger)" }}> · {counts.failed} failed</span> : null}
+            {counts.failed ? <span className="text-danger"> · {counts.failed} failed</span> : null}
           </span>
           {counts.failed ? (
             <span className="dbx-commit-error" title={Object.values(pending.errors).join("\n")}>
               {Object.values(pending.errors)[0]}
             </span>
           ) : null}
-          <div style={{ flex: 1 }} />
-          <button className="btn btn-ghost btn-sm" onClick={() => setReview(true)} disabled={saving}>
+          <div className="flex-1" />
+          <Button variant="ghost" size="sm" onClick={() => setReview(true)} disabled={saving}>
             Review SQL
-          </button>
-          <button className="btn btn-sm" onClick={() => void discard()} disabled={saving}>
+          </Button>
+          <Button size="sm" onClick={() => void discard()} disabled={saving}>
             Discard
-          </button>
-          <button className="btn btn-sm btn-primary" onClick={() => void doSave()} disabled={saving}>
-            {saving ? <Spinner label="Saving" /> : null} Save <kbd className="dbx-kbd-primary hide-sm">Ctrl S</kbd>
-          </button>
+          </Button>
+          <Button size="sm" variant="primary" loading={saving} onClick={() => void doSave()}>
+            Save <kbd className="dbx-kbd-primary hide-sm">Ctrl S</kbd>
+          </Button>
         </div>
       ) : null}
 
@@ -604,11 +668,11 @@ export function TableTab({
             {data && data.rows.length > 0 ? <RowRange data={data} offset={offset} /> : data ? "No rows" : ""}
             {selected.size > 1 ? ` · ${selected.size} selected` : ""}
           </span>
-          <div style={{ flex: 1 }} />
+          <div className="flex-1" />
           <label className="flex items-center gap-1 text-sm muted">
             <span className="hide-sm">Rows per page</span>
-            <select
-              className="input dbx-pagesize"
+            <Select
+              className="dbx-pagesize"
               value={view.pageSize}
               onChange={(e) => setView({ pageSize: Number(e.target.value), page: 1 })}
               aria-label="Rows per page"
@@ -618,7 +682,7 @@ export function TableTab({
                   {n}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <Pagination
             page={view.page}
@@ -631,7 +695,7 @@ export function TableTab({
 
       {review ? (
         <Modal open wide onClose={() => setReview(false)} title={`Changes to ${tab.label}`}>
-          <p className="text-sm muted" style={{ marginTop: 0 }}>
+          <p className="text-sm muted mt-0">
             What saving will do, as SQL. Each row is applied on its own, in this order; if one fails, the others still
             go through and the failed one stays here for you to fix.
           </p>
@@ -640,19 +704,17 @@ export function TableTab({
               .map((m) => mutationSQL(m, quoted, columns, dialect))
               .join("\n")}
           </pre>
-          <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-            <button
-              className="btn btn-primary"
+          <div className="flex gap-2 mt-3">
+            <Button
+              variant="primary"
               onClick={() => {
                 setReview(false);
                 void doSave();
               }}
             >
               Save {count} change{count === 1 ? "" : "s"}
-            </button>
-            <button className="btn" onClick={() => setReview(false)}>
-              Close
-            </button>
+            </Button>
+            <Button onClick={() => setReview(false)}>Close</Button>
           </div>
         </Modal>
       ) : null}
@@ -694,19 +756,19 @@ function ValuePanel({
       <div className="dbx-valuepanel-head">
         <span className="truncate font-medium">{col ? col.name : "Value"}</span>
         {col ? <span className="muted text-xs truncate">{col.type}</span> : null}
-        <div style={{ flex: 1 }} />
-        <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close value panel">
-          <X size={14} />
-        </button>
+        <div className="flex-1" />
+        <IconButton label="Close value panel" onClick={onClose}>
+          <X size={14} aria-hidden />
+        </IconButton>
       </div>
       {!st ? (
-        <p className="muted text-sm" style={{ padding: ".75rem" }}>
+        <p className="muted text-sm p-3">
           Select a cell to see its full value here.
         </p>
       ) : draft !== null ? (
         <div className="dbx-valuepanel-body">
-          <textarea
-            className="input dbx-valuepanel-edit"
+          <Textarea
+            className="dbx-valuepanel-edit"
             value={draft}
             autoFocus
             onChange={(e) => setDraft(e.target.value)}
@@ -721,26 +783,27 @@ function ValuePanel({
             }}
             spellCheck={false}
           />
-          <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
-            <button
-              className="btn btn-sm btn-primary"
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="primary"
               onClick={() => {
                 onApply(draft);
                 setDraft(null);
               }}
             >
               Apply
-            </button>
-            <button className="btn btn-sm" onClick={() => setDraft(null)}>
+            </Button>
+            <Button size="sm" onClick={() => setDraft(null)}>
               Cancel
-            </button>
+            </Button>
             {kind === "json" ? (
-              <button className="btn btn-ghost btn-sm" onClick={() => setDraft(prettyValue(draft, "json"))}>
+              <Button variant="ghost" size="sm" onClick={() => setDraft(prettyValue(draft, "json"))}>
                 Format JSON
-              </button>
+              </Button>
             ) : null}
           </div>
-          <p className="muted text-xs" style={{ margin: 0 }}>
+          <p className="muted text-xs m-0">
             Ctrl+Enter applies. Nothing is written until you save the tab.
           </p>
         </div>
@@ -753,32 +816,33 @@ function ValuePanel({
           ) : (
             <pre className="dbx-valuepanel-pre">{prettyValue(st.value, kind)}</pre>
           )}
-          <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+          <div className="flex flex-wrap gap-2">
             {st.value !== null ? (
-              <button
-                className="btn btn-sm"
+              <Button
+                size="sm"
+                icon={<ClipboardCopy size={13} aria-hidden />}
                 onClick={() => void navigator.clipboard?.writeText(st.value ?? "").then(() => push("success", "Copied value"))}
               >
-                <ClipboardCopy size={13} /> Copy
-              </button>
+                Copy
+              </Button>
             ) : null}
             {editable && !locked ? (
-              <button className="btn btn-sm" onClick={() => setDraft(st.value ?? "")}>
+              <Button size="sm" onClick={() => setDraft(st.value ?? "")}>
                 Edit
-              </button>
+              </Button>
             ) : null}
             {editable && col?.nullable && st.value !== null ? (
-              <button className="btn btn-ghost btn-sm" onClick={() => onApply(null)}>
+              <Button variant="ghost" size="sm" onClick={() => onApply(null)}>
                 Set NULL
-              </button>
+              </Button>
             ) : null}
           </div>
           {locked ? (
-            <p className="muted text-xs" style={{ margin: 0 }}>
+            <p className="muted text-xs m-0">
               Shown cut short at 4 KB, so it can&apos;t be edited here. Use the SQL console.
             </p>
           ) : st.changed ? (
-            <p className="text-xs" style={{ margin: 0, color: "var(--warning)" }}>
+            <p className="text-xs m-0 text-warning">
               Changed — was {st.original === null ? "NULL" : `“${st.original.slice(0, 80)}${st.original.length > 80 ? "…" : ""}”`}
             </p>
           ) : null}

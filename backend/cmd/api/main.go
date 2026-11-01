@@ -17,11 +17,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
 	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	backupapp "github.com/Fleetdock/fleetdock/backend/internal/app/backup"
+	backupcopyapp "github.com/Fleetdock/fleetdock/backend/internal/app/backupcopy"
+	catalogapp "github.com/Fleetdock/fleetdock/backend/internal/app/catalog"
 	consoleapp "github.com/Fleetdock/fleetdock/backend/internal/app/console"
 	databaseapp "github.com/Fleetdock/fleetdock/backend/internal/app/database"
 	dbaccessapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbaccess"
@@ -29,12 +33,14 @@ import (
 	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
 	destinationapp "github.com/Fleetdock/fleetdock/backend/internal/app/destination"
 	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
+	fleetapp "github.com/Fleetdock/fleetdock/backend/internal/app/fleet"
 	instanceapp "github.com/Fleetdock/fleetdock/backend/internal/app/instance"
 	moveapp "github.com/Fleetdock/fleetdock/backend/internal/app/move"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
 	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
+	schemahistoryapp "github.com/Fleetdock/fleetdock/backend/internal/app/schemahistory"
 	secretsapp "github.com/Fleetdock/fleetdock/backend/internal/app/secrets"
 	serverapp "github.com/Fleetdock/fleetdock/backend/internal/app/server"
 	summaryapp "github.com/Fleetdock/fleetdock/backend/internal/app/summary"
@@ -165,12 +171,28 @@ func run() error {
 	opsSvc.SetAccessRoleResolver(dbadminSvc.WriteRoleCredentials)
 	consoleRepo := postgres.NewConsoleRepository(pool)
 	dbadminSvc.SetHistory(consoleRepo)
+	rowChangeRepo := postgres.NewRowChangeRepository(pool)
+	if cfg.RowChangeRetention > 0 {
+		dbadminSvc.SetJournal(rowChangeRepo)
+	}
+	catalogSvc := catalogapp.NewService(postgres.NewCatalogRepository(pool), dbadminSvc, cfg.CatalogRefreshInterval)
 	summarySvc := summaryapp.NewService(statsRepo)
 	notifSender := notify.New(notify.SMTPConfig{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
 		Password: cfg.SMTPPassword, From: cfg.SMTPFrom,
 	})
 	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc)
+	schemaSvc := schemahistoryapp.NewService(postgres.NewSchemaHistoryRepository(pool), dbadminSvc, databaseRepo,
+		cfg.SchemaSnapshotInterval)
+	schemaSvc.SetNotifier(notifSvc)
+	// DDL made through Fleetdock refreshes the search catalog and, for
+	// watched databases, records the new schema.
+	dbadminSvc.SetSchemaChanged(func(id uuid.UUID) {
+		if catalogSvc.Enabled() {
+			catalogSvc.SchemaChanged(id)
+		}
+		schemaSvc.SchemaChanged(id)
+	})
 
 	// The probe keeps instance health and database lists current: every
 	// minute from the worker, and on demand ("Check now").
@@ -181,6 +203,21 @@ func run() error {
 		return err
 	}))
 	opsSvc.SetNotifier(notifSvc)
+	copySvc := backupcopyapp.NewService(postgres.NewBackupCopyRepository(pool), backupRepo, databaseRepo, backupSvc,
+		cfg.BackupCopyTTL, cfg.BackupCopyMaxBytes)
+	copySvc.SetPreparer(dbadminSvc)
+	opsSvc.SetBackupCopyHook(copySvc)
+	dbadminSvc.SetCopies(copySvc)
+	fleetSvc := fleetapp.NewService(fleetapp.Deps{
+		Repo:       postgres.NewFleetRepository(pool),
+		Databases:  databaseRepo,
+		Instances:  instanceRepo,
+		Ancestry:   resolver,
+		DataAccess: dbadminSvc,
+		Principals: authSvc,
+		Queries:    dbadminSvc,
+		Audit:      auditSvc,
+	})
 	moveSvc := moveapp.NewService(databaseRepo, instanceRepo, backupSvc, databaseSvc, endpointSvc)
 	opsSvc.SetMover(moveSvc)
 
@@ -195,17 +232,25 @@ func run() error {
 	// scheduled backups, retention, alert evaluation + notification dispatch.
 	if cfg.WorkerEnabled {
 		go worker.New(worker.Deps{
-			Ops:              opsSvc,
-			Agents:           agentSvc,
-			Schedules:        scheduleSvc,
-			Notifications:    notifSvc,
-			Endpoints:        endpointSvc,
-			Credentials:      credentialSvc,
-			HeartbeatTimeout: cfg.HeartbeatTimeout,
-			MetricsRetention: cfg.MetricsRetention,
-			HousekeepingLock: postgres.HousekeepingLock(pool),
-			Probe:            probeSvc,
+			Ops:                opsSvc,
+			Agents:             agentSvc,
+			Schedules:          scheduleSvc,
+			Notifications:      notifSvc,
+			Endpoints:          endpointSvc,
+			Credentials:        credentialSvc,
+			HeartbeatTimeout:   cfg.HeartbeatTimeout,
+			MetricsRetention:   cfg.MetricsRetention,
+			HousekeepingLock:   postgres.HousekeepingLock(pool),
+			Probe:              probeSvc,
+			Catalog:            catalogSvc,
+			SchemaHistory:      schemaSvc,
+			RowChanges:         rowChangeRepo,
+			BackupCopies:       copySvc,
+			RowChangeRetention: cfg.RowChangeRetention,
+			CatalogLock:        postgres.CatalogLock(pool),
 		}).Run(ctx)
+		// Fleet queries run on every replica, each taking its share.
+		go fleetapp.NewRunner(fleetSvc, cfg.FleetMaxParallel, cfg.FleetRunRetention).Run(ctx)
 	}
 
 	// Bundled dashboard: a supervised node child on loopback, fronted by this
@@ -228,6 +273,9 @@ func run() error {
 	}
 
 	// HTTP layer.
+	dbadminHandler := httpapi.NewDBAdminHandler(dbadminSvc, resolver)
+	dbadminHandler.SetCopies(copySvc)
+	dbadminHandler.SetSchemaHistory(schemaSvc)
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Auth: httpapi.NewAuthHandler(authSvc, httpapi.SessionCookieConfig{
 			TTL: cfg.JWTTTL,
@@ -245,7 +293,9 @@ func run() error {
 		Schedules:         httpapi.NewScheduleHandler(scheduleSvc),
 		Moves:             httpapi.NewMoveHandler(moveSvc, resolver),
 		Destinations:      httpapi.NewDestinationHandler(destSvc),
-		DBAdmin:           httpapi.NewDBAdminHandler(dbadminSvc, resolver),
+		DBAdmin:           dbadminHandler,
+		Search:            httpapi.NewSearchHandler(catalogSvc, dbadminSvc, resolver),
+		Fleet:             httpapi.NewFleetHandler(fleetSvc),
 		Console:           httpapi.NewConsoleHandler(consoleapp.NewService(consoleRepo), resolver),
 		Connectivity:      httpapi.NewConnectivityHandler(endpointSvc),
 		DBCredentials:     httpapi.NewDBCredentialHandler(credentialSvc),

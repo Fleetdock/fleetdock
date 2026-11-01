@@ -7,6 +7,142 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-01
+
+### Security
+
+- **Next.js 16.4.3.** The dashboard was on Next.js 16.4.0, affected by
+  GHSA-2464-fhr4-w9xw (unauthenticated remote code execution in the image
+  optimizer with SVG files), GHSA-673q-mjm6-r5xr and GHSA-p3m5-59mp-jv5r.
+- **Go 1.26.10.** Builds use Go 1.26.10 and golang.org/x/net 0.62.0, which fix
+  standard-library vulnerabilities in `net/http`, `crypto/tls`, `crypto/x509`
+  and `mime/multipart`.
+- **Production refuses the demo stack's secrets.** `FLEETDOCK_ENV=production`
+  now also rejects secrets marked `not-for-production` and the demo admin
+  password, so a copy of the demo compose file cannot run with published
+  keys.
+
+### Added
+
+- **Fleet query: one script, many databases.** The new *Fleet query* page
+  runs a SQL script on up to 500 databases in the background, a few at a
+  time, and merges the results into one table (with CSV export). Access is
+  checked per database when the run starts and again before each one runs;
+  scripts that write need a typed confirmation, run on one database first
+  and stop at the first failure by default. Runs can be canceled and
+  retried. `FLEETDOCK_FLEET_MAX_PARALLEL` (16) caps the work per process,
+  `FLEETDOCK_FLEET_RUN_RETENTION` (30 days) how long runs are kept. API:
+  `/v1/fleet-runs`.
+- **Schema history and drift.** Turn on *Track changes* on a database's new
+  **Schema** tab and every structural change — from Fleetdock, a migration
+  tool or someone's psql — is recorded as a snapshot with what changed, and
+  announced as a `database.schema_changed` notification. *Compare with…*
+  diffs two databases on the same engine and writes the DDL that aligns them
+  (destructive steps commented out for review); a snapshot can be compared
+  with the live schema to go back to it. Checks run every
+  `FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL` (15m). API:
+  `/v1/databases/{id}/schema/snapshots`, `/v1/databases/{id}/schema/watch`,
+  `POST /v1/schema/compare`.
+- **Compare a table with a backup, restore single rows.** *Compare with a
+  backup…* in the data browser restores a backup into a temporary `fds_…`
+  database on the same server, lists the rows changed, deleted or added since
+  (by primary key, in pages), and puts the picked rows back as they were.
+  Restores are journaled, so **Undo** reverts them. The copy is dropped after
+  `FLEETDOCK_BACKUP_COPY_TTL` (2h; extendable to 24h);
+  `FLEETDOCK_BACKUP_COPY_MAX_BYTES` caps the backup size. API:
+  `/v1/databases/{id}/backup-copies` (create, list, extend, discard, diff,
+  restore-rows).
+- **Preview writes in the SQL console.** A script with writes can be dry-run
+  first: it runs in one transaction that is always rolled back
+  (`POST /v1/databases/{id}/query` with `preview: true`), reporting rows
+  affected per statement and, for single-table UPDATE / DELETE, a sample of
+  up to 20 rows before and after; reads later in the script see the
+  preview's changes. Only statements a rollback fully undoes are allowed,
+  autocommit is off for the whole run on MySQL/MariaDB, and databases with
+  non-transactional tables are refused. Previews are not kept in the
+  history.
+- **Undo for the data browser.** Every insert, edit and delete made in the
+  data browser is journaled with the row before and after, captured in the
+  same transaction. Saving shows **Undo**; a table's **Change history** lists
+  the edits of the last week (`FLEETDOCK_ROW_CHANGE_RETENTION`) with undo per
+  row or per save. An undo first checks that the row still looks as the
+  edit left it and asks before overwriting a later change. Binary values,
+  identity and generated columns and the session time zone round-trip
+  exactly (`GET /v1/databases/{id}/changes`,
+  `POST /v1/databases/{id}/changes/{changeId}/undo`,
+  `POST /v1/databases/{id}/changes/undo`). Row edits now return the
+  journal entry, and generated columns are read-only in the grid.
+- **SQL autocompletion from the real schema.** The console completes the
+  database's tables, schemas and columns (with their types) and the
+  engine's keywords (`GET /v1/databases/{id}/columns`).
+- **Foreign keys both ways.** Composite foreign keys now link to their
+  referenced row, and a row's context menu opens the rows of other tables
+  that reference it (`GET /v1/databases/{id}/tables/{table}/referenced-by`).
+- **Find a table or column anywhere with Ctrl/Cmd+K.** A background loop
+  keeps an index of every reachable database's table and column names
+  (`FLEETDOCK_CATALOG_REFRESH_INTERVAL`, 30 minutes, and right after DDL
+  made through Fleetdock); `GET /v1/search/schema` returns only databases
+  the caller could open in the data browser.
+- **Explain and Analyze in the console.** A statement's plan is drawn as a
+  tree with expected and actual rows, time or cost per step, and warnings
+  for full scans, filesorts, temporary tables, disk spills and stale
+  statistics (`POST /v1/databases/{id}/explain`). Analyze runs reads only,
+  in a read-only transaction that is rolled back.
+- **Index health.** A database's page and each table's structure flag
+  indexes never used since statistics started and indexes made redundant
+  by another one, with the `DROP INDEX` statement to review
+  (`GET /v1/databases/{id}/index-insights`).
+- **Top queries.** An instance's monitoring lists its most expensive
+  statements by total time, time per run or frequency, from
+  `pg_stat_statements` or `performance_schema`, and explains how to turn
+  them on when they are off (`GET /v1/instances/{id}/top-queries`).
+- **Demo stack.** `deploy/demo` starts a throwaway install with sample
+  MariaDB, MySQL and PostgreSQL databases bound to 127.0.0.1;
+  `scripts/screenshots.sh` builds it, seeds it and captures the screenshots
+  used in the README and on fleetdock.dev.
+
+### Changed
+
+- **A refreshed dashboard.** Every page is rebuilt on one design system
+  (shared tokens, controls, tables and charts) with the Geist typeface,
+  bundled with the image. Charts have time axes, tabs work with the arrow
+  keys, toasts wait while you hover or focus them, and pages show loading,
+  error and not-found states of their own.
+
+### Fixed
+
+- **Databases with `-` in their names are managed.** Applications that name
+  databases after UUIDs (`tenant_ffc07774-1db5-…`) had those databases
+  skipped by discovery without a warning, and refused by grants, the data
+  browser and backups. Database names may now contain `-` anywhere but the
+  first character. Charset, collation and role names keep the stricter rule.
+  Thanks to @shahawiz (#67).
+- The SQL console now honours a `DELIMITER` line that follows a comment.
+- **Backup verification no longer shows up as a database.** The temporary
+  `fdv_…` database a test restore uses was picked up by discovery while it
+  existed and then reported as missing once dropped. Names `fdv_`/`fds_`
+  followed by 16 hex digits are now reserved for Fleetdock's temporary
+  restores and never registered; ones registered before are removed from
+  the inventory.
+- **Long statements on MySQL and MariaDB no longer fail after 30 seconds.**
+  The driver's per-read timeout cut off any statement that returned nothing
+  for 30 seconds (a slow `UPDATE`, an `ALTER` on a big table) with "invalid
+  connection", whatever its own limit. It now outlasts the statement's
+  timeout.
+- **MySQL and MariaDB through an SSH tunnel.** Connections failed with
+  "invalid connection" because the tunnel rejected I/O deadlines. Deadlines
+  are now emulated, so a bastion that stops answering still times out
+  instead of blocking.
+- **Database discovery is no longer cancelled by slow size queries.** The
+  probe saves an instance's database list before collecting sizes, each with
+  its own deadline, so instances with many tables (or behind an SSH tunnel)
+  have their databases discovered.
+
+## [0.8.1 – 0.8.5]
+
+These versions were tagged without their own changelog sections; their
+changes are collected here.
+
 ### Security
 
 - **The dashboard session is an httpOnly cookie.** Login sets a
@@ -47,12 +183,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that already have managed roles keep using them.
 
 ### Fixed
-
-- **Databases with `-` in their names are managed.** Applications that name
-  databases after UUIDs (`tenant_ffc07774-1db5-…`) had those databases
-  skipped by discovery without a warning, and refused by grants, the data
-  browser and backups. Database names may now contain `-` anywhere but the
-  first character. Charset, collation and role names keep the stricter rule.
 
 - **"The database rejected the login" in the data browser** when a
   Fleetdock-managed role was dropped or its password changed outside

@@ -4,14 +4,15 @@ import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
 import { DataBrowser } from "@/components/data-browser/workspace";
-import { Spinner } from "@/components/ui";
+import { Skeleton } from "@/components/ui";
 
 export default function DataBrowserPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center gap-2 text-sm muted" style={{ padding: "1.5rem" }}>
-          <Spinner /> Loading…
+        <div role="status" aria-label="Loading Data Browser" className="flex gap-3 p-4">
+          <Skeleton width="15rem" height="70vh" radius="var(--radius)" className="hide-sm shrink-0" />
+          <Skeleton height="70vh" radius="var(--radius)" className="flex-1" />
         </div>
       }
     >

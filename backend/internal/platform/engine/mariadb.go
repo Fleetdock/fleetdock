@@ -47,6 +47,17 @@ func validDBName(name string) bool { return len(name) <= 64 && dbNameRe.MatchStr
 // formatting so passwords containing '@', '/' or '?' cannot corrupt it.
 func (m *MariaDB) dsn(p ConnParams) string { return m.config(p).FormatDSN() }
 
+// readTimeout is the driver's per-read deadline: a backstop against a peer
+// that stopped answering. The driver applies it to every network read, so a
+// statement that sends nothing back for longer (SLEEP, a slow UPDATE, an
+// ALTER on a big table) would fail as "invalid connection". It therefore
+// outlasts the statement's own timeout; the caller's context ends the
+// statement itself.
+func readTimeout(statement time.Duration) time.Duration {
+	const backstop = 30 * time.Second
+	return max(backstop, statement+backstop)
+}
+
 // config builds the driver configuration. With an SSH tunnel the dial goes
 // through the bastion instead of the registered netsafe network.
 func (m *MariaDB) config(p ConnParams) *mysql.Config {
@@ -57,7 +68,7 @@ func (m *MariaDB) config(p ConnParams) *mysql.Config {
 	c.Addr = net.JoinHostPort(p.Host, strconv.Itoa(p.Port))
 	c.DBName = p.Database
 	c.Timeout = 8 * time.Second
-	c.ReadTimeout = 30 * time.Second
+	c.ReadTimeout = readTimeout(p.StatementTimeout)
 	c.WriteTimeout = 30 * time.Second
 	c.TLSConfig = mysqlTLS(p.TLSMode)
 	// Report rows matched, not rows changed, for UPDATE: re-saving a row with

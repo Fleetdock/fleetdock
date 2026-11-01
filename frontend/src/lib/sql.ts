@@ -135,3 +135,28 @@ export function splitStatements(script: string): string[] {
 export function writeStatements(script: string): string[] {
   return splitStatements(script).filter((s) => !isReadOnly(s));
 }
+
+const PREVIEW_ALLOWED = new Set([
+  "SELECT", "WITH", "TABLE", "VALUES", "SHOW", "DESCRIBE", "DESC", "EXPLAIN",
+  "INSERT", "UPDATE", "DELETE", "REPLACE", "MERGE",
+]);
+
+/**
+ * previewBlocker says why a script cannot be previewed (dry run, rolled
+ * back), or returns null. Mirrors engine.PreviewBlocker: only statements a
+ * rollback fully undoes are allowed.
+ */
+export function previewBlocker(script: string): string | null {
+  const stmts = splitStatements(script);
+  if (writeStatements(script).length === 0) return "Nothing to preview: the script only reads.";
+  for (let i = 0; i < stmts.length; i++) {
+    const kw = leadingKeyword(stmts[i]);
+    if (!PREVIEW_ALLOWED.has(kw)) {
+      return `Statement ${i + 1} (${kw || "?"}) cannot be previewed: only SELECT, INSERT, UPDATE, DELETE, REPLACE and MERGE roll back reliably.`;
+    }
+    if (/\bINTO\s+(OUTFILE|DUMPFILE)\b/i.test(stmts[i].replace(/'(?:[^'\\]|\\.|'')*'/g, "''"))) {
+      return `Statement ${i + 1} writes a file, which a rollback cannot undo.`;
+    }
+  }
+  return null;
+}

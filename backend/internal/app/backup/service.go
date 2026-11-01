@@ -253,7 +253,7 @@ func (s *Service) Verify(ctx context.Context, backupID string, createdBy *uuid.U
 	if err != nil {
 		return nil, apperr.Internal(err)
 	}
-	scratch := "fdv_" + strings.ReplaceAll(b.ID.String(), "-", "")[:16]
+	scratch := databasedom.ScratchName("fdv", b.ID)
 	job, err := s.ops.Create(ctx, jobdom.TypeRestore, "backup", &b.ID, executorFor(inst), operationapp.Params{
 		InstanceID:     inst.ID.String(),
 		Database:       scratch,
@@ -269,6 +269,62 @@ func (s *Service) Verify(ctx context.Context, backupID string, createdBy *uuid.U
 	}
 	_ = s.backups.SetVerify(ctx, b.ID, "running", nil)
 	return job, nil
+}
+
+// RestoreCopy restores a completed backup into a backup copy's temporary
+// database (scratch) on the source database's instance, like Verify.
+func (s *Service) RestoreCopy(ctx context.Context, backupID, copyID uuid.UUID, scratch string, createdBy *uuid.UUID) (*jobdom.Job, error) {
+	b, err := s.backups.GetByID(ctx, backupID)
+	if err != nil {
+		return nil, err
+	}
+	if b.Status != backupdom.StatusCompleted || b.StorageURL == nil || b.DestinationID == nil {
+		return nil, apperr.Invalid("backup_id", "only completed backups in backup storage can be opened")
+	}
+	db, err := s.databases.GetByID(ctx, b.DatabaseID)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := s.instances.GetByID(ctx, db.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !inst.HasCredentials() {
+		return nil, apperr.Invalid("backup_id", "the instance has no admin credentials")
+	}
+	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
+	if err != nil {
+		return nil, err
+	}
+	key, err := keyFromStorageURL(*b.StorageURL, dest.Bucket)
+	if err != nil {
+		return nil, apperr.Internal(err)
+	}
+	return s.ops.Create(ctx, jobdom.TypeRestore, "backup", &b.ID, executorFor(inst), operationapp.Params{
+		InstanceID:    inst.ID.String(),
+		Database:      scratch,
+		Charset:       db.Charset,
+		Collation:     db.Collation,
+		BackupID:      b.ID.String(),
+		DestinationID: dest.ID.String(),
+		Key:           key,
+		BackupCopyID:  copyID.String(),
+	}, createdBy)
+}
+
+// DropCopy drops a backup copy's temporary database. The job carries no
+// DatabaseID, so nothing of the source database (its access roles) is
+// touched.
+func (s *Service) DropCopy(ctx context.Context, instanceID, backupID, copyID uuid.UUID, scratch string, createdBy *uuid.UUID) (*jobdom.Job, error) {
+	inst, err := s.instances.GetByID(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.ops.Create(ctx, jobdom.TypeDeleteDatabase, "backup", &backupID, executorFor(inst), operationapp.Params{
+		InstanceID:   inst.ID.String(),
+		Database:     scratch,
+		BackupCopyID: copyID.String(),
+	}, createdBy)
 }
 
 // ImportInput loads a user-supplied SQL file into an existing database.

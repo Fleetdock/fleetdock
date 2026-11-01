@@ -511,6 +511,19 @@ export interface QueryResult {
   rows_affected: number;
   read_only: boolean;
   duration_ms: number;
+  /** Preview only: caveats of the dry run. */
+  notes?: string[];
+  /** Preview only: rows of a single-table UPDATE/DELETE before and after. */
+  sample?: PreviewSample;
+}
+
+export interface PreviewSample {
+  table: string;
+  key: string[];
+  columns: string[];
+  truncated: boolean;
+  /** after is null when the statement deleted the row. */
+  rows: { before: (string | null)[]; after: (string | null)[] | null }[];
 }
 
 /** QueryOutput is a console run: one result per statement that ran. */
@@ -518,6 +531,8 @@ export interface QueryOutput {
   results: QueryResult[];
   /** Set when a statement after the first failed (1-based). */
   error?: { statement: number; message: string };
+  /** A preview: the run was rolled back, nothing was saved. */
+  rolled_back?: boolean;
 }
 
 export interface HistoryEntry {
@@ -545,6 +560,8 @@ export interface RunQueryInput {
   limit?: number;
   /** Client-generated UUID; lets the caller cancel the run. */
   query_id?: string;
+  /** Dry run: one transaction, rolled back. */
+  preview?: boolean;
 }
 
 export interface CreateDBUserInput {
@@ -733,6 +750,8 @@ export interface BrowseColumn {
   type: string;
   nullable: boolean;
   has_default: boolean;
+  /** Computed by the database; read-only. */
+  generated?: boolean;
 }
 
 export interface BrowseResult {
@@ -762,6 +781,8 @@ export interface ColumnSpec {
 
 export interface ForeignKey {
   name: string;
+  /** The referencing table; set only on incoming keys (referenced-by). */
+  table?: string;
   columns: string[];
   ref_table: string;
   ref_columns: string[];
@@ -791,4 +812,307 @@ export interface DBObject {
   name: string;
   table?: string;
   definition: string | null;
+}
+
+/** ColumnCatalog lists every table's columns of a database (autocompletion). */
+export interface ColumnCatalog {
+  truncated: boolean;
+  tables: {
+    /** PostgreSQL schema; absent on MySQL/MariaDB. */
+    schema?: string;
+    name: string;
+    kind: "table" | "view";
+    columns: { name: string; type: string }[];
+  }[];
+}
+
+/** SchemaSearchHit is a table or column found by the fleet-wide schema search. */
+export interface SchemaSearchHit {
+  database_id: string;
+  database: string;
+  instance_id: string;
+  instance: string;
+  engine: string;
+  /** PostgreSQL schema; absent on MySQL/MariaDB. */
+  schema?: string;
+  table: string;
+  kind: "table" | "view";
+  /** Set when the match is a column. */
+  column?: string;
+  type?: string;
+}
+
+/** ExplainResult is the response of POST /v1/databases/{id}/explain. */
+export interface ExplainResult {
+  format: "postgres" | "mysql" | "mariadb" | "mysql-tree";
+  analyzed: boolean;
+  /** The engine's JSON plan, as returned by the server. */
+  plan?: unknown;
+  /** The plan as text (mysql-tree). */
+  text?: string;
+}
+
+/** TopQueries is GET /v1/instances/{id}/top-queries: the busiest statements. */
+export interface TopQueries {
+  available: boolean;
+  note?: string;
+  stats_since?: string;
+  queries: {
+    database: string;
+    query: string;
+    calls: number;
+    total_ms: number;
+    mean_ms: number;
+    rows: number;
+    rows_examined?: number;
+    no_index_used?: number;
+    cache_hit_pct?: number;
+  }[];
+}
+
+export interface IndexDef {
+  schema?: string;
+  table: string;
+  name: string;
+  columns: string[];
+  unique: boolean;
+  primary: boolean;
+  partial: boolean;
+  expression: boolean;
+  method: string;
+  size_bytes?: number;
+  scans?: number;
+}
+
+export interface IndexFinding {
+  index: IndexDef;
+  reason: string;
+  covered_by?: string;
+  drop_sql: string;
+}
+
+/** IndexInsights is GET /v1/databases/{id}/index-insights. */
+export interface IndexInsights {
+  indexes: IndexDef[];
+  usage_available: boolean;
+  stats_since?: string;
+  note?: string;
+  unused: IndexFinding[];
+  redundant: IndexFinding[];
+}
+
+/** A journaled value: text, SQL NULL, or binary as base64. */
+export type ImageValue = string | null | { b64: string };
+
+/** RowChange is one data-browser edit kept in the change journal (undo). */
+export interface RowChange {
+  id: string;
+  database_id: string;
+  table: string;
+  op: "insert" | "update" | "delete";
+  key: Record<string, ImageValue>;
+  before: Record<string, ImageValue> | null;
+  after: Record<string, ImageValue> | null;
+  columns: string[];
+  undoable: boolean;
+  note?: string;
+  batch_id?: string;
+  source: "editor" | "undo";
+  user_id?: string;
+  user_email?: string;
+  undo_of?: string;
+  undone_at?: string;
+  undone_by?: string;
+  created_at: string;
+}
+
+/** RowEditResult is what a row insert/update/delete returns. */
+export interface RowEditResult {
+  status: "inserted" | "updated" | "deleted";
+  change_id?: string;
+  undoable: boolean;
+  note?: string;
+}
+
+export interface UndoResult {
+  change_id: string;
+  ok: boolean;
+  conflict?: boolean;
+  error?: string;
+  undo?: RowEditResult;
+}
+
+/** BackupCopy is a backup restored next to its database for comparison. */
+export interface BackupCopy {
+  id: string;
+  database_id: string;
+  backup_id: string;
+  instance_id: string;
+  scratch_name: string;
+  status: "restoring" | "ready" | "failed" | "dropping" | "dropped";
+  job_id?: string;
+  error?: string;
+  ready_at?: string;
+  expires_at?: string;
+  backup_created_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiffCursor {
+  phase: "live" | "backup";
+  after?: Record<string, ImageValue>;
+}
+
+export interface DiffItem {
+  kind: "added" | "removed" | "changed";
+  key: Record<string, ImageValue>;
+  live?: (string | null)[];
+  backup?: (string | null)[];
+  changed?: string[];
+  live_hash?: string;
+}
+
+export interface CopyDiff {
+  columns: string[];
+  key: string[];
+  items: DiffItem[];
+  scanned: number;
+  next?: DiffCursor;
+  warnings?: string[];
+}
+
+export interface RestoreRowResult {
+  key: Record<string, ImageValue>;
+  ok: boolean;
+  conflict?: boolean;
+  error?: string;
+  change_id?: string;
+}
+
+// ---- schema history & comparison ----
+
+export interface SchemaWatch {
+  database_id: string;
+  enabled: boolean;
+  last_checked_at?: string;
+  last_error?: string;
+  updated_at: string;
+}
+
+export interface SchemaSnapshot {
+  id: string;
+  database_id: string;
+  hash: string;
+  summary: {
+    counts: { tables: number; views: number; routines: number; triggers: number };
+    changes: { added: number; removed: number; changed: number };
+    highlights?: string[];
+    truncated?: boolean;
+    stored: boolean;
+  };
+  previous_id?: string;
+  trigger: "scheduled" | "manual" | "ddl";
+  taken_by?: string;
+  taken_at: string;
+}
+
+export type SchemaChangeKind =
+  | "table"
+  | "column"
+  | "index"
+  | "constraint"
+  | "options"
+  | "view"
+  | "routine"
+  | "trigger"
+  | "type"
+  | "extension";
+
+export interface SchemaChange {
+  kind: SchemaChangeKind;
+  op: "added" | "removed" | "changed";
+  schema?: string;
+  table?: string;
+  name?: string;
+  before?: string;
+  after?: string;
+}
+
+export interface SchemaHistory {
+  watch: SchemaWatch | null;
+  interval_seconds: number;
+  items: SchemaSnapshot[];
+}
+
+export interface SchemaSnapshotDetail {
+  snapshot: SchemaSnapshot;
+  previous?: SchemaSnapshot;
+  changes: SchemaChange[];
+}
+
+export interface SchemaComparison {
+  same: boolean;
+  source_hash: string;
+  target_hash: string;
+  warnings: string[];
+  sql: string;
+  changes: SchemaChange[];
+  review: number;
+}
+
+// ---- fleet queries ----
+
+export type FleetRunStatus = "running" | "paused" | "canceling" | "succeeded" | "failed" | "canceled";
+export type FleetTargetStatus = "pending" | "running" | "succeeded" | "failed" | "skipped" | "canceled" | "unknown";
+
+export interface FleetRun {
+  id: string;
+  created_by: string;
+  sql: string;
+  writes: boolean;
+  status: FleetRunStatus;
+  concurrency: number;
+  stop_on_error: boolean;
+  canary: boolean;
+  timeout_seconds: number;
+  row_limit: number;
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  running: number;
+  created_at: string;
+  updated_at: string;
+  finished_at?: string;
+}
+
+export interface FleetTargetResults {
+  results: QueryResult[];
+  error?: { statement: number; message: string };
+  trimmed?: boolean;
+}
+
+export interface FleetTarget {
+  position: number;
+  database_id?: string;
+  database_name: string;
+  instance_name: string;
+  engine: string;
+  status: FleetTargetStatus;
+  results?: FleetTargetResults;
+  rows_affected?: number;
+  error?: string;
+  started_at?: string;
+  finished_at?: string;
+}
+
+export interface CreateFleetRunInput {
+  sql: string;
+  database_ids: string[];
+  concurrency?: number;
+  stop_on_error?: boolean;
+  canary?: boolean;
+  timeout_seconds?: number;
+  row_limit?: number;
 }

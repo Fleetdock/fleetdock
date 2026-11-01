@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { ConfirmModal, ErrorText } from "@/components/ui";
+import { Checkbox, ConfirmModal, ErrorText } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useDeleteInstance } from "@/lib/hooks";
 import type { Instance } from "@/lib/types";
@@ -40,23 +40,26 @@ export function DeleteInstanceModal({
       confirmText={removeVolume ? instance?.name : undefined}
       busy={del.isPending}
       message={
-        <>
+        <div className="stack-sm">
           {instance?.provisioned ? (
             <>
-              <p style={{ marginTop: 0 }}>Its Docker container is stopped and removed.</p>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={removeVolume} onChange={(e) => setRemoveVolume(e.target.checked)} />
-                Also delete the data volume — <strong>permanently destroys all of its databases</strong>
-              </label>
-              {!removeVolume ? <p className="muted">The volume is kept and can be reattached later.</p> : null}
+              <p className="m-0">Its Docker container is stopped and removed.</p>
+              <Checkbox
+                checked={removeVolume}
+                onChange={(e) => setRemoveVolume(e.target.checked)}
+                label={
+                  <>
+                    Also delete the data volume — <strong>permanently destroys all of its databases</strong>
+                  </>
+                }
+              />
+              {!removeVolume ? <p className="m-0 text-muted">The volume is kept and can be reattached later.</p> : null}
             </>
           ) : (
-            <p style={{ marginTop: 0 }}>
-              It is removed from Fleetdock only; the database server itself is not touched.
-            </p>
+            <p className="m-0">It is removed from Fleetdock only; the database server itself is not touched.</p>
           )}
           <ErrorText message={error ?? undefined} />
-        </>
+        </div>
       }
       onConfirm={async () => {
         if (!instance) return;

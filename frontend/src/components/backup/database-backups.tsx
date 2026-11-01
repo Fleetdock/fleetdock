@@ -1,13 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 
 import { Archive, CalendarClock } from "lucide-react";
 
 import { BackupList } from "@/components/backup/backup-list";
 import { BackupDatabaseModal } from "@/components/database/backup-database-modal";
-import { Time } from "@/components/ui";
+import { Button, ButtonLink, Time } from "@/components/ui";
 import { useCan, useSchedules } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
 
@@ -24,9 +23,9 @@ export function DatabaseBackups({ database, canBackup }: { database: Database; c
 
   return (
     <div>
-      <div className="card flex items-center gap-3" style={{ padding: ".8rem 1rem", marginBottom: ".9rem", flexWrap: "wrap" }}>
+      <div className="card flex flex-wrap items-center gap-3 px-4 py-3 mb-3.5">
         <CalendarClock size={18} className="muted" aria-hidden />
-        <div style={{ flex: 1, minWidth: "12rem" }}>
+        <div className="flex-1 min-w-48">
           {active.length > 0 ? (
             <>
               <div className="font-medium">Backed up automatically</div>
@@ -48,17 +47,36 @@ export function DatabaseBackups({ database, canBackup }: { database: Database; c
           )}
         </div>
         {can("schedule:read") ? (
-          <Link href="/backups/schedules" className="btn btn-sm">
+          <ButtonLink href="/backups/schedules" size="sm">
             {active.length > 0 ? "Manage schedule" : "Set up a schedule"}
-          </Link>
+          </ButtonLink>
         ) : null}
         {canBackup ? (
-          <button className="btn btn-sm btn-primary" onClick={() => setBackupOpen(true)}>
-            <Archive size={15} /> Back up now
-          </button>
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<Archive size={15} aria-hidden />}
+            onClick={() => setBackupOpen(true)}
+          >
+            Back up now
+          </Button>
         ) : null}
       </div>
-      <BackupList databaseId={database.id} emptyHint="Back up this database now, or set up a schedule." />
+      <BackupList
+        databaseId={database.id}
+        emptyHint="Back up this database now, or set up a schedule."
+        emptyAction={
+          canBackup ? (
+            <Button
+              variant="primary"
+              icon={<Archive size={15} aria-hidden />}
+              onClick={() => setBackupOpen(true)}
+            >
+              Back up now
+            </Button>
+          ) : undefined
+        }
+      />
       <BackupDatabaseModal database={backupOpen ? database : null} onClose={() => setBackupOpen(false)} />
     </div>
   );

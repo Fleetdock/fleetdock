@@ -15,13 +15,17 @@ import (
 	"github.com/google/uuid"
 
 	agentapp "github.com/Fleetdock/fleetdock/backend/internal/app/agent"
+	backupcopyapp "github.com/Fleetdock/fleetdock/backend/internal/app/backupcopy"
+	catalogapp "github.com/Fleetdock/fleetdock/backend/internal/app/catalog"
 	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
 	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
 	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
+	schemahistoryapp "github.com/Fleetdock/fleetdock/backend/internal/app/schemahistory"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
+	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
 )
 
@@ -49,6 +53,19 @@ type Deps struct {
 	// housekeeping pass so only one replica runs schedules, retention and
 	// alerts. ok=false means another replica holds it this round.
 	HousekeepingLock func(ctx context.Context) (release func(), ok bool, err error)
+	// RowChanges is the data-browser change journal, pruned after
+	// RowChangeRetention.
+	RowChanges         rowchangedom.Repository
+	RowChangeRetention time.Duration
+	// BackupCopies drops expired backup copies.
+	BackupCopies *backupcopyapp.Service
+	// Catalog, when set and enabled, refreshes the fleet-wide schema
+	// catalog on its own loop, under CatalogLock (one replica at a time).
+	Catalog *catalogapp.Service
+	// SchemaHistory checks watched databases for schema changes, on the
+	// catalog loop and under its lock.
+	SchemaHistory *schemahistoryapp.Service
+	CatalogLock   func(ctx context.Context) (release func(), ok bool, err error)
 }
 
 // jobTimeout bounds one control-plane operation; stuckAfter is how long a
@@ -76,6 +93,9 @@ func (w *Worker) Run(ctx context.Context) {
 	defer fast.Stop()
 
 	slog.Info("operations worker started")
+	if (w.deps.Catalog != nil && w.deps.Catalog.Enabled()) || (w.deps.SchemaHistory != nil && w.deps.SchemaHistory.Enabled()) {
+		go w.catalogLoop(ctx)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -95,13 +115,18 @@ func (w *Worker) Run(ctx context.Context) {
 // locked runs fn under the housekeeping lock (when configured) and never lets
 // a panic in it take the API process down.
 func (w *Worker) locked(ctx context.Context, fn func(context.Context)) {
+	w.withLock(ctx, w.deps.HousekeepingLock, fn)
+}
+
+// withLock runs fn under lock (when set), recovering panics.
+func (w *Worker) withLock(ctx context.Context, lock func(context.Context) (func(), bool, error), fn func(context.Context)) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("worker housekeeping panicked", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 		}
 	}()
-	if w.deps.HousekeepingLock != nil {
-		release, ok, err := w.deps.HousekeepingLock(ctx)
+	if lock != nil {
+		release, ok, err := lock(ctx)
 		if err != nil {
 			slog.Error("housekeeping lock", "error", err.Error())
 			return
@@ -112,6 +137,30 @@ func (w *Worker) locked(ctx context.Context, fn func(context.Context)) {
 		defer release()
 	}
 	fn(ctx)
+}
+
+// catalogLoop refreshes stale schema catalogs and checks watched schemas
+// once a minute. It runs on its
+// own goroutine because a pass connects to many databases and must not hold
+// up job claiming or alerts.
+func (w *Worker) catalogLoop(ctx context.Context) {
+	tick := time.NewTicker(time.Minute)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			w.withLock(ctx, w.deps.CatalogLock, func(ctx context.Context) {
+				if w.deps.Catalog != nil {
+					w.deps.Catalog.RefreshDue(ctx)
+				}
+				if w.deps.SchemaHistory != nil {
+					w.deps.SchemaHistory.RunDue(ctx)
+				}
+			})
+		}
+	}
 }
 
 // evaluateAndDispatch runs alert evaluation then delivers queued notifications.
@@ -179,6 +228,25 @@ func (w *Worker) housekeeping(ctx context.Context) {
 			slog.Error("prune health history", "error", err.Error())
 		} else if n > 0 {
 			slog.Info("pruned health history", "count", n)
+		}
+	}
+
+	// Row change journal retention (data browser undo).
+	if w.deps.RowChanges != nil && w.deps.RowChangeRetention > 0 {
+		cutoff := time.Now().Add(-w.deps.RowChangeRetention)
+		if n, err := w.deps.RowChanges.PruneBefore(ctx, cutoff); err != nil {
+			slog.Error("prune row changes", "error", err.Error())
+		} else if n > 0 {
+			slog.Info("pruned row changes", "count", n)
+		}
+	}
+
+	// Drop expired backup copies and retry stalled drops.
+	if w.deps.BackupCopies != nil {
+		if n, err := w.deps.BackupCopies.ExpireDue(ctx); err != nil {
+			slog.Error("expire backup copies", "error", err.Error())
+		} else if n > 0 {
+			slog.Info("dropping backup copies", "count", n)
 		}
 	}
 

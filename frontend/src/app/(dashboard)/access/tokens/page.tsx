@@ -1,20 +1,20 @@
 "use client";
 
-import { useErrorToast } from "@/components/toast";
-
-import { useMemo, useState, type FormEvent } from "react";
-
 import { Key, Plus, Trash2 } from "lucide-react";
-import { DataTable } from "@/components/data-table";
-import { ErrorText, Field, Modal, PageHeader } from "@/components/ui";
-import { ApiError } from "@/lib/api";
-import { useCan, useCreateToken, useMe, useRevokeToken, useTokens } from "@/lib/hooks";
-import { useDataTable } from "@/lib/use-data-table";
-import type { ApiToken } from "@/lib/types";
+import { useState } from "react";
+
+import { CreateTokenModal } from "@/components/access/token-modal";
 import { useConfirm } from "@/components/confirm";
+import { DataTable } from "@/components/data-table";
+import { useErrorToast } from "@/components/toast";
+import { Badge, Button, IconButton, PageHeader, SecretReveal, Time } from "@/components/ui";
+import { friendlyError } from "@/lib/errors";
+import { useCan, useRevokeToken, useTokens } from "@/lib/hooks";
+import type { ApiToken } from "@/lib/types";
+import { useDataTable } from "@/lib/use-data-table";
 
 export default function TokensPage() {
-  const { data, isLoading, error } = useTokens();
+  const { data, isLoading, error, refetch } = useTokens();
   const revoke = useRevokeToken();
   const toastError = useErrorToast();
   const confirm = useConfirm();
@@ -24,20 +24,18 @@ export default function TokensPage() {
   const canWrite = can("token:write");
   const table = useDataTable({ items: data?.items });
 
+  const newButton = canWrite ? (
+    <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setOpen(true)}>
+      New token
+    </Button>
+  ) : null;
+
   return (
     <div>
       <PageHeader
         title="API tokens"
         description="Keys for scripts and automation. A token can do at most what you can."
-        actions={
-          <>
-            {canWrite ? (
-          <button className="btn btn-primary" onClick={() => setOpen(true)}>
-            <Plus size={16} /> New token
-          </button>
-        ) : null}
-          </>
-        }
+        actions={newButton}
       />
 
       <DataTable<ApiToken>
@@ -45,18 +43,18 @@ export default function TokensPage() {
           {
             id: "name",
             header: "Name",
-            className: "font-medium flex items-center gap-2",
+            className: "font-medium",
             render: (t) => (
-              <>
-                <Key size={15} /> {t.name}
-              </>
+              <span className="inline-flex items-center gap-2">
+                <Key size={15} aria-hidden className="text-muted" /> {t.name}
+              </span>
             ),
           },
           {
             id: "prefix",
             header: "Prefix",
             className: "muted",
-            render: (t) => <code>{t.prefix}…</code>,
+            render: (t) => <code className="mono">{t.prefix}…</code>,
           },
           {
             id: "scopes",
@@ -79,13 +77,13 @@ export default function TokensPage() {
             id: "created",
             header: "Created",
             className: "muted",
-            render: (t) => new Date(t.created_at).toLocaleDateString(),
+            render: (t) => <Time value={t.created_at} />,
           },
           {
             id: "last_used",
             header: "Last used",
             className: "muted",
-            render: (t) => (t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "never"),
+            render: (t) => (t.last_used_at ? <Time value={t.last_used_at} /> : "never"),
           },
           {
             id: "actions",
@@ -93,10 +91,13 @@ export default function TokensPage() {
             align: "right",
             render: (t) =>
               t.revoked_at ? (
-                <span className="badge badge-red"><span className="dot" /> revoked</span>
+                <Badge tone="danger" dot>
+                  revoked
+                </Badge>
               ) : canWrite ? (
-                <button
-                  className="btn btn-sm btn-danger"
+                <IconButton
+                  label={`Revoke ${t.name}`}
+                  variant="danger"
                   onClick={async () => {
                     const ok = await confirm({
                       title: `Revoke "${t.name}"?`,
@@ -106,137 +107,33 @@ export default function TokensPage() {
                     });
                     if (ok) revoke.mutate(t.id, { onError: toastError("Failed to revoke the token") });
                   }}
-                  aria-label={`Revoke ${t.name}`}
                 >
-                  <Trash2 size={15} />
-                </button>
+                  <Trash2 size={15} aria-hidden />
+                </IconButton>
               ) : null,
           },
         ]}
         rows={table.rows}
         rowKey={(t) => t.id}
         isLoading={isLoading}
-        error={error ? (error as ApiError).message : undefined}
-        emptyTitle="No tokens"
+        error={error ? friendlyError(error) : undefined}
+        errorTitle="Could not load tokens"
+        onRetry={() => void refetch()}
+        emptyTitle="No tokens yet"
         emptyHint="Create a token to call the API from scripts or CI."
+        emptyAction={newButton}
         pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
       />
 
       <CreateTokenModal open={open} onClose={() => setOpen(false)} onCreated={setSecret} />
 
-      <Modal open={secret !== null} onClose={() => setSecret(null)} title="Token created">
-        <p className="text-sm" style={{ marginBottom: ".6rem" }}>
-          Copy this token now — it will not be shown again.
-        </p>
-        <div
-          className="card"
-          style={{ padding: ".7rem", fontFamily: "ui-monospace, monospace", fontSize: ".8rem", wordBreak: "break-all", background: "var(--panel-2)" }}
-        >
-          {secret}
-        </div>
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".9rem" }}>
-          <button
-            className="btn"
-            onClick={() => {
-              if (secret) navigator.clipboard?.writeText(secret);
-            }}
-          >
-            Copy
-          </button>
-          <button className="btn btn-primary" onClick={() => setSecret(null)}>Done</button>
-        </div>
-      </Modal>
+      <SecretReveal
+        open={secret !== null}
+        onClose={() => setSecret(null)}
+        title="Token created"
+        hint="Copy this token now — it will not be shown again."
+        items={[{ label: "Token", value: secret ?? "" }]}
+      />
     </div>
-  );
-}
-
-function CreateTokenModal({
-  open,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: (secret: string) => void;
-}) {
-  const create = useCreateToken();
-  const { data: me } = useMe();
-  const [name, setName] = useState("");
-  const [scopes, setScopes] = useState<string[]>([]);
-  const [ttlHours, setTtlHours] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  // A token can only carry scopes the user actually holds (at any scope).
-  const available = useMemo(() => {
-    const held = new Set((me?.grants ?? []).map((g) => g.permission));
-    return [...held].sort();
-  }, [me]);
-
-  function toggle(perm: string) {
-    setScopes((s) => (s.includes(perm) ? s.filter((p) => p !== perm) : [...s, perm]));
-  }
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const ttl = ttlHours.trim() === "" ? undefined : Number(ttlHours);
-    if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
-      setError("Expiry must be a positive number of hours.");
-      return;
-    }
-    try {
-      const res = await create.mutateAsync({ name, scopes, ttl_hours: ttl });
-      setName("");
-      setScopes([]);
-      setTtlHours("");
-      onClose();
-      onCreated(res.token);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create token");
-    }
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title="New API token">
-      <form onSubmit={onSubmit}>
-        <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="ci-pipeline" required />
-        </Field>
-        <Field label="Permissions" hint="Leave all unchecked to give the token every permission you have." help="Give a token only what it needs — for example backup:write for a script that triggers backups.">
-          <div
-            className="card"
-            style={{ padding: ".5rem .6rem", maxHeight: "11rem", overflowY: "auto", display: "grid", gap: ".3rem" }}
-          >
-            {available.length === 0 ? (
-              <span className="muted text-sm">No permissions available.</span>
-            ) : (
-              available.map((perm) => (
-                <label key={perm} className="flex items-center gap-2 text-sm" style={{ cursor: "pointer" }}>
-                  <input type="checkbox" checked={scopes.includes(perm)} onChange={() => toggle(perm)} />
-                  <code>{perm}</code>
-                </label>
-              ))
-            )}
-          </div>
-        </Field>
-        <Field label="Expires after (hours)" hint="Optional. Leave empty for a token that never expires.">
-          <input
-            className="input"
-            type="number"
-            min={1}
-            value={ttlHours}
-            onChange={(e) => setTtlHours(e.target.value)}
-            placeholder="never"
-          />
-        </Field>
-        <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".7rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={create.isPending}>
-            {create.isPending ? "Creating…" : "Create token"}
-          </button>
-        </div>
-      </form>
-    </Modal>
   );
 }

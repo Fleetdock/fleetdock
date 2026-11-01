@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isReadOnly, leadingKeyword, splitStatements, writeStatements } from "./sql";
+import { isReadOnly, leadingKeyword, splitStatements, writeStatements, previewBlocker } from "./sql";
 
 // These cases mirror backend/internal/platform/engine/sqlsplit_test.go and
 // mariadb_admin_test.go: the client warning must classify exactly like the
@@ -70,5 +70,21 @@ describe("writeStatements", () => {
 describe("leadingKeyword", () => {
   it("skips nested comments and parentheses", () => {
     expect(leadingKeyword("/* a */ -- b\n # c\n ((select 1))")).toBe("SELECT");
+  });
+});
+
+describe("previewBlocker", () => {
+  it("allows DML and reads", () => {
+    expect(previewBlocker("UPDATE t SET a = 1; SELECT * FROM t; DELETE FROM t WHERE x = 'into outfile'")).toBeNull();
+  });
+
+  it("needs a write to preview", () => {
+    expect(previewBlocker("SELECT 1")).toMatch(/only reads/);
+  });
+
+  it("refuses statements a rollback cannot undo", () => {
+    expect(previewBlocker("UPDATE t SET a = 1; DROP TABLE t")).toMatch(/Statement 2 \(DROP\)/);
+    expect(previewBlocker("DELETE FROM t; COMMIT")).toMatch(/COMMIT/);
+    expect(previewBlocker("UPDATE t SET a = 1; SELECT * FROM t INTO OUTFILE '/tmp/x'")).toMatch(/writes a file/);
   });
 });

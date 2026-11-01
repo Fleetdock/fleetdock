@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useDeferredValue, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useDeferredValue, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
-import { Database, FileText, HardDrive, Server, type LucideIcon } from "lucide-react";
+import { Columns3, Database, Eye, FileText, HardDrive, Server, Table2, type LucideIcon } from "lucide-react";
 
 import { useVisibleSections } from "@/components/sidebar";
 import { Modal } from "@/components/ui";
-import { useCanAny, useDatabases, useInstances, useServers } from "@/lib/hooks";
+import { schemaHitHref } from "@/lib/schema-search";
+import { useCanAny, useDatabases, useInstances, useSchemaSearch, useServers } from "@/lib/hooks";
 
 const OPEN_EVENT = "fleetdock:open-palette";
 
@@ -102,6 +103,9 @@ function Palette({ onClose }: { onClose: () => void }) {
   // The databases endpoint searches server-side; the others are filtered here.
   const { data: dbResults } = useDatabases({ search: remoteQ, page: 1, enabled: remoteQ !== "" && canAny("database:read") });
   const databases = q === remoteQ ? dbResults : undefined;
+  // Tables and columns of every database, from the fleet-wide catalog.
+  const { data: schemaResults } = useSchemaSearch(remoteQ, canAny("database:read"));
+  const schemaHits = q === remoteQ ? schemaResults : undefined;
 
   const items = useMemo(() => {
     const out: Item[] = [];
@@ -128,9 +132,32 @@ function Palette({ onClose }: { onClose: () => void }) {
       for (const d of (databases?.items ?? []).filter((d) => d.name.toLowerCase().includes(q))) {
         out.push({ id: `db:${d.id}`, label: d.name, hint: d.instance?.name, href: `/databases/${d.id}`, Icon: Database, group: "Databases" });
       }
+      for (const h of schemaHits ?? []) {
+        const table = h.schema && h.schema !== "public" ? `${h.schema}.${h.table}` : h.table;
+        const where = `${h.database} · ${h.instance}`;
+        if (h.column) {
+          out.push({
+            id: `col:${h.database_id}:${h.schema ?? ""}.${h.table}.${h.column}`,
+            label: `${table}.${h.column}`,
+            hint: `${h.type} · ${where}`,
+            href: schemaHitHref(h),
+            Icon: Columns3,
+            group: "Columns",
+          });
+        } else {
+          out.push({
+            id: `tbl:${h.database_id}:${h.schema ?? ""}.${h.table}`,
+            label: table,
+            hint: h.kind === "view" ? `view · ${where}` : where,
+            href: schemaHitHref(h),
+            Icon: h.kind === "view" ? Eye : Table2,
+            group: "Tables",
+          });
+        }
+      }
     }
-    return out.slice(0, 50);
-  }, [sections, q, servers, instances, databases]);
+    return out.slice(0, 60);
+  }, [sections, q, servers, instances, databases, schemaHits]);
 
   const current = Math.min(active, Math.max(0, items.length - 1));
 
@@ -161,14 +188,14 @@ function Palette({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="Go to…">
       <input
-        className="input"
+        className="input palette-input"
         autoFocus
         role="combobox"
         aria-expanded
         aria-controls={listId}
         aria-activedescendant={items.length ? `${listId}-${current}` : undefined}
-        aria-label="Search pages, servers and databases"
-        placeholder="Search pages, servers and databases…"
+        aria-label="Search pages, servers, databases, tables and columns"
+        placeholder="Search pages, servers, databases, tables and columns…"
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -178,8 +205,8 @@ function Palette({ onClose }: { onClose: () => void }) {
       />
       <ul id={listId} role="listbox" className="palette-list" aria-label="Results">
         {items.length === 0 ? (
-          <li className="muted text-sm" style={{ padding: ".8rem .5rem" }}>
-            Nothing found
+          <li className="muted text-sm px-2 py-3">
+            Nothing found{query.trim() ? ` for “${query.trim()}”` : ""}. Try a server, database or table name.
           </li>
         ) : (
           items.map((it, i) => {
@@ -190,30 +217,39 @@ function Palette({ onClose }: { onClose: () => void }) {
                 </li>
               ) : null;
             lastGroup = it.group;
-            return [
-              header,
-              <li
-                key={it.id}
-                id={`${listId}-${i}`}
-                role="option"
-                aria-selected={i === current}
-                className={`palette-item${i === current ? " active" : ""}`}
-                onMouseMove={() => setActive(i)}
-                onClick={() => go(it)}
-              >
-                <it.Icon size={15} aria-hidden className="muted" />
-                <span className="truncate" style={{ flex: 1 }}>
-                  {it.label}
-                </span>
-                {it.hint ? <span className="muted text-sm truncate">{it.hint}</span> : null}
-              </li>,
-            ];
+            return (
+              <Fragment key={it.id}>
+                {header}
+                <li
+                  id={`${listId}-${i}`}
+                  role="option"
+                  aria-selected={i === current}
+                  className={`palette-item${i === current ? " active" : ""}`}
+                  onMouseMove={() => setActive(i)}
+                  onClick={() => go(it)}
+                >
+                  <it.Icon size={15} aria-hidden className="muted" />
+                  <span className="truncate flex-1">
+                    {it.label}
+                  </span>
+                  {it.hint ? <span className="muted text-sm truncate">{it.hint}</span> : null}
+                </li>
+              </Fragment>
+            );
           })
         )}
       </ul>
-      <p className="muted text-sm" style={{ margin: ".6rem 0 0" }}>
-        <kbd>↑</kbd> <kbd>↓</kbd> to move · <kbd>Enter</kbd> to open · <kbd>Esc</kbd> to close
-      </p>
+      <div className="palette-foot" aria-hidden>
+        <span>
+          <kbd className="kbd">↑</kbd> <kbd className="kbd">↓</kbd> navigate
+        </span>
+        <span>
+          <kbd className="kbd">↵</kbd> open
+        </span>
+        <span>
+          <kbd className="kbd">esc</kbd> close
+        </span>
+      </div>
     </Modal>
   );
 }
@@ -238,12 +274,12 @@ function ShortcutHelp() {
       <tbody>
         {rows.map(([combos, label]) => (
           <tr key={label}>
-            <td style={{ width: "50%" }}>
+            <td className="w-1/2">
               {combos.map((keys, i) => (
                 <span key={keys.join("+")}>
                   {i > 0 ? <span className="muted"> or </span> : null}
                   {keys.map((k) => (
-                    <kbd key={k} style={{ marginRight: ".2rem" }}>
+                    <kbd key={k} className="kbd mr-1">
                       {k}
                     </kbd>
                   ))}

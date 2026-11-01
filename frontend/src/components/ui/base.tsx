@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Copy, X } from "lucide-react";
 import {
   cloneElement,
   isValidElement,
@@ -10,8 +11,9 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Copy, X } from "lucide-react";
+import { createPortal } from "react-dom";
 
+import { Input, Select, Textarea } from "./controls";
 import { HelpText } from "./tooltip";
 
 export function Modal({
@@ -44,7 +46,9 @@ export function Modal({
             node.querySelectorAll<HTMLElement>(
               'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
             ),
-          ).filter((el) => el.offsetParent !== null || el === document.activeElement)
+          ).filter(
+            (el) => el.offsetParent !== null || el === document.activeElement,
+          )
         : [];
     // Prefer an explicitly autofocused field; otherwise the first control
     // after the close button.
@@ -85,9 +89,12 @@ export function Modal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  if (!open) return null;
-  return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="overlay"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div
         ref={ref}
         className={`card modal${wide ? " modal-wide" : ""}`}
@@ -96,18 +103,31 @@ export function Modal({
         aria-labelledby={titleId}
         tabIndex={-1}
       >
-        <div className="flex items-center justify-between gap-3" style={{ marginBottom: "1rem" }}>
-          <h3 id={titleId} className="text-base font-semibold">
+        <div className="modal-head">
+          <h2 id={titleId} className="modal-title">
             {title}
-          </h3>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close dialog">
+          </h2>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm btn-icon"
+            onClick={onClose}
+            aria-label="Close dialog"
+          >
             <X size={16} />
           </button>
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
+}
+
+// Controls Field links to its label: the raw elements and the primitives
+// that render them (which forward id and aria-* props to the element).
+const FORM_CONTROLS: unknown[] = ["input", "select", "textarea", Input, Select, Textarea];
+function isFormControl(type: unknown): boolean {
+  return FORM_CONTROLS.includes(type);
 }
 
 /**
@@ -138,7 +158,7 @@ export function Field({
 
   let control = children;
   let linked = false;
-  if (isValidElement(children) && typeof children.type === "string" && ["input", "select", "textarea"].includes(children.type)) {
+  if (isValidElement(children) && isFormControl(children.type)) {
     const el = children as ReactElement<Record<string, unknown>>;
     linked = true;
     control = cloneElement(el, {
@@ -147,7 +167,10 @@ export function Field({
       "aria-invalid": error ? true : undefined,
     });
   }
-  const controlId = linked && isValidElement(control) ? ((control.props as { id?: string }).id ?? id) : undefined;
+  const controlId =
+    linked && isValidElement(control)
+      ? ((control.props as { id?: string }).id ?? id)
+      : undefined;
 
   return (
     <div className="field">
@@ -192,6 +215,10 @@ const STATUS_CLASS: Record<string, string> = {
   failed: "badge-red",
   error: "badge-red",
   missing: "badge-amber",
+  paused: "badge-amber",
+  canceling: "badge-amber",
+  unknown: "badge-amber",
+  skipped: "badge-gray",
 };
 
 // Plain-language labels and explanations for statuses whose raw value is
@@ -204,7 +231,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_HELP: Record<string, string> = {
-  missing: "Fleetdock no longer sees this database on its server. It may have been dropped or renamed outside Fleetdock; it comes back automatically if it reappears.",
+  missing:
+    "Fleetdock no longer sees this database on its server. It may have been dropped or renamed outside Fleetdock; it comes back automatically if it reappears.",
   locked: "Writes are blocked until the database is unlocked.",
   migrating: "Being copied or moved; writes are paused.",
   offline: "No heartbeat from the agent for over two minutes.",
@@ -212,9 +240,30 @@ const STATUS_HELP: Record<string, string> = {
   error: "The last operation on this failed — see Activity for details.",
 };
 
-export function StatusBadge({ status, title }: { status: string; title?: string }) {
+// Statuses that mean "something is happening right now": their dot pulses.
+const STATUS_BUSY = new Set([
+  "pending",
+  "creating",
+  "provisioning",
+  "deleting",
+  "migrating",
+  "canceling",
+  "running",
+]);
+
+export function StatusBadge({
+  status,
+  title,
+}: {
+  status: string;
+  title?: string;
+}) {
+  const busy = STATUS_BUSY.has(status) && status !== "running";
   return (
-    <span className={`badge ${STATUS_CLASS[status] ?? "badge-gray"}`} title={title ?? STATUS_HELP[status]}>
+    <span
+      className={`badge ${STATUS_CLASS[status] ?? "badge-gray"}${busy ? " badge-pulse" : ""}`}
+      title={title ?? STATUS_HELP[status]}
+    >
       <span className="dot" aria-hidden />
       {STATUS_LABEL[status] ?? status}
     </span>
@@ -234,26 +283,43 @@ export function EmptyState({
   hint,
   action,
   icon,
+  plain,
 }: {
   title: string;
   hint?: ReactNode;
   action?: ReactNode;
   icon?: ReactNode;
+  /** No card border — for use inside another card. */
+  plain?: boolean;
 }) {
   return (
-    <div className="card empty-state">
-      {icon ? <div className="empty-state-icon">{icon}</div> : null}
-      <p className="font-medium">{title}</p>
-      {hint ? <p className="muted text-sm" style={{ marginTop: ".35rem", maxWidth: "34rem", marginInline: "auto" }}>{hint}</p> : null}
-      {action ? <div className="flex justify-center gap-2" style={{ marginTop: "1rem", flexWrap: "wrap" }}>{action}</div> : null}
+    <div className={`card empty-state${plain ? " empty-state-plain" : ""}`}>
+      {icon ? (
+        <div className="empty-state-icon" aria-hidden>
+          {icon}
+        </div>
+      ) : null}
+      <p className="empty-state-title">{title}</p>
+      {hint ? <p className="empty-state-hint">{hint}</p> : null}
+      {action ? <div className="empty-state-actions">{action}</div> : null}
     </div>
   );
 }
 
 // pageNumbers returns page buttons with ellipsis gaps: 1 … p-1 p p+1 … N.
 function pageNumbers(page: number, pageCount: number): (number | "…")[] {
-  const wanted = new Set<number>([1, 2, page - 1, page, page + 1, pageCount - 1, pageCount]);
-  const pages = [...wanted].filter((p) => p >= 1 && p <= pageCount).sort((a, b) => a - b);
+  const wanted = new Set<number>([
+    1,
+    2,
+    page - 1,
+    page,
+    page + 1,
+    pageCount - 1,
+    pageCount,
+  ]);
+  const pages = [...wanted]
+    .filter((p) => p >= 1 && p <= pageCount)
+    .sort((a, b) => a - b);
   const out: (number | "…")[] = [];
   let prev = 0;
   for (const p of pages) {
@@ -279,15 +345,27 @@ export function Pagination({
   if (pageCount <= 1 && !hasMore) return null;
   return (
     <div className="flex items-center gap-1">
-      <button className="btn btn-sm" disabled={page === 1} onClick={() => onPage(1)} aria-label="First page">
+      <button
+        className="btn btn-sm"
+        disabled={page === 1}
+        onClick={() => onPage(1)}
+        aria-label="First page"
+      >
         «
       </button>
-      <button className="btn btn-sm" disabled={page === 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
+      <button
+        className="btn btn-sm"
+        disabled={page === 1}
+        onClick={() => onPage(page - 1)}
+        aria-label="Previous page"
+      >
         ‹
       </button>
       {pageNumbers(page, pageCount).map((p, i) =>
         p === "…" ? (
-          <span key={`gap-${i}`} className="muted text-sm" style={{ padding: "0 .3rem" }}>…</span>
+          <span key={`gap-${i}`} className="px-1 text-sm muted">
+            …
+          </span>
         ) : (
           <button
             key={p}
@@ -307,7 +385,12 @@ export function Pagination({
       >
         ›
       </button>
-      <button className="btn btn-sm" disabled={page >= pageCount} onClick={() => onPage(pageCount)} aria-label="Last page">
+      <button
+        className="btn btn-sm"
+        disabled={page >= pageCount}
+        onClick={() => onPage(pageCount)}
+        aria-label="Last page"
+      >
         »
       </button>
     </div>
@@ -317,7 +400,7 @@ export function Pagination({
 export function ErrorText({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <p className="text-sm" style={{ color: "var(--danger)", marginTop: ".25rem" }}>
+    <p className="mt-1 text-danger text-sm" role="alert">
       {message}
     </p>
   );
@@ -327,13 +410,19 @@ export function ErrorText({ message }: { message?: string }) {
  * Detail renders one label/value row. Shared by the database overview and the
  * connectivity cards, which previously carried two copies of this markup.
  */
-export function Detail({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+export function Detail({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+}) {
   return (
-    <div className="flex gap-3 text-sm" style={{ marginBottom: ".25rem" }}>
-      <span className="muted" style={{ minWidth: "8rem", flexShrink: 0 }}>
-        {label}
-      </span>
-      <span style={mono ? { fontFamily: "ui-monospace, monospace", wordBreak: "break-all" } : undefined}>{value}</span>
+    <div className="flex gap-3 mb-1.5 text-sm">
+      <span className="min-w-32 muted shrink-0">{label}</span>
+      <span className={mono ? "mono break-all" : "min-w-0"}>{value}</span>
     </div>
   );
 }
@@ -390,8 +479,18 @@ export function CopyButton({
   }
 
   return (
-    <button type="button" className={className} onClick={onClick}>
-      <Copy size={14} /> {state === "copied" ? "Copied" : state === "failed" ? "Press ⌘C" : label}
+    <button
+      type="button"
+      className={className}
+      onClick={onClick}
+      aria-live="polite"
+    >
+      {state === "copied" ? (
+        <Check size={14} aria-hidden />
+      ) : (
+        <Copy size={14} aria-hidden />
+      )}{" "}
+      {state === "copied" ? "Copied" : state === "failed" ? "Press ⌘C" : label}
     </button>
   );
 }
@@ -416,35 +515,28 @@ export function SecretReveal({
   const visible = items.filter((i) => i.value);
   return (
     <Modal open={open} onClose={onClose} title={title}>
-      <p className="text-sm muted" style={{ marginBottom: ".75rem" }}>
+      <p className="mb-3 text-sm muted">
         {hint ?? "Copy these values now — they will not be shown again."}
       </p>
       {visible.map((item) => (
-        <div key={item.label} style={{ marginBottom: ".85rem" }}>
-          <div className="muted text-sm" style={{ marginBottom: ".25rem" }}>
-            {item.label}
-          </div>
-          <div
-            className="card"
-            style={{
-              padding: ".6rem",
-              fontFamily: "ui-monospace, monospace",
-              fontSize: ".75rem",
-              wordBreak: "break-all",
-            }}
-          >
-            {item.value}
-          </div>
+        <div key={item.label} className="mb-3.5">
+          <div className="label">{item.label}</div>
+          <div className="secret-value">{item.value}</div>
           {item.copyable === false ? null : (
-            <div style={{ marginTop: ".35rem" }}>
-              <CopyButton value={item.value} label={`Copy ${item.label.toLowerCase()}`} />
+            <div className="mt-1.5">
+              <CopyButton
+                value={item.value}
+                label={`Copy ${item.label.toLowerCase()}`}
+              />
             </div>
           )}
         </div>
       ))}
-      <button className="btn btn-primary" style={{ marginTop: ".25rem" }} onClick={onClose}>
-        Done
-      </button>
+      <div className="modal-actions">
+        <button type="button" className="btn btn-primary" onClick={onClose}>
+          Done
+        </button>
+      </div>
     </Modal>
   );
 }
@@ -482,9 +574,7 @@ export function ConfirmModal({
   const blocked = confirmText !== undefined && typed !== confirmText;
   return (
     <Modal open={open} onClose={onCancel} title={title}>
-      <div className="text-sm" style={{ marginBottom: "1rem" }}>
-        {message}
-      </div>
+      <div className="mb-4 text-sm">{message}</div>
       {confirmText !== undefined ? (
         <Field label={`Type ${confirmText} to confirm`}>
           <input
@@ -497,12 +587,23 @@ export function ConfirmModal({
           />
         </Field>
       ) : null}
-      <div className="flex gap-2">
-        <button className={danger ? "btn btn-danger" : "btn btn-primary"} disabled={busy || blocked} onClick={onConfirm}>
-          {busy ? "Working…" : confirmLabel}
-        </button>
-        <button className="btn" disabled={busy} onClick={onCancel}>
+      <div className="modal-actions">
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={onCancel}
+        >
           Cancel
+        </button>
+        <button
+          type="button"
+          className={danger ? "btn btn-danger-solid" : "btn btn-primary"}
+          disabled={busy || blocked}
+          onClick={onConfirm}
+        >
+          {busy ? <span className="spin" aria-hidden /> : null}
+          {busy ? "Working…" : confirmLabel}
         </button>
       </div>
     </Modal>

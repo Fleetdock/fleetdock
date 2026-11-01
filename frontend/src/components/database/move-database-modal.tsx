@@ -1,9 +1,18 @@
 "use client";
 
-import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
-import { ErrorText, Field, Modal } from "@/components/ui";
+import {
+  Button,
+  ButtonLink,
+  Callout,
+  Checkbox,
+  ErrorText,
+  Field,
+  Input,
+  Modal,
+  Select,
+} from "@/components/ui";
 
 import { ApiError } from "@/lib/api";
 import { useDestinations, useInstances, useStartMove } from "@/lib/hooks";
@@ -53,29 +62,22 @@ export function MoveDatabaseModal({
     <Modal open onClose={onClose} title={`Copy, move or rename "${database.name}"`}>
       {started ? (
         <div>
-          <div
-            className="card"
-            style={{ padding: ".8rem .9rem", marginBottom: "1rem" }}
-          >
-            <span className="text-sm">{started}</span>
-          </div>
-          <div className="flex justify-end items-center gap-2">
-            <Link
-              href={operationId ? `/activity/${operationId}` : "/activity"}
-              className="btn btn-sm"
-            >
+          <Callout tone="success" role="status">
+            {started}
+          </Callout>
+          <div className="modal-actions">
+            <ButtonLink href={operationId ? `/activity/${operationId}` : "/activity"}>
               View operation
-            </Link>
-            <button className="btn btn-primary btn-sm" onClick={onClose}>
+            </ButtonLink>
+            <Button variant="primary" onClick={onClose}>
               Done
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
         <form onSubmit={onSubmit}>
           <Field label="Copy to database server">
-            <select
-              className="input"
+            <Select
               value={targetInstance}
               onChange={(e) => setTargetInstance(e.target.value)}
               required
@@ -90,19 +92,17 @@ export function MoveDatabaseModal({
                     {i.name} ({i.engine})
                   </option>
                 ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Target database name (optional)">
-            <input
-              className="input"
+            <Input
               value={targetName}
               onChange={(e) => setTargetName(e.target.value)}
               placeholder={database.name}
             />
           </Field>
           <Field label="Backup storage to use">
-            <select
-              className="input"
+            <Select
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
               required
@@ -113,19 +113,14 @@ export function MoveDatabaseModal({
                   {d.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
-          <label
-            className="flex items-center gap-2 text-sm"
-            style={{ cursor: "pointer", margin: ".2rem 0 .6rem" }}
-          >
-            <input
-              type="checkbox"
-              checked={dropSource}
-              onChange={(e) => setDropSource(e.target.checked)}
-            />
-            Drop the source database after a successful, verified move (cutover)
-          </label>
+          <Checkbox
+            className="mt-1 mb-2.5"
+            checked={dropSource}
+            onChange={(e) => setDropSource(e.target.checked)}
+            label="Drop the source database after a successful, verified move (cutover)"
+          />
           <p className="text-sm muted">
             The source is backed up and restored to the target (verifying the
             checksum and table count), in the background. Leave &quot;drop the
@@ -134,20 +129,11 @@ export function MoveDatabaseModal({
             instance to <strong>move</strong>.
           </p>
           <ErrorText message={error ?? undefined} />
-          <div
-            className="flex justify-end items-center gap-2"
-            style={{ marginTop: ".5rem" }}
-          >
-            <button type="button" className="btn" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={start.isPending}
-            >
+          <div className="modal-actions">
+            <Button onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={start.isPending}>
               {start.isPending ? "Starting…" : "Start move"}
-            </button>
+            </Button>
           </div>
         </form>
       )}

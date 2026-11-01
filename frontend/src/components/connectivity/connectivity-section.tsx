@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { Network } from "lucide-react";
 
-import { ErrorText, KeyValueList, SectionHeader, Skeleton } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import { Badge, Button, Callout, KeyValueList, SectionHeader, Skeleton } from "@/components/ui";
+import { friendlyError } from "@/lib/errors";
 import { useConnectivity, useOperation } from "@/lib/hooks";
 
 import { PublicEndpointCard } from "./public-endpoint-card";
@@ -34,7 +34,7 @@ export function ConnectivitySection({
   databaseName?: string;
   canWrite: boolean;
 }) {
-  const { data, isLoading, error } = useConnectivity(databaseId);
+  const { data, isLoading, error, refetch } = useConnectivity(databaseId);
   const [operationId, setOperationId] = useState<string | null>(null);
   const op = useOperation(operationId ?? "");
 
@@ -51,7 +51,7 @@ export function ConnectivitySection({
       <section className="section" aria-busy="true">
         {header}
         <div className="card panel" role="status" aria-label="Loading connection details">
-          <div style={{ display: "grid", gap: ".6rem" }}>
+          <div className="stack-sm">
             <Skeleton width="40%" />
             <Skeleton width="70%" />
             <Skeleton width="55%" />
@@ -67,7 +67,17 @@ export function ConnectivitySection({
     return (
       <section className="section">
         {header}
-        <ErrorText message={error instanceof ApiError ? error.message : "Could not load connectivity for this database."} />
+        <Callout
+          tone="danger"
+          title="Couldn't load connection details"
+          actions={
+            <Button size="sm" onClick={() => void refetch()}>
+              Try again
+            </Button>
+          }
+        >
+          {error ? friendlyError(error) : "Could not load connectivity for this database."}
+        </Callout>
       </section>
     );
   }
@@ -82,20 +92,26 @@ export function ConnectivitySection({
       {header}
 
       {operationId && opRunning ? (
-        <div className="callout callout-info" role="status">
-          Applying gateway changes ({op.data?.status}). <Link href={`/activity/${operationId}`}>View operation</Link>
-        </div>
+        <Callout tone="info" role="status">
+          Applying gateway changes ({op.data?.status}).{" "}
+          <Link href={`/activity/${operationId}`} className="link">
+            View operation
+          </Link>
+        </Callout>
       ) : null}
       {operationId && op.data?.status === "failed" ? (
-        <div className="callout callout-danger" role="alert">
-          The gateway update failed. <Link href={`/activity/${operationId}`}>View operation</Link>
-        </div>
+        <Callout tone="danger">
+          The gateway update failed.{" "}
+          <Link href={`/activity/${operationId}`} className="link">
+            View operation
+          </Link>
+        </Callout>
       ) : null}
 
       <div className="card panel">
         <h3 className="panel-title">
           <span>Private network</span>
-          <span className="badge">{PROTOCOL_LABELS[p.protocol] ?? p.protocol}</span>
+          <Badge>{PROTOCOL_LABELS[p.protocol] ?? p.protocol}</Badge>
         </h3>
         <KeyValueList
           items={[

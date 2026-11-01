@@ -51,6 +51,13 @@ type Mover interface {
 	OnRestoreComplete(ctx context.Context, job *jobdom.Job, ok bool, result json.RawMessage)
 }
 
+// BackupCopyHook advances a backup copy when its restore or drop completes
+// (implemented by *backupcopyapp.Service).
+type BackupCopyHook interface {
+	OnCopyRestored(ctx context.Context, copyID uuid.UUID, ok bool, errMsg *string)
+	OnCopyDropped(ctx context.Context, copyID uuid.UUID, ok bool)
+}
+
 // GatewayReconciler runs gateway reconciliation jobs (optional).
 type GatewayReconciler interface {
 	Reconcile(ctx context.Context) error
@@ -66,6 +73,7 @@ type Service struct {
 	secrets   SecretsReader
 	notifier  EventEmitter
 	mover     Mover
+	copies    BackupCopyHook
 	onDropped func(ctx context.Context, databaseID, instanceID uuid.UUID)
 	roleCreds func(ctx context.Context, databaseID uuid.UUID) (user, password string, err error)
 	gateway   GatewayReconciler
@@ -94,6 +102,9 @@ func (s *Service) SetAccessRoleResolver(f func(ctx context.Context, databaseID u
 
 // SetMover attaches the move-database saga hook (optional).
 func (s *Service) SetMover(m Mover) { s.mover = m }
+
+// SetBackupCopyHook attaches the backup-copy lifecycle hook (optional).
+func (s *Service) SetBackupCopyHook(h BackupCopyHook) { s.copies = h }
 
 // SetGatewayReconciler attaches the gateway reconciler (optional).
 func (s *Service) SetGatewayReconciler(g GatewayReconciler) { s.gateway = g }
@@ -124,6 +135,10 @@ type Params struct {
 	// into a throwaway database, which is dropped again once the result is
 	// recorded.
 	VerifyBackupID string `json:"verify_backup_id,omitempty"`
+	// BackupCopyID marks a restore into, or a drop of, a backup copy's
+	// temporary database. Such a drop never carries DatabaseID: the
+	// database it was restored from keeps its access roles.
+	BackupCopyID string `json:"backup_copy_id,omitempty"`
 	// AccessRole "rw" makes the executor connect as the database's
 	// least-privilege read-write role instead of the instance admin — used
 	// for user-supplied SQL (imports), which must not run as root.
@@ -544,6 +559,12 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 			s.completeVerification(ctx, j, p, ok, errMsg)
 			break
 		}
+		if p.BackupCopyID != "" {
+			if cid, e := uuid.Parse(p.BackupCopyID); e == nil && s.copies != nil {
+				s.copies.OnCopyRestored(ctx, cid, ok, errMsg)
+			}
+			break
+		}
 		if s.mover != nil {
 			s.mover.OnRestoreComplete(ctx, j, ok, result)
 		}
@@ -559,6 +580,12 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 			s.importDiscovered(ctx, p, result)
 		}
 	case jobdom.TypeDeleteDatabase:
+		if p.BackupCopyID != "" {
+			if cid, e := uuid.Parse(p.BackupCopyID); e == nil && s.copies != nil {
+				s.copies.OnCopyDropped(ctx, cid, ok)
+			}
+			break
+		}
 		// Metadata is already soft-deleted when the job was enqueued; what is
 		// left is the engine-side console roles of the dropped database.
 		if ok && s.onDropped != nil {

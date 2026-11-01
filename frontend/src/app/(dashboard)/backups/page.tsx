@@ -3,10 +3,20 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
-import { Plus, Search } from "lucide-react";
+import { Archive, HardDrive, Plus, Search } from "lucide-react";
 
 import { BackupList } from "@/components/backup/backup-list";
-import { ErrorText, Field, Modal, PageHeader } from "@/components/ui";
+import {
+  Button,
+  ButtonLink,
+  ErrorText,
+  Field,
+  Modal,
+  PageHeader,
+  SearchInput,
+  Select,
+  Toolbar,
+} from "@/components/ui";
 import { friendlyError } from "@/lib/errors";
 import { useCan, useDatabases, useDestinations, useTriggerBackup } from "@/lib/hooks";
 
@@ -26,23 +36,25 @@ export default function BackupsPage() {
         description="Every backup taken of your databases. Restore one, download it, or check that it restores."
         actions={
           canWrite ? (
-            <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-              <Plus size={16} /> Back up now
-            </button>
+            <Button
+              variant="primary"
+              icon={<Plus size={16} aria-hidden />}
+              onClick={() => setCreateOpen(true)}
+            >
+              Back up now
+            </Button>
           ) : null
         }
       />
-      <div className="search-box" style={{ marginBottom: ".9rem" }}>
-        <Search size={16} aria-hidden />
-        <input
-          className="input"
-          type="search"
+      <Toolbar>
+        <SearchInput
+          icon={<Search size={16} aria-hidden />}
           placeholder="Search by database or server…"
           aria-label="Search backups"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-      </div>
+      </Toolbar>
       <BackupList
         search={search}
         emptyHint={
@@ -52,13 +64,26 @@ export default function BackupsPage() {
         }
         emptyAction={
           noStorage ? (
-            <Link href="/backups/storage" className="btn btn-primary">
+            <ButtonLink
+              href="/backups/storage"
+              variant="primary"
+              icon={<HardDrive size={15} aria-hidden />}
+            >
               Add backup storage
-            </Link>
+            </ButtonLink>
           ) : (
-            <Link href="/backups/schedules" className="btn">
-              Set up a schedule
-            </Link>
+            <>
+              {canWrite ? (
+                <Button
+                  variant="primary"
+                  icon={<Archive size={15} aria-hidden />}
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Back up a database
+                </Button>
+              ) : null}
+              <ButtonLink href="/backups/schedules">Set up a schedule</ButtonLink>
+            </>
           )
         }
       />
@@ -106,8 +131,7 @@ function NewBackupModal({
     <Modal open={open} onClose={onClose} title="Back up a database">
       <form onSubmit={onSubmit}>
         <Field label="Database">
-          <select
-            className="input"
+          <Select
             value={databaseId}
             onChange={(e) => setDatabaseId(e.target.value)}
             required
@@ -120,11 +144,10 @@ function NewBackupModal({
                 {d.name}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="Save to">
-          <select
-            className="input"
+          <Select
             value={destinationId}
             onChange={(e) => setDestinationId(e.target.value)}
             required
@@ -137,7 +160,7 @@ function NewBackupModal({
                 {d.name}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
         {destinations.length === 0 ? (
           <p className="muted text-sm">
@@ -145,20 +168,16 @@ function NewBackupModal({
           </p>
         ) : null}
         <ErrorText message={error ?? undefined} />
-        <div
-          className="flex items-center justify-end gap-2"
-          style={{ marginTop: ".5rem" }}
-        >
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
             type="submit"
-            className="btn btn-primary"
-            disabled={trigger.isPending || destinations.length === 0}
+            variant="primary"
+            loading={trigger.isPending}
+            disabled={destinations.length === 0}
           >
             {trigger.isPending ? "Starting…" : "Start backup"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

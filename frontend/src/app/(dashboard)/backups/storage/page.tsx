@@ -11,7 +11,16 @@ import {
 } from "react";
 
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { ErrorText, Field, Modal, PageHeader } from "@/components/ui";
+import {
+  Button,
+  ErrorText,
+  Field,
+  IconButton,
+  Input,
+  Modal,
+  PageHeader,
+  Select,
+} from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   useCan,
@@ -23,7 +32,7 @@ import {
 } from "@/lib/hooks";
 import type { Destination } from "@/lib/types";
 import { useDataTable } from "@/lib/use-data-table";
-import { Pencil, Plug, Plus, Trash2 } from "lucide-react";
+import { HardDrive, Pencil, Plug, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "@/components/confirm";
 import { friendlyError } from "@/lib/errors";
 
@@ -112,26 +121,25 @@ export default function DestinationsPage() {
         header: "Actions",
         align: "right",
         render: (d) => (
-          <div
-            className="flex items-center gap-2"
-            style={{ justifyContent: "flex-end" }}
-          >
-            <button
-              className="btn btn-sm"
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              size="sm"
+              icon={<Plug size={15} aria-hidden />}
               onClick={() => onTest(d.id, d.name)}
               disabled={test.isPending}
             >
-              <Plug size={15} /> Test
-            </button>
-            <button
-              className="btn btn-sm"
+              Test
+            </Button>
+            <IconButton
+              variant="secondary"
+              label={`Edit ${d.name}`}
               onClick={() => setEditTarget(d)}
-              aria-label={`Edit ${d.name}`}
             >
-              <Pencil size={15} />
-            </button>
-            <button
-              className="btn btn-sm btn-danger"
+              <Pencil size={15} aria-hidden />
+            </IconButton>
+            <IconButton
+              variant="danger"
+              label={`Remove ${d.name}`}
               onClick={async () => {
                 const ok = await confirm({
                   title: `Remove "${d.name}"?`,
@@ -143,10 +151,9 @@ export default function DestinationsPage() {
                 if (ok) del.mutate(d.id, { onError: toastError("Failed to remove the storage") });
               }}
               disabled={del.isPending}
-              aria-label="Delete"
             >
-              <Trash2 size={15} />
-            </button>
+              <Trash2 size={15} aria-hidden />
+            </IconButton>
           </div>
         ),
       });
@@ -160,16 +167,17 @@ export default function DestinationsPage() {
         title="Backup storage"
         description="The S3-compatible buckets (AWS S3, Cloudflare R2, MinIO…) your backups are saved to."
         actions={
-          <>
-            {canWrite ? (
-          <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
-            <Plus size={16} /> Add storage
-          </button>
-        ) : null}
-          </>
+          canWrite ? (
+            <Button
+              variant="primary"
+              icon={<Plus size={16} aria-hidden />}
+              onClick={() => setAddOpen(true)}
+            >
+              Add storage
+            </Button>
+          ) : null
         }
       />
-
 
       <DataTable<Destination>
         columns={columns}
@@ -180,6 +188,17 @@ export default function DestinationsPage() {
         errorTitle="Could not load backup storage"
         emptyTitle="No backup storage yet"
         emptyHint="Add an S3 or Cloudflare R2 bucket to enable backups."
+        emptyAction={
+          canWrite ? (
+            <Button
+              variant="primary"
+              icon={<HardDrive size={15} aria-hidden />}
+              onClick={() => setAddOpen(true)}
+            >
+              Add storage
+            </Button>
+          ) : undefined
+        }
         emptySearchTitle="Nothing matches your search"
         search={{
           value: search,
@@ -311,13 +330,9 @@ function DestinationModal({
       title={isEdit ? "Edit backup storage" : "Add backup storage"}
     >
       <form onSubmit={onSubmit}>
-        <div
-          className="grid"
-          style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}
-        >
+        <div className="form-grid">
           <Field label="Name">
-            <input
-              className="input"
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="prod-backups"
@@ -325,24 +340,19 @@ function DestinationModal({
             />
           </Field>
           <Field label="Provider">
-            <select
-              className="input"
+            <Select
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
             >
               <option value="r2">Cloudflare R2</option>
               <option value="s3">AWS S3</option>
               <option value="s3_compatible">Other S3-compatible</option>
-            </select>
+            </Select>
           </Field>
         </div>
-        <div
-          className="grid"
-          style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}
-        >
+        <div className="form-grid">
           <Field label="Bucket" help="The bucket must already exist. Fleetdock writes backups into it and never deletes the bucket itself.">
-            <input
-              className="input"
+            <Input
               value={bucket}
               onChange={(e) => setBucket(e.target.value)}
               placeholder="db-backups"
@@ -350,8 +360,7 @@ function DestinationModal({
             />
           </Field>
           <Field label={provider === "s3" ? "Region" : "Region (optional)"}>
-            <input
-              className="input"
+            <Input
               value={region}
               onChange={(e) => setRegion(e.target.value)}
               placeholder={provider === "s3" ? "eu-central-1" : "auto"}
@@ -360,8 +369,7 @@ function DestinationModal({
         </div>
         {provider !== "s3" ? (
           <Field label="Endpoint" help="The S3 API address. Leave empty for AWS; for R2 it looks like https://<account>.r2.cloudflarestorage.com, for MinIO your server’s URL.">
-            <input
-              className="input"
+            <Input
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
               placeholder={
@@ -374,20 +382,15 @@ function DestinationModal({
           </Field>
         ) : null}
         <Field label="Folder (optional)" help="A path inside the bucket to keep backups in, e.g. fleetdock/prod. Useful when the bucket is shared.">
-          <input
-            className="input"
+          <Input
             value={prefix}
             onChange={(e) => setPrefix(e.target.value)}
             placeholder="fleetdock"
           />
         </Field>
-        <div
-          className="grid"
-          style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}
-        >
+        <div className="form-grid">
           <Field label="Access key ID">
-            <input
-              className="input"
+            <Input
               value={accessKey}
               onChange={(e) => setAccessKey(e.target.value)}
               autoComplete="off"
@@ -401,8 +404,7 @@ function DestinationModal({
                 : "Secret access key"
             }
           >
-            <input
-              className="input"
+            <Input
               type="password"
               value={secretKey}
               onChange={(e) => setSecretKey(e.target.value)}
@@ -417,14 +419,9 @@ function DestinationModal({
             : "The secret key is encrypted at rest and never returned by the API."}
         </p>
         <ErrorText message={error ?? undefined} />
-        <div
-          className="flex justify-end items-center gap-2"
-          style={{ marginTop: ".5rem" }}
-        >
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={pending}>
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={pending}>
             {pending
               ? isEdit
                 ? "Saving…"
@@ -432,7 +429,7 @@ function DestinationModal({
               : isEdit
                 ? "Save changes"
                 : "Add storage"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

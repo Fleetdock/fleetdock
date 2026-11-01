@@ -1,6 +1,6 @@
 "use client";
 
-import { ErrorText, Field } from "@/components/ui";
+import { ErrorText, Field, Input, SegmentedControl } from "@/components/ui";
 import type { DataAccessDraft } from "@/lib/data-access";
 import { fieldError } from "@/lib/errors";
 import type { DataAccess } from "@/lib/types";
@@ -44,23 +44,21 @@ export function DataAccessFields({
 
   return (
     <div className="field">
-      <label>Data browsing connects as</label>
-      <div className="segmented" role="group" aria-label="Data access login">
-        {OPTIONS.map((o) => (
-          <button key={o.mode} type="button" aria-pressed={value.mode === o.mode} onClick={() => set({ mode: o.mode })}>
-            {o.label}
-          </button>
-        ))}
-      </div>
+      <div className="label">Data browsing connects as</div>
+      <SegmentedControl
+        label="Data access login"
+        value={value.mode}
+        onChange={(mode) => set({ mode })}
+        options={OPTIONS.map((o) => ({ value: o.mode, label: o.label }))}
+      />
       <ErrorText message={fieldError(error, "data_access")} />
-      <p className="muted text-sm" style={{ marginBottom: 0 }}>
+      <p className="muted text-sm mb-0">
         {current.help}
       </p>
       {value.mode === "login" ? (
-        <div className="form-grid" style={{ marginTop: ".6rem" }}>
+        <div className="form-grid mt-2.5">
           <Field label="Data username" error={fieldError(error, "data_username")}>
-            <input
-              className="input"
+            <Input
               value={value.username}
               onChange={(e) => set({ username: e.target.value })}
               placeholder="app_reader"
@@ -73,8 +71,7 @@ export function DataAccessFields({
             hint={hasStoredLogin ? "A password is stored. Leave empty to keep it." : "Stored encrypted."}
             error={fieldError(error, "data_password")}
           >
-            <input
-              className="input"
+            <Input
               type="password"
               value={value.password}
               onChange={(e) => set({ password: e.target.value })}

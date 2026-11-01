@@ -28,3 +28,6 @@ coverage.out
 **/.env.bak*
 **/.env.*.bak
 **/.env.local
+
+# demo stack: agent registration tokens written by scripts/demo/seed.mjs
+deploy/demo/.agent-tokens/

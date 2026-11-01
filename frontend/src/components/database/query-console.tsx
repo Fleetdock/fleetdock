@@ -2,16 +2,24 @@
 
 import { useErrorToast } from "@/components/toast";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 
+import { ExplainView } from "@/components/database/explain-view";
+import { PreviewSampleView } from "@/components/database/preview-sample";
 import { ExportButton } from "@/components/database/export-button";
 import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
 import {
+  Button,
+  Callout,
+  Checkbox,
   ConfirmModal,
   ErrorText,
   Field,
+  IconButton,
+  Input,
   Modal,
-  Spinner,
+  Skeleton,
+  Table,
 } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
@@ -21,12 +29,18 @@ import {
   useRunQuery,
   useSavedQueries,
   useSavedQueryMutations,
+  useExplain,
+  useSchemaColumns,
 } from "@/lib/hooks";
-import { splitStatements, writeStatements } from "@/lib/sql";
-import type { QueryOutput, QueryResult } from "@/lib/types";
+import { previewBlocker, splitStatements, writeStatements } from "@/lib/sql";
+import { sqlCompletion } from "@/lib/sql-schema";
+import type { ExplainResult, QueryOutput, QueryResult } from "@/lib/types";
 import {
   Bookmark,
+  FlaskConical,
+  Gauge,
   History,
+  ListTree,
   KeyRound,
   Play,
   Save,
@@ -42,13 +56,18 @@ export function QueryConsole({
   databaseId,
   canWrite,
   initialSql = "",
+  engine,
 }: {
   databaseId: string;
   canWrite: boolean;
+  /** Engine of the database ("postgres", "mysql", "mariadb"), for autocompletion. */
+  engine?: string;
   /** Text the editor starts with (a Data Browser "New query on this table"). */
   initialSql?: string;
 }) {
   const run = useRunQuery(databaseId);
+  const columns = useSchemaColumns(databaseId);
+  const completion = useMemo(() => sqlCompletion(columns.data, engine === "postgres"), [columns.data, engine]);
   const editorRef = useRef<SqlEditorHandle>(null);
   const [sql, setSql] = useState(initialSql);
   const [ranSql, setRanSql] = useState("");
@@ -57,10 +76,43 @@ export function QueryConsole({
   const [confirm, setConfirm] = useState<{
     sql: string;
     writes: string[];
+    /** The preview of this script, when it was previewed first. */
+    preview?: QueryOutput;
   } | null>(null);
   const [queryId, setQueryId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("none");
   const [saving, setSaving] = useState(false);
+  const explain = useExplain(databaseId);
+  const [plan, setPlan] = useState<ExplainResult | null>(null);
+
+  // Explain works on one statement: the selection, or the whole editor.
+  const explainTarget = (): string | null => {
+    const text = editorRef.current?.getQueryToRun() ?? sql.trim();
+    const stmts = splitStatements(text);
+    if (stmts.length !== 1) {
+      setError(stmts.length === 0 ? null : "Explain works on one statement — select the one to explain.");
+      return null;
+    }
+    return stmts[0];
+  };
+
+  async function onExplain(analyze: boolean) {
+    const stmt = explainTarget();
+    if (!stmt) return;
+    if (analyze && writeStatements(stmt).length > 0) {
+      setError("Only reads can be analyzed: analyzing runs the statement. Use Explain for writes.");
+      return;
+    }
+    setError(null);
+    try {
+      const res = await explain.mutateAsync({ sql: stmt, analyze });
+      setOutput(null);
+      setPlan(res);
+    } catch (err) {
+      setPlan(null);
+      setError(err instanceof ApiError ? err.message : "Explain failed");
+    }
+  }
 
   function onRun() {
     const text = editorRef.current?.getQueryToRun() ?? sql.trim();
@@ -79,7 +131,7 @@ export function QueryConsole({
     void execute(text);
   }
 
-  async function execute(text: string) {
+  async function execute(text: string, preview = false) {
     setError(null);
     setConfirm(null);
     const id = crypto.randomUUID();
@@ -89,8 +141,10 @@ export function QueryConsole({
         sql: text,
         limit: ROW_LIMIT,
         query_id: id,
+        preview,
       });
       setOutput(res);
+      setPlan(null);
       setRanSql(text);
     } catch (err) {
       setOutput(null);
@@ -98,6 +152,17 @@ export function QueryConsole({
     } finally {
       setQueryId(null);
     }
+  }
+
+  async function onPreview() {
+    const text = editorRef.current?.getQueryToRun() ?? sql.trim();
+    if (!text) return;
+    const blocked = previewBlocker(text);
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
+    await execute(text, true);
   }
 
   async function onCancel() {
@@ -122,7 +187,7 @@ export function QueryConsole({
 
   return (
     <div>
-      <p className="text-sm muted" style={{ marginBottom: ".5rem" }}>
+      <p className="text-sm muted mb-2">
         {canWrite
           ? `Run SQL against this database — several statements separated by ";" run in order on one session. Reads return up to ${ROW_LIMIT} rows; you are asked to confirm before anything writes.`
           : `Run read-only SQL against this database (up to ${ROW_LIMIT} rows per statement). You do not have write access.`}
@@ -134,47 +199,49 @@ export function QueryConsole({
         onRun={onRun}
         placeholder="SELECT * FROM ..."
         minHeight="220px"
+        engine={engine}
+        completion={completion}
       />
-      <div
-        className="flex justify-between items-center"
-        style={{ marginTop: ".5rem", flexWrap: "wrap", gap: ".5rem" }}
-      >
+      <div className="flex flex-wrap justify-between items-center gap-2 mt-2">
         <span className="flex items-center gap-2 text-sm muted">
           <span>
             <span className="kbd">⌘/Ctrl</span> +{" "}
             <span className="kbd">Enter</span> to run
             {sql.trim() ? " · selection runs when highlighted" : ""}
           </span>
-          <button
-            className={`btn btn-ghost btn-sm${panel === "history" ? " btn-primary" : ""}`}
+          <Button
+            size="sm"
+            variant={panel === "history" ? "primary" : "ghost"}
+            aria-pressed={panel === "history"}
+            icon={<History size={14} aria-hidden />}
             onClick={() => setPanel(panel === "history" ? "none" : "history")}
           >
-            <History size={14} /> History
-          </button>
-          <button
-            className={`btn btn-ghost btn-sm${panel === "saved" ? " btn-primary" : ""}`}
+            History
+          </Button>
+          <Button
+            size="sm"
+            variant={panel === "saved" ? "primary" : "ghost"}
+            aria-pressed={panel === "saved"}
+            icon={<Bookmark size={14} aria-hidden />}
             onClick={() => setPanel(panel === "saved" ? "none" : "saved")}
           >
-            <Bookmark size={14} /> Saved
-          </button>
+            Saved
+          </Button>
         </span>
         <div className="flex items-center gap-2">
           {sql.trim() ? (
             <>
-              <button
-                className="btn btn-sm"
+              <Button
+                size="sm"
+                icon={<Save size={14} aria-hidden />}
                 onClick={() => setSaving(true)}
                 disabled={run.isPending}
               >
-                <Save size={14} /> Save
-              </button>
-              <button
-                className="btn btn-sm"
-                onClick={() => setSql("")}
-                disabled={run.isPending}
-              >
+                Save
+              </Button>
+              <Button size="sm" onClick={() => setSql("")} disabled={run.isPending}>
                 Clear
-              </button>
+              </Button>
             </>
           ) : null}
           {canExport ? (
@@ -184,21 +251,56 @@ export function QueryConsole({
             />
           ) : null}
           {run.isPending ? (
-            <button
-              className="btn btn-danger btn-sm"
+            <Button
+              size="sm"
+              variant="danger"
+              icon={<Square size={14} aria-hidden />}
               onClick={() => void onCancel()}
               disabled={!queryId}
             >
-              <Square size={14} /> Cancel
-            </button>
+              Cancel
+            </Button>
           ) : null}
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={onRun}
+          {canWrite && writeStatements(sql).length > 0 ? (
+            <Button
+              size="sm"
+              icon={<FlaskConical size={14} aria-hidden />}
+              onClick={() => void onPreview()}
+              disabled={run.isPending || explain.isPending}
+              title="Run the script in a transaction that is rolled back, and see what it would change"
+            >
+              Preview
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            icon={<ListTree size={14} aria-hidden />}
+            loading={explain.isPending}
+            onClick={() => void onExplain(false)}
             disabled={run.isPending || !sql.trim()}
+            title="Show how the database would run this statement, without running it"
           >
-            {run.isPending ? <Spinner /> : <Play size={15} />} Run
-          </button>
+            Explain
+          </Button>
+          <Button
+            size="sm"
+            icon={<Gauge size={14} aria-hidden />}
+            onClick={() => void onExplain(true)}
+            disabled={run.isPending || explain.isPending || !sql.trim()}
+            title="Run this read and show where the time went (rolled back)"
+          >
+            Analyze
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<Play size={15} aria-hidden />}
+            loading={run.isPending}
+            onClick={onRun}
+            disabled={!sql.trim()}
+          >
+            Run
+          </Button>
         </div>
       </div>
 
@@ -211,11 +313,41 @@ export function QueryConsole({
 
       <ErrorText message={error ?? undefined} />
 
+      {plan ? <ExplainView result={plan} /> : null}
+
       {output ? (
         <div>
+          {output.rolled_back ? (
+            <Callout
+              tone="info"
+              role="status"
+              className="mt-4"
+              title="Preview — rolled back, nothing was saved."
+              actions={
+                canWrite && ranSql ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={<Play size={14} aria-hidden />}
+                    onClick={() => setConfirm({ sql: ranSql, writes: writeStatements(ranSql), preview: output })}
+                  >
+                    Apply for real
+                  </Button>
+                ) : null
+              }
+            >
+              {previewSummary(output)}
+              <ul className="preview-notes">
+                {(output.results.find((r) => r.notes)?.notes ?? []).slice(1).map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </Callout>
+          ) : null}
           {output.results.map((r, i) => (
             <QueryResultView
               key={i}
+              preview={output.rolled_back}
               result={r}
               label={
                 output.results.length > 1 || output.error
@@ -225,22 +357,15 @@ export function QueryConsole({
             />
           ))}
           {output.error ? (
-            <div
-              className="card"
-              style={{
-                padding: ".8rem .9rem",
-                marginTop: ".9rem",
-                borderColor: "var(--danger)",
-              }}
+            <Callout
+              tone="danger"
+              className="mt-3.5"
+              title={`Statement ${output.error.statement} failed: ${output.error.message}`}
             >
-              <span className="text-sm" style={{ color: "var(--danger)" }}>
-                Statement {output.error.statement} failed:{" "}
-                {output.error.message}
-              </span>
-              <p className="text-sm muted" style={{ margin: ".3rem 0 0" }}>
+              <span className="text-sm muted">
                 The statements before it ran; the ones after it did not.
-              </p>
-            </div>
+              </span>
+            </Callout>
           ) : null}
         </div>
       ) : null}
@@ -256,19 +381,16 @@ export function QueryConsole({
         }
         message={
           <>
-            <p style={{ marginTop: 0 }}>
+            <p className="mt-0">
               This script will modify the database. There is no undo.
             </p>
-            <pre
-              className="card"
-              style={{
-                padding: ".6rem",
-                maxHeight: 200,
-                overflow: "auto",
-                fontSize: 12,
-                whiteSpace: "pre-wrap",
-              }}
-            >
+            {confirm?.preview ? (
+              <Callout tone="warning">
+                <strong>Preview:</strong> {previewSummary(confirm.preview)} Data may have changed since, so the
+                real run can differ.
+              </Callout>
+            ) : null}
+            <pre className="card p-2.5 max-h-50 overflow-auto text-xs whitespace-pre-wrap">
               <code>
                 {confirm?.writes
                   .map((w) => (w.length > 400 ? w.slice(0, 400) + "…" : w))
@@ -299,7 +421,7 @@ function HistoryPanel({
   onPick: (sql: string) => void;
 }) {
   const { data, isLoading, error } = useQueryHistory(databaseId, true);
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <PanelSkeleton label="Loading history" />;
   if (error)
     return (
       <ErrorText
@@ -308,49 +430,38 @@ function HistoryPanel({
         }
       />
     );
-  if (!data?.length) return <p className="text-sm muted">No history yet.</p>;
+  if (!data?.length) return <p className="text-sm muted">No history yet. Queries you run show up here.</p>;
   return (
-    <div
-      className="card"
-      style={{ marginTop: ".6rem", maxHeight: 300, overflowY: "auto" }}
-    >
-      <table className="table" style={{ fontSize: 13 }}>
-        <tbody>
-          {data.map((h) => (
-            <tr
-              key={h.id}
-              style={{ cursor: "pointer" }}
-              onClick={() => onPick(h.sql)}
-              title="Load into the editor"
-            >
-              <td style={{ width: 150 }} className="muted">
-                {new Date(h.created_at).toLocaleString()}
-              </td>
-              <td>
-                <code
-                  className="text-sm"
-                  style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                >
-                  {h.sql.length > 240 ? h.sql.slice(0, 240) + "…" : h.sql}
-                </code>
-              </td>
-              <td
-                style={{ width: 160, textAlign: "right" }}
-                className={h.error ? undefined : "muted"}
-              >
-                {h.error ? (
-                  <span style={{ color: "var(--danger)" }} title={h.error}>
-                    failed
-                  </span>
-                ) : (
-                  `${h.duration_ms} ms`
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table wrapClassName="mt-2.5 max-h-75 overflow-y-auto" className="text-[length:var(--fs-sm)]">
+      <tbody>
+        {data.map((h) => (
+          <tr
+            key={h.id}
+            className="cursor-pointer"
+            onClick={() => onPick(h.sql)}
+            title="Load into the editor"
+          >
+            <td className="muted w-[150px]">
+              {new Date(h.created_at).toLocaleString()}
+            </td>
+            <td>
+              <code className="text-sm whitespace-pre-wrap break-words">
+                {h.sql.length > 240 ? h.sql.slice(0, 240) + "…" : h.sql}
+              </code>
+            </td>
+            <td className={h.error ? "w-40 text-right" : "w-40 text-right muted num"}>
+              {h.error ? (
+                <span className="text-danger" title={h.error}>
+                  failed
+                </span>
+              ) : (
+                `${h.duration_ms} ms`
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
   );
 }
 
@@ -364,7 +475,7 @@ function SavedPanel({
   const { data, isLoading, error } = useSavedQueries(databaseId);
   const { remove } = useSavedQueryMutations(databaseId);
   const toastError = useErrorToast();
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <PanelSkeleton label="Loading saved queries" />;
   if (error)
     return (
       <ErrorText
@@ -382,16 +493,12 @@ function SavedPanel({
       </p>
     );
   return (
-    <div
-      className="card"
-      style={{ marginTop: ".6rem", maxHeight: 300, overflowY: "auto" }}
-    >
-      <table className="table" style={{ fontSize: 13 }}>
+    <Table wrapClassName="mt-2.5 max-h-75 overflow-y-auto" className="text-[length:var(--fs-sm)]">
         <tbody>
           {data.map((q) => (
             <tr key={q.id}>
               <td
-                style={{ cursor: "pointer" }}
+                className="cursor-pointer"
                 onClick={() => onPick(q.sql)}
                 title="Load into the editor"
               >
@@ -405,20 +512,18 @@ function SavedPanel({
                   </code>
                 </div>
               </td>
-              <td style={{ width: 50, textAlign: "right" }}>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  aria-label={`Delete ${q.name}`}
+              <td className="w-[50px] text-right">
+                <IconButton
+                  label={`Delete ${q.name}`}
                   onClick={() => remove.mutate(q.id, { onError: toastError("Failed to delete the saved query") })}
                 >
-                  <Trash2 size={14} />
-                </button>
+                  <Trash2 size={14} aria-hidden />
+                </IconButton>
               </td>
             </tr>
           ))}
         </tbody>
-      </table>
-    </div>
+    </Table>
   );
 }
 
@@ -455,34 +560,24 @@ function SaveQueryModal({
     <Modal open onClose={onClose} title="Save query">
       <form onSubmit={onSubmit}>
         <Field label="Name">
-          <input
-            className="input"
+          <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
             autoFocus
           />
         </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={allDatabases}
-            onChange={(e) => setAllDatabases(e.target.checked)}
-          />
-          Show in every database&apos;s console
-        </label>
+        <Checkbox
+          label="Show in every database's console"
+          checked={allDatabases}
+          onChange={(e) => setAllDatabases(e.target.checked)}
+        />
         <ErrorText message={error ?? undefined} />
-        <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-          <button
-            className="btn btn-primary"
-            type="submit"
-            disabled={create.isPending}
-          >
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={create.isPending}>
             Save
-          </button>
-          <button className="btn" type="button" onClick={onClose}>
-            Cancel
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -492,32 +587,30 @@ function SaveQueryModal({
 function QueryResultView({
   result,
   label,
+  preview = false,
 }: {
   result: QueryResult;
   label?: string;
+  /** Part of a rolled-back preview. */
+  preview?: boolean;
 }) {
   const header = label ? <span className="font-medium">{label} · </span> : null;
   if (result.columns.length === 0) {
     return (
-      <div
-        className="card"
-        style={{ padding: ".8rem .9rem", marginTop: ".9rem" }}
-      >
+      <div className="card px-3.5 py-3 mt-3.5">
         <span className="flex items-center gap-2 text-sm">
-          <KeyRound size={15} /> {header}
+          <KeyRound size={15} aria-hidden /> {header}
           {result.rows_affected.toLocaleString()} row
-          {result.rows_affected === 1 ? "" : "s"} affected
+          {result.rows_affected === 1 ? "" : "s"} {preview ? "would be affected" : "affected"}
           <span className="muted">· {result.duration_ms} ms</span>
         </span>
+        {result.sample ? <PreviewSampleView sample={result.sample} /> : null}
       </div>
     );
   }
   return (
-    <div style={{ marginTop: ".9rem" }}>
-      <div
-        className="flex justify-between items-center"
-        style={{ marginBottom: ".5rem", flexWrap: "wrap", gap: ".4rem" }}
-      >
+    <div className="mt-3.5">
+      <div className="flex flex-wrap justify-between items-center gap-1.5 mb-2">
         <span className="text-sm muted">
           {header}
           {result.row_count.toLocaleString()} row
@@ -527,8 +620,7 @@ function QueryResultView({
             : ""}
         </span>
       </div>
-      <div className="card" style={{ overflowX: "auto" }}>
-        <table className="table" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+      <Table className="text-[length:var(--fs-sm)] whitespace-nowrap">
           <thead>
             <tr>
               {result.columns.map((c, i) => (
@@ -549,12 +641,7 @@ function QueryResultView({
                   {row.map((cell, ci) => (
                     <td
                       key={ci}
-                      className={cell === null ? "muted" : undefined}
-                      style={{
-                        maxWidth: 320,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
+                      className={cell === null ? "muted max-w-80 overflow-hidden text-ellipsis" : "max-w-80 overflow-hidden text-ellipsis"}
                       title={cell ?? undefined}
                     >
                       {cell === null ? "NULL" : cell}
@@ -564,8 +651,28 @@ function QueryResultView({
               ))
             )}
           </tbody>
-        </table>
-      </div>
+      </Table>
     </div>
   );
+}
+
+/** PanelSkeleton stands in for the history / saved list while it loads. */
+function PanelSkeleton({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} className="card p-3 mt-2.5 stack-sm">
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} width={`${85 - i * 15}%`} />
+      ))}
+    </div>
+  );
+}
+
+/** previewSummary: "would change 2 rows (statement 1), delete 1 row (statement 3)." */
+function previewSummary(out: QueryOutput): string {
+  const parts = out.results
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !r.read_only)
+    .map(({ r, i }) => `${r.rows_affected.toLocaleString()} row${r.rows_affected === 1 ? "" : "s"} (statement ${i + 1})`);
+  if (out.error) return `Statement ${out.error.statement} would fail: ${out.error.message}`;
+  return parts.length ? `It would change ${parts.join(", ")}.` : "It would change no rows.";
 }

@@ -3,10 +3,28 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 
 import { ColumnFields, emptyColumn } from "@/components/database/column-editor";
-import { ConfirmModal, EmptyState, ErrorText, Field, Modal, Spinner } from "@/components/ui";
+import { findingsFor } from "@/components/database/index-health";
+import {
+  Badge,
+  Button,
+  Checkbox,
+  ConfirmModal,
+  EmptyState,
+  ErrorText,
+  Field,
+  IconButton,
+  Input,
+  Modal,
+  QueryError,
+  SectionHeader,
+  Select,
+  Skeleton,
+  Table,
+  TableSkeleton,
+} from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useForeignKeys, useStructureMutations, useTableSchema } from "@/lib/hooks";
-import type { AlterOp, ColumnInfo, ColumnSpec, ForeignKey, TableSchema } from "@/lib/types";
+import { useForeignKeys, useIndexInsights, useStructureMutations, useTableSchema } from "@/lib/hooks";
+import type { AlterOp, ColumnInfo, ColumnSpec, ForeignKey, IndexDef, TableSchema } from "@/lib/types";
 import { Eraser, Pencil, Plus, TextCursorInput, Trash2 } from "lucide-react";
 
 const errMsg = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
@@ -28,36 +46,39 @@ export function SchemaView({
   /** Called after the table was dropped (null) or renamed (new name). */
   onTableGone?: (renamedTo: string | null) => void;
 }) {
-  const { data, isLoading, error } = useTableSchema(databaseId, table);
+  const { data, isLoading, error, refetch } = useTableSchema(databaseId, table);
   const fks = useForeignKeys(databaseId, table);
+  const insights = useIndexInsights(databaseId);
+  const flagged = findingsFor(insights.data, table);
   const [modal, setModal] = useState<ReactNode>(null);
   const close = () => setModal(null);
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm muted">
-        <Spinner /> Loading structure…
+      <div role="status" aria-label="Loading structure" className="stack">
+        <Skeleton width="18rem" height="2rem" radius="var(--radius-md)" />
+        <TableSkeleton rows={5} columns={6} />
       </div>
     );
   }
-  if (error) return <EmptyState title="Could not load structure" hint={(error as ApiError).message} />;
+  if (error) return <QueryError error={error} what="table structure" onRetry={() => void refetch()} />;
   if (!data) return <EmptyState title="No structure" />;
 
   const props = { databaseId, table, schema: data, onClose: close };
 
   return (
-    <div className="flex" style={{ flexDirection: "column", gap: "1.1rem" }}>
+    <div className="flex flex-col gap-4">
       {canWrite ? (
-        <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-          <button className="btn btn-sm" onClick={() => setModal(<RenameTable {...props} onDone={(n) => onTableGone?.(n)} />)}>
-            <TextCursorInput size={15} /> Rename table
-          </button>
-          <button className="btn btn-sm" onClick={() => setModal(<TruncateTable {...props} />)}>
-            <Eraser size={15} /> Truncate
-          </button>
-          <button className="btn btn-sm btn-danger" onClick={() => setModal(<DropTable {...props} onDone={() => onTableGone?.(null)} />)}>
-            <Trash2 size={15} /> Drop table
-          </button>
+        <div className="row">
+          <Button size="sm" icon={<TextCursorInput size={15} aria-hidden />} onClick={() => setModal(<RenameTable {...props} onDone={(n) => onTableGone?.(n)} />)}>
+            Rename table
+          </Button>
+          <Button size="sm" icon={<Eraser size={15} aria-hidden />} onClick={() => setModal(<TruncateTable {...props} />)}>
+            Truncate
+          </Button>
+          <Button size="sm" variant="danger" icon={<Trash2 size={15} aria-hidden />} onClick={() => setModal(<DropTable {...props} onDone={() => onTableGone?.(null)} />)}>
+            Drop table
+          </Button>
         </div>
       ) : null}
 
@@ -65,14 +86,13 @@ export function SchemaView({
         title="Columns"
         action={
           canWrite ? (
-            <button className="btn btn-sm" onClick={() => setModal(<ColumnModal {...props} column={null} />)}>
-              <Plus size={14} /> Add column
-            </button>
+            <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setModal(<ColumnModal {...props} column={null} />)}>
+              Add column
+            </Button>
           ) : null
         }
       >
-        <div className="card" style={{ overflowX: "auto" }}>
-          <table className="table" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+        <Table className="text-[length:var(--fs-sm)] whitespace-nowrap">
             <thead>
               <tr>
                 <th>Column</th>
@@ -95,9 +115,7 @@ export function SchemaView({
                   <td className="muted">{c.nullable ? "YES" : "NO"}</td>
                   <td className="muted">
                     {c.key ? (
-                      <span className="badge badge-gray" style={{ fontSize: 11 }}>
-                        {c.key}
-                      </span>
+                      <Badge className="text-[length:var(--fs-2xs)]">{c.key}</Badge>
                     ) : (
                       "—"
                     )}
@@ -106,13 +124,12 @@ export function SchemaView({
                   <td className="muted">{c.extra || "—"}</td>
                   <td className="muted">{c.comment || "—"}</td>
                   {canWrite ? (
-                    <td style={{ textAlign: "right" }}>
-                      <button className="btn btn-ghost btn-sm" aria-label={`Edit column ${c.name}`} onClick={() => setModal(<ColumnModal {...props} column={c} />)}>
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        aria-label={`Drop column ${c.name}`}
+                    <td className="text-right whitespace-nowrap">
+                      <IconButton label={`Edit column ${c.name}`} onClick={() => setModal(<ColumnModal {...props} column={c} />)}>
+                        <Pencil size={14} aria-hidden />
+                      </IconButton>
+                      <IconButton
+                        label={`Drop column ${c.name}`}
                         disabled={data.columns.length === 1}
                         onClick={() =>
                           setModal(
@@ -127,38 +144,38 @@ export function SchemaView({
                           )
                         }
                       >
-                        <Trash2 size={14} />
-                      </button>
+                        <Trash2 size={14} aria-hidden />
+                      </IconButton>
                     </td>
                   ) : null}
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+          </Table>
       </Section>
 
       <Section
         title="Indexes"
         action={
           canWrite ? (
-            <button className="btn btn-sm" onClick={() => setModal(<IndexModal {...props} />)}>
-              <Plus size={14} /> Add index
-            </button>
+            <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setModal(<IndexModal {...props} />)}>
+              Add index
+            </Button>
           ) : null
         }
       >
         {data.indexes.length === 0 ? (
           <p className="text-sm muted">No indexes.</p>
         ) : (
-          <div className="card" style={{ overflowX: "auto" }}>
-            <table className="table" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+          <Table className="text-[length:var(--fs-sm)] whitespace-nowrap">
               <thead>
                 <tr>
                   <th>Index</th>
                   <th>Columns</th>
                   <th>Unique</th>
                   <th>Type</th>
+                  {insights.data?.usage_available ? <th className="text-right">Scans</th> : null}
+                  <th />
                   {canWrite ? <th /> : null}
                 </tr>
               </thead>
@@ -169,22 +186,35 @@ export function SchemaView({
                     <td className="muted">{idx.columns.join(", ")}</td>
                     <td className="muted">{idx.unique ? "YES" : "NO"}</td>
                     <td className="muted">{idx.type}</td>
+                    {insights.data?.usage_available ? (
+                      <td className="muted num text-right">
+                        {usage(insights.data.indexes, table, idx.name)}
+                      </td>
+                    ) : null}
+                    <td>
+                      {flagged[idx.name] ? (
+                        <Badge
+                          tone={flagged[idx.name].kind === "redundant" ? "warning" : "neutral"}
+                          title={`${flagged[idx.name].reason}. To drop: ${flagged[idx.name].drop_sql}`}
+                        >
+                          {flagged[idx.name].kind === "redundant" ? `redundant · ${flagged[idx.name].covered_by}` : "unused"}
+                        </Badge>
+                      ) : null}
+                    </td>
                     {canWrite ? (
-                      <td style={{ textAlign: "right" }}>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          aria-label={`Drop index ${idx.name}`}
+                      <td className="text-right whitespace-nowrap">
+                        <IconButton
+                          label={`Drop index ${idx.name}`}
                           onClick={() => setModal(<DropIndex {...props} index={idx.name} />)}
                         >
-                          <Trash2 size={14} />
-                        </button>
+                          <Trash2 size={14} aria-hidden />
+                        </IconButton>
                       </td>
                     ) : null}
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+            </Table>
         )}
       </Section>
 
@@ -192,21 +222,20 @@ export function SchemaView({
         title="Foreign keys"
         action={
           canWrite ? (
-            <button className="btn btn-sm" onClick={() => setModal(<ForeignKeyModal {...props} />)}>
-              <Plus size={14} /> Add foreign key
-            </button>
+            <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setModal(<ForeignKeyModal {...props} />)}>
+              Add foreign key
+            </Button>
           ) : null
         }
       >
         {fks.isLoading ? (
-          <Spinner />
+          <TableSkeleton rows={2} columns={5} />
         ) : fks.error ? (
           <ErrorText message={errMsg(fks.error, "Could not load foreign keys")} />
         ) : !fks.data?.length ? (
           <p className="text-sm muted">No foreign keys.</p>
         ) : (
-          <div className="card" style={{ overflowX: "auto" }}>
-            <table className="table" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+          <Table className="text-[length:var(--fs-sm)] whitespace-nowrap">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -228,10 +257,9 @@ export function SchemaView({
                     <td className="muted">{fk.on_delete}</td>
                     <td className="muted">{fk.on_update}</td>
                     {canWrite ? (
-                      <td style={{ textAlign: "right" }}>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          aria-label={`Drop foreign key ${fk.name}`}
+                      <td className="text-right whitespace-nowrap">
+                        <IconButton
+                          label={`Drop foreign key ${fk.name}`}
                           onClick={() =>
                             setModal(
                               <AlterConfirm
@@ -244,21 +272,20 @@ export function SchemaView({
                             )
                           }
                         >
-                          <Trash2 size={14} />
-                        </button>
+                          <Trash2 size={14} aria-hidden />
+                        </IconButton>
                       </td>
                     ) : null}
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+            </Table>
         )}
       </Section>
 
       {data.ddl ? (
         <Section title="DDL">
-          <pre className="card" style={{ padding: ".9rem", overflowX: "auto", fontSize: 12, margin: 0 }}>
+          <pre className="card p-3.5 overflow-x-auto text-xs m-0">
             <code>{data.ddl}</code>
           </pre>
         </Section>
@@ -268,17 +295,17 @@ export function SchemaView({
   );
 }
 
+function usage(indexes: IndexDef[], table: string, name: string): string {
+  const ix = indexes.find((i) => i.name === name && (i.table === table || `${i.schema}.${i.table}` === table));
+  return ix?.scans === undefined ? "" : ix.scans.toLocaleString();
+}
+
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: ".4rem" }}>
-        <p className="text-sm muted" style={{ margin: 0 }}>
-          {title}
-        </p>
-        {action}
-      </div>
+    <section>
+      <SectionHeader as="h3" title={title} actions={action} />
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -324,15 +351,16 @@ function ColumnModal({ databaseId, table, onClose, column }: ModalProps & { colu
       <form onSubmit={onSubmit}>
         <ColumnFields value={spec} onChange={setSpec} hideDefault={editing && spec.keep_default} />
         {editing ? (
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={Boolean(spec.keep_default)}
-              onChange={(e) => setSpec({ ...spec, keep_default: e.target.checked, default: null, auto_increment: false })}
-            />
-            Keep the current default{column.default !== null ? ` (${column.default})` : ""}
-            {column.extra ? ` and ${column.extra}` : ""}
-          </label>
+          <Checkbox
+            checked={Boolean(spec.keep_default)}
+            onChange={(e) => setSpec({ ...spec, keep_default: e.target.checked, default: null, auto_increment: false })}
+            label={
+              <>
+                Keep the current default{column.default !== null ? ` (${column.default})` : ""}
+                {column.extra ? ` and ${column.extra}` : ""}
+              </>
+            }
+          />
         ) : null}
         {editing ? (
           <p className="text-sm muted">
@@ -341,13 +369,11 @@ function ColumnModal({ databaseId, table, onClose, column }: ModalProps & { colu
           </p>
         ) : null}
         <ErrorText message={error ?? undefined} />
-        <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-          <button className="btn btn-primary" type="submit" disabled={alter.isPending}>
+        <div className="modal-actions">
+          <Button onClick={onClose} disabled={alter.isPending}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={alter.isPending}>
             {alter.isPending ? "Applying…" : editing ? "Save column" : "Add column"}
-          </button>
-          <button className="btn" type="button" onClick={onClose} disabled={alter.isPending}>
-            Cancel
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -376,22 +402,18 @@ function IndexModal({ databaseId, table, schema, onClose }: ModalProps) {
     <Modal open onClose={onClose} title={`Add index to ${table}`}>
       <form onSubmit={onSubmit}>
         <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          <Input value={name} onChange={(e) => setName(e.target.value)} required />
         </Field>
         <Field label="Columns (in order)">
           <ColumnPicker all={schema.columns.map((c) => c.name)} value={cols} onChange={setCols} />
         </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={unique} onChange={(e) => setUnique(e.target.checked)} /> Unique
-        </label>
+        <Checkbox label="Unique" checked={unique} onChange={(e) => setUnique(e.target.checked)} />
         <ErrorText message={error ?? undefined} />
-        <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-          <button className="btn btn-primary" type="submit" disabled={createIndex.isPending || cols.length === 0}>
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={createIndex.isPending} disabled={cols.length === 0}>
             {createIndex.isPending ? "Creating…" : "Create index"}
-          </button>
-          <button className="btn" type="button" onClick={onClose}>
-            Cancel
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -401,19 +423,20 @@ function IndexModal({ databaseId, table, schema, onClose }: ModalProps) {
 /** ColumnPicker selects an ordered list of columns. */
 function ColumnPicker({ all, value, onChange }: { all: string[]; value: string[]; onChange: (v: string[]) => void }) {
   return (
-    <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+    <div className="row" role="group">
       {all.map((c) => {
         const i = value.indexOf(c);
         return (
-          <button
+          <Button
             key={c}
-            type="button"
-            className={`btn btn-sm${i >= 0 ? " btn-primary" : ""}`}
+            size="sm"
+            variant={i >= 0 ? "primary" : "secondary"}
+            aria-pressed={i >= 0}
             onClick={() => onChange(i >= 0 ? value.filter((x) => x !== c) : [...value, c])}
           >
             {i >= 0 ? `${i + 1}. ` : ""}
             {c}
-          </button>
+          </Button>
         );
       })}
     </div>
@@ -455,35 +478,33 @@ function ForeignKeyModal({ databaseId, table, schema, onClose }: ModalProps) {
     <Modal open onClose={onClose} title={`Add foreign key to ${table}`}>
       <form onSubmit={onSubmit}>
         <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          <Input value={name} onChange={(e) => setName(e.target.value)} required />
         </Field>
         <Field label="Columns">
           <ColumnPicker all={schema.columns.map((c) => c.name)} value={cols} onChange={setCols} />
         </Field>
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+        <div className="form-grid">
           <Field label="Referenced table">
-            <input className="input" value={refTable} onChange={(e) => setRefTable(e.target.value)} placeholder="customers" required />
+            <Input value={refTable} onChange={(e) => setRefTable(e.target.value)} placeholder="customers" required />
           </Field>
           <Field label="Referenced columns (comma-separated)">
-            <input className="input" value={refCols} onChange={(e) => setRefCols(e.target.value)} placeholder="id" required />
+            <Input value={refCols} onChange={(e) => setRefCols(e.target.value)} placeholder="id" required />
           </Field>
         </div>
         <Field label="On delete">
-          <select className="input" value={onDelete} onChange={(e) => setOnDelete(e.target.value)}>
+          <Select value={onDelete} onChange={(e) => setOnDelete(e.target.value)}>
             <option value="">(default: NO ACTION)</option>
             <option value="CASCADE">CASCADE</option>
             <option value="SET NULL">SET NULL</option>
             <option value="RESTRICT">RESTRICT</option>
-          </select>
+          </Select>
         </Field>
         <ErrorText message={error ?? undefined} />
-        <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-          <button className="btn btn-primary" type="submit" disabled={alter.isPending || cols.length === 0}>
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={alter.isPending} disabled={cols.length === 0}>
             {alter.isPending ? "Adding…" : "Add foreign key"}
-          </button>
-          <button className="btn" type="button" onClick={onClose}>
-            Cancel
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -512,7 +533,7 @@ function AlterConfirm({
       busy={alter.isPending}
       message={
         <>
-          <p style={{ marginTop: 0 }}>{message}</p>
+          <p className="mt-0">{message}</p>
           <ErrorText message={error ?? undefined} />
         </>
       }
@@ -542,7 +563,7 @@ function DropIndex({ databaseId, table, onClose, index }: ModalProps & { index: 
       busy={dropIndex.isPending}
       message={
         <>
-          <p style={{ marginTop: 0 }}>
+          <p className="mt-0">
             Queries that relied on it may get slower. Dropping a primary-key or unique index also drops that
             constraint.
           </p>
@@ -576,7 +597,7 @@ function TruncateTable({ databaseId, table, onClose }: ModalProps) {
       busy={truncate.isPending}
       message={
         <>
-          <p style={{ marginTop: 0 }}>Every row is permanently deleted. The table and its structure stay.</p>
+          <p className="mt-0">Every row is permanently deleted. The table and its structure stay.</p>
           <ErrorText message={error ?? undefined} />
         </>
       }
@@ -607,7 +628,7 @@ function DropTable({ databaseId, table, onClose, onDone }: ModalProps & { onDone
       busy={drop.isPending}
       message={
         <>
-          <p style={{ marginTop: 0 }}>The table and all of its data are permanently deleted.</p>
+          <p className="mt-0">The table and all of its data are permanently deleted.</p>
           <ErrorText message={error ?? undefined} />
         </>
       }
@@ -648,17 +669,15 @@ function RenameTable({ databaseId, table, onClose, onDone }: ModalProps & { onDo
     <Modal open onClose={onClose} title={`Rename ${table}`}>
       <form onSubmit={onSubmit}>
         <Field label="New name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
         </Field>
         <p className="text-sm muted">Views, routines and application code that use the old name will break.</p>
         <ErrorText message={error ?? undefined} />
-        <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-          <button className="btn btn-primary" type="submit" disabled={rename.isPending || name === bareName(table)}>
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={rename.isPending} disabled={name === bareName(table)}>
             {rename.isPending ? "Renaming…" : "Rename"}
-          </button>
-          <button className="btn" type="button" onClick={onClose}>
-            Cancel
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

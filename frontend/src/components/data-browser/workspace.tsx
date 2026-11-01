@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 
@@ -9,7 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useConfirm } from "@/components/confirm";
 import { CreateTableModal } from "@/components/database/create-table-modal";
 import { QueryConsole } from "@/components/database/query-console";
-import { EmptyState, Spinner } from "@/components/ui";
+import { Button, ButtonLink, EmptyState, IconButton, QueryError, Spinner } from "@/components/ui";
 import { dialectOf, type Dialect } from "@/lib/data-browser/cells";
 import {
   lastDatabase,
@@ -18,6 +17,7 @@ import {
   rememberDatabase,
   rememberTable,
   save,
+  takeQueryDraft,
   workspaceKey,
   type RecentTable,
 } from "@/lib/data-browser/storage";
@@ -106,7 +106,7 @@ export function DataBrowser({
     if (last) router.replace(`/data?db=${encodeURIComponent(last)}`);
   }, [databaseId, router]);
 
-  const { data: db, isLoading, error } = useDatabase(databaseId ?? "");
+  const { data: db, isLoading, error, refetch } = useDatabase(databaseId ?? "");
   useEffect(() => {
     if (db) rememberDatabase(db.id);
   }, [db]);
@@ -149,17 +149,19 @@ export function DataBrowser({
   );
   const sideToggle = (
     <>
-      <button
-        className="btn btn-ghost btn-icon dbx-side-toggle"
+      {/* noTooltip: these toggles are hidden per breakpoint via display:none, which a tooltip wrapper would defeat. */}
+      <IconButton
+        noTooltip
+        className="dbx-side-toggle"
         onClick={side.toggle}
         title={side.collapsed ? "Show sidebar" : "Hide sidebar"}
-        aria-label={side.collapsed ? "Show sidebar" : "Hide sidebar"}
+        label={side.collapsed ? "Show sidebar" : "Hide sidebar"}
       >
-        {side.collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-      </button>
-      <button className="btn btn-ghost btn-icon dbx-drawer-toggle" onClick={() => setDrawer(true)} aria-label="Show tables">
-        <PanelLeftOpen size={16} />
-      </button>
+        {side.collapsed ? <PanelLeftOpen size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
+      </IconButton>
+      <IconButton noTooltip className="dbx-drawer-toggle" onClick={() => setDrawer(true)} label="Show tables">
+        <PanelLeftOpen size={16} aria-hidden />
+      </IconButton>
     </>
   );
 
@@ -178,10 +180,17 @@ export function DataBrowser({
     return shell(
       null,
       <div className="dbx-center">
-        <EmptyState
-          title="Database not found"
-          hint={error ? (error as Error).message : "It may have been removed. Pick another one."}
-        />
+        {error ? (
+          <QueryError
+            error={error}
+            what="database"
+            onRetry={() => void refetch()}
+            backHref="/data"
+            backLabel="Pick another database"
+          />
+        ) : (
+          <EmptyState title="Database not found" hint="It may have been removed. Pick another one." />
+        )}
       </div>,
     );
   }
@@ -194,9 +203,7 @@ export function DataBrowser({
           hint="Add an admin login on the database server's page to browse its tables."
           action={
             db.instance ? (
-              <Link href={`/instances/${db.instance.id}`} className="btn">
-                Open {db.instance.name}
-              </Link>
+              <ButtonLink href={`/instances/${db.instance.id}`}>Open {db.instance.name}</ButtonLink>
             ) : undefined
           }
         />
@@ -241,6 +248,7 @@ function Workspace({
   const qc = useQueryClient();
   const canOn = useCanOn();
   const canWrite = canOn("database:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
+  const canBackup = canOn("backup:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
   const dialect: Dialect = dialectOf(db.instance?.engine);
   const pg = dialect === "postgres";
 
@@ -296,14 +304,15 @@ function Workspace({
   );
   const newQuery = useCallback((sql?: string) => dispatch({ type: "newQuery", sql }), []);
 
-  // ?query=new (the database page's "New SQL query") opens one query tab.
+  // ?query=new (the database page's "New SQL query") opens one query tab;
+  // ?query=draft opens one holding a stashed script (schema comparison).
   // The ref keeps React's development double-run from opening two.
   const queryOpened = useRef(false);
   useEffect(() => {
-    if (queryParam !== "new" || queryOpened.current) return;
+    if ((queryParam !== "new" && queryParam !== "draft") || queryOpened.current) return;
     queryOpened.current = true;
-    newQuery();
-  }, [queryParam, newQuery]);
+    newQuery(queryParam === "draft" ? (takeQueryDraft(db.id) ?? undefined) : undefined);
+  }, [queryParam, newQuery, db.id]);
 
   // ?table= / ?view= opens (or focuses) that tab; the active tab is written back.
   useEffect(() => {
@@ -449,6 +458,7 @@ function Workspace({
                 active={t.id === ws.active}
                 db={db}
                 canWrite={canWrite}
+                canBackup={canBackup && !db.system}
                 dialect={dialect}
                 dispatch={dispatch}
                 onDirty={onDirty}
@@ -483,6 +493,7 @@ function TabContent({
   active,
   db,
   canWrite,
+  canBackup,
   dialect,
   dispatch,
   onDirty,
@@ -493,6 +504,7 @@ function TabContent({
   active: boolean;
   db: Database;
   canWrite: boolean;
+  canBackup: boolean;
   dialect: Dialect;
   dispatch: React.Dispatch<import("@/lib/data-browser/tabs").Action>;
   onDirty: (id: string, n: number) => void;
@@ -505,7 +517,7 @@ function TabContent({
   if (tab.kind === "query") {
     return (
       <div className="dbx-query">
-        <QueryConsole databaseId={db.id} canWrite={canWrite} initialSql={tab.sql} />
+        <QueryConsole databaseId={db.id} canWrite={canWrite} initialSql={tab.sql} engine={db.instance?.engine} />
       </div>
     );
   }
@@ -515,6 +527,7 @@ function TabContent({
       tab={tab}
       active={active}
       canWrite={canWrite}
+      canBackup={canBackup}
       dialect={dialect}
       dispatch={dispatch}
       onDirty={onDirty}
@@ -551,18 +564,18 @@ function Welcome({
       <div className="dbx-welcome-icon">
         <Table2 size={22} />
       </div>
-      <h2 className="font-semibold" style={{ fontSize: "1.15rem", margin: ".2rem 0" }}>
+      <h2 className="font-semibold text-base my-1">
         {db.name}
       </h2>
-      <p className="muted text-sm" style={{ margin: 0, maxWidth: "32rem" }}>
+      <p className="muted text-sm m-0 max-w-lg">
         {items
           ? "Pick a table in the sidebar. A single click previews it; a double click keeps it open in its own tab."
           : "Tables you create appear in the sidebar."}
       </p>
-      <div className="flex gap-2" style={{ marginTop: "1rem" }}>
-        <button className="btn btn-sm" onClick={() => onNewQuery()}>
-          <SquareTerminal size={14} /> New SQL query
-        </button>
+      <div className="flex gap-2 mt-4">
+        <Button size="sm" icon={<SquareTerminal size={14} aria-hidden />} onClick={() => onNewQuery()}>
+          New SQL query
+        </Button>
       </div>
       {recent.length ? (
         <div className="dbx-welcome-recent">

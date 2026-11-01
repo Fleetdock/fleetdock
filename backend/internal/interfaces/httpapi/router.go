@@ -31,6 +31,8 @@ type RouterDeps struct {
 	Install       *InstallHandler
 	Notifications *NotificationHandler
 	Overview      *OverviewHandler
+	Search        *SearchHandler
+	Fleet         *FleetHandler
 	Docs          *DocsHandler
 	Authn         *Authenticator
 	// Resolver resolves resource scope ancestry for per-resource authorization.
@@ -175,6 +177,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/instances/{id}/processes/{pid}/kill", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.DBAdmin.KillProcess))
 	mux.HandleFunc("GET /v1/instances/{id}/status", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.ServerStatus))
 	mux.HandleFunc("GET /v1/instances/{id}/variables", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.Variables))
+	mux.HandleFunc("GET /v1/instances/{id}/top-queries", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.DBAdmin.TopQueries))
 
 	// Live DB administration: database scope (grants, tables, data)
 	mux.HandleFunc("GET /v1/databases/{id}/grants", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaGrants))
@@ -198,7 +201,41 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/indexes", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.CreateIndex))
 	mux.HandleFunc("POST /v1/databases/{id}/tables/{table}/indexes/drop", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.DropIndex))
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/foreign-keys", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ForeignKeys))
+	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/referenced-by", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ReferencedBy))
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
+	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
+	// Backup copies: compare a table with a backup and put rows back.
+	mux.HandleFunc("GET /v1/databases/{id}/backup-copies", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ListCopies))
+	mux.HandleFunc("POST /v1/databases/{id}/backup-copies", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.CreateCopy))
+	mux.HandleFunc("GET /v1/databases/{id}/backup-copies/{copyId}", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.GetCopy))
+	mux.HandleFunc("POST /v1/databases/{id}/backup-copies/{copyId}/extend", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.ExtendCopy))
+	mux.HandleFunc("DELETE /v1/databases/{id}/backup-copies/{copyId}", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.DiscardCopy))
+	mux.HandleFunc("POST /v1/databases/{id}/backup-copies/{copyId}/diff", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.DiffCopy))
+	mux.HandleFunc("POST /v1/databases/{id}/backup-copies/{copyId}/restore-rows", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.RestoreCopyRows))
+	// Row change journal (data browser undo).
+	mux.HandleFunc("GET /v1/databases/{id}/changes", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ListChanges))
+	mux.HandleFunc("POST /v1/databases/{id}/changes/undo", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.UndoBatch))
+	mux.HandleFunc("POST /v1/databases/{id}/changes/{changeId}/undo", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.UndoChange))
+	mux.HandleFunc("GET /v1/databases/{id}/schema/snapshots", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaSnapshots))
+	mux.HandleFunc("POST /v1/databases/{id}/schema/snapshots", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.TakeSchemaSnapshot))
+	mux.HandleFunc("GET /v1/databases/{id}/schema/snapshots/{snapshotId}", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaSnapshot))
+	mux.HandleFunc("PUT /v1/databases/{id}/schema/watch", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.SetSchemaWatch))
+	mux.HandleFunc("POST /v1/schema/compare", requireAnyPerm("database:read", d.DBAdmin.CompareSchemas))
+	mux.HandleFunc("GET /v1/databases/{id}/index-insights", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.IndexInsights))
+	// Explaining a write needs database:write; checked in the handler.
+	mux.HandleFunc("POST /v1/databases/{id}/explain", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Explain))
+	// Fleet-wide schema search; hits are filtered per database in the handler.
+	mux.HandleFunc("GET /v1/search/schema", requireAnyPerm("database:read", d.Search.Schema))
+
+	// Fleet queries: each target database is authorized inside the service.
+	mux.HandleFunc("POST /v1/fleet-runs", requireAnyPerm("database:read", d.Fleet.Create))
+	mux.HandleFunc("GET /v1/fleet-runs", requireAnyPerm("database:read", d.Fleet.List))
+	mux.HandleFunc("GET /v1/fleet-runs/{id}", requireAnyPerm("database:read", d.Fleet.Get))
+	mux.HandleFunc("GET /v1/fleet-runs/{id}/targets", requireAnyPerm("database:read", d.Fleet.Targets))
+	mux.HandleFunc("GET /v1/fleet-runs/{id}/results.csv", requireAnyPerm("database:read", d.Fleet.ResultsCSV))
+	mux.HandleFunc("POST /v1/fleet-runs/{id}/resume", requireAnyPerm("database:read", d.Fleet.Resume))
+	mux.HandleFunc("POST /v1/fleet-runs/{id}/cancel", requireAnyPerm("database:read", d.Fleet.Cancel))
+	mux.HandleFunc("POST /v1/fleet-runs/{id}/retry", requireAnyPerm("database:read", d.Fleet.Retry))
 	// SQL console: any writes are gated inside the handler by database:write.
 	mux.HandleFunc("POST /v1/databases/{id}/query", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Query))
 	// One-off dump streamed to the client; needs the same right as "back up now".

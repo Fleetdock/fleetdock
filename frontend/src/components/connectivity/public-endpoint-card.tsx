@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Globe } from "lucide-react";
 
-import { ConfirmModal, ErrorText, Field, KeyValueList, StatusBadge } from "@/components/ui";
+import { Badge, Button, Callout, ConfirmModal, ErrorText, Field, KeyValueList, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useDisablePublicAccess, useEnablePublicAccess } from "@/lib/hooks";
 import type { Connectivity, EndpointView, GatewayInfo } from "@/lib/types";
@@ -27,7 +27,7 @@ export function PublicEndpointCard({
         <span>
           <Globe size={16} aria-hidden /> Public access
         </span>
-        {data.public ? <StatusBadge status={data.public.status} /> : <span className="badge">Off</span>}
+        {data.public ? <StatusBadge status={data.public.status} /> : <Badge>Off</Badge>}
       </h3>
 
       {data.public ? (
@@ -93,11 +93,11 @@ function EnabledPublicAccess({
           {
             label: "Allowed networks",
             value: cidrs.length ? (
-              <span className="flex gap-1" style={{ flexWrap: "wrap" }}>
+              <span className="flex flex-wrap gap-1">
                 {cidrs.map((c) => (
-                  <code key={c} className={c === ALLOW_ANYWHERE ? "badge badge-amber" : "badge"}>
+                  <Badge key={c} tone={c === ALLOW_ANYWHERE ? "warning" : "neutral"} className="mono">
                     {c}
-                  </code>
+                  </Badge>
                 ))}
               </span>
             ) : (
@@ -115,48 +115,47 @@ function EnabledPublicAccess({
       {endpoint.last_error ? <ErrorText message={endpoint.last_error} /> : null}
 
       {tlsUnsatisfiable ? (
-        <div className="callout callout-danger" role="alert">
-          <strong>This database does not accept TLS, but the endpoint requires it.</strong>
-          <p className="text-sm" style={{ margin: ".25rem 0 0" }}>
+        <Callout tone="danger" title="This database does not accept TLS, but the endpoint requires it.">
+          <p className="m-0 text-sm">
             Connection URLs are issued with <code>sslmode=require</code> and will fail until you enable TLS on the
             database. Fleetdock will not quietly downgrade the requirement, because that would drop encryption without
             you asking.
           </p>
-        </div>
+        </Callout>
       ) : null}
 
       {allowlistLikelyWrong ? (
-        <div className="callout callout-warning" role="status">
-          <strong>Connections are being rejected by the allowlist.</strong>
-          <p className="text-sm" style={{ margin: ".25rem 0 0" }}>
+        <Callout tone="warning" role="status" title="Connections are being rejected by the allowlist.">
+          <p className="m-0 text-sm">
             The gateway saw {endpoint.denied_connections} connection
             {endpoint.denied_connections === 1 ? "" : "s"} from addresses that are not in your allowed networks, and no
             successful sessions.
           </p>
           <SourceIPHint gateway={gateway} />
-        </div>
+        </Callout>
       ) : null}
 
       {endpoint.status === "pending" ? (
-        <div className="callout callout-info" role="status">
+        <Callout tone="info" role="status">
           Waiting for the gateway to program this endpoint.
-        </div>
+        </Callout>
       ) : null}
 
       <ErrorText message={error ?? undefined} />
 
       {canWrite ? (
         <div className="panel-actions">
-          <button className="btn btn-sm" onClick={() => setEditing(true)}>
+          <Button size="sm" onClick={() => setEditing(true)}>
             Edit allowed networks
-          </button>
-          <button
-            className="btn btn-sm btn-danger"
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
             disabled={disable.isPending || endpoint.status === "disabling"}
             onClick={() => setConfirmDisable(true)}
           >
             {endpoint.status === "disabling" ? "Disabling…" : "Disable public access"}
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -201,17 +200,17 @@ function EnableForm({
 
   if (!gateway.enabled) {
     return (
-      <p className="muted text-sm">
+      <p className="m-0 text-sm text-muted">
         This deployment has no gateway configured, so public access is unavailable. Set{" "}
         <code>FLEETDOCK_GATEWAY_ENABLED</code> and run the gateway service to enable it.
       </p>
     );
   }
   if (gateway.unavailable_reason) {
-    return <p className="muted text-sm">{capitalize(gateway.unavailable_reason)}.</p>;
+    return <p className="m-0 text-sm text-muted">{capitalize(gateway.unavailable_reason)}.</p>;
   }
   if (!canWrite) {
-    return <p className="muted text-sm">Public access is disabled.</p>;
+    return <p className="m-0 text-sm text-muted">Public access is disabled.</p>;
   }
 
   async function onEnable() {
@@ -253,16 +252,18 @@ function EnableForm({
       <SourceIPHint gateway={gateway} />
 
       {confirmAnywhere ? (
-        <div className="callout callout-warning" role="alert">
-          <strong>0.0.0.0/0 allows connections from any address on the internet.</strong> Press Enable again to confirm.
-        </div>
+        <Callout tone="warning" role="alert" title="0.0.0.0/0 allows connections from any address on the internet.">
+          Press Enable again to confirm.
+        </Callout>
       ) : null}
 
       <ErrorText message={error ?? undefined} />
 
-      <button className="btn btn-primary btn-sm" style={{ marginTop: ".5rem" }} disabled={enable.isPending} onClick={onEnable}>
-        {enable.isPending ? "Enabling…" : "Enable public access"}
-      </button>
+      <div className="mt-3">
+        <Button variant="primary" size="sm" loading={enable.isPending} onClick={onEnable}>
+          {enable.isPending ? "Enabling…" : "Enable public access"}
+        </Button>
+      </div>
     </>
   );
 }
@@ -275,7 +276,7 @@ function EnableForm({
 function SourceIPHint({ gateway }: { gateway: GatewayInfo }) {
   const host = gateway.public_host;
   return (
-    <p className="muted text-sm" style={{ marginTop: ".5rem" }}>
+    <p className="mb-0 mt-2 text-sm text-muted">
       The gateway matches the source address it observes. Behind NAT (including Docker Desktop) or a load balancer
       without PROXY protocol, that is the proxy&apos;s address, not your client&apos;s.
       {gateway.diag_port && host ? (

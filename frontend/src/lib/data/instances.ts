@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
 import type {
+  TopQueries,
   Process,
   Setting,
   CreateInstanceInput,
@@ -112,6 +113,19 @@ export function useProcesses(instanceId: string, enabled = true) {
     queryFn: () => api.get<{ items: Process[] }>(`/v1/instances/${instanceId}/processes`).then((r) => r.items),
     enabled: Boolean(instanceId) && enabled,
     refetchInterval: 5000,
+  });
+}
+
+export function useTopQueries(instanceId: string, sort: "total" | "mean" | "calls", database = "", enabled = true) {
+  return useQuery({
+    queryKey: ["top-queries", instanceId, sort, database],
+    queryFn: () =>
+      api.get<TopQueries>(
+        `/v1/instances/${instanceId}/top-queries?sort=${sort}&limit=50${database ? `&database=${encodeURIComponent(database)}` : ""}`,
+      ),
+    enabled: Boolean(instanceId) && enabled,
+    refetchInterval: 30000,
+    retry: false,
   });
 }
 
