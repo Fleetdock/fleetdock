@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { SqlEditor } from "@/components/sql-editor";
-import { CopyButton, ErrorText, Modal, Spinner } from "@/components/ui";
+import { Button, Callout, CopyButton, ErrorText, Modal, Select, buttonClass } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { stashQueryDraft } from "@/lib/data-browser/storage";
 import { useCompareSchemas, useDatabases } from "@/lib/hooks";
@@ -78,48 +78,53 @@ export function SchemaCompare({
 
   return (
     <Modal open onClose={onClose} title={snapshot ? "Return the schema to an earlier version" : "Compare schemas"} wide>
-      <div className="flex" style={{ flexDirection: "column", gap: ".85rem" }}>
+      <div className="flex flex-col gap-3.5">
         {snapshot ? (
-          <p className="text-sm" style={{ margin: 0 }}>
+          <p className="text-sm m-0">
             Compares <strong>{database.name}</strong> as it is now with <strong>{snapshot.label}</strong> and writes the
             script that puts its structure back — undoing every structural change made since. Data is not restored: dropped
             tables and columns come back empty.
           </p>
         ) : (
           <>
-            <p className="text-sm" style={{ margin: 0 }}>
+            <p className="text-sm m-0">
               Compares the structure of <strong>{database.name}</strong> with another {engine ?? ""} database — tables,
               columns, indexes, constraints, views, routines and triggers — and writes the script that makes one match
               the other. Nothing is changed until you run the script.
             </p>
-            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <select className="input" style={{ maxWidth: "22rem" }} value={other} onChange={(e) => setOther(e.target.value)} aria-label="Other database">
+            <div className="flex flex-wrap items-center gap-2">
+              <Select className="max-w-88" value={other} onChange={(e) => setOther(e.target.value)} aria-label="Other database">
                 <option value="">Choose a database…</option>
                 {others.map((d: Database) => (
                   <option key={d.id} value={d.id}>
                     {d.name} · {d.instance?.name ?? d.instance_id.slice(0, 8)}
                   </option>
                 ))}
-              </select>
-              <button className="btn btn-sm" onClick={() => setDirection((d) => (d === "push" ? "pull" : "push"))} disabled={!other}>
-                <ArrowLeftRight size={14} /> Swap
-              </button>
+              </Select>
+              <Button
+                size="sm"
+                icon={<ArrowLeftRight size={14} aria-hidden />}
+                onClick={() => setDirection((d) => (d === "push" ? "pull" : "push"))}
+                disabled={!other}
+              >
+                Swap
+              </Button>
             </div>
             {other ? (
-              <p className="text-sm muted" style={{ margin: 0 }}>
+              <p className="text-sm muted m-0">
                 The script will change <strong>{targetName}</strong> to match <strong>{sourceName}</strong>.
               </p>
             ) : others.length === 0 && data ? (
-              <p className="text-sm muted" style={{ margin: 0 }}>
+              <p className="text-sm muted m-0">
                 There is no other {engine ?? ""} database to compare with.
               </p>
             ) : null}
           </>
         )}
         <div>
-          <button className="btn btn-primary btn-sm" disabled={compare.isPending || (!snapshot && !other)} onClick={run}>
-            {compare.isPending ? <Spinner /> : null} Compare
-          </button>
+          <Button size="sm" variant="primary" loading={compare.isPending} disabled={!snapshot && !other} onClick={run}>
+            Compare
+          </Button>
         </div>
         <ErrorText message={error ?? undefined} />
         {result ? <CompareResult result={result.cmp} targetName={result.targetName} onOpen={openInConsole} /> : null}
@@ -131,18 +136,18 @@ export function SchemaCompare({
 function CompareResult({ result, targetName, onOpen }: { result: SchemaComparison; targetName: string; onOpen: () => void }) {
   if (result.same) {
     return (
-      <div className="callout callout-info" role="status">
+      <Callout tone="success" role="status" className="mb-0">
         The schemas are identical.
-      </div>
+      </Callout>
     );
   }
   const n = result.changes.length;
   return (
     <>
       {result.warnings.map((w) => (
-        <div key={w} className="callout callout-warning">
+        <Callout key={w} tone="warning" className="mb-0">
           {w}
-        </div>
+        </Callout>
       ))}
       <div className="text-sm">
         <strong>{n}</strong> difference{n === 1 ? "" : "s"}.
@@ -159,11 +164,11 @@ function CompareResult({ result, targetName, onOpen }: { result: SchemaCompariso
       {result.sql ? (
         <>
           <SqlEditor value={result.sql} onChange={() => {}} readOnly minHeight="12rem" />
-          <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-            <CopyButton value={result.sql} label="Copy script" />
-            <button className="btn btn-primary btn-sm" onClick={onOpen}>
-              <SquareTerminal size={14} /> Open in SQL console on {targetName}
-            </button>
+          <div className="flex items-center justify-end gap-2">
+            <CopyButton value={result.sql} label="Copy script" className={buttonClass({ size: "sm" })} />
+            <Button size="sm" variant="primary" icon={<SquareTerminal size={14} aria-hidden />} onClick={onOpen}>
+              Open in SQL console on {targetName}
+            </Button>
           </div>
         </>
       ) : null}

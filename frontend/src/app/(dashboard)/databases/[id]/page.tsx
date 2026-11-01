@@ -21,10 +21,16 @@ import { ImportSQLModal } from "@/components/database/import-sql-modal";
 import { MoveDatabaseModal } from "@/components/database/move-database-modal";
 import { DeleteDatabaseModal } from "@/components/delete-database-modal";
 import {
+  Badge,
+  Button,
+  ButtonLink,
+  Callout,
+  DetailSkeleton,
   EmptyState,
   KeyValueList,
   Menu,
   PageHeader,
+  QueryError,
   QueryTabs,
   Skeleton,
   StatTile,
@@ -51,6 +57,8 @@ import {
 
 const formatBytes = (n: number) => formatBytesOr(n, "0 B");
 
+const TAB_LABEL = { backups: "Backups", users: "Access", schema: "Schema" } as const;
+
 export default function DatabaseDetailPage() {
   return (
     <Suspense fallback={<DatabaseDetailSkeleton />}>
@@ -62,7 +70,7 @@ export default function DatabaseDetailPage() {
 function DatabaseDetail() {
   const params = useParams();
   const id = String(params.id);
-  const { data: db, isLoading } = useDatabase(id);
+  const { data: db, isLoading, error, refetch } = useDatabase(id);
   // The owning instance is embedded in the database response — no second
   // request, and no window where the page renders with the instance unknown.
   const instance = db?.instance;
@@ -100,7 +108,15 @@ function DatabaseDetail() {
     return <DatabaseDetailSkeleton />;
   }
   if (!db) {
-    return <EmptyState title="Database not found" />;
+    return (
+      <QueryError
+        error={error}
+        what="database"
+        onRetry={() => void refetch()}
+        backHref="/databases"
+        backLabel="Back to databases"
+      />
+    );
   }
 
   const hasCreds = instance?.has_credentials ?? false;
@@ -121,26 +137,30 @@ function DatabaseDetail() {
           <>
             <StatusBadge status={db.status} />
             {db.system ? (
-              <span
-                className="badge badge-gray"
-                title="Belongs to the database engine itself. You can browse and back it up, but not remove it."
-              >
+              <Badge title="Belongs to the database engine itself. You can browse and back it up, but not remove it.">
                 system
-              </span>
+              </Badge>
             ) : null}
           </>
         }
         actions={
           <>
             {canMove && !db.system ? (
-              <button className="btn" onClick={() => setMoveOpen(true)}>
-                <ArrowRightLeft size={15} /> Copy / move
-              </button>
+              <Button
+                icon={<ArrowRightLeft size={15} aria-hidden />}
+                onClick={() => setMoveOpen(true)}
+              >
+                Copy / move
+              </Button>
             ) : null}
             {hasCreds ? (
-              <Link className="btn btn-primary" href={browserHref}>
-                <Table2 size={15} /> Open Data Browser
-              </Link>
+              <ButtonLink
+                variant="primary"
+                href={browserHref}
+                icon={<Table2 size={15} aria-hidden />}
+              >
+                Open Data Browser
+              </ButtonLink>
             ) : null}
             {canWrite && !db.system ? (
               <Menu
@@ -166,16 +186,23 @@ function DatabaseDetail() {
       />
 
       {db.status === "missing" ? (
-        <div className="callout callout-warning" role="status">
-          <strong>This database can no longer be found on its server</strong>
-          {db.missing_since ? (
+        <Callout
+          tone="warning"
+          role="status"
+          title={
             <>
-              {" "}(since <Time value={db.missing_since} />)
+              This database can no longer be found on its server
+              {db.missing_since ? (
+                <>
+                  {" "}(since <Time value={db.missing_since} />)
+                </>
+              ) : null}
             </>
-          ) : null}
-          . It may have been dropped or renamed outside Fleetdock. Its backups are kept, and it becomes active again
+          }
+        >
+          It may have been dropped or renamed outside Fleetdock. Its backups are kept, and it becomes active again
           automatically if it reappears. Remove it here if it is gone for good.
-        </div>
+        </Callout>
       ) : null}
 
       <SummaryStrip
@@ -189,17 +216,17 @@ function DatabaseDetail() {
       <div className="detail-grid">
         <div className="detail-main">
           {!hasCreds ? (
-            <div className="callout callout-info">
-              <strong>Fleetdock can&apos;t log in to this database server yet.</strong> Add an admin login on{" "}
+            <Callout tone="info" title="Fleetdock can't log in to this database server yet.">
+              Add an admin login on{" "}
               {instance ? (
-                <Link href={`/instances/${instance.id}`} className="link-plain" style={{ textDecoration: "underline" }}>
+                <Link href={`/instances/${instance.id}`} className="link">
                   {instance.name}
                 </Link>
               ) : (
                 "the database server's page"
               )}{" "}
               to browse tables, import SQL and manage access.
-            </div>
+            </Callout>
           ) : null}
 
           <ConnectivitySection databaseId={id} databaseName={db.name} canWrite={canWrite} />
@@ -208,6 +235,7 @@ function DatabaseDetail() {
           <section className="section">
             <QueryTabs
               label="Database sections"
+              panelId="database-tabpanel"
               onSelect={(t) => router.push(t === "backups" ? pathname : `${pathname}?tab=${t}`)}
               tabs={[
                 { id: "backups", label: "Backups" },
@@ -216,17 +244,17 @@ function DatabaseDetail() {
               ]}
             />
 
-            {tab === "backups" ? (
-              <DatabaseBackups database={db} canBackup={canMove} />
-            ) : !hasCreds ? (
-              <NoLogin instance={instance} />
-            ) : tab === "schema" ? (
-              <SchemaHistorySection database={db} canWrite={canWrite} />
-            ) : hasCreds ? (
-              <GrantsSection databaseId={id} canWrite={canWrite} />
-            ) : (
-              <NoLogin instance={instance} />
-            )}
+            <div id="database-tabpanel" role="tabpanel" aria-label={TAB_LABEL[tab]}>
+              {tab === "backups" ? (
+                <DatabaseBackups database={db} canBackup={canMove} />
+              ) : !hasCreds ? (
+                <NoLogin instance={instance} />
+              ) : tab === "schema" ? (
+                <SchemaHistorySection database={db} canWrite={canWrite} />
+              ) : (
+                <GrantsSection databaseId={id} canWrite={canWrite} />
+              )}
+            </div>
           </section>
         </div>
 
@@ -238,7 +266,7 @@ function DatabaseDetail() {
                 {
                   label: "Server",
                   value: instance ? (
-                    <Link href={`/instances/${instance.id}`} className="link-plain" style={{ textDecoration: "underline" }}>
+                    <Link href={`/instances/${instance.id}`} className="link">
                       {instance.name}
                     </Link>
                   ) : (
@@ -264,12 +292,12 @@ function DatabaseDetail() {
                 <>
                   <li>
                     <Link href={browserHref}>
-                      <Table2 size={15} /> Browse tables and views
+                      <Table2 size={15} aria-hidden /> Browse tables and views
                     </Link>
                   </li>
                   <li>
                     <Link href={queryHref}>
-                      <SquareTerminal size={15} /> New SQL query
+                      <SquareTerminal size={15} aria-hidden /> New SQL query
                     </Link>
                   </li>
                 </>
@@ -277,13 +305,13 @@ function DatabaseDetail() {
               {instance ? (
                 <li>
                   <Link href={`/instances/${instance.id}`}>
-                    <Database size={15} /> Database server {instance.name}
+                    <Database size={15} aria-hidden /> Database server {instance.name}
                   </Link>
                 </li>
               ) : null}
               <li>
                 <Link href={`${pathname}?tab=users`}>
-                  <Users size={15} /> Users and privileges
+                  <Users size={15} aria-hidden /> Users and privileges
                 </Link>
               </li>
             </ul>
@@ -321,9 +349,9 @@ function NoLogin({ instance }: { instance: InstanceRefLike }) {
       hint="Add an admin login on the database server's page to browse tables and manage access."
       action={
         instance ? (
-          <Link href={`/instances/${instance.id}`} className="btn">
+          <ButtonLink href={`/instances/${instance.id}`}>
             Open {instance.name}
-          </Link>
+          </ButtonLink>
         ) : undefined
       }
     />
@@ -357,57 +385,27 @@ function SummaryStrip({
 
   return (
     <div className="stat-strip">
-      <StatTile label="Size" icon={<HardDrive size={13} />} value={sizeBytes ? formatBytes(sizeBytes) : "—"} />
+      <StatTile label="Size" icon={<HardDrive size={13} aria-hidden />} value={sizeBytes ? formatBytes(sizeBytes) : "—"} />
       <StatTile
         label="Tables"
-        icon={<Table2 size={13} />}
+        icon={<Table2 size={13} aria-hidden />}
         value={count(nTables, tables.isLoading)}
         hint={hasCreds ? "Open in Data Browser" : "Needs a server login"}
         href={hasCreds ? browserHref : undefined}
       />
       <StatTile
         label="Views"
-        icon={<Eye size={13} />}
+        icon={<Eye size={13} aria-hidden />}
         value={count(nViews, objects.isLoading)}
         hint={hasCreds && nOther ? `${nOther.toLocaleString()} other object${nOther === 1 ? "" : "s"}` : undefined}
         href={hasCreds ? browserHref : undefined}
       />
-      <StatTile label="Connections" icon={<Activity size={13} />} value={connections.toLocaleString()} hint="Open right now" />
+      <StatTile label="Connections" icon={<Activity size={13} aria-hidden />} value={connections.toLocaleString()} hint="Open right now" />
     </div>
   );
 }
 
 /** DatabaseDetailSkeleton mirrors the page layout while the database loads. */
 function DatabaseDetailSkeleton() {
-  return (
-    <div role="status" aria-label="Loading database">
-      <div className="page-header">
-        <Skeleton width="12rem" height=".8rem" />
-        <div style={{ marginTop: ".6rem" }}>
-          <Skeleton width="16rem" height="1.6rem" />
-        </div>
-      </div>
-      <div className="stat-strip">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="card stat-tile">
-            <Skeleton width="4rem" height=".7rem" />
-            <Skeleton width="3rem" height="1.3rem" />
-          </div>
-        ))}
-      </div>
-      <div className="detail-grid">
-        <div className="card panel" style={{ display: "grid", gap: ".6rem" }}>
-          <Skeleton width="30%" />
-          <Skeleton width="70%" />
-          <Skeleton width="55%" />
-          <Skeleton width="60%" />
-        </div>
-        <div className="card panel" style={{ display: "grid", gap: ".6rem" }}>
-          <Skeleton width="40%" />
-          <Skeleton width="80%" />
-          <Skeleton width="65%" />
-        </div>
-      </div>
-    </div>
-  );
+  return <DetailSkeleton label="Loading database" />;
 }

@@ -1,12 +1,13 @@
 "use client";
 
+import { Badge, type Tone } from "@/components/ui";
 import { changeLabel } from "@/lib/schema-changes";
 import type { SchemaChange } from "@/lib/types";
 
-const OP_BADGE: Record<SchemaChange["op"], string> = {
-  added: "badge-green",
-  removed: "badge-red",
-  changed: "badge-amber",
+const OP_BADGE: Record<SchemaChange["op"], Tone> = {
+  added: "success",
+  removed: "danger",
+  changed: "warning",
 };
 
 /**
@@ -32,7 +33,7 @@ export function SchemaChangeList({
         <li key={`${c.kind}:${c.schema ?? ""}:${c.table ?? ""}:${c.name ?? ""}:${i}`}>
           <details>
             <summary>
-              <span className={`badge ${OP_BADGE[c.op]}`}>{opLabels?.[c.op] ?? c.op}</span>
+              <Badge tone={OP_BADGE[c.op]}>{opLabels?.[c.op] ?? c.op}</Badge>
               <code>{changeLabel(c)}</code>
             </summary>
             <div className="schema-change-defs">

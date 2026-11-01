@@ -8,7 +8,18 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { ErrorText, Field, Modal, PageHeader, Time } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  ErrorText,
+  Field,
+  IconButton,
+  Input,
+  Modal,
+  PageHeader,
+  Select,
+  Time,
+} from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   useCan,
@@ -83,7 +94,14 @@ export default function SchedulesPage() {
       {
         id: "enabled",
         header: "Status",
-        render: (s) => (s.enabled ? <span className="badge badge-green">on</span> : <span className="badge badge-gray">paused</span>),
+        render: (s) =>
+          s.enabled ? (
+            <Badge tone="success" dot>
+              on
+            </Badge>
+          ) : (
+            <Badge dot>paused</Badge>
+          ),
       },
       {
         id: "next",
@@ -98,10 +116,13 @@ export default function SchedulesPage() {
         header: "Actions",
         align: "right",
         render: (s) => (
-          <div className="flex items-center gap-2" style={{ justifyContent: "flex-end" }}>
-            <button className="btn btn-sm" onClick={() => setEditTarget(s)} aria-label="Edit"><Pencil size={15} /></button>
-            <button
-              className="btn btn-sm btn-danger"
+          <div className="flex items-center justify-end gap-2">
+            <IconButton variant="secondary" label="Edit schedule" onClick={() => setEditTarget(s)}>
+              <Pencil size={15} aria-hidden />
+            </IconButton>
+            <IconButton
+              variant="danger"
+              label="Delete schedule"
               onClick={async () => {
                 const ok = await confirm({
                   title: "Delete this schedule?",
@@ -112,10 +133,9 @@ export default function SchedulesPage() {
                 if (ok) del.mutate(s.id, { onError: toastError("Failed to delete the schedule") });
               }}
               disabled={del.isPending}
-              aria-label="Delete"
             >
-              <Trash2 size={15} />
-            </button>
+              <Trash2 size={15} aria-hidden />
+            </IconButton>
           </div>
         ),
       });
@@ -129,13 +149,11 @@ export default function SchedulesPage() {
         title="Backup schedules"
         description="Automatic backups on a timetable, and how long to keep them. Times are in UTC."
         actions={
-          <>
-            {canWrite ? (
-          <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
-            <Plus size={16} /> New schedule
-          </button>
-        ) : null}
-          </>
+          canWrite ? (
+            <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setAddOpen(true)}>
+              New schedule
+            </Button>
+          ) : null
         }
       />
 
@@ -148,6 +166,13 @@ export default function SchedulesPage() {
         errorTitle="Could not load schedules"
         emptyTitle="No schedules yet"
         emptyHint="Create a schedule to back up a database automatically."
+        emptyAction={
+          canWrite ? (
+            <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setAddOpen(true)}>
+              New schedule
+            </Button>
+          ) : undefined
+        }
         pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
       />
 
@@ -232,25 +257,24 @@ function ScheduleModal({ mode, schedule, open, onClose }: ScheduleModalProps) {
       <form onSubmit={onSubmit}>
         {!isEdit ? (
           <Field label="Database">
-            <select className="input" value={databaseId} onChange={(e) => setDatabaseId(e.target.value)} required>
+            <Select value={databaseId} onChange={(e) => setDatabaseId(e.target.value)} required>
               <option value="">Select a database…</option>
               {databases?.items.map((d) => (
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
-            </select>
+            </Select>
           </Field>
         ) : null}
         <Field label="Save to">
-          <select className="input" value={destinationId} onChange={(e) => setDestinationId(e.target.value)} required>
+          <Select value={destinationId} onChange={(e) => setDestinationId(e.target.value)} required>
             <option value="">Select backup storage…</option>
             {destinations?.items.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="How often">
-          <select
-            className="input"
+          <Select
             value={presetMatch ? cron : "custom"}
             onChange={(e) => {
               const custom = e.target.value === "custom";
@@ -262,7 +286,7 @@ function ScheduleModal({ mode, schedule, open, onClose }: ScheduleModalProps) {
               <option key={p.value} value={p.value}>{p.label}</option>
             ))}
             <option value="custom">Custom…</option>
-          </select>
+          </Select>
         </Field>
         {!presetMatch ? (
           <Field
@@ -270,26 +294,26 @@ function ScheduleModal({ mode, schedule, open, onClose }: ScheduleModalProps) {
             hint={isCron(cron) ? (cronText ?? "Custom schedule (UTC)") : "Five fields: minute hour day-of-month month day-of-week, in UTC"}
             help="Example: 0 2 * * * runs every day at 02:00 UTC; */30 * * * * runs every 30 minutes."
           >
-            <input className="input mono" value={cron} onChange={(e) => setCron(e.target.value)} placeholder="0 2 * * *" required />
+            <Input className="mono" value={cron} onChange={(e) => setCron(e.target.value)} placeholder="0 2 * * *" required />
           </Field>
         ) : null}
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
+        <div className="form-grid">
           <Field label="Keep backups for (days)" help="Older backups from this schedule are deleted automatically to save storage.">
-            <input className="input" type="number" min={1} value={retention} onChange={(e) => setRetention(e.target.value)} required />
+            <Input type="number" min={1} value={retention} onChange={(e) => setRetention(e.target.value)} required />
           </Field>
           <Field label="Status">
-            <select className="input" value={enabled ? "yes" : "no"} onChange={(e) => setEnabled(e.target.value === "yes")}>
+            <Select value={enabled ? "yes" : "no"} onChange={(e) => setEnabled(e.target.value === "yes")}>
               <option value="yes">Enabled</option>
               <option value="no">Paused</option>
-            </select>
+            </Select>
           </Field>
         </div>
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={pending}>
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={pending}>
             {pending ? "Saving…" : isEdit ? "Save changes" : "Create schedule"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

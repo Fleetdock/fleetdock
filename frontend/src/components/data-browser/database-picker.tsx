@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Spinner } from "@/components/ui";
+import { Badge, Input, Spinner } from "@/components/ui";
 import { recentDatabases } from "@/lib/data-browser/storage";
 import { engineLabel } from "@/lib/engines";
 import { useDatabases } from "@/lib/hooks";
@@ -118,12 +118,12 @@ function DatabaseOptions({
                 onClick={() => onPick(d.id)}
               >
                 <DatabaseIcon size={14} className="muted" />
-                <span className="truncate" style={{ flex: 1 }}>
+                <span className="truncate flex-1">
                   {d.name}
                 </span>
                 {g.key === "recent" ? <span className="muted text-xs truncate">{d.instance?.name}</span> : null}
-                {d.system ? <span className="badge badge-gray">system</span> : null}
-                {d.id === currentId ? <Check size={14} style={{ color: "var(--accent)" }} /> : null}
+                {d.system ? <Badge>system</Badge> : null}
+                {d.id === currentId ? <Check size={14} className="text-accent" aria-label="Current database" /> : null}
               </button>
             );
           })}
@@ -215,9 +215,8 @@ export function DatabasePicker({
       {open ? (
         <div className="dbx-picker-pop">
           <div className="dbx-search">
-            <Search size={14} />
-            <input
-              className="input"
+            <Search size={14} aria-hidden />
+            <Input
               autoFocus
               placeholder="Find a database…"
               value={search}
@@ -259,17 +258,16 @@ export function DatabaseChooser({ onPick }: { onPick: (id: string) => void }) {
       <div className="dbx-welcome-icon">
         <DatabaseIcon size={22} />
       </div>
-      <h2 className="font-semibold" style={{ fontSize: "1.15rem", margin: ".2rem 0" }}>
+      <h2 className="font-semibold text-base my-1">
         Which database do you want to browse?
       </h2>
-      <p className="muted text-sm" style={{ margin: "0 0 1rem" }}>
+      <p className="muted text-sm mt-0 mb-4">
         Its tables and views appear in the sidebar. You can switch at any time from the top of the sidebar.
       </p>
       <div className="card dbx-chooser-card">
         <div className="dbx-search">
-          <Search size={14} />
-          <input
-            className="input"
+          <Search size={14} aria-hidden />
+          <Input
             autoFocus
             placeholder="Find a database…"
             value={search}

@@ -40,7 +40,8 @@ maps them to the names in the code and API.
   S3-compatible bucket.
   Secret keys (and instance passwords) are envelope-encrypted at rest with
   `FLEETDOCK_ENCRYPTION_KEY`.
-- **Backup / Restore** — `mariadb-dump | gzip`, streamed to the bucket via
+- **Backup / Restore** — the engine's own dump tool (`mariadb-dump`,
+  `mysqldump` or `pg_dump`) piped through gzip, streamed to the bucket via
   presigned URLs (agents never see storage credentials). Restoring into a
   different instance and/or database name is how you **move a database to
   another server**.
@@ -57,8 +58,8 @@ Backend (Go):
 - **Servers & agents** — one-command install, single-use registration tokens,
   agent enrollment + bearer-token auth, heartbeats + health snapshots,
   offline detection.
-- **Instances** — managed & external, engine field (mariadb now, pluggable
-  registry for more), encrypted admin credentials, connection test, import
+- **Instances** — managed & external, engine field (MariaDB, MySQL or
+  PostgreSQL, via a pluggable engine registry), encrypted admin credentials, connection test, import
   of existing databases.
 - **Databases** — create (physical when credentials exist) / list / lock /
   unlock / soft-delete (7-day recovery window).

@@ -26,8 +26,14 @@ export type NavPage = {
   keywords?: string;
 };
 
+/** Sidebar groups, in display order. */
+export const NAV_GROUPS = ["Workspace", "Data", "Operations", "Admin"] as const;
+export type NavGroup = (typeof NAV_GROUPS)[number];
+
 export type NavSection = {
   label: string;
+  /** Sidebar group heading the section sits under. */
+  group: NavGroup;
   Icon: LucideIcon;
   /** The section's landing page. */
   href: string;
@@ -40,12 +46,13 @@ export type NavSection = {
 const backupRead: Requirement[] = [{ perm: "backup:read", scoped: true }];
 
 /**
- * NAV is the whole dashboard structure: nine sections, each a set of pages.
- * The sidebar, section tabs, breadcrumbs and command palette all derive from it.
+ * NAV is the whole dashboard structure: nine sections in four groups, each a
+ * set of pages. The sidebar, section tabs, breadcrumbs and command palette all derive from it.
  */
 export const NAV: NavSection[] = [
   {
     label: "Overview",
+    group: "Workspace",
     Icon: LayoutDashboard,
     href: "/dashboard",
     match: ["/dashboard"],
@@ -53,6 +60,7 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Servers",
+    group: "Workspace",
     Icon: Server,
     href: "/servers",
     match: ["/servers"],
@@ -60,6 +68,7 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Databases",
+    group: "Workspace",
     Icon: Database,
     href: "/databases",
     match: ["/databases", "/instances"],
@@ -77,6 +86,7 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Data browser",
+    group: "Data",
     Icon: Table2,
     href: "/data",
     match: ["/data"],
@@ -91,6 +101,7 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Fleet query",
+    group: "Data",
     Icon: Layers,
     href: "/fleet",
     match: ["/fleet"],
@@ -105,6 +116,7 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Backups",
+    group: "Operations",
     Icon: Archive,
     href: "/backups",
     match: ["/backups"],
@@ -116,6 +128,7 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Activity",
+    group: "Operations",
     Icon: Activity,
     href: "/activity",
     match: ["/activity"],
@@ -123,6 +136,7 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Access",
+    group: "Admin",
     Icon: ShieldCheck,
     href: "/access",
     match: ["/access"],
@@ -134,6 +148,7 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Settings",
+    group: "Admin",
     Icon: Settings,
     href: "/settings",
     match: ["/settings"],

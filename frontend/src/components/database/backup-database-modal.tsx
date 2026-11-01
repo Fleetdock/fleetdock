@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { CloudUpload, Download } from "lucide-react";
 
-import { ErrorText, Field, Modal } from "@/components/ui";
+import { Button, ErrorText, Field, Modal, Select } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { downloadDatabaseDump, useDestinations, useTriggerBackup } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
@@ -77,7 +77,7 @@ export function BackupDatabaseModal({
                 Your download has started: <code>{database.name}-….sql.gz</code>. A large database can take a
                 while — keep this tab open until your browser finishes it.
               </p>
-              <p className="text-sm muted" style={{ marginTop: ".5rem" }}>
+              <p className="text-sm muted mt-2">
                 The file is not kept in Fleetdock and does not appear in the backup history. To restore it, use
                 Import SQL on a database.
               </p>
@@ -88,13 +88,10 @@ export function BackupDatabaseModal({
               finishes.
             </p>
           )}
-          <div
-            className="flex justify-end items-center"
-            style={{ marginTop: ".8rem" }}
-          >
-            <button className="btn btn-primary" onClick={close}>
+          <div className="modal-actions">
+            <Button variant="primary" onClick={close}>
               Done
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -108,11 +105,11 @@ export function BackupDatabaseModal({
               onClick={() => setPicked("download")}
             >
               <span className="choice-card-icon">
-                <Download size={16} />
+                <Download size={16} aria-hidden />
               </span>
               <span>
                 <span className="font-medium">Download to this computer</span>
-                <span className="muted text-sm" style={{ display: "block", marginTop: ".15rem" }}>
+                <span className="muted text-sm block mt-0.5">
                   A compressed SQL dump (.sql.gz), saved by your browser. Nothing is stored in Fleetdock.
                 </span>
               </span>
@@ -125,11 +122,11 @@ export function BackupDatabaseModal({
               onClick={() => setPicked("storage")}
             >
               <span className="choice-card-icon">
-                <CloudUpload size={16} />
+                <CloudUpload size={16} aria-hidden />
               </span>
               <span>
                 <span className="font-medium">Save to backup storage</span>
-                <span className="muted text-sm" style={{ display: "block", marginTop: ".15rem" }}>
+                <span className="muted text-sm block mt-0.5">
                   Kept in your bucket, listed in the backup history and restorable from here.
                 </span>
               </span>
@@ -139,8 +136,7 @@ export function BackupDatabaseModal({
           {target === "storage" ? (
             hasStorage ? (
               <Field label="Save to">
-                <select
-                  className="input"
+                <Select
                   value={destinationId}
                   onChange={(e) => setDestinationId(e.target.value)}
                   required
@@ -153,7 +149,7 @@ export function BackupDatabaseModal({
                       {d.name} ({d.bucket})
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
             ) : (
               <p className="text-sm muted">
@@ -167,17 +163,13 @@ export function BackupDatabaseModal({
           ) : null}
 
           <ErrorText message={error ?? undefined} />
-          <div
-            className="flex justify-end items-center gap-2"
-            style={{ marginTop: ".5rem" }}
-          >
-            <button type="button" className="btn" onClick={close}>
-              Cancel
-            </button>
-            <button
+          <div className="modal-actions">
+            <Button onClick={close}>Cancel</Button>
+            <Button
               type="submit"
-              className="btn btn-primary"
-              disabled={busy || (target === "storage" && !hasStorage)}
+              variant="primary"
+              loading={busy}
+              disabled={target === "storage" && !hasStorage}
             >
               {target === "download"
                 ? preparing
@@ -186,7 +178,7 @@ export function BackupDatabaseModal({
                 : trigger.isPending
                   ? "Starting…"
                   : "Start backup"}
-            </button>
+            </Button>
           </div>
         </form>
       )}

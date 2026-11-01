@@ -6,7 +6,20 @@ import { useConfirm } from "@/components/confirm";
 import { FilterEditor, ImportCSV, needsValue, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
 import { useToast } from "@/components/toast";
-import { EmptyState, Menu, Modal, Pagination, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  IconButton,
+  Input,
+  Menu,
+  Modal,
+  Pagination,
+  SegmentedControl,
+  Select,
+  Spinner,
+  Textarea,
+} from "@/components/ui";
 import { cellKind, isTruncated, mutationSQL, prettyValue, quoteTable, type Dialect } from "@/lib/data-browser/cells";
 import {
   changeCount,
@@ -335,20 +348,21 @@ export function TableTab({
   return (
     <div className="dbx-pane">
       <div className="dbx-toolbar">
-        <div className="segmented dbx-seg" role="group" aria-label="View">
-          <button aria-pressed={view.mode === "data"} onClick={() => setView({ mode: "data" }, false)}>
-            Data
-          </button>
-          <button aria-pressed={view.mode === "structure"} onClick={() => setView({ mode: "structure" }, false)}>
-            Structure
-          </button>
-        </div>
+        <SegmentedControl
+          className="dbx-seg"
+          label="View"
+          value={view.mode}
+          onChange={(mode) => setView({ mode }, false)}
+          options={[
+            { value: "data", label: "Data" },
+            { value: "structure", label: "Structure" },
+          ]}
+        />
         {view.mode === "data" ? (
           <>
             <div className="dbx-search dbx-toolbar-search">
-              <Search size={14} />
-              <input
-                className="input"
+              <Search size={14} aria-hidden />
+              <Input
                 placeholder="Search all columns…"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
@@ -366,8 +380,10 @@ export function TableTab({
                 </button>
               ) : null}
             </div>
-            <button
-              className={`btn btn-sm${view.filters.length ? " btn-active" : ""}`}
+            <Button
+              size="sm"
+              active={view.filters.length > 0}
+              icon={<Filter size={14} aria-hidden />}
               aria-expanded={showFilters}
               onClick={() => {
                 setDraftFilters(view.filters.length ? view.filters : [{ column: columns[0]?.name ?? "", op: "eq", value: "" }]);
@@ -375,46 +391,49 @@ export function TableTab({
               }}
               disabled={columns.length === 0}
             >
-              <Filter size={14} /> Filter{view.filters.length ? ` · ${view.filters.length}` : ""}
-            </button>
+              Filter{view.filters.length ? ` · ${view.filters.length}` : ""}
+            </Button>
           </>
         ) : null}
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
         {readOnlyReason ? (
-          <span className="badge dbx-readonly" title={readOnlyReason}>
-            <Lock size={11} /> Read-only
-          </span>
+          <Badge className="dbx-readonly" title={readOnlyReason}>
+            <Lock size={11} aria-hidden /> Read-only
+          </Badge>
         ) : null}
         {isFetching && !isLoading ? <Spinner label="Refreshing" /> : null}
         {view.mode === "data" ? (
           <>
-            <button className="btn btn-ghost btn-icon" onClick={() => void refetch()} title="Refresh rows" aria-label="Refresh rows">
-              <RefreshCw size={14} />
-            </button>
+            <IconButton label="Refresh rows" onClick={() => void refetch()}>
+              <RefreshCw size={14} aria-hidden />
+            </IconButton>
+            {/* noTooltip + title: the native title says more than the accessible name. */}
             {!isView ? (
-              <button
-                className={`btn btn-ghost btn-icon${historyOpen ? " btn-active" : ""}`}
+              <IconButton
+                noTooltip
+                label="Toggle change history"
+                active={historyOpen}
                 onClick={() => setHistoryOpen((v) => !v)}
                 title="Change history: edits made here, with undo"
-                aria-label="Toggle change history"
                 aria-pressed={historyOpen}
               >
-                <History size={15} />
-              </button>
+                <History size={15} aria-hidden />
+              </IconButton>
             ) : null}
-            <button
-              className={`btn btn-ghost btn-icon${panel ? " btn-active" : ""}`}
+            <IconButton
+              noTooltip
+              label="Toggle value panel"
+              active={panel}
               onClick={togglePanel}
               title="Value panel: see and edit the selected cell in full"
-              aria-label="Toggle value panel"
               aria-pressed={panel}
             >
-              <PanelRight size={15} />
-            </button>
+              <PanelRight size={15} aria-hidden />
+            </IconButton>
             {editable ? (
-              <button className="btn btn-sm btn-primary" onClick={addRow}>
-                <Plus size={14} /> Row
-              </button>
+              <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={addRow}>
+                Row
+              </Button>
             ) : null}
           </>
         ) : null}
@@ -483,9 +502,9 @@ export function TableTab({
               </button>
             </span>
           ))}
-          <button className="btn btn-ghost btn-sm" onClick={() => setView({ filters: [], page: 1 })}>
+          <Button variant="ghost" size="sm" onClick={() => setView({ filters: [], page: 1 })}>
             Clear filters
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -519,9 +538,7 @@ export function TableTab({
                   title="Could not load rows"
                   hint={(error as Error).message}
                   action={
-                    <button className="btn" onClick={() => void refetch()}>
-                      Try again
-                    </button>
+                    <Button onClick={() => void refetch()}>Try again</Button>
                   }
                 />
               </div>
@@ -625,23 +642,23 @@ export function TableTab({
             ]
               .filter(Boolean)
               .join(" · ")}
-            {counts.failed ? <span style={{ color: "var(--danger)" }}> · {counts.failed} failed</span> : null}
+            {counts.failed ? <span className="text-danger"> · {counts.failed} failed</span> : null}
           </span>
           {counts.failed ? (
             <span className="dbx-commit-error" title={Object.values(pending.errors).join("\n")}>
               {Object.values(pending.errors)[0]}
             </span>
           ) : null}
-          <div style={{ flex: 1 }} />
-          <button className="btn btn-ghost btn-sm" onClick={() => setReview(true)} disabled={saving}>
+          <div className="flex-1" />
+          <Button variant="ghost" size="sm" onClick={() => setReview(true)} disabled={saving}>
             Review SQL
-          </button>
-          <button className="btn btn-sm" onClick={() => void discard()} disabled={saving}>
+          </Button>
+          <Button size="sm" onClick={() => void discard()} disabled={saving}>
             Discard
-          </button>
-          <button className="btn btn-sm btn-primary" onClick={() => void doSave()} disabled={saving}>
-            {saving ? <Spinner label="Saving" /> : null} Save <kbd className="dbx-kbd-primary hide-sm">Ctrl S</kbd>
-          </button>
+          </Button>
+          <Button size="sm" variant="primary" loading={saving} onClick={() => void doSave()}>
+            Save <kbd className="dbx-kbd-primary hide-sm">Ctrl S</kbd>
+          </Button>
         </div>
       ) : null}
 
@@ -651,11 +668,11 @@ export function TableTab({
             {data && data.rows.length > 0 ? <RowRange data={data} offset={offset} /> : data ? "No rows" : ""}
             {selected.size > 1 ? ` · ${selected.size} selected` : ""}
           </span>
-          <div style={{ flex: 1 }} />
+          <div className="flex-1" />
           <label className="flex items-center gap-1 text-sm muted">
             <span className="hide-sm">Rows per page</span>
-            <select
-              className="input dbx-pagesize"
+            <Select
+              className="dbx-pagesize"
               value={view.pageSize}
               onChange={(e) => setView({ pageSize: Number(e.target.value), page: 1 })}
               aria-label="Rows per page"
@@ -665,7 +682,7 @@ export function TableTab({
                   {n}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <Pagination
             page={view.page}
@@ -678,7 +695,7 @@ export function TableTab({
 
       {review ? (
         <Modal open wide onClose={() => setReview(false)} title={`Changes to ${tab.label}`}>
-          <p className="text-sm muted" style={{ marginTop: 0 }}>
+          <p className="text-sm muted mt-0">
             What saving will do, as SQL. Each row is applied on its own, in this order; if one fails, the others still
             go through and the failed one stays here for you to fix.
           </p>
@@ -687,19 +704,17 @@ export function TableTab({
               .map((m) => mutationSQL(m, quoted, columns, dialect))
               .join("\n")}
           </pre>
-          <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-            <button
-              className="btn btn-primary"
+          <div className="flex gap-2 mt-3">
+            <Button
+              variant="primary"
               onClick={() => {
                 setReview(false);
                 void doSave();
               }}
             >
               Save {count} change{count === 1 ? "" : "s"}
-            </button>
-            <button className="btn" onClick={() => setReview(false)}>
-              Close
-            </button>
+            </Button>
+            <Button onClick={() => setReview(false)}>Close</Button>
           </div>
         </Modal>
       ) : null}
@@ -741,19 +756,19 @@ function ValuePanel({
       <div className="dbx-valuepanel-head">
         <span className="truncate font-medium">{col ? col.name : "Value"}</span>
         {col ? <span className="muted text-xs truncate">{col.type}</span> : null}
-        <div style={{ flex: 1 }} />
-        <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close value panel">
-          <X size={14} />
-        </button>
+        <div className="flex-1" />
+        <IconButton label="Close value panel" onClick={onClose}>
+          <X size={14} aria-hidden />
+        </IconButton>
       </div>
       {!st ? (
-        <p className="muted text-sm" style={{ padding: ".75rem" }}>
+        <p className="muted text-sm p-3">
           Select a cell to see its full value here.
         </p>
       ) : draft !== null ? (
         <div className="dbx-valuepanel-body">
-          <textarea
-            className="input dbx-valuepanel-edit"
+          <Textarea
+            className="dbx-valuepanel-edit"
             value={draft}
             autoFocus
             onChange={(e) => setDraft(e.target.value)}
@@ -768,26 +783,27 @@ function ValuePanel({
             }}
             spellCheck={false}
           />
-          <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
-            <button
-              className="btn btn-sm btn-primary"
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="primary"
               onClick={() => {
                 onApply(draft);
                 setDraft(null);
               }}
             >
               Apply
-            </button>
-            <button className="btn btn-sm" onClick={() => setDraft(null)}>
+            </Button>
+            <Button size="sm" onClick={() => setDraft(null)}>
               Cancel
-            </button>
+            </Button>
             {kind === "json" ? (
-              <button className="btn btn-ghost btn-sm" onClick={() => setDraft(prettyValue(draft, "json"))}>
+              <Button variant="ghost" size="sm" onClick={() => setDraft(prettyValue(draft, "json"))}>
                 Format JSON
-              </button>
+              </Button>
             ) : null}
           </div>
-          <p className="muted text-xs" style={{ margin: 0 }}>
+          <p className="muted text-xs m-0">
             Ctrl+Enter applies. Nothing is written until you save the tab.
           </p>
         </div>
@@ -800,32 +816,33 @@ function ValuePanel({
           ) : (
             <pre className="dbx-valuepanel-pre">{prettyValue(st.value, kind)}</pre>
           )}
-          <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+          <div className="flex flex-wrap gap-2">
             {st.value !== null ? (
-              <button
-                className="btn btn-sm"
+              <Button
+                size="sm"
+                icon={<ClipboardCopy size={13} aria-hidden />}
                 onClick={() => void navigator.clipboard?.writeText(st.value ?? "").then(() => push("success", "Copied value"))}
               >
-                <ClipboardCopy size={13} /> Copy
-              </button>
+                Copy
+              </Button>
             ) : null}
             {editable && !locked ? (
-              <button className="btn btn-sm" onClick={() => setDraft(st.value ?? "")}>
+              <Button size="sm" onClick={() => setDraft(st.value ?? "")}>
                 Edit
-              </button>
+              </Button>
             ) : null}
             {editable && col?.nullable && st.value !== null ? (
-              <button className="btn btn-ghost btn-sm" onClick={() => onApply(null)}>
+              <Button variant="ghost" size="sm" onClick={() => onApply(null)}>
                 Set NULL
-              </button>
+              </Button>
             ) : null}
           </div>
           {locked ? (
-            <p className="muted text-xs" style={{ margin: 0 }}>
+            <p className="muted text-xs m-0">
               Shown cut short at 4 KB, so it can&apos;t be edited here. Use the SQL console.
             </p>
           ) : st.changed ? (
-            <p className="text-xs" style={{ margin: 0, color: "var(--warning)" }}>
+            <p className="text-xs m-0 text-warning">
               Changed — was {st.original === null ? "NULL" : `“${st.original.slice(0, 80)}${st.original.length > 80 ? "…" : ""}”`}
             </p>
           ) : null}

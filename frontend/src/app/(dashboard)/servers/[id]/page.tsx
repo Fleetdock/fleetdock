@@ -4,10 +4,27 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { Ban, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
+import { Activity, Ban, Database, HeartPulse, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table";
 import { MetricChart, type ChartPoint } from "@/components/chart";
-import { EmptyState, ErrorText, Field, Menu, Modal, PageHeader, Spinner, StatusBadge, Time } from "@/components/ui";
+import {
+  Button,
+  Callout,
+  DetailSkeleton,
+  ErrorText,
+  Field,
+  KeyValueList,
+  Menu,
+  Modal,
+  PageHeader,
+  QueryError,
+  SectionHeader,
+  SegmentedControl,
+  Skeleton,
+  StatTile,
+  StatusBadge,
+  Time,
+} from "@/components/ui";
 import { InstallCommand } from "@/components/install-command";
 import { AddServerWizard } from "@/components/database/add-server-wizard";
 import { engineLabel } from "@/lib/engines";
@@ -30,20 +47,33 @@ import { friendlyError } from "@/lib/errors";
 export default function ServerDetailPage() {
   const params = useParams();
   const id = String(params.id);
-  const { data: server, isLoading } = useServer(id);
-  const { data: instances } = useInstances(id);
+  const { data: server, isLoading, error, refetch } = useServer(id);
+  const { data: instances, isLoading: instancesLoading } = useInstances(id);
   const [open, setOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const can = useCan();
 
   if (isLoading) {
-    return <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>;
+    return <DetailSkeleton label="Loading server" />;
   }
   if (!server) {
-    return <EmptyState title="Server not found" />;
+    return (
+      <QueryError
+        error={error}
+        what="server"
+        onRetry={() => void refetch()}
+        backHref="/servers"
+        backLabel="Back to servers"
+      />
+    );
   }
 
   const instanceCount = instances?.items.length ?? 0;
+  const addButton = can("instance:write") ? (
+    <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setOpen(true)}>
+      Add database server
+    </Button>
+  ) : undefined;
 
   return (
     <div>
@@ -57,56 +87,82 @@ export default function ServerDetailPage() {
             {can("server:write") ? (
               <ServerControls server={server} instanceCount={instanceCount} onRename={() => setRenameOpen(true)} />
             ) : null}
-            {can("instance:write") ? (
-              <button className="btn btn-primary" onClick={() => setOpen(true)}>
-                <Plus size={16} /> Add database server
-              </button>
-            ) : null}
+            {addButton}
           </>
         }
       />
 
-      <div className="card" style={{ padding: "1.1rem", marginBottom: "1.25rem" }}>
-        <dl className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem" }}>
-          <Detail label="Hostname" value={server.hostname} />
-          <Detail label="Address" value={server.address ?? "—"} />
-          <Detail label="Agent" value={server.agent_version ?? "—"} />
-          <Detail label="Tags" value={server.tags.length ? server.tags.join(", ") : "—"} />
-          <Detail label="Connected" value={<Time value={server.created_at} />} />
-        </dl>
+      <div className="stat-strip">
+        <StatTile
+          label="Database servers"
+          icon={<Database size={13} aria-hidden />}
+          value={instancesLoading ? "—" : instanceCount}
+          hint="On this machine"
+        />
+        <StatTile
+          label="Last heartbeat"
+          icon={<HeartPulse size={13} aria-hidden />}
+          value={server.last_heartbeat_at ? <Time value={server.last_heartbeat_at} /> : "Never"}
+          hintTone={server.status === "offline" ? "danger" : undefined}
+          hint={server.status === "offline" ? "No heartbeat for over two minutes" : undefined}
+        />
+        <StatTile
+          label="Agent"
+          icon={<Activity size={13} aria-hidden />}
+          value={server.agent_version ?? "—"}
+          hint={server.agent_version ? "Installed version" : "Not connected yet"}
+        />
       </div>
 
-      <ServerMetrics id={id} />
+      <div className="detail-grid">
+        <div className="detail-main">
+          <ServerMetrics id={id} />
 
-      <h2 className="section-title">Database servers on this machine</h2>
-      <DataTable
-        columns={[
-          {
-            id: "name",
-            header: "Name",
-            className: "font-medium",
-            render: (i) => (
-              <Link href={`/instances/${i.id}`} className="link-plain">
-                {i.name}
-              </Link>
-            ),
-          },
-          { id: "engine", header: "Engine", className: "muted", render: (i) => `${engineLabel(i.engine)} ${i.engine_version}` },
-          { id: "port", header: "Port", className: "muted", hideOnMobile: true, render: (i) => i.port },
-          { id: "status", header: "Status", render: (i) => <StatusBadge status={i.status} /> },
-        ]}
-        rows={instances?.items ?? []}
-        rowKey={(i) => i.id}
-        emptyTitle="No database servers on this machine yet"
-        emptyHint="Let Fleetdock create one here, or tell it about one that is already running."
-        emptyAction={
-          can("instance:write") ? (
-            <button className="btn btn-primary" onClick={() => setOpen(true)}>
-              <Plus size={16} /> Add database server
-            </button>
-          ) : undefined
-        }
-      />
+          <section className="section">
+            <SectionHeader
+              title="Database servers on this machine"
+              icon={<Database size={17} aria-hidden />}
+            />
+            <DataTable
+              columns={[
+                {
+                  id: "name",
+                  header: "Name",
+                  className: "font-medium",
+                  render: (i) => (
+                    <Link href={`/instances/${i.id}`} className="link-plain">
+                      {i.name}
+                    </Link>
+                  ),
+                },
+                { id: "engine", header: "Engine", className: "muted", render: (i) => `${engineLabel(i.engine)} ${i.engine_version}` },
+                { id: "port", header: "Port", align: "right", className: "muted num", hideOnMobile: true, render: (i) => i.port },
+                { id: "status", header: "Status", render: (i) => <StatusBadge status={i.status} /> },
+              ]}
+              rows={instances?.items ?? []}
+              rowKey={(i) => i.id}
+              isLoading={instancesLoading}
+              emptyTitle="No database servers on this machine yet"
+              emptyHint="Let Fleetdock create one here, or tell it about one that is already running."
+              emptyAction={addButton}
+            />
+          </section>
+        </div>
+
+        <aside className="detail-aside" aria-label="Server details">
+          <div className="card panel aside-card">
+            <h2 className="panel-title">Details</h2>
+            <KeyValueList
+              items={[
+                { label: "Hostname", value: server.hostname, mono: true, copy: server.hostname },
+                { label: "Address", value: server.address ?? "—", mono: !!server.address, copy: server.address ?? undefined },
+                { label: "Tags", value: server.tags.length ? server.tags.join(", ") : "—" },
+                { label: "Connected", value: <Time value={server.created_at} /> },
+              ]}
+            />
+          </div>
+        </aside>
+      </div>
 
       <AddServerWizard open={open} onClose={() => setOpen(false)} serverId={id} />
       <RenameServerModal open={renameOpen} onClose={() => setRenameOpen(false)} server={server} />
@@ -187,11 +243,12 @@ function ServerControls({
 
   return (
     <>
-      <button className="btn btn-sm" onClick={onRename} aria-label="Rename server">
-        <Pencil size={15} /> Rename
-      </button>
-      <button
-        className="btn btn-sm btn-danger"
+      <Button icon={<Pencil size={15} aria-hidden />} onClick={onRename} aria-label="Rename server">
+        Rename
+      </Button>
+      <Button
+        variant="danger"
+        icon={<Trash2 size={15} aria-hidden />}
         disabled={busy || blocked}
         onClick={onDelete}
         title={
@@ -200,8 +257,8 @@ function ServerControls({
             : undefined
         }
       >
-        <Trash2 size={15} /> Remove
-      </button>
+        Remove
+      </Button>
       <Menu
         label="Agent token actions"
         items={[
@@ -212,12 +269,14 @@ function ServerControls({
       <Modal open={reenroll !== null} onClose={() => setReenroll(null)} title={`Re-enroll ${server.name}`}>
         {reenroll ? (
           <>
-            <p className="callout callout-info">
+            <Callout tone="info">
               The old agent token no longer works. This command is shown once and expires in 24 hours.
-            </p>
+            </Callout>
             <InstallCommand command={reenroll} />
-            <div className="flex justify-end" style={{ marginTop: ".9rem" }}>
-              <button className="btn btn-primary" onClick={() => setReenroll(null)}>Done</button>
+            <div className="modal-actions">
+              <Button variant="primary" onClick={() => setReenroll(null)}>
+                Done
+              </Button>
             </div>
           </>
         ) : null}
@@ -269,7 +328,7 @@ function RenameServerModal({
   return (
     <Modal open={open} onClose={onClose} title="Rename server">
       <form onSubmit={onSubmit}>
-        <Field label="Name">
+        <Field label="Name" hint="Lowercase letters, digits, hyphens and underscores (2–63 characters).">
           <input
             className="input"
             value={name}
@@ -284,36 +343,29 @@ function RenameServerModal({
           <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="prod, eu-west" />
         </Field>
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={update.isPending}>
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={update.isPending}>
             {update.isPending ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
   );
 }
 
-function Detail({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="muted text-sm">{label}</dt>
-      <dd className="font-medium" style={{ margin: 0 }}>{value}</dd>
-    </div>
-  );
-}
+type Range = "1" | "6" | "24" | "168";
 
-const RANGES = [
-  { label: "1h", hours: 1 },
-  { label: "6h", hours: 6 },
-  { label: "24h", hours: 24 },
-  { label: "7d", hours: 168 },
+const RANGES: { value: Range; label: string }[] = [
+  { value: "1", label: "1h" },
+  { value: "6", label: "6h" },
+  { value: "24", label: "24h" },
+  { value: "168", label: "7d" },
 ];
 
 function ServerMetrics({ id }: { id: string }) {
-  const [hours, setHours] = useState(6);
-  const { data, isLoading } = useServerMetrics(id, hours);
+  const [range, setRange] = useState<Range>("6");
+  const { data, isLoading } = useServerMetrics(id, Number(range));
   const samples = data?.items ?? [];
 
   const cpu: ChartPoint[] = samples.map((s) => ({ t: s.collected_at, v: s.cpu_pct ?? null }));
@@ -322,29 +374,24 @@ function ServerMetrics({ id }: { id: string }) {
   const conns: ChartPoint[] = samples.map((s) => ({ t: s.collected_at, v: s.active_connections ?? null }));
 
   return (
-    <section style={{ marginBottom: "1.5rem" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: ".6rem" }}>
-        <h2 className="font-semibold">Metrics</h2>
-        <div className="flex items-center gap-1">
-          {RANGES.map((r) => (
-            <button
-              key={r.hours}
-              className={`btn btn-sm${hours === r.hours ? " btn-primary" : ""}`}
-              onClick={() => setHours(r.hours)}
-            >
-              {r.label}
-            </button>
+    <section className="section">
+      <SectionHeader
+        title="Metrics"
+        icon={<Activity size={17} aria-hidden />}
+        actions={<SegmentedControl options={RANGES} value={range} onChange={setRange} label="Time range" size="sm" />}
+      />
+      {isLoading && samples.length === 0 ? (
+        <div className="chart-grid-layout" role="status" aria-label="Loading metrics">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} height="10.5rem" radius="var(--radius)" />
           ))}
         </div>
-      </div>
-      {isLoading && samples.length === 0 ? (
-        <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading metrics…</div>
       ) : (
-        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: ".9rem" }}>
-          <MetricChart title="CPU" points={cpu} unit="%" max={100} color="var(--accent)" />
-          <MetricChart title="Memory used" points={mem} unit="%" max={100} color="#22c55e" />
-          <MetricChart title="Disk used" points={disk} unit="%" max={100} color="#f59e0b" />
-          <MetricChart title="Connections" points={conns} color="#8b5cf6" />
+        <div className="chart-grid-layout">
+          <MetricChart title="CPU" points={cpu} unit="%" max={100} color="var(--chart-1)" />
+          <MetricChart title="Memory used" points={mem} unit="%" max={100} color="var(--chart-2)" />
+          <MetricChart title="Disk used" points={disk} unit="%" max={100} color="var(--chart-3)" />
+          <MetricChart title="Connections" points={conns} color="var(--chart-4)" />
         </div>
       )}
     </section>

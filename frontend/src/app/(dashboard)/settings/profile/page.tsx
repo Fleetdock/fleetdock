@@ -1,43 +1,70 @@
 "use client";
 
+import { KeyRound, UserRound } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { ErrorText, Field, PageHeader, Spinner, StatusBadge } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import { FormError } from "@/components/access/form-error";
+import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, QueryError, Skeleton, StatusBadge } from "@/components/ui";
+import { fieldError } from "@/lib/errors";
 import { useChangePassword, useProfile, useUpdateProfile } from "@/lib/hooks";
 
-export default function ProfilePage() {
-  const { data: profile, isLoading } = useProfile();
+const header = <PageHeader title="Your profile" description="Your name, email and password." />;
 
-  if (isLoading || !profile) {
-    return <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>;
+export default function ProfilePage() {
+  const { data: profile, isLoading, error, refetch } = useProfile();
+
+  if (isLoading) {
+    return (
+      <div className="max-w-xl" role="status" aria-label="Loading profile">
+        {header}
+        <div className="stack" aria-hidden>
+          {[0, 1].map((i) => (
+            <div key={i} className="card panel stack-sm">
+              <Skeleton width="35%" height=".95rem" />
+              <Skeleton height="2.25rem" radius="var(--radius-md)" />
+              <Skeleton height="2.25rem" radius="var(--radius-md)" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (!profile) {
+    return (
+      <div className="max-w-xl">
+        {header}
+        <QueryError error={error} what="profile" onRetry={() => void refetch()} />
+      </div>
+    );
   }
 
   return (
-    <div style={{ maxWidth: 560 }}>
-      <PageHeader
-        title="Your profile"
-        description="Your name, email and password."
-      />
+    <div className="max-w-xl">
+      {header}
 
-      <div className="card" style={{ padding: "1.1rem", marginBottom: "1.25rem" }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: ".9rem" }}>
-          <div>
-            <div className="font-semibold">{profile.name}</div>
-            <div className="muted text-sm">{profile.email}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={profile.status} />
-            <span className="badge badge-gray">{profile.roles.join(", ") || "no role"}</span>
-          </div>
-        </div>
-        <ProfileForm initialName={profile.name} initialEmail={profile.email} />
-      </div>
+      <Card className="mb-5">
+        <CardHeader
+          icon={<UserRound size={15} aria-hidden className="text-muted" />}
+          title={profile.name}
+          description={profile.email}
+          actions={
+            <>
+              <StatusBadge status={profile.status} />
+              <Badge tone="neutral">{profile.roles.join(", ") || "no role"}</Badge>
+            </>
+          }
+        />
+        <CardBody>
+          <ProfileForm initialName={profile.name} initialEmail={profile.email} />
+        </CardBody>
+      </Card>
 
-      <div className="card" style={{ padding: "1.1rem" }}>
-        <h2 className="font-semibold" style={{ marginBottom: ".8rem" }}>Change password</h2>
-        <PasswordForm />
-      </div>
+      <Card>
+        <CardHeader icon={<KeyRound size={15} aria-hidden className="text-muted" />} title="Change password" />
+        <CardBody>
+          <PasswordForm />
+        </CardBody>
+      </Card>
     </div>
   );
 }
@@ -46,7 +73,7 @@ function ProfileForm({ initialName, initialEmail }: { initialName: string; initi
   const update = useUpdateProfile();
   const [name, setName] = useState(initialName);
   const [email, setEmail] = useState(initialEmail);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -62,24 +89,28 @@ function ProfileForm({ initialName, initialEmail }: { initialName: string; initi
       await update.mutateAsync({ name, email });
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to update profile");
+      setError(err);
     }
   }
 
   return (
     <form onSubmit={onSubmit}>
-      <Field label="Name">
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+      <Field label="Name" error={fieldError(error, "name")}>
+        <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
       </Field>
-      <Field label="Email">
-        <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+      <Field label="Email" error={fieldError(error, "email")}>
+        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
       </Field>
-      <ErrorText message={error ?? undefined} />
-      <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-        {saved ? <span className="muted text-sm">Saved.</span> : null}
-        <button type="submit" className="btn btn-primary" disabled={update.isPending}>
+      <FormError error={error} fields={["name", "email"]} fallback="Failed to update profile" />
+      <div className="form-actions mt-2 justify-end">
+        {saved ? (
+          <span className="muted text-sm" role="status">
+            Saved.
+          </span>
+        ) : null}
+        <Button type="submit" variant="primary" loading={update.isPending}>
           {update.isPending ? "Saving…" : "Save profile"}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -90,15 +121,17 @@ function PasswordForm() {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [mismatch, setMismatch] = useState(false);
   const [saved, setSaved] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setMismatch(false);
     setSaved(false);
     if (next !== confirm) {
-      setError("New passwords do not match");
+      setMismatch(true);
       return;
     }
     try {
@@ -108,29 +141,53 @@ function PasswordForm() {
       setConfirm("");
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to change password");
+      setError(err);
     }
   }
 
   return (
     <form onSubmit={onSubmit}>
-      <Field label="Current password">
-        <input className="input" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
+      <Field label="Current password" error={fieldError(error, "current_password")}>
+        <Input
+          type="password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          autoComplete="current-password"
+          required
+        />
       </Field>
-      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
-        <Field label="New password (min 8 chars)">
-          <input className="input" type="password" value={next} onChange={(e) => setNext(e.target.value)} minLength={8} autoComplete="new-password" required />
+      <div className="form-grid">
+        <Field label="New password" hint="At least 8 characters." error={fieldError(error, "new_password")}>
+          <Input
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            minLength={8}
+            autoComplete="new-password"
+            required
+          />
         </Field>
-        <Field label="Confirm new password">
-          <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} minLength={8} autoComplete="new-password" required />
+        <Field label="Confirm new password" error={mismatch ? "New passwords do not match" : undefined}>
+          <Input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            minLength={8}
+            autoComplete="new-password"
+            required
+          />
         </Field>
       </div>
-      <ErrorText message={error ?? undefined} />
-      <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-        {saved ? <span className="muted text-sm">Password changed.</span> : null}
-        <button type="submit" className="btn btn-primary" disabled={change.isPending}>
+      <FormError error={error} fields={["current_password", "new_password"]} fallback="Failed to change password" />
+      <div className="form-actions mt-2 justify-end">
+        {saved ? (
+          <span className="muted text-sm" role="status">
+            Password changed.
+          </span>
+        ) : null}
+        <Button type="submit" variant="primary" loading={change.isPending}>
           {change.isPending ? "Saving…" : "Change password"}
-        </button>
+        </Button>
       </div>
     </form>
   );

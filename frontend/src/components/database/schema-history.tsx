@@ -3,7 +3,7 @@
 import { Camera, GitCompareArrows, History, RotateCcw } from "lucide-react";
 import { useState } from "react";
 
-import { EmptyState, ErrorText, Spinner, Time } from "@/components/ui";
+import { Badge, Button, Callout, EmptyState, ErrorText, QueryError, Skeleton, Time } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useSchemaHistory, useSchemaHistoryMutations, useSchemaSnapshot } from "@/lib/hooks";
 import type { Database, SchemaSnapshot } from "@/lib/types";
@@ -36,26 +36,43 @@ function summaryText(s: SchemaSnapshot) {
  * database.
  */
 export function SchemaHistorySection({ database, canWrite }: { database: Database; canWrite: boolean }) {
-  const { data, isLoading, error } = useSchemaHistory(database.id);
+  const { data, isLoading, error, refetch } = useSchemaHistory(database.id);
   const { setWatch, snapshot } = useSchemaHistoryMutations(database.id);
   const [open, setOpen] = useState<string | null>(null);
   const [compare, setCompare] = useState<{ snapshot?: SnapshotSource } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  if (isLoading) return <Spinner />;
+  if (isLoading) {
+    return (
+      <div role="status" aria-label="Loading schema history" className="stack-sm">
+        <Skeleton height="4rem" radius="var(--radius)" />
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} height="2.75rem" width={`${90 - i * 8}%`} radius="var(--radius-md)" />
+        ))}
+      </div>
+    );
+  }
   if (error) {
-    return <ErrorText message={error instanceof ApiError ? error.message : "Could not load the schema history"} />;
+    return <QueryError error={error} what="schema history" onRetry={() => void refetch()} />;
   }
   if (!data) return null;
   const watching = data.watch?.enabled ?? false;
   const fail = (e: unknown) => setActionError(e instanceof ApiError ? e.message : "Something went wrong");
+  const takeSnapshot = () => {
+    setActionError(null);
+    setNote(null);
+    snapshot.mutate(undefined, {
+      onError: fail,
+      onSuccess: (r) => setNote(r.created ? "Snapshot recorded." : "No change since the last snapshot."),
+    });
+  };
 
   return (
     <div>
-      <div className="card flex items-center gap-3" style={{ padding: ".8rem 1rem", marginBottom: ".9rem", flexWrap: "wrap" }}>
+      <div className="card flex flex-wrap items-center gap-3 px-4 py-3 mb-3.5">
         <History size={18} className="muted" aria-hidden />
-        <div style={{ flex: 1, minWidth: "12rem" }}>
+        <div className="flex-1 min-w-48">
           {watching ? (
             <>
               <div className="font-medium">Schema changes are tracked</div>
@@ -80,34 +97,24 @@ export function SchemaHistorySection({ database, canWrite }: { database: Databas
           )}
         </div>
         {canWrite ? (
-          <button
-            className={`btn btn-sm${watching ? "" : " btn-primary"}`}
-            disabled={setWatch.isPending}
+          <Button
+            size="sm"
+            variant={watching ? "secondary" : "primary"}
+            loading={setWatch.isPending}
             onClick={() => {
               setActionError(null);
               setWatch.mutate(!watching, { onError: fail });
             }}
           >
-            {setWatch.isPending ? <Spinner /> : null} {watching ? "Stop tracking" : "Track changes"}
-          </button>
+            {watching ? "Stop tracking" : "Track changes"}
+          </Button>
         ) : null}
-        <button
-          className="btn btn-sm"
-          disabled={snapshot.isPending}
-          onClick={() => {
-            setActionError(null);
-            setNote(null);
-            snapshot.mutate(undefined, {
-              onError: fail,
-              onSuccess: (r) => setNote(r.created ? "Snapshot recorded." : "No change since the last snapshot."),
-            });
-          }}
-        >
-          {snapshot.isPending ? <Spinner /> : <Camera size={14} />} Snapshot now
-        </button>
-        <button className="btn btn-sm" onClick={() => setCompare({})}>
-          <GitCompareArrows size={14} /> Compare with…
-        </button>
+        <Button size="sm" icon={<Camera size={14} aria-hidden />} loading={snapshot.isPending} onClick={takeSnapshot}>
+          Snapshot now
+        </Button>
+        <Button size="sm" icon={<GitCompareArrows size={14} aria-hidden />} onClick={() => setCompare({})}>
+          Compare with…
+        </Button>
       </div>
       <ErrorText message={actionError ?? undefined} />
       {note ? (
@@ -116,15 +123,23 @@ export function SchemaHistorySection({ database, canWrite }: { database: Databas
         </p>
       ) : null}
       {data.watch?.last_error ? (
-        <div className="callout callout-warning" style={{ marginBottom: ".9rem" }}>
-          The last check failed: {data.watch.last_error}
-        </div>
+        <Callout tone="warning">The last check failed: {data.watch.last_error}</Callout>
       ) : null}
 
       {data.items.length === 0 ? (
         <EmptyState
           title="No snapshots yet"
           hint="Track changes or take a snapshot to start this database's schema history."
+          action={
+            <Button
+              variant="primary"
+              icon={<Camera size={14} aria-hidden />}
+              loading={snapshot.isPending}
+              onClick={takeSnapshot}
+            >
+              Snapshot now
+            </Button>
+          }
         />
       ) : (
         <ol className="schema-timeline">
@@ -162,11 +177,11 @@ function SnapshotRow({
   const first = !snap.previous_id;
   return (
     <li className={`schema-snapshot${open ? " is-open" : ""}`}>
-      <button className="schema-snapshot-head" onClick={onToggle} aria-expanded={open}>
+      <button type="button" className="schema-snapshot-head" onClick={onToggle} aria-expanded={open}>
         <span className="schema-snapshot-time">
           <Time value={snap.taken_at} />
         </span>
-        <span className="badge badge-gray">{first ? "first snapshot" : TRIGGER_LABEL[snap.trigger]}</span>
+        <Badge>{first ? "first snapshot" : TRIGGER_LABEL[snap.trigger]}</Badge>
         <span className="schema-snapshot-text">
           {first ? summaryText(snap) : (snap.summary.highlights ?? []).join(" · ")}
         </span>
@@ -196,27 +211,31 @@ function SnapshotDetail({
   const prev = data?.previous;
   return (
     <div className="schema-snapshot-body">
-      <p className="text-sm muted" style={{ margin: 0 }}>
+      <p className="text-sm muted m-0">
         {summaryText(snap)}
         {snap.summary.truncated ? " (only the first objects were read)" : ""} · fingerprint <code>{snap.hash.slice(0, 12)}</code>
       </p>
       {!snap.summary.stored ? (
         <p className="text-sm muted">This structure was too large to keep; only its fingerprint was recorded.</p>
       ) : isLoading ? (
-        <Spinner />
+        <div role="status" aria-label="Loading changes" className="stack-sm">
+          <Skeleton width="60%" />
+          <Skeleton width="45%" />
+        </div>
       ) : data && snap.previous_id ? (
         <SchemaChangeList changes={data.changes} />
       ) : null}
       {prev?.summary.stored ? (
         <div>
-          <button
-            className="btn btn-sm"
+          <Button
+            size="sm"
+            icon={<RotateCcw size={14} aria-hidden />}
             onClick={() =>
               onRestore({ id: prev.id, label: `its schema as of ${new Date(prev.taken_at).toLocaleString()}` })
             }
           >
-            <RotateCcw size={14} /> Go back to the version before this…
-          </button>
+            Go back to the version before this…
+          </Button>
         </div>
       ) : null}
     </div>

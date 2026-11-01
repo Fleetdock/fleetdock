@@ -3,7 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useToast } from "@/components/toast";
-import { Spinner } from "@/components/ui";
+import { Button, IconButton, Input, Spinner } from "@/components/ui";
 import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells";
 import { objectName, type OpenRequest } from "@/lib/data-browser/tabs";
 import { formatBytes } from "@/lib/format";
@@ -290,7 +290,7 @@ export const ObjectTree = forwardRef<
         ) : (
           <Table2 size={14} className="dbx-tree-icon" />
         )}
-        <span className="truncate" style={{ flex: 1 }}>
+        <span className="truncate flex-1">
           {item.kind === "object" && grouped ? <span className="muted">{item.schema}.</span> : null}
           <Highlight text={item.label} query={q} />
         </span>
@@ -308,11 +308,11 @@ export const ObjectTree = forwardRef<
     );
   } else if (error) {
     body = (
-      <div className="dbx-tree-note" style={{ color: "var(--danger)" }}>
+      <div className="dbx-tree-note text-danger">
         {error}
-        <button className="btn btn-sm" style={{ marginTop: ".5rem" }} onClick={onRefresh}>
+        <Button size="sm" className="mt-2" onClick={onRefresh}>
           Try again
-        </button>
+        </Button>
       </div>
     );
   } else if (relations.length === 0 && objectCount === 0) {
@@ -345,7 +345,7 @@ export const ObjectTree = forwardRef<
           >
             <ChevronRight size={13} className={`dbx-chevron${isOpen ? " open" : ""}`} />
             {isOpen ? <FolderOpen size={14} /> : <Folder size={14} />}
-            <span className="truncate" style={{ flex: 1 }}>
+            <span className="truncate flex-1">
               {s}
             </span>
             <span className="dbx-tree-count">{list.length}</span>
@@ -360,7 +360,7 @@ export const ObjectTree = forwardRef<
   const objectsBody =
     isLoading || error || objectGroups.length === 0 ? null : (
       <div className="dbx-tree-objects">
-        <div className="dbx-tree-title" style={{ padding: ".7rem .45rem .25rem" }}>
+        <div className="dbx-tree-title px-[.45rem] pt-[.7rem] pb-1">
           Routines &amp; more
         </div>
         {objectGroups.map((g) => {
@@ -382,7 +382,7 @@ export const ObjectTree = forwardRef<
               >
                 <ChevronRight size={13} className={`dbx-chevron${isOpen ? " open" : ""}`} />
                 <ObjectIcon kind={g.kind} />
-                <span className="truncate" style={{ flex: 1 }}>
+                <span className="truncate flex-1">
                   {g.label}
                 </span>
                 <span className="dbx-tree-count">{g.list.length}</span>
@@ -403,37 +403,30 @@ export const ObjectTree = forwardRef<
         <span className="dbx-tree-title">
           Tables
           {relations.length ? (
-            <span className="muted" style={{ fontWeight: 400 }}>
+            <span className="muted font-normal">
               {" "}
               {q ? `${matches.length} of ${relations.length}` : `${tableCount}${viewCount ? ` + ${viewCount} views` : ""}`}
             </span>
           ) : null}
         </span>
         <span className="flex items-center">
-          <button className="btn btn-ghost btn-icon" onClick={() => onNewQuery()} title="New SQL query" aria-label="New SQL query">
-            <SquareTerminal size={14} />
-          </button>
+          <IconButton label="New SQL query" onClick={() => onNewQuery()}>
+            <SquareTerminal size={14} aria-hidden />
+          </IconButton>
           {canWrite ? (
-            <button className="btn btn-ghost btn-icon" onClick={onCreateTable} title="Create table" aria-label="Create table">
-              <Plus size={15} />
-            </button>
+            <IconButton label="Create table" onClick={onCreateTable}>
+              <Plus size={15} aria-hidden />
+            </IconButton>
           ) : null}
-          <button
-            className="btn btn-ghost btn-icon"
-            onClick={onRefresh}
-            title="Refresh the list"
-            aria-label="Refresh the list"
-            disabled={refreshing}
-          >
-            <RefreshCw size={14} className={refreshing ? "spin-icon" : undefined} />
-          </button>
+          <IconButton label="Refresh the list" onClick={onRefresh} disabled={refreshing}>
+            <RefreshCw size={14} aria-hidden className={refreshing ? "spin-icon" : undefined} />
+          </IconButton>
         </span>
       </div>
-      <div className="dbx-search" style={{ margin: "0 .6rem .4rem" }}>
-        <Search size={14} />
-        <input
+      <div className="dbx-search mx-[.6rem] mb-[.4rem]">
+        <Search size={14} aria-hidden />
+        <Input
           ref={searchRef}
-          className="input"
           placeholder="Search tables…"
           value={query}
           onChange={(e) => {

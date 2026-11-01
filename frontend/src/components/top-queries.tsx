@@ -2,13 +2,29 @@
 
 import { useState } from "react";
 
-import { Info } from "lucide-react";
-
-import { CopyButton, ErrorText, Spinner } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import {
+  Badge,
+  Button,
+  Callout,
+  CopyButton,
+  EmptyState,
+  Input,
+  SegmentedControl,
+  Table,
+  TableSkeleton,
+  Toolbar,
+  buttonClass,
+} from "@/components/ui";
+import { friendlyError } from "@/lib/errors";
 import { useTopQueries } from "@/lib/hooks";
 
 type Sort = "total" | "mean" | "calls";
+
+const SORT_OPTIONS: { value: Sort; label: string }[] = [
+  { value: "total", label: "Total time" },
+  { value: "mean", label: "Slowest per run" },
+  { value: "calls", label: "Most frequent" },
+];
 
 function ms(v: number) {
   if (v >= 60_000) return `${(v / 60_000).toFixed(1)} min`;
@@ -25,89 +41,104 @@ function ms(v: number) {
 export function TopQueriesView({ instanceId }: { instanceId: string }) {
   const [sort, setSort] = useState<Sort>("total");
   const [database, setDatabase] = useState("");
-  const { data, isLoading, error } = useTopQueries(instanceId, sort, database.trim());
+  const { data, isLoading, error, refetch } = useTopQueries(instanceId, sort, database.trim());
 
-  if (isLoading) return <div className="flex items-center gap-2 muted text-sm"><Spinner /> Loading…</div>;
-  if (error) return <ErrorText message={error instanceof ApiError ? error.message : "Failed to load"} />;
-  if (!data?.available) {
+  if (error) {
     return (
-      <div className="callout callout-info flex gap-2">
-        <Info size={16} style={{ flex: "none", marginTop: 2 }} aria-hidden />
-        <span>{data?.note ?? "This server does not collect statement statistics."}</span>
-      </div>
+      <Callout
+        tone="danger"
+        title="Couldn't load top queries"
+        actions={
+          <Button size="sm" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        }
+      >
+        {friendlyError(error)}
+      </Callout>
     );
   }
-  const totalMs = data.queries.reduce((a, q) => a + q.total_ms, 0) || 1;
+  if (data && !data.available) {
+    return <Callout tone="info">{data.note ?? "This server does not collect statement statistics."}</Callout>;
+  }
+
+  const queries = data?.queries ?? [];
+  const totalMs = queries.reduce((a, q) => a + q.total_ms, 0) || 1;
   return (
     <div className="card">
-      <div className="flex items-center gap-2" style={{ padding: ".6rem .8rem", flexWrap: "wrap" }}>
-        <div className="segmented" role="group" aria-label="Sort by">
-          {(["total", "mean", "calls"] as Sort[]).map((s) => (
-            <button key={s} aria-pressed={sort === s} onClick={() => setSort(s)} style={{ height: "2rem" }}>
-              {s === "total" ? "Total time" : s === "mean" ? "Slowest per run" : "Most frequent"}
-            </button>
-          ))}
-        </div>
-        <input
-          className="input"
-          style={{ maxWidth: "14rem", height: "2rem" }}
+      {/* The toolbar stays mounted while a new sort or filter loads, so typing in the filter keeps focus. */}
+      <Toolbar className="m-0 px-3 py-2.5">
+        <SegmentedControl options={SORT_OPTIONS} value={sort} onChange={setSort} label="Sort by" size="sm" />
+        <Input
+          size="sm"
+          className="max-w-56"
           placeholder="Only database…"
           value={database}
           onChange={(e) => setDatabase(e.target.value)}
           aria-label="Only statements run in this database"
         />
-        <span style={{ flex: 1 }} />
-        {data.stats_since ? (
-          <span className="text-sm muted">since {new Date(data.stats_since).toLocaleString()}</span>
+        <span className="toolbar-spacer" />
+        {data?.stats_since ? (
+          <span className="text-sm text-muted">since {new Date(data.stats_since).toLocaleString()}</span>
         ) : null}
-      </div>
-      {data.queries.length === 0 ? (
-        <p className="muted text-sm" style={{ padding: "0 .8rem .8rem" }}>No statements recorded yet.</p>
+      </Toolbar>
+      {isLoading || !data ? (
+        <TableSkeleton bare rows={5} columns={5} />
+      ) : queries.length === 0 ? (
+        <EmptyState
+          plain
+          title="No statements recorded yet"
+          hint={
+            database.trim()
+              ? "Nothing has run in that database since statistics were last reset. Clear the filter to see every database."
+              : "Statements appear here once applications start running queries on this server."
+          }
+        />
       ) : (
-        <div style={{ maxHeight: 560, overflowY: "auto" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Statement</th>
-                <th style={{ textAlign: "right" }}>Calls</th>
-                <th style={{ textAlign: "right" }}>Total</th>
-                <th style={{ textAlign: "right" }}>Per run</th>
-                <th style={{ textAlign: "right" }}>Rows</th>
+        <Table bare sticky wrapClassName="max-h-140 overflow-y-auto">
+          <thead>
+            <tr>
+              <th>Statement</th>
+              <th className="num">Calls</th>
+              <th className="num">Total</th>
+              <th className="num">Per run</th>
+              <th className="num">Rows</th>
+            </tr>
+          </thead>
+          <tbody>
+            {queries.map((q, i) => (
+              <tr key={i}>
+                <td className="max-w-xl">
+                  <div className="flex items-start gap-2">
+                    <code className="flex-1 text-sm whitespace-pre-wrap break-words">
+                      {q.query.length > 600 ? `${q.query.slice(0, 600)}…` : q.query}
+                    </code>
+                    <CopyButton value={q.query} className={buttonClass({ variant: "ghost", size: "sm" })} />
+                  </div>
+                  <div className="row mt-1 text-sm text-muted">
+                    <span>{q.database || "—"}</span>
+                    {q.no_index_used ? <Badge tone="warning">{q.no_index_used} runs without a good index</Badge> : null}
+                    {q.cache_hit_pct !== undefined && q.cache_hit_pct < 90 ? (
+                      <Badge tone="warning">cache hit {q.cache_hit_pct.toFixed(0)}%</Badge>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="num">{q.calls.toLocaleString()}</td>
+                <td className="num whitespace-nowrap">
+                  {ms(q.total_ms)}
+                  <div className="text-sm text-muted">{((q.total_ms / totalMs) * 100).toFixed(0)}%</div>
+                </td>
+                <td className="num whitespace-nowrap">{ms(q.mean_ms)}</td>
+                <td className="num whitespace-nowrap">
+                  {q.rows.toLocaleString()}
+                  {q.rows_examined !== undefined ? (
+                    <div className="text-sm text-muted">{q.rows_examined.toLocaleString()} examined</div>
+                  ) : null}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {data.queries.map((q, i) => (
-                <tr key={i}>
-                  <td style={{ maxWidth: "36rem" }}>
-                    <div className="flex items-start gap-2">
-                      <code className="text-sm" style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", flex: 1 }}>
-                        {q.query.length > 600 ? `${q.query.slice(0, 600)}…` : q.query}
-                      </code>
-                      <CopyButton value={q.query} className="btn btn-ghost btn-sm" />
-                    </div>
-                    <div className="text-sm muted" style={{ marginTop: ".2rem" }}>
-                      {q.database || "—"}
-                      {q.no_index_used ? <span className="badge badge-amber" style={{ marginLeft: ".5rem" }}>{q.no_index_used} runs without a good index</span> : null}
-                      {q.cache_hit_pct !== undefined && q.cache_hit_pct < 90 ? (
-                        <span className="badge badge-amber" style={{ marginLeft: ".5rem" }}>cache hit {q.cache_hit_pct.toFixed(0)}%</span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="num" style={{ textAlign: "right" }}>{q.calls.toLocaleString()}</td>
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    {ms(q.total_ms)}
-                    <div className="text-sm muted">{((q.total_ms / totalMs) * 100).toFixed(0)}%</div>
-                  </td>
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{ms(q.mean_ms)}</td>
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    {q.rows.toLocaleString()}
-                    {q.rows_examined !== undefined ? <div className="text-sm muted">{q.rows_examined.toLocaleString()} examined</div> : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </Table>
       )}
     </div>
   );

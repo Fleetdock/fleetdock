@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { ErrorText, Modal } from "@/components/ui";
+import { Button, ErrorText, Field, Input, Modal, cx } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useDeleteDatabase } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
@@ -43,7 +43,9 @@ export function DeleteDatabaseModal({
       close();
       onDeleted?.();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to remove database");
+      setError(
+        err instanceof ApiError ? err.message : "Failed to remove database",
+      );
     }
   }
 
@@ -53,15 +55,19 @@ export function DeleteDatabaseModal({
   // control plane depends on them — the delete path refuses them server-side too.
   if (database.system) {
     return (
-      <Modal open onClose={close} title={`"${database.name}" is a system database`}>
+      <Modal
+        open
+        onClose={close}
+        title={`"${database.name}" is a system database`}
+      >
         <div className="flex flex-col gap-3">
           <p className="text-sm">
-            This database belongs to the engine itself. Fleetdock connects to it for
-            administration, so it cannot be dropped or removed from the control plane.
-            You can still browse it and back it up.
+            This database belongs to the engine itself. Fleetdock connects to it
+            for administration, so it cannot be dropped or removed from the
+            control plane. You can still browse it and back it up.
           </p>
-          <div className="flex items-center justify-end" style={{ marginTop: ".25rem" }}>
-            <button type="button" className="btn" onClick={close}>Close</button>
+          <div className="mt-1 modal-actions">
+            <Button onClick={close}>Close</Button>
           </div>
         </div>
       </Modal>
@@ -71,24 +77,28 @@ export function DeleteDatabaseModal({
   return (
     <Modal open onClose={close} title={`Remove database "${database.name}"?`}>
       <div className="flex flex-col gap-3">
-        <label className="flex items-start gap-2 text-sm" style={{ cursor: "pointer" }}>
+        <label className="flex items-start gap-2 text-sm cursor-pointer">
           <input
             type="radio"
             name="delete-mode"
             checked={mode === "metadata"}
             onChange={() => setMode("metadata")}
-            style={{ marginTop: ".2rem" }}
+            className="mt-1"
           />
           <span>
             <span className="font-medium">Remove from Fleetdock only</span>
-            <span className="muted block" style={{ marginTop: ".15rem" }}>
-              Fleetdock stops showing it; the data on the server is not touched. If the database still exists there, it is picked up again after 7 days.
+            <span className="block mt-0.5 muted">
+              Fleetdock stops showing it; the data on the server is not touched.
+              If the database still exists there, it is picked up again after 7
+              days.
             </span>
           </span>
         </label>
         <label
-          className="flex items-start gap-2 text-sm"
-          style={{ cursor: canDrop ? "pointer" : "not-allowed", opacity: canDrop ? 1 : 0.55 }}
+          className={cx(
+            "flex items-start gap-2 text-sm",
+            canDrop ? "cursor-pointer" : "cursor-not-allowed opacity-55",
+          )}
         >
           <input
             type="radio"
@@ -96,43 +106,54 @@ export function DeleteDatabaseModal({
             checked={mode === "physical"}
             onChange={() => setMode("physical")}
             disabled={!canDrop}
-            style={{ marginTop: ".2rem" }}
+            className="mt-1"
           />
           <span>
-            <span className="font-medium">Also delete it from the database server</span>
-            <span className="muted block" style={{ marginTop: ".15rem" }}>
-              Permanently deletes the database and all its data (DROP DATABASE). This cannot be undone.
+            <span className="font-medium">
+              Also delete it from the database server
+            </span>
+            <span className="block mt-0.5 muted">
+              Permanently deletes the database and all its data (DROP DATABASE).
+              This cannot be undone.
             </span>
           </span>
         </label>
         {!canDrop ? (
-          <p className="muted text-sm">Add an admin login to the database server to delete the data too.</p>
+          <p className="text-sm muted">
+            Add an admin login to the database server to delete the data too.
+          </p>
         ) : null}
         {mode === "physical" ? (
-          <label className="text-sm">
-            Type <code>{database.name}</code> to confirm
-            <input
-              className="input"
+          <Field
+            label={
+              <>
+                Type <code>{database.name}</code> to confirm
+              </>
+            }
+          >
+            <Input
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               autoComplete="off"
               autoFocus
-              aria-label="Database name confirmation"
-              style={{ marginTop: ".3rem" }}
             />
-          </label>
+          </Field>
         ) : null}
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".25rem" }}>
-          <button type="button" className="btn" onClick={close}>Cancel</button>
-          <button
-            type="button"
-            className="btn btn-danger"
+        <div className="mt-1 modal-actions">
+          <Button onClick={close}>Cancel</Button>
+          <Button
+            variant={mode === "physical" ? "danger-solid" : "danger"}
             onClick={onConfirm}
-            disabled={del.isPending || (mode === "physical" && typed !== database.name)}
+            loading={del.isPending}
+            disabled={mode === "physical" && typed !== database.name}
           >
-            {del.isPending ? "Removing…" : mode === "physical" ? "Drop database" : "Remove"}
-          </button>
+            {del.isPending
+              ? "Removing…"
+              : mode === "physical"
+                ? "Drop database"
+                : "Remove"}
+          </Button>
         </div>
       </div>
     </Modal>

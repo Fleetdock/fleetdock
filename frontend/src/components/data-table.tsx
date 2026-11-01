@@ -2,11 +2,10 @@
 
 // Shared table for list pages. Not used for: the Data Browser grid (dynamic columns), expandable
 // DB user rows, and roles card layout.
+import { ArrowDown, ArrowUp, RefreshCw, Search, WifiOff } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { ArrowDown, ArrowUp, Search } from "lucide-react";
-
-import { EmptyState, Pagination, TableSkeleton } from "@/components/ui";
+import { Button, cx, EmptyState, Pagination, SearchInput, Table, TableSkeleton, Toolbar } from "@/components/ui";
 import type { SortDir } from "@/lib/use-data-table";
 
 export type DataTableColumn<T> = {
@@ -52,6 +51,8 @@ export type DataTableProps<T> = {
     hasMore?: boolean;
   };
   toolbar?: ReactNode;
+  /** Shows a "Try again" button on the error state. */
+  onRetry?: () => void;
 };
 
 function SortableHeader({
@@ -72,24 +73,9 @@ function SortableHeader({
   const active = sortKey === activeKey;
   return (
     <th className={className} aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        style={{
-          padding: 0,
-          font: "inherit",
-          color: "inherit",
-          textTransform: "inherit",
-          letterSpacing: "inherit",
-          fontWeight: 500,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: ".25rem",
-        }}
-        onClick={() => onSort(sortKey)}
-      >
+      <button type="button" className="th-sort" onClick={() => onSort(sortKey)}>
         {label}
-        {active ? (dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : null}
+        {active ? dir === "asc" ? <ArrowUp size={12} aria-hidden /> : <ArrowDown size={12} aria-hidden /> : null}
       </button>
     </th>
   );
@@ -112,43 +98,50 @@ export function DataTable<T>({
   sort,
   pagination,
   toolbar,
+  onRetry,
 }: DataTableProps<T>) {
   const searchActive = Boolean(search?.value.trim());
 
   if (isLoading) {
     return (
-      <div aria-label={loadingLabel}>
+      <div role="status" aria-label={loadingLabel}>
         <TableSkeleton columns={Math.min(columns.length, 5)} />
       </div>
     );
   }
 
   if (error) {
-    return <EmptyState title={errorTitle} hint={error} />;
+    return (
+      <EmptyState
+        icon={<WifiOff size={22} />}
+        title={errorTitle}
+        hint={error}
+        action={
+          onRetry ? (
+            <Button variant="primary" icon={<RefreshCw size={14} aria-hidden />} onClick={onRetry}>
+              Try again
+            </Button>
+          ) : undefined
+        }
+      />
+    );
   }
 
   return (
     <div>
       {search || toolbar ? (
-        <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: ".9rem" }}>
+        <Toolbar>
           {search ? (
-            <div style={{ position: "relative", maxWidth: "22rem", width: "100%" }}>
-              <span style={{ position: "absolute", left: 10, top: 9, color: "var(--muted)" }}>
-                <Search size={16} />
-              </span>
-              <input
-                className="input"
-                style={{ paddingLeft: "2rem", width: "100%" }}
-                placeholder={search.placeholder ?? "Search…"}
-                aria-label={search.placeholder ?? "Search"}
-                type="search"
-                value={search.value}
-                onChange={(e) => search.onChange(e.target.value)}
-              />
-            </div>
+            <SearchInput
+              icon={<Search size={15} aria-hidden />}
+              placeholder={search.placeholder ?? "Search…"}
+              aria-label={search.placeholder ?? "Search"}
+              value={search.value}
+              onChange={(e) => search.onChange(e.target.value)}
+            />
           ) : null}
           {toolbar}
-        </div>
+        </Toolbar>
       ) : null}
 
       {rows.length === 0 ? (
@@ -159,8 +152,7 @@ export function DataTable<T>({
         />
       ) : (
         <>
-          <div className="card table-wrap">
-            <table className="table">
+          <Table>
               <thead>
                 <tr>
                   {columns.map((col) =>
@@ -172,13 +164,12 @@ export function DataTable<T>({
                         activeKey={sort.key}
                         dir={sort.dir}
                         onSort={sort.onSort}
-                        className={col.hideOnMobile ? "hide-sm" : undefined}
+                        className={cx(col.hideOnMobile && "hide-sm", col.align === "right" && "text-right") || undefined}
                       />
                     ) : (
                       <th
                         key={col.id}
-                        className={col.hideOnMobile ? "hide-sm" : undefined}
-                        style={col.align === "right" ? { textAlign: "right" } : undefined}
+                        className={cx(col.hideOnMobile && "hide-sm", col.align === "right" && "text-right") || undefined}
                       >
                         {col.header}
                       </th>
@@ -192,8 +183,7 @@ export function DataTable<T>({
                     {columns.map((col) => (
                       <td
                         key={col.id}
-                        className={[col.className, col.hideOnMobile ? "hide-sm" : ""].filter(Boolean).join(" ") || undefined}
-                        style={col.align === "right" ? { textAlign: "right" } : undefined}
+                        className={cx(col.className, col.hideOnMobile && "hide-sm", col.align === "right" && "text-right") || undefined}
                       >
                         {col.render(row)}
                       </td>
@@ -201,10 +191,9 @@ export function DataTable<T>({
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+          </Table>
           {pagination ? (
-            <div className="flex items-center justify-end" style={{ marginTop: ".6rem" }}>
+            <div className="flex items-center justify-end mt-2.5">
               <Pagination
                 page={pagination.page}
                 pageCount={pagination.pageCount}

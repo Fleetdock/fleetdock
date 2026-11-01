@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
-import { ErrorText, Field, Modal } from "@/components/ui";
+import { Button, ButtonLink, Callout, ErrorText, Field, Input, Modal, Select } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useDestinations } from "@/lib/hooks";
 
@@ -54,18 +54,16 @@ export function ImportSQLModal({
       {operationId ? (
         <>
           <p>The file was uploaded and is being applied in the background.</p>
-          <div className="flex justify-end gap-2">
-            <Link href={`/activity/${operationId}`} className="btn btn-sm">
-              View operation
-            </Link>
-            <button className="btn btn-primary btn-sm" onClick={onClose}>
+          <div className="modal-actions">
+            <ButtonLink href={`/activity/${operationId}`}>View operation</ButtonLink>
+            <Button variant="primary" onClick={onClose}>
               Done
-            </button>
+            </Button>
           </div>
         </>
       ) : (
         <form onSubmit={onSubmit}>
-          <p className="text-sm muted" style={{ marginTop: 0 }}>
+          <p className="text-sm muted mt-0">
             Runs a SQL dump (.sql or .sql.gz, max 2 GB) against this database
             with the same rights as a user with write access in the console —
             statements that need instance-admin rights (creating users, other
@@ -73,8 +71,7 @@ export function ImportSQLModal({
             transaction.
           </p>
           <Field label="SQL file">
-            <input
-              className="input"
+            <Input
               type="file"
               accept=".sql,.gz,application/sql,application/gzip"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -82,14 +79,16 @@ export function ImportSQLModal({
             />
           </Field>
           {destinations && destinations.items.length === 0 ? (
-            <p className="text-sm" style={{ color: "var(--danger)" }}>
+            <Callout tone="warning">
               A backup destination is needed to stage the file.{" "}
-              <Link href="/backups/storage">Add one</Link> first.
-            </p>
+              <Link href="/backups/storage" className="link">
+                Add one
+              </Link>{" "}
+              first.
+            </Callout>
           ) : (
             <Field label="Upload through backup storage">
-              <select
-                className="input"
+              <Select
                 value={dest}
                 onChange={(e) => setDestination(e.target.value)}
               >
@@ -98,26 +97,22 @@ export function ImportSQLModal({
                     {d.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
           )}
           <ErrorText message={error ?? undefined} />
-          <div className="flex gap-2" style={{ marginTop: ".8rem" }}>
-            <button
-              className="btn btn-primary"
+          <div className="modal-actions">
+            <Button onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
               type="submit"
-              disabled={busy || !file || !dest}
+              variant="primary"
+              loading={busy}
+              disabled={!file || !dest}
             >
               {busy ? "Uploading…" : "Import"}
-            </button>
-            <button
-              className="btn"
-              type="button"
-              onClick={onClose}
-              disabled={busy}
-            >
-              Cancel
-            </button>
+            </Button>
           </div>
         </form>
       )}

@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 
-import { ErrorText, Field, Modal } from "@/components/ui";
+import { Badge, Button, ErrorText, Field, Modal, SectionHeader, Select } from "@/components/ui";
 
 import { ApiError } from "@/lib/api";
 import {
@@ -76,11 +76,11 @@ export function GrantsSection({
       id: "privileges",
       header: "Privileges",
       render: (g) => (
-        <div className="flex" style={{ flexWrap: "wrap", gap: ".25rem" }}>
+        <div className="flex flex-wrap gap-1">
           {g.privileges.map((p) => (
-            <span key={p} className="badge badge-gray" style={{ fontSize: 11 }}>
+            <Badge key={p} className="text-[length:var(--fs-2xs)]">
               {p}
-            </span>
+            </Badge>
           ))}
         </div>
       ),
@@ -92,36 +92,37 @@ export function GrantsSection({
       header: "Actions",
       align: "right",
       render: (g) => (
-        <button
-          className="btn btn-sm btn-danger"
+        <Button
+          size="sm"
+          variant="danger"
           onClick={() => onRevoke(g.user, g.host)}
           disabled={revoke.isPending}
+          aria-label={`Revoke all privileges of ${g.user}@${g.host}`}
         >
           Revoke all
-        </button>
+        </Button>
       ),
     });
   }
 
   return (
     <div>
-      <div
-        className="flex justify-between items-center"
-        style={{ marginBottom: ".6rem" }}
-      >
-        <p className="text-sm muted">
-          Accounts with privileges on this database (live).
-        </p>
-        {canWrite ? (
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => setGrantOpen(true)}
-          >
-            <Plus size={15} /> Grant access
-          </button>
-        ) : null}
-      </div>
-
+      <SectionHeader
+        title="Access"
+        description="Accounts with privileges on this database (live)."
+        actions={
+          canWrite ? (
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<Plus size={15} aria-hidden />}
+              onClick={() => setGrantOpen(true)}
+            >
+              Grant access
+            </Button>
+          ) : null
+        }
+      />
 
       <DataTable<SchemaGrant>
         columns={columns}
@@ -132,7 +133,18 @@ export function GrantsSection({
         error={error ? (error as ApiError).message : undefined}
         errorTitle="Could not reach the database server"
         emptyTitle="No accounts have privileges on this database"
-        emptyHint='Use "Grant access" to give a database user access.'
+        emptyHint="Give an existing database user privileges on this database."
+        emptyAction={
+          canWrite ? (
+            <Button
+              variant="primary"
+              icon={<Plus size={15} aria-hidden />}
+              onClick={() => setGrantOpen(true)}
+            >
+              Grant access
+            </Button>
+          ) : undefined
+        }
       />
 
       <GrantAccessModal
@@ -197,8 +209,7 @@ function GrantAccessModal({
     <Modal open={open} onClose={onClose} title="Grant access to this database">
       <form onSubmit={onSubmit}>
         <Field label="Database user">
-          <select
-            className="input"
+          <Select
             value={account}
             onChange={(e) => setAccount(e.target.value)}
             required
@@ -211,22 +222,15 @@ function GrantAccessModal({
                 {u.user}@{u.host}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="Privileges">
-          <div
-            className="card"
-            style={{ padding: ".75rem", maxHeight: 220, overflowY: "auto" }}
-          >
-            <div
-              className="flex"
-              style={{ flexWrap: "wrap", gap: ".3rem 1rem" }}
-            >
+          <div className="card p-3 max-h-55 overflow-y-auto">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
               {(privileges?.items ?? []).map((p) => (
                 <label
                   key={p}
-                  className="flex items-center gap-1 text-sm"
-                  style={{ cursor: "pointer" }}
+                  className="flex items-center gap-1 text-sm cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -244,20 +248,16 @@ function GrantAccessModal({
           existing accounts access.
         </p>
         <ErrorText message={error ?? undefined} />
-        <div
-          className="flex justify-end items-center gap-2"
-          style={{ marginTop: ".5rem" }}
-        >
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
             type="submit"
-            className="btn btn-primary"
-            disabled={grant.isPending || selected.size === 0 || !account}
+            variant="primary"
+            loading={grant.isPending}
+            disabled={selected.size === 0 || !account}
           >
             {grant.isPending ? "Granting…" : "Grant"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

@@ -188,7 +188,7 @@ function Palette({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="Go to…">
       <input
-        className="input"
+        className="input palette-input"
         autoFocus
         role="combobox"
         aria-expanded
@@ -205,8 +205,8 @@ function Palette({ onClose }: { onClose: () => void }) {
       />
       <ul id={listId} role="listbox" className="palette-list" aria-label="Results">
         {items.length === 0 ? (
-          <li className="muted text-sm" style={{ padding: ".8rem .5rem" }}>
-            Nothing found
+          <li className="muted text-sm px-2 py-3">
+            Nothing found{query.trim() ? ` for “${query.trim()}”` : ""}. Try a server, database or table name.
           </li>
         ) : (
           items.map((it, i) => {
@@ -229,7 +229,7 @@ function Palette({ onClose }: { onClose: () => void }) {
                   onClick={() => go(it)}
                 >
                   <it.Icon size={15} aria-hidden className="muted" />
-                  <span className="truncate" style={{ flex: 1 }}>
+                  <span className="truncate flex-1">
                     {it.label}
                   </span>
                   {it.hint ? <span className="muted text-sm truncate">{it.hint}</span> : null}
@@ -239,9 +239,17 @@ function Palette({ onClose }: { onClose: () => void }) {
           })
         )}
       </ul>
-      <p className="muted text-sm" style={{ margin: ".6rem 0 0" }}>
-        <kbd>↑</kbd> <kbd>↓</kbd> to move · <kbd>Enter</kbd> to open · <kbd>Esc</kbd> to close
-      </p>
+      <div className="palette-foot" aria-hidden>
+        <span>
+          <kbd className="kbd">↑</kbd> <kbd className="kbd">↓</kbd> navigate
+        </span>
+        <span>
+          <kbd className="kbd">↵</kbd> open
+        </span>
+        <span>
+          <kbd className="kbd">esc</kbd> close
+        </span>
+      </div>
     </Modal>
   );
 }
@@ -266,12 +274,12 @@ function ShortcutHelp() {
       <tbody>
         {rows.map(([combos, label]) => (
           <tr key={label}>
-            <td style={{ width: "50%" }}>
+            <td className="w-1/2">
               {combos.map((keys, i) => (
                 <span key={keys.join("+")}>
                   {i > 0 ? <span className="muted"> or </span> : null}
                   {keys.map((k) => (
-                    <kbd key={k} style={{ marginRight: ".2rem" }}>
+                    <kbd key={k} className="kbd mr-1">
                       {k}
                     </kbd>
                   ))}

@@ -6,7 +6,7 @@ export function Logo({ size = 28 }: { size?: number }) {
       alt="Fleetdock"
       width={size}
       height={size}
-      style={{ display: "block", flexShrink: 0, borderRadius: "25%" }}
+      className="block shrink-0 rounded-[25%]"
     />
   );
 }

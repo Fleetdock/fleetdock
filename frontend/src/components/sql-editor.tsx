@@ -33,7 +33,7 @@ function fleetdockEditorTheme(dark: boolean): Extension {
         fontSize: "13px",
       },
       ".cm-scroller": {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        fontFamily: "var(--font-mono-stack)",
         lineHeight: "1.5",
       },
       ".cm-content": {
@@ -67,12 +67,12 @@ function fleetdockEditorTheme(dark: boolean): Extension {
         backgroundColor: "var(--panel)",
         color: "var(--fg)",
         border: "1px solid var(--border)",
-        borderRadius: "6px",
-        boxShadow: "0 6px 20px rgb(0 0 0 / 0.12)",
+        borderRadius: "var(--radius-sm)",
+        boxShadow: "var(--shadow-md)",
         overflow: "hidden",
       },
       ".cm-tooltip.cm-tooltip-autocomplete > ul": {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        fontFamily: "var(--font-mono-stack)",
         fontSize: "12.5px",
         maxHeight: "16em",
       },
@@ -101,14 +101,15 @@ function fleetdockEditorTheme(dark: boolean): Extension {
 function syntaxTheme(dark: boolean): Extension {
   return EditorView.theme(
     {
-      ".cm-keyword": { color: dark ? "#7dd3fc" : "#0369a1", fontWeight: 500 },
-      ".cm-string": { color: dark ? "#86efac" : "#15803d" },
-      ".cm-number": { color: dark ? "#fcd34d" : "#b45309" },
-      ".cm-comment": { color: "var(--muted)", fontStyle: "italic" },
-      ".cm-operator": { color: dark ? "#f9a8d4" : "#be185d" },
+      // Colours come from the --syntax-* tokens, which switch with the theme.
+      ".cm-keyword": { color: "var(--syntax-keyword)", fontWeight: 500 },
+      ".cm-string": { color: "var(--syntax-string)" },
+      ".cm-number": { color: "var(--syntax-number)" },
+      ".cm-comment": { color: "var(--syntax-comment)", fontStyle: "italic" },
+      ".cm-operator": { color: "var(--syntax-operator)" },
       ".cm-variableName": { color: "var(--fg)" },
-      ".cm-typeName": { color: dark ? "#a5b4fc" : "#4338ca" },
-      ".cm-propertyName": { color: dark ? "#93c5fd" : "#1d4ed8" },
+      ".cm-typeName": { color: "var(--syntax-function)" },
+      ".cm-propertyName": { color: "var(--syntax-function)" },
     },
     { dark },
   );

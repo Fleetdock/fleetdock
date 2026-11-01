@@ -7,7 +7,21 @@ import { Download, ShieldCheck, Trash2, Upload } from "lucide-react";
 
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { useErrorToast, useToast } from "@/components/toast";
-import { ConfirmModal, ErrorText, Field, Menu, Modal, StatusBadge, Time } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Callout,
+  ConfirmModal,
+  ErrorText,
+  Field,
+  Input,
+  Menu,
+  Modal,
+  Select,
+  StatusBadge,
+  Time,
+} from "@/components/ui";
 import { friendlyError } from "@/lib/errors";
 import { formatBytes } from "@/lib/format";
 import {
@@ -90,7 +104,7 @@ export function BackupList({
         <>
           <StatusBadge status={b.status} />
           {b.error ? (
-            <div className="muted text-sm truncate" style={{ maxWidth: 280 }} title={b.error}>
+            <div className="muted text-sm truncate max-w-70" title={b.error}>
               {b.error}
             </div>
           ) : null}
@@ -101,7 +115,7 @@ export function BackupList({
       id: "size",
       header: "Size",
       align: "right",
-      className: "muted",
+      className: "muted num",
       hideOnMobile: true,
       render: (b) => formatBytes(b.size_bytes),
     },
@@ -123,19 +137,19 @@ export function BackupList({
             items={[
               {
                 label: "Restore…",
-                icon: <Upload size={15} />,
+                icon: <Upload size={15} aria-hidden />,
                 onSelect: () => setRestoreTarget(b),
                 hidden: !canWrite || !completed,
               },
               {
                 label: "Download",
-                icon: <Download size={15} />,
+                icon: <Download size={15} aria-hidden />,
                 onSelect: () => void download(b),
                 hidden: !canWrite || !completed,
               },
               {
                 label: "Check that it restores",
-                icon: <ShieldCheck size={15} />,
+                icon: <ShieldCheck size={15} aria-hidden />,
                 onSelect: () =>
                   actions.verify.mutate(b.id, {
                     onSuccess: () => push("info", "Checking the backup — it is restored into a temporary database"),
@@ -146,7 +160,7 @@ export function BackupList({
               },
               {
                 label: "Delete…",
-                icon: <Trash2 size={15} />,
+                icon: <Trash2 size={15} aria-hidden />,
                 danger: true,
                 onSelect: () => setDeleteTarget(b),
                 hidden: !canWrite || b.status === "pending" || b.status === "running" || b.status === "deleted",
@@ -237,21 +251,21 @@ function RestoreModal({ backup, onClose }: { backup: Backup | null; onClose: () 
     <Modal open onClose={close} title={`Restore ${name}`}>
       {operationId !== null ? (
         <div>
-          <p className="text-sm" style={{ marginTop: 0 }}>
+          <p className="text-sm mt-0">
             The restore has started. It runs in the background — you&apos;ll get a notification when it finishes.
           </p>
-          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".8rem" }}>
-            <Link href={operationId ? `/activity/${operationId}` : "/activity"} className="btn" onClick={close}>
+          <div className="modal-actions">
+            <ButtonLink href={operationId ? `/activity/${operationId}` : "/activity"} onClick={close}>
               Follow progress
-            </Link>
-            <button className="btn btn-primary" onClick={close}>
+            </ButtonLink>
+            <Button variant="primary" onClick={close}>
               Done
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
         <form onSubmit={onSubmit}>
-          <div className="callout callout-warning">
+          <Callout tone="warning">
             Restoring into the original database <strong>replaces its current contents</strong> with this backup
             {backup.completed_at ? (
               <>
@@ -260,9 +274,9 @@ function RestoreModal({ backup, onClose }: { backup: Backup | null; onClose: () 
               </>
             ) : null}
             . To keep both, enter a new database name below.
-          </div>
+          </Callout>
           <Field label="Database server" hint="Pick another server to copy the database there.">
-            <select className="input" value={targetInstance} onChange={(e) => setTargetInstance(e.target.value)}>
+            <Select value={targetInstance} onChange={(e) => setTargetInstance(e.target.value)}>
               <option value="">{backup.instance_name ? `${backup.instance_name} (original)` : "Original server"}</option>
               {instances?.items
                 .filter((i) => i.has_credentials)
@@ -271,24 +285,21 @@ function RestoreModal({ backup, onClose }: { backup: Backup | null; onClose: () 
                     {i.name} ({i.kind === "external" ? `${i.host}:${i.port}` : `port ${i.port}`})
                   </option>
                 ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Database name" hint="Leave empty to restore under the original name.">
-            <input
-              className="input"
+            <Input
               value={targetDatabase}
               onChange={(e) => setTargetDatabase(e.target.value)}
               placeholder={backup.database_name || "original name"}
             />
           </Field>
           <ErrorText message={error ? friendlyError(error, "Failed to start the restore") : undefined} />
-          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".5rem" }}>
-            <button type="button" className="btn" onClick={close}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={restore.isPending}>
+          <div className="modal-actions">
+            <Button onClick={close}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={restore.isPending}>
               {restore.isPending ? "Starting…" : "Restore"}
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -301,18 +312,18 @@ export function VerifyBadge({ backup }: { backup: Backup }) {
   switch (backup.verify_status) {
     case "passed":
       return (
-        <span className="badge badge-green" title="A test restore of this backup succeeded">
+        <Badge tone="success" title="A test restore of this backup succeeded">
           restores OK
-        </span>
+        </Badge>
       );
     case "failed":
       return (
-        <span className="badge badge-red" title={backup.verify_error ?? "The test restore failed"}>
+        <Badge tone="danger" title={backup.verify_error ?? "The test restore failed"}>
           check failed
-        </span>
+        </Badge>
       );
     case "running":
-      return <span className="badge badge-gray">checking…</span>;
+      return <Badge pulse>checking…</Badge>;
     default:
       return <span className="muted text-sm">not checked</span>;
   }

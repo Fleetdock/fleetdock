@@ -6,7 +6,7 @@ import { History, RotateCcw, X } from "lucide-react";
 
 import { useConfirm } from "@/components/confirm";
 import { useToast } from "@/components/toast";
-import { Spinner } from "@/components/ui";
+import { Badge, Button, IconButton, Spinner } from "@/components/ui";
 import { changedColumns, displayValue, groupByBatch, keyLabel, type ChangeGroup } from "@/lib/data-browser/history";
 import { useRowChanges, useUndo } from "@/lib/hooks";
 import type { RowChange, UndoResult } from "@/lib/types";
@@ -38,12 +38,12 @@ export function RowHistory({
     <aside className="dbx-valuepanel dbx-history" aria-label="Change history">
       <div className="dbx-valuepanel-head">
         <History size={14} aria-hidden />
-        <span className="font-medium" style={{ flex: 1 }}>
+        <span className="font-medium flex-1">
           Change history
         </span>
-        <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close change history">
-          <X size={14} />
-        </button>
+        <IconButton label="Close change history" onClick={onClose}>
+          <X size={14} aria-hidden />
+        </IconButton>
       </div>
       <div className="dbx-valuepanel-body">
         {isLoading ? (
@@ -116,7 +116,7 @@ function Group({ group, canWrite, undo }: { group: ChangeGroup; canWrite: boolea
   return (
     <section className="dbx-history-group">
       <header className="flex items-center gap-2">
-        <span className="text-sm" style={{ flex: 1, minWidth: 0 }}>
+        <span className="text-sm flex-1 min-w-0">
           <span className="font-medium">{group.source === "undo" ? "Undo" : n === 1 ? OP_LABEL[group.changes[0].op] : `Saved ${n} changes`}</span>
           <span className="muted">
             {" · "}
@@ -127,21 +127,22 @@ function Group({ group, canWrite, undo }: { group: ChangeGroup; canWrite: boolea
           </span>
         </span>
         {canWrite && group.undoable > 0 ? (
-          <button
-            className="btn btn-sm"
+          <Button
+            size="sm"
+            icon={<RotateCcw size={13} aria-hidden />}
             disabled={undo.pending}
             onClick={() => void undo.run(group.batchId && n > 1 ? { batchId: group.batchId } : { changeId: group.changes[0].id })}
             title={group.source === "undo" ? "Redo: put back what this undo reverted" : n > 1 ? "Undo every change of this save" : "Undo this change"}
           >
-            <RotateCcw size={13} /> {group.source === "undo" ? "Redo" : "Undo"}
+            {group.source === "undo" ? "Redo" : "Undo"}
             {n > 1 ? " all" : ""}
-          </button>
+          </Button>
         ) : null}
       </header>
       {n > 3 ? (
-        <button className="btn btn-ghost btn-sm" onClick={() => setOpen(!open)} style={{ alignSelf: "flex-start" }}>
+        <Button variant="ghost" size="sm" className="self-start" onClick={() => setOpen(!open)}>
           {open ? "Hide rows" : `Show ${n} rows`}
-        </button>
+        </Button>
       ) : null}
       {open ? group.changes.map((c) => <ChangeRow key={c.id} change={c} canWrite={canWrite && n > 1} undo={undo} />) : null}
     </section>
@@ -153,18 +154,18 @@ function ChangeRow({ change: c, canWrite, undo }: { change: RowChange; canWrite:
   return (
     <div className={`dbx-history-change${c.undone_at ? " is-undone" : ""}`}>
       <div className="flex items-center gap-2">
-        <span className={`badge ${c.op === "delete" ? "badge-red" : c.op === "insert" ? "badge-green" : "badge-gray"}`}>{c.op}</span>
-        <code className="text-sm truncate" style={{ flex: 1 }} title={keyLabel(c)}>
+        <Badge tone={c.op === "delete" ? "danger" : c.op === "insert" ? "success" : "neutral"}>{c.op}</Badge>
+        <code className="text-sm truncate flex-1" title={keyLabel(c)}>
           {keyLabel(c)}
         </code>
         {c.undone_at ? <span className="text-sm muted">undone</span> : null}
         {canWrite && c.undoable && !c.undone_at ? (
-          <button className="btn btn-ghost btn-sm" disabled={undo.pending} onClick={() => void undo.run({ changeId: c.id })} aria-label="Undo this row's change">
-            <RotateCcw size={13} />
-          </button>
+          <IconButton label="Undo this row's change" disabled={undo.pending} onClick={() => void undo.run({ changeId: c.id })}>
+            <RotateCcw size={13} aria-hidden />
+          </IconButton>
         ) : null}
       </div>
-      {!c.undoable && c.note ? <p className="text-sm muted" style={{ margin: 0 }}>{c.note}</p> : null}
+      {!c.undoable && c.note ? <p className="text-sm muted m-0">{c.note}</p> : null}
       {c.op === "update" && diffs.length ? (
         <dl className="dbx-history-diff">
           {diffs.map((d) => (

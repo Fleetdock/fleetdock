@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 
+import { Badge, Button } from "@/components/ui";
 import { parsePlan, walk, type Plan, type PlanNode } from "@/lib/explain";
 import type { ExplainResult } from "@/lib/types";
 
@@ -47,15 +48,15 @@ export function ExplainView({ result }: { result: ExplainResult }) {
   return (
     <div className="explain card">
       <div className="explain-head">
-        <span className={`badge ${plan?.analyzed ? "badge-green" : "badge-gray"}`}>
+        <Badge tone={plan?.analyzed ? "success" : "neutral"}>
           {plan?.analyzed ? "Analyzed — the statement ran and was rolled back" : "Estimated plan — nothing was run"}
-        </span>
+        </Badge>
         {plan?.totalTimeMs !== undefined ? <span className="text-sm muted">Execution {fmtMs(plan.totalTimeMs)}</span> : null}
         {plan?.planningTimeMs !== undefined ? <span className="text-sm muted">Planning {fmtMs(plan.planningTimeMs)}</span> : null}
-        <span style={{ flex: 1 }} />
-        <button className={`btn btn-ghost btn-sm${raw ? " btn-primary" : ""}`} onClick={() => setRaw(!raw)}>
+        <span className="flex-1" />
+        <Button variant={raw ? "primary" : "ghost"} size="sm" onClick={() => setRaw(!raw)}>
           {raw ? "Tree" : "Raw"}
-        </button>
+        </Button>
       </div>
 
       {warnings.length ? (
@@ -67,7 +68,7 @@ export function ExplainView({ result }: { result: ExplainResult }) {
           ))}
         </ul>
       ) : plan ? (
-        <p className="text-sm muted" style={{ margin: "0 0 .6rem" }}>
+        <p className="text-sm muted mt-0 mb-2.5">
           Nothing stands out in this plan.
         </p>
       ) : null}
@@ -112,8 +113,8 @@ function PlanRow({ node, depth, total, byTime, analyzed }: { node: PlanNode; dep
       <div className={`explain-row${hot ? " is-hot" : ""}`} style={{ paddingLeft: `${0.4 + depth * 1.1}rem` }}>
         <span className="explain-step">
           {node.children.length ? (
-            <button className="explain-toggle" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Collapse step" : "Expand step"}>
-              {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <button type="button" className="explain-toggle" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Collapse step" : "Expand step"}>
+              {open ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}
             </button>
           ) : (
             <span className="explain-toggle" />

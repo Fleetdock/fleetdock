@@ -1,8 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { Menu } from "@/components/ui";
 import { useCanAny, useOperations } from "@/lib/hooks";
@@ -30,9 +29,9 @@ export function RunningOps() {
       items={[
         ...running.slice(0, 8).map((op) => ({
           label: (
-            <span className="flex items-center justify-between gap-3" style={{ width: "100%" }}>
+            <span className="flex w-full items-center justify-between gap-3">
               <span className="truncate">{operationTitle(op)}</span>
-              {op.status === "running" && op.progress > 0 ? <span className="muted text-sm">{op.progress}%</span> : null}
+              {op.status === "running" && op.progress > 0 ? <span className="muted text-sm num">{op.progress}%</span> : null}
             </span>
           ),
           onSelect: () => router.push(`/activity/${op.id}`),

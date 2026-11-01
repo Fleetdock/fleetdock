@@ -2,7 +2,7 @@
 
 import { SqlEditor } from "@/components/sql-editor";
 import { useToast } from "@/components/toast";
-import { EmptyState, Spinner } from "@/components/ui";
+import { Badge, Button, EmptyState, Spinner } from "@/components/ui";
 import type { Dialect } from "@/lib/data-browser/cells";
 import { objectName, type OpenRequest, type Tab } from "@/lib/data-browser/tabs";
 import { useDBObjects } from "@/lib/hooks";
@@ -72,22 +72,28 @@ export function ObjectTab({
       <div className="dbx-toolbar">
         <span className="dbx-object-title">
           <ObjectIcon kind={obj.kind} />
-          <span className="badge">{KIND_LABEL[obj.kind] ?? obj.kind}</span>
+          <Badge>{KIND_LABEL[obj.kind] ?? obj.kind}</Badge>
           <span className="font-medium truncate">
             <span className="muted">{obj.schema}.</span>
             {obj.name}
           </span>
         </span>
         {tableName ? (
-          <button className="btn btn-ghost btn-sm" onClick={() => onOpen({ kind: "table", name: tableName, label: obj.table! })}>
-            <Table2 size={14} /> on {obj.table}
-          </button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Table2 size={14} aria-hidden />}
+            onClick={() => onOpen({ kind: "table", name: tableName, label: obj.table! })}
+          >
+            on {obj.table}
+          </Button>
         ) : null}
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
         {definition ? (
           <>
-            <button
-              className="btn btn-sm"
+            <Button
+              size="sm"
+              icon={<ClipboardCopy size={14} aria-hidden />}
               onClick={() =>
                 void navigator.clipboard
                   ?.writeText(definition)
@@ -95,11 +101,11 @@ export function ObjectTab({
                   .catch(() => push("error", "The browser did not allow copying"))
               }
             >
-              <ClipboardCopy size={14} /> Copy
-            </button>
-            <button className="btn btn-sm" onClick={() => onNewQuery(definition)}>
-              <SquareTerminal size={14} /> Open in SQL console
-            </button>
+              Copy
+            </Button>
+            <Button size="sm" icon={<SquareTerminal size={14} aria-hidden />} onClick={() => onNewQuery(definition)}>
+              Open in SQL console
+            </Button>
           </>
         ) : null}
       </div>

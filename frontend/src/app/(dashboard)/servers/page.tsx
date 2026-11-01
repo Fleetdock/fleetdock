@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/confirm";
 import { DataTable } from "@/components/data-table";
 import { InstallCommand } from "@/components/install-command";
 import { useToast } from "@/components/toast";
-import { ErrorText, Field, Modal, StatusBadge, Time } from "@/components/ui";
+import { Button, ButtonLink, ErrorText, Field, Modal, PageHeader, SectionHeader, StatusBadge, Time } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import {
@@ -32,33 +32,43 @@ export default function ServersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: "1.1rem" }}>
-        <div>
-          <h1 className="text-xl font-semibold">Servers</h1>
-          <p className="muted text-sm">Hosts running the Fleetdock agent.</p>
-        </div>
-        {can("server:write") ? (
-          <div className="flex items-center gap-2">
-            <button className="btn" onClick={() => setRegisterOpen(true)}>
-              <Plus size={16} /> Register manually
-            </button>
-            <button className="btn btn-primary" onClick={() => setConnectOpen(true)}>
-              <Server size={16} /> Connect server
-            </button>
-          </div>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Servers"
+        description="Hosts running the Fleetdock agent."
+        actions={
+          can("server:write") ? (
+            <>
+              <Button icon={<Plus size={16} aria-hidden />} onClick={() => setRegisterOpen(true)}>
+                Register manually
+              </Button>
+              <Button variant="primary" icon={<Server size={16} aria-hidden />} onClick={() => setConnectOpen(true)}>
+                Connect server
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
 
       <DataTable<ServerType>
         columns={[
-          { id: "name", header: "Name", className: "font-medium", render: (s) => s.name },
+          {
+            id: "name",
+            header: "Name",
+            className: "font-medium",
+            render: (s) => (
+              <Link href={`/servers/${s.id}`} className="link-plain">
+                {s.name}
+              </Link>
+            ),
+          },
           { id: "hostname", header: "Hostname", className: "muted", render: (s) => s.hostname },
           { id: "status", header: "Status", render: (s) => <StatusBadge status={s.status} /> },
-          { id: "agent", header: "Agent", className: "muted", render: (s) => s.agent_version ?? "—" },
+          { id: "agent", header: "Agent", className: "muted", hideOnMobile: true, render: (s) => s.agent_version ?? "—" },
           {
             id: "heartbeat",
             header: "Last heartbeat",
             className: "muted",
+            hideOnMobile: true,
             render: (s) => (s.last_heartbeat_at ? new Date(s.last_heartbeat_at).toLocaleString() : "never"),
           },
           {
@@ -66,9 +76,9 @@ export default function ServersPage() {
             header: "",
             align: "right",
             render: (s) => (
-              <Link href={`/servers/${s.id}`} className="btn btn-ghost btn-sm">
-                Open <ChevronRight size={15} />
-              </Link>
+              <ButtonLink href={`/servers/${s.id}`} variant="ghost" size="sm" aria-label={`Open ${s.name}`}>
+                Open <ChevronRight size={15} aria-hidden />
+              </ButtonLink>
             ),
           },
         ]}
@@ -78,7 +88,14 @@ export default function ServersPage() {
         error={error ? (error as ApiError).message : undefined}
         errorTitle="Could not load servers"
         emptyTitle="No servers yet"
-        emptyHint='Use "Connect server" to get a one-command installer for your host.'
+        emptyHint="Get a one-command installer for your host, run it there, and the server shows up here."
+        emptyAction={
+          can("server:write") ? (
+            <Button variant="primary" icon={<Server size={16} aria-hidden />} onClick={() => setConnectOpen(true)}>
+              Connect server
+            </Button>
+          ) : undefined
+        }
         emptySearchTitle="No servers match your search"
         search={{
           value: search,
@@ -135,8 +152,11 @@ function PendingInstallCommands() {
   }
 
   return (
-    <section className="section" style={{ marginTop: "1.5rem" }}>
-      <h2 className="section-title">Unused install commands</h2>
+    <section className="section mt-6">
+      <SectionHeader
+        title="Unused install commands"
+        description="Revoke any command that was shared by mistake before it is used to enroll a host."
+      />
       <DataTable<AgentToken>
         columns={[
           { id: "name", header: "Label", className: "font-medium", render: (t) => t.name || "install" },
@@ -152,9 +172,9 @@ function PendingInstallCommands() {
             header: "",
             align: "right",
             render: (t) => (
-              <button className="btn btn-sm btn-danger" disabled={revoke.isPending} onClick={() => onRevoke(t)}>
+              <Button variant="danger" size="sm" disabled={revoke.isPending} onClick={() => onRevoke(t)}>
                 Revoke
-              </button>
+              </Button>
             ),
           },
         ]}
@@ -195,22 +215,23 @@ function ConnectServerModal({ open, onClose }: { open: boolean; onClose: () => v
       {command ? (
         <div>
           <InstallCommand command={command} />
-          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".9rem" }}>
-            <button className="btn btn-primary" onClick={close}>Done</button>
+          <div className="modal-actions">
+            <Button variant="primary" onClick={close}>
+              Done
+            </Button>
           </div>
         </div>
       ) : (
         <form onSubmit={onSubmit}>
-          <Field label="Label (optional)">
+          <Field label="Label (optional)" hint="Generates a single-use registration token and install script.">
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="prod-01" />
           </Field>
-          <p className="muted text-sm">Generates a single-use registration token and install script.</p>
           <ErrorText message={error ?? undefined} />
-          <div className="flex items-center justify-end gap-2" style={{ marginTop: ".7rem" }}>
-            <button type="button" className="btn" onClick={close}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={create.isPending}>
+          <div className="modal-actions">
+            <Button onClick={close}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={create.isPending}>
               {create.isPending ? "Generating…" : "Generate command"}
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -256,11 +277,11 @@ function RegisterServerModal({ open, onClose }: { open: boolean; onClose: () => 
           <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="production,eu" />
         </Field>
         <ErrorText message={error ?? undefined} />
-        <div className="flex items-center justify-end gap-2" style={{ marginTop: ".7rem" }}>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={create.isPending}>
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={create.isPending}>
             {create.isPending ? "Registering…" : "Register"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

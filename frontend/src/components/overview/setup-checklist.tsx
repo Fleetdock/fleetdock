@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { CheckCircle2, Circle, X } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
-import { CheckCircle2, Circle, X } from "lucide-react";
-
+import { ButtonLink, IconButton } from "@/components/ui";
 import { useCan, useCanAny } from "@/lib/hooks";
 import type { Overview } from "@/lib/types";
 
@@ -106,18 +105,19 @@ export function SetupChecklist({ setup }: { setup: Overview["setup"] }) {
     <section className="card setup-checklist" aria-labelledby="setup-title">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h2 id="setup-title" className="font-semibold" style={{ margin: 0 }}>
+          <h2 id="setup-title" className="font-semibold m-0">
             Get started
           </h2>
-          <p className="muted text-sm" style={{ margin: ".2rem 0 0" }}>
+          <p className="muted text-sm mt-1 mb-0">
             {doneCount} of {visible.length} done
           </p>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={dismiss} aria-label="Hide the setup checklist">
-          <X size={16} />
-        </button>
+        <IconButton label="Hide the setup checklist" onClick={dismiss}>
+          <X size={16} aria-hidden />
+        </IconButton>
       </div>
       <div className="progress" aria-hidden>
+        {/* Width is the share of steps done. */}
         <span style={{ width: `${(doneCount / visible.length) * 100}%` }} />
       </div>
       <ol className="setup-steps">
@@ -130,17 +130,17 @@ export function SetupChecklist({ setup }: { setup: Overview["setup"] }) {
               ) : (
                 <Circle size={18} className="muted" aria-label="To do" />
               )}
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="flex-1 min-w-0">
                 <div className="font-medium">
                   {s.title}
                   {s.optional ? <span className="muted text-sm"> · optional</span> : null}
                 </div>
-                {!done ? <p className="muted text-sm" style={{ margin: ".15rem 0 0" }}>{s.text}</p> : null}
+                {!done ? <p className="muted text-sm mt-0.5 mb-0">{s.text}</p> : null}
               </div>
               {!done ? (
-                <Link href={s.href} className="btn btn-sm">
+                <ButtonLink href={s.href} size="sm">
                   {s.cta}
-                </Link>
+                </ButtonLink>
               ) : null}
             </li>
           );

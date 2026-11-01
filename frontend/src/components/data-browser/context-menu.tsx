@@ -124,7 +124,7 @@ function ContextMenu({ x, y, items, onClose }: Open & { onClose: () => void }) {
             }}
           >
             {it.icon}
-            <span style={{ flex: 1 }}>{it.label}</span>
+            <span className="flex-1">{it.label}</span>
             {it.hint ? <span className="dbx-ctx-hint">{it.hint}</span> : null}
           </button>
         ),

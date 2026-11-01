@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { CopyButton } from "@/components/ui";
+import { Badge, CopyButton, buttonClass } from "@/components/ui";
 import { formatBytes } from "@/lib/format";
 import { useIndexInsights } from "@/lib/hooks";
 import type { IndexFinding, IndexInsights } from "@/lib/types";
@@ -37,13 +37,13 @@ export function IndexHealthCard({ databaseId, browserHref }: { databaseId: strin
     <div className="card panel aside-card">
       <h2 className="panel-title">Index health</h2>
       {findings.length === 0 ? (
-        <p className="text-sm muted" style={{ margin: 0 }}>
+        <p className="text-sm muted m-0">
           {data.indexes.length} index{data.indexes.length === 1 ? "" : "es"}, none redundant
           {data.usage_available ? " or unused" : ""}.
         </p>
       ) : (
         <>
-          <p className="text-sm" style={{ margin: "0 0 .5rem" }}>
+          <p className="text-sm mt-0 mb-2">
             {findings.length} index{findings.length === 1 ? "" : "es"} could go
             {reclaim > 0 ? `, freeing ${formatBytes(reclaim)}` : ""}. Each one slows down writes.
           </p>
@@ -51,7 +51,7 @@ export function IndexHealthCard({ databaseId, browserHref }: { databaseId: strin
             {findings.slice(0, 6).map((f) => (
               <li key={`${f.kind}:${f.index.schema ?? ""}.${f.index.table}.${f.index.name}`}>
                 <div className="flex items-center gap-2">
-                  <span className={`badge ${f.kind === "redundant" ? "badge-amber" : "badge-gray"}`}>{f.kind}</span>
+                  <Badge tone={f.kind === "redundant" ? "warning" : "neutral"}>{f.kind}</Badge>
                   <Link className="link-plain font-medium text-sm truncate" href={`${browserHref}&table=${encodeURIComponent(f.index.schema ? `${f.index.schema}.${f.index.table}` : f.index.table)}`}>
                     {f.index.table}.{f.index.name}
                   </Link>
@@ -61,18 +61,18 @@ export function IndexHealthCard({ databaseId, browserHref }: { databaseId: strin
                   {f.index.size_bytes ? ` · ${formatBytes(f.index.size_bytes)}` : ""}
                 </div>
                 <div className="flex items-center gap-1">
-                  <code className="text-sm truncate" style={{ flex: 1 }}>{f.drop_sql}</code>
-                  <CopyButton value={f.drop_sql} className="btn btn-ghost btn-sm" />
+                  <code className="text-sm truncate flex-1">{f.drop_sql}</code>
+                  <CopyButton value={f.drop_sql} className={buttonClass({ variant: "ghost", size: "sm" })} />
                 </div>
               </li>
             ))}
           </ul>
-          {findings.length > 6 ? <p className="text-sm muted" style={{ margin: ".4rem 0 0" }}>…and {findings.length - 6} more.</p> : null}
+          {findings.length > 6 ? <p className="text-sm muted mt-1.5 mb-0">…and {findings.length - 6} more.</p> : null}
         </>
       )}
-      {!data.usage_available && data.note ? <p className="text-sm muted" style={{ margin: ".5rem 0 0" }}>Usage unknown: {data.note}</p> : null}
+      {!data.usage_available && data.note ? <p className="text-sm muted mt-2 mb-0">Usage unknown: {data.note}</p> : null}
       {data.usage_available && data.stats_since ? (
-        <p className="text-sm muted" style={{ margin: ".5rem 0 0" }}>
+        <p className="text-sm muted mt-2 mb-0">
           Usage counted since {new Date(data.stats_since).toLocaleDateString()}
           {now - new Date(data.stats_since).getTime() < 7 * 86400_000 ? " — less than a week, so \"unused\" may just mean \"not yet\"" : ""}.
         </p>

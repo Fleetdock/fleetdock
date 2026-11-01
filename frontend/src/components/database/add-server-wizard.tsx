@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useState, type FormEvent, type ReactNode } from "react";
 
-import { Cloud, Plus, Server as ServerIcon } from "lucide-react";
+import { ArrowLeft, Cloud, Plus, Server as ServerIcon } from "lucide-react";
 
-import { ErrorText, Field, Modal, Spinner } from "@/components/ui";
+import { Button, ButtonLink, ErrorText, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { fieldError, friendlyError } from "@/lib/errors";
 import { ENGINE_IDS, ENGINES, type EngineId } from "@/lib/engines";
 import { useCreateInstance, useDatabases, useProbeInstance, useProvisionInstance, useServers } from "@/lib/hooks";
@@ -22,19 +22,19 @@ type Mode = "provision" | "register" | "external";
 const MODES: { id: Mode; icon: ReactNode; title: string; text: string }[] = [
   {
     id: "provision",
-    icon: <Plus size={18} />,
+    icon: <Plus size={18} aria-hidden />,
     title: "Create a new one",
     text: "Fleetdock starts a fresh database server (in Docker) on one of your connected servers.",
   },
   {
     id: "register",
-    icon: <ServerIcon size={18} />,
+    icon: <ServerIcon size={18} aria-hidden />,
     title: "Use one on my server",
     text: "A database server already runs on one of your connected servers; Fleetdock manages it through the agent.",
   },
   {
     id: "external",
-    icon: <Cloud size={18} />,
+    icon: <Cloud size={18} aria-hidden />,
     title: "Connect to one anywhere",
     text: "Any database server Fleetdock can reach over the network — hosted, cloud or on another machine.",
   },
@@ -134,7 +134,7 @@ export function AddServerWizard({
     <Modal open={open} onClose={close} title={title} wide>
       {done ? (
         <div>
-          <p style={{ marginTop: 0 }}>
+          <p className="mt-0">
             <strong>{done.instance.name}</strong> was added.{" "}
             {done.operationId
               ? "Fleetdock is starting it now — this usually takes under a minute."
@@ -143,15 +143,13 @@ export function AddServerWizard({
                 : "Add an admin login later so Fleetdock can find its databases."}
           </p>
           {done.instance.has_credentials || done.operationId ? <Discovery instanceId={done.instance.id} /> : null}
-          <div className="flex justify-end gap-2" style={{ flexWrap: "wrap" }}>
+          <div className="modal-actions">
             {done.operationId ? (
-              <Link href={`/activity/${done.operationId}`} className="btn">
-                Follow progress
-              </Link>
+              <ButtonLink href={`/activity/${done.operationId}`}>Follow progress</ButtonLink>
             ) : null}
-            <Link href={`/instances/${done.instance.id}`} className="btn btn-primary" onClick={close}>
+            <ButtonLink href={`/instances/${done.instance.id}`} variant="primary" onClick={close}>
               Open {done.instance.name}
-            </Link>
+            </ButtonLink>
           </div>
         </div>
       ) : !mode ? (
@@ -161,7 +159,7 @@ export function AddServerWizard({
               <span className="choice-card-icon">{m.icon}</span>
               <span>
                 <span className="font-medium">{m.title}</span>
-                <span className="muted text-sm" style={{ display: "block", marginTop: ".15rem" }}>
+                <span className="muted text-sm block mt-0.5">
                   {m.text}
                 </span>
               </span>
@@ -172,13 +170,13 @@ export function AddServerWizard({
         <form onSubmit={onSubmit}>
           {mode !== "external" ? (
             serverList.length === 0 ? (
-              <p className="text-sm" style={{ marginTop: 0 }}>
+              <p className="text-sm mt-0">
                 You haven&apos;t connected a server yet. <Link href="/servers" className="link">Connect a server</Link> first,
                 or connect to a database server anywhere instead.
               </p>
             ) : (
               <Field label="On which server?" error={fieldError(error, "server_id")}>
-                <select className="input" value={server} onChange={(e) => setServer(e.target.value)} required>
+                <Select value={server} onChange={(e) => setServer(e.target.value)} required>
                   <option value="" disabled>
                     Choose a server…
                   </option>
@@ -187,27 +185,27 @@ export function AddServerWizard({
                       {s.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
             )
           ) : null}
 
           <div className="form-grid">
             <Field label="Engine">
-              <select className="input" value={engine} onChange={(e) => pickEngine(e.target.value as EngineId)}>
+              <Select value={engine} onChange={(e) => pickEngine(e.target.value as EngineId)}>
                 {ENGINE_IDS.map((id) => (
                   <option key={id} value={id}>
                     {ENGINES[id].label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
             <Field
               label="Version"
               error={fieldError(error, "engine_version")}
               hint={mode === "provision" ? undefined : "The version running there — used for compatibility."}
             >
-              <input className="input" list="engine-versions" value={version} onChange={(e) => setVersion(e.target.value)} required />
+              <Input list="engine-versions" value={version} onChange={(e) => setVersion(e.target.value)} required />
             </Field>
             <datalist id="engine-versions">
               {ENGINES[engine].versions.map((v) => (
@@ -218,14 +216,14 @@ export function AddServerWizard({
 
           <div className="form-grid">
             <Field label="Name" hint="How it appears in Fleetdock, e.g. “production” or “analytics”." error={fieldError(error, "name")}>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+              <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
             </Field>
             <Field
               label="Port"
               error={fieldError(error, "port")}
               help={mode === "provision" ? "The port the new server listens on, on its host. Pick a free one." : undefined}
             >
-              <input className="input" type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
+              <Input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
             </Field>
           </div>
 
@@ -233,7 +231,7 @@ export function AddServerWizard({
             <>
               <Field label="Host" hint={ssh.enabled ? "Hostname or IP address as seen from the SSH server." : "Hostname or IP address Fleetdock can reach."}
                 help={<>On the same computer as Fleetdock? Use <code>host.docker.internal</code> — <code>localhost</code> would mean Fleetdock&apos;s own container.</>} error={fieldError(error, "host")}>
-                <input className="input" value={host} onChange={(e) => setHost(e.target.value)} placeholder={ssh.enabled ? "127.0.0.1" : "db.example.com"} required />
+                <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder={ssh.enabled ? "127.0.0.1" : "db.example.com"} required />
               </Field>
               <SSHTunnelFields value={ssh} onChange={setSsh} error={error} />
             </>
@@ -247,22 +245,22 @@ export function AddServerWizard({
                   help="An account allowed to create databases and users. Fleetdock needs it to find databases, take backups and show monitoring — you can add it later."
                   error={fieldError(error, "username")}
                 >
-                  <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder={ENGINES[engine].adminUser} autoComplete="off" />
+                  <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder={ENGINES[engine].adminUser} autoComplete="off" />
                 </Field>
                 <Field label="Password" error={fieldError(error, "password")}>
-                  <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+                  <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
                 </Field>
               </div>
               <Field
                 label="Encryption"
                 help="How Fleetdock protects its connection to this server. Use “Verify” across networks you don't trust."
               >
-                <select className="input" value={tls} onChange={(e) => setTls(e.target.value as TLSMode)}>
+                <Select value={tls} onChange={(e) => setTls(e.target.value as TLSMode)}>
                   <option value="prefer">Use encryption when available (default)</option>
                   <option value="require">Always encrypt</option>
                   <option value="verify-full">Always encrypt and verify the certificate</option>
                   <option value="disable">Never encrypt</option>
-                </select>
+                </Select>
               </Field>
               <DataAccessFields value={dataAccess} onChange={setDataAccess} error={error} />
             </>
@@ -271,15 +269,20 @@ export function AddServerWizard({
           )}
 
           <ErrorText message={error ? friendlyError(error) : undefined} />
-          <div className="flex justify-between gap-2" style={{ marginTop: ".9rem", flexWrap: "wrap" }}>
+          <div className="flex flex-wrap justify-between gap-2 mt-3.5">
             {serverId ? <span /> : (
-              <button type="button" className="btn btn-ghost" onClick={() => setMode(null)} disabled={busy}>
-                ← Back
-              </button>
+              <Button variant="ghost" icon={<ArrowLeft size={15} aria-hidden />} onClick={() => setMode(null)} disabled={busy}>
+                Back
+              </Button>
             )}
-            <button className="btn btn-primary" type="submit" disabled={busy || (mode !== "external" && serverList.length === 0)}>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={busy}
+              disabled={mode !== "external" && serverList.length === 0}
+            >
               {busy ? "Working…" : mode === "provision" ? "Create database server" : "Connect"}
-            </button>
+            </Button>
           </div>
         </form>
       )}

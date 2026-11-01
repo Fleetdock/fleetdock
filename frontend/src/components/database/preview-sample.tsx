@@ -23,13 +23,13 @@ export function PreviewSampleView({ sample }: { sample: PreviewSample }) {
     .filter(({ name, i }) => changed.size === 0 || changed.has(i) || sample.key.includes(name));
   return (
     <div className="preview-sample">
-      <div className="text-sm muted" style={{ marginBottom: ".35rem" }}>
+      <div className="text-sm muted mb-1.5">
         {sample.rows.length === 0
           ? `No rows of ${sample.table} match.`
           : `${sample.truncated ? "First " : ""}${sample.rows.length} row${sample.rows.length === 1 ? "" : "s"} of ${sample.table}, before → after`}
       </div>
       {sample.rows.length ? (
-        <div style={{ overflowX: "auto" }}>
+        <div className="overflow-x-auto">
           <table className="table preview-table">
             <thead>
               <tr>

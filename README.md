@@ -9,7 +9,23 @@ An open-source, self-hosted **dashboard for your databases** — MariaDB, MySQL
 and PostgreSQL. Manage database servers, databases, users and backups from one
 place instead of SSH, without handing your credentials to a SaaS vendor.
 
-> Screenshots: see [docs/screenshots/](docs/screenshots/).
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/overview.png">
+  <img alt="The Fleetdock overview: servers, databases, backups and recent activity" src="docs/screenshots/light/overview.png">
+</picture>
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Data browser: edit rows with undo" src="docs/screenshots/light/data-browser.png"><br><sub><b>Data browser</b>: edit rows in place, follow foreign keys, undo any save.</sub></td>
+    <td width="50%"><img alt="SQL console with a preview of the rows a statement changes" src="docs/screenshots/light/sql-console.png"><br><sub><b>SQL console</b>: preview what an UPDATE will change before it runs.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img alt="Fleet query results across many databases" src="docs/screenshots/light/fleet-query.png"><br><sub><b>Fleet query</b>: one SQL script on up to 500 databases.</sub></td>
+    <td width="50%"><img alt="Backup history and verification" src="docs/screenshots/light/backups.png"><br><sub><b>Backups</b>: scheduled, to your own S3 bucket, test-restored.</sub></td>
+  </tr>
+</table>
+
+More in [docs/screenshots/](docs/screenshots/).
 
 ## Quick start
 

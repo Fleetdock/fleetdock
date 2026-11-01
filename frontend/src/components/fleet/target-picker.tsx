@@ -1,8 +1,9 @@
 "use client";
 
+import { Database as DatabaseIcon, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { Spinner } from "@/components/ui";
+import { Button, ButtonLink, EmptyState, SearchInput, Select, Skeleton, Toolbar } from "@/components/ui";
 import { engineLabel } from "@/lib/engines";
 import { useAllDatabases } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
@@ -63,45 +64,69 @@ export function TargetPicker({
     onChange(next);
   };
 
-  if (isLoading) return <Spinner />;
+  if (isLoading) {
+    return (
+      <div className="fleet-picker" role="status" aria-label="Loading databases">
+        <Skeleton height="2.25rem" radius="var(--radius-md)" />
+        <div className="card p-3 stack-sm" aria-hidden>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} height=".95rem" width={`${80 - i * 9}%`} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (all.length === 0) {
+    return (
+      <EmptyState
+        plain
+        icon={<DatabaseIcon size={22} />}
+        title="No databases to run on"
+        hint="Connect a database server first; its databases show up here."
+        action={
+          <ButtonLink href="/databases" variant="primary">
+            Go to Databases
+          </ButtonLink>
+        }
+      />
+    );
+  }
   return (
     <div className="fleet-picker">
-      <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-        <input
-          className="input"
-          style={{ maxWidth: "14rem" }}
+      <Toolbar className="mb-0">
+        <SearchInput
+          icon={<Search size={15} aria-hidden />}
+          className="max-w-56"
           placeholder="Name, or a pattern like shop_*"
           value={pattern}
           onChange={(e) => setPattern(e.target.value)}
           aria-label="Filter by name"
         />
-        <select className="input" style={{ maxWidth: "12rem" }} value={instance} onChange={(e) => setInstance(e.target.value)} aria-label="Server">
+        <Select className="max-w-48" value={instance} onChange={(e) => setInstance(e.target.value)} aria-label="Server">
           <option value="">All servers</option>
           {instances.map(([id, name]) => (
             <option key={id} value={id}>
               {name}
             </option>
           ))}
-        </select>
+        </Select>
         {engines.length > 1 ? (
-          <select className="input" style={{ maxWidth: "10rem" }} value={engine} onChange={(e) => setEngine(e.target.value)} aria-label="Engine">
+          <Select className="max-w-40" value={engine} onChange={(e) => setEngine(e.target.value)} aria-label="Engine">
             <option value="">All engines</option>
             {engines.map((e) => (
               <option key={e} value={e}>
                 {engineLabel(e)}
               </option>
             ))}
-          </select>
+          </Select>
         ) : null}
-        <button className="btn btn-sm" onClick={toggleShown} disabled={shown.length === 0}>
+        <Button size="sm" onClick={toggleShown} disabled={shown.length === 0}>
           {allShown ? "Clear shown" : `Select ${shown.length} shown`}
-        </button>
-      </div>
+        </Button>
+      </Toolbar>
       <div className="card fleet-picker-list">
         {shown.length === 0 ? (
-          <p className="text-sm muted" style={{ margin: ".75rem" }}>
-            No databases match.
-          </p>
+          <p className="text-sm muted m-3">No databases match these filters.</p>
         ) : (
           shown.map((d) => (
             <label key={d.id} className="fleet-picker-row">

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Spinner } from "@/components/ui";
+import { Button } from "@/components/ui";
 
 import { ApiError } from "@/lib/api";
 
@@ -35,17 +35,18 @@ export function ExportButton({
   return (
     <span className="flex items-center gap-2">
       {error ? (
-        <span
-          className="text-sm"
-          style={{ color: "var(--danger, #c00)" }}
-          title={error}
-        >
+        <span className="text-sm text-danger" title={error} role="alert">
           Export failed
         </span>
       ) : null}
-      <button className="btn btn-sm" onClick={onClick} disabled={busy}>
-        {busy ? <Spinner /> : <Download size={15} />} {label}
-      </button>
+      <Button
+        size="sm"
+        icon={<Download size={15} aria-hidden />}
+        loading={busy}
+        onClick={onClick}
+      >
+        {label}
+      </Button>
     </span>
   );
 }

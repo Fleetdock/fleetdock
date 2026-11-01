@@ -4,7 +4,19 @@ import { useState } from "react";
 import { KeyRound, Plus, RotateCw, Trash2 } from "lucide-react";
 
 import { DataTable } from "@/components/data-table";
-import { ConfirmModal, ErrorText, Field, Modal, SecretReveal, SectionHeader, StatusBadge, Time } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Checkbox,
+  ConfirmModal,
+  ErrorText,
+  Field,
+  Modal,
+  SecretReveal,
+  SectionHeader,
+  StatusBadge,
+  Time,
+} from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   useConnectivity,
@@ -62,9 +74,9 @@ export function CredentialsSection({ databaseId, canWrite }: { databaseId: strin
         description="Scoped logins for apps that connect to this database. Passwords are shown once."
         actions={
           canWrite ? (
-            <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
-              <Plus size={14} /> Create credential
-            </button>
+            <Button variant="primary" size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>
+              Create credential
+            </Button>
           ) : null
         }
       />
@@ -83,13 +95,13 @@ export function CredentialsSection({ databaseId, canWrite }: { databaseId: strin
               </div>
             ),
           },
-          { id: "access", header: "Access", render: (c) => <span className="badge">{c.access_level}</span> },
+          { id: "access", header: "Access", render: (c) => <Badge>{c.access_level}</Badge> },
           {
             id: "status",
             header: "Status",
             render: (c) =>
               c.revoked_at ? (
-                <span className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                <span className="row">
                   <StatusBadge status="revoked" />
                   <span className="muted text-sm">
                     <Time value={c.revoked_at} />
@@ -106,13 +118,18 @@ export function CredentialsSection({ databaseId, canWrite }: { databaseId: strin
             align: "right",
             render: (c) =>
               canWrite && !c.revoked_at ? (
-                <div className="flex gap-2 justify-end">
-                  <button className="btn btn-sm" onClick={() => setPendingRotate(c)}>
-                    <RotateCw size={14} /> Rotate
-                  </button>
-                  <button className="btn btn-sm btn-danger" onClick={() => setPendingRevoke(c)}>
-                    <Trash2 size={14} /> Revoke
-                  </button>
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" icon={<RotateCw size={14} aria-hidden />} onClick={() => setPendingRotate(c)}>
+                    Rotate
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    icon={<Trash2 size={14} aria-hidden />}
+                    onClick={() => setPendingRevoke(c)}
+                  >
+                    Revoke
+                  </Button>
                 </div>
               ) : null,
           },
@@ -123,6 +140,13 @@ export function CredentialsSection({ databaseId, canWrite }: { databaseId: strin
         error={error instanceof ApiError ? error.message : error ? "Could not load credentials." : undefined}
         emptyTitle="No application credentials"
         emptyHint="Create credentials for apps connecting to this database."
+        emptyAction={
+          canWrite ? (
+            <Button variant="primary" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>
+              Create credential
+            </Button>
+          ) : undefined
+        }
       />
 
       {creating ? (
@@ -243,29 +267,23 @@ function CreateCredentialModal({
           </select>
         </Field>
 
-        <label
-          className="flex items-center gap-2 text-sm"
-          style={{ margin: ".5rem 0", opacity: publicActive ? 1 : 0.6 }}
-        >
-          <input
-            type="checkbox"
-            checked={usePublic}
-            disabled={!publicActive}
-            onChange={(e) => setUsePublic(e.target.checked)}
-          />
-          Use the public endpoint in the connection URL
-        </label>
-        {!publicActive ? (
-          <p className="muted text-sm" style={{ marginTop: "-.25rem", marginBottom: ".5rem" }}>
-            Available once public access is enabled and active.
-          </p>
-        ) : null}
+        <Checkbox
+          className={publicActive ? undefined : "opacity-60"}
+          checked={usePublic}
+          disabled={!publicActive}
+          onChange={(e) => setUsePublic(e.target.checked)}
+          label="Use the public endpoint in the connection URL"
+          hint={publicActive ? undefined : "Available once public access is enabled and active."}
+        />
 
         <ErrorText message={error ?? undefined} />
 
-        <button className="btn btn-primary" style={{ marginTop: ".5rem" }} disabled={create.isPending}>
-          {create.isPending ? "Creating…" : "Create"}
-        </button>
+        <div className="modal-actions">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={create.isPending}>
+            {create.isPending ? "Creating…" : "Create"}
+          </Button>
+        </div>
       </form>
     </Modal>
   );

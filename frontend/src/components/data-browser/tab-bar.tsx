@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { IconButton } from "@/components/ui";
 import type { Tab } from "@/lib/data-browser/tabs";
 import { Copy, Eye, Plus, SquareTerminal, Table2, X } from "lucide-react";
 
@@ -166,9 +167,10 @@ export function TabBar({
           );
         })}
       </div>
-      <button className="btn btn-ghost btn-icon dbx-tab-new" onClick={onNewQuery} title="New SQL query" aria-label="New SQL query">
-        <Plus size={15} />
-      </button>
+      {/* noTooltip: the tooltip wrapper would break the .dbx-tabbar > .btn-icon rule. */}
+      <IconButton label="New SQL query" noTooltip title="New SQL query" className="dbx-tab-new" onClick={onNewQuery}>
+        <Plus size={15} aria-hidden />
+      </IconButton>
       {ctx.element}
     </div>
   );

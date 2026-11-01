@@ -1,12 +1,24 @@
 "use client";
 
-import { Download, Pause, Play, RotateCcw, Square } from "lucide-react";
+import { Download, Play, RotateCcw, Square } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { SqlEditor } from "@/components/sql-editor";
-import { EmptyState, ErrorText, PageHeader, Spinner, StatusBadge } from "@/components/ui";
+import {
+  Button,
+  ButtonLink,
+  Callout,
+  DetailSkeleton,
+  EmptyState,
+  PageHeader,
+  QueryError,
+  StatusBadge,
+  Table,
+  TableSkeleton,
+  Tabs,
+} from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { mergeResults } from "@/lib/fleet";
 import { formatDuration } from "@/lib/format";
@@ -15,21 +27,25 @@ import type { FleetRun, FleetTarget } from "@/lib/types";
 
 const ACTIVE = new Set(["running", "canceling"]);
 
+type RunTab = "results" | "databases";
+
 export default function FleetRunPage() {
   const id = String(useParams().id);
-  const { data: run, isLoading } = useFleetRun(id);
+  const { data: run, isLoading, error, refetch } = useFleetRun(id);
   const active = run ? ACTIVE.has(run.status) : false;
-  const { data: targets } = useFleetTargets(id, active);
-  const [picked, setTab] = useState<"results" | "databases" | null>(null);
+  const targetsQuery = useFleetTargets(id, active);
+  const targets = targetsQuery.data;
+  const [picked, setTab] = useState<RunTab | null>(null);
 
-  if (isLoading) {
+  if (isLoading) return <DetailSkeleton label="Loading fleet run" />;
+  if (!run) {
     return (
-      <div className="flex items-center gap-2 muted text-sm">
-        <Spinner /> Loading…
+      <div>
+        <PageHeader breadcrumbs={[{ label: "Fleet query", href: "/fleet" }, { label: "Run" }]} title="Fleet run" />
+        <QueryError error={error} what="fleet run" onRetry={() => void refetch()} backHref="/fleet" backLabel="Back to Fleet query" />
       </div>
     );
   }
-  if (!run) return <EmptyState title="Fleet run not found" />;
   // A script that writes is judged by what it changed on each database.
   const tab = picked ?? (run.writes ? "databases" : "results");
 
@@ -42,14 +58,29 @@ export default function FleetRunPage() {
         actions={<RunActions run={run} />}
       />
       <RunSummary run={run} />
-      <div className="tabs" role="tablist" aria-label="Run sections">
-        {(["results", "databases"] as const).map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} className={`tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
-            {t === "results" ? "Results" : "Databases"}
-          </button>
-        ))}
+      <Tabs<RunTab>
+        tabs={[
+          { id: "results", label: "Results" },
+          { id: "databases", label: "Databases", count: run.total },
+        ]}
+        value={tab}
+        onChange={setTab}
+        label="Run sections"
+        panelId="fleet-run-panel"
+      />
+      <div id="fleet-run-panel" role="tabpanel" aria-label={tab === "results" ? "Results" : "Databases"} tabIndex={0} className="mt-4">
+        {!targets ? (
+          targetsQuery.isError ? (
+            <QueryError error={targetsQuery.error} what="run results" onRetry={() => void targetsQuery.refetch()} />
+          ) : (
+            <TableSkeleton rows={4} columns={5} />
+          )
+        ) : tab === "results" ? (
+          <Merged run={run} targets={targets} />
+        ) : (
+          <Targets targets={targets} />
+        )}
       </div>
-      {!targets ? <Spinner /> : tab === "results" ? <Merged run={run} targets={targets} /> : <Targets targets={targets} />}
     </div>
   );
 }
@@ -60,25 +91,29 @@ function RunActions({ run }: { run: FleetRun }) {
   const onError = (e: unknown) => setError(e instanceof ApiError ? e.message : "Something went wrong");
   return (
     <>
-      {error ? <span className="text-sm" style={{ color: "var(--danger)" }}>{error}</span> : null}
+      {error ? (
+        <span className="text-sm text-danger" role="alert">
+          {error}
+        </span>
+      ) : null}
       {run.status === "paused" ? (
-        <button className="btn btn-primary" disabled={resume.isPending} onClick={() => resume.mutate(undefined, { onError })}>
-          <Play size={15} /> Continue on the other {run.total - 1}
-        </button>
+        <Button variant="primary" icon={<Play size={15} aria-hidden />} loading={resume.isPending} onClick={() => resume.mutate(undefined, { onError })}>
+          Continue on the other {run.total - 1}
+        </Button>
       ) : null}
       {run.status === "running" || run.status === "paused" ? (
-        <button className="btn" disabled={cancel.isPending} onClick={() => cancel.mutate(undefined, { onError })}>
-          <Square size={14} /> Cancel
-        </button>
+        <Button icon={<Square size={14} aria-hidden />} loading={cancel.isPending} onClick={() => cancel.mutate(undefined, { onError })}>
+          Cancel
+        </Button>
       ) : null}
       {(run.status === "failed" || run.status === "canceled") && run.succeeded < run.total ? (
-        <button className="btn" disabled={retry.isPending} onClick={() => retry.mutate(undefined, { onError })}>
-          <RotateCcw size={14} /> Retry the {run.total - run.succeeded} not done
-        </button>
+        <Button icon={<RotateCcw size={14} aria-hidden />} loading={retry.isPending} onClick={() => retry.mutate(undefined, { onError })}>
+          Retry the {run.total - run.succeeded} not done
+        </Button>
       ) : null}
-      <button className="btn" onClick={() => void downloadFleetCSV(run.id).catch(onError)}>
-        <Download size={14} /> CSV
-      </button>
+      <Button icon={<Download size={14} aria-hidden />} onClick={() => void downloadFleetCSV(run.id).catch(onError)}>
+        Download CSV
+      </Button>
     </>
   );
 }
@@ -89,12 +124,11 @@ function RunSummary({ run }: { run: FleetRun }) {
   return (
     <div className="card panel fleet-summary">
       {run.status === "paused" ? (
-        <div className="callout callout-info flex items-center gap-2">
-          <Pause size={14} aria-hidden /> The script ran on the first database. Check its result below, then continue
-          on the rest or cancel.
-        </div>
+        <Callout tone="info" title="Paused after the first database">
+          The script ran on the first database. Check its result below, then continue on the rest or cancel.
+        </Callout>
       ) : null}
-      <div className="fleet-progress" aria-label={`${pct}% done`}>
+      <div className="fleet-progress" role="img" aria-label={`${pct}% done`}>
         <span className="is-ok" style={{ width: `${(100 * run.succeeded) / Math.max(run.total, 1)}%` }} />
         <span className="is-failed" style={{ width: `${(100 * run.failed) / Math.max(run.total, 1)}%` }} />
         <span className="is-skipped" style={{ width: `${(100 * run.skipped) / Math.max(run.total, 1)}%` }} />
@@ -130,25 +164,30 @@ function Merged({ run, targets }: { run: FleetRun; targets: FleetTarget[] }) {
   const affected = targets.reduce((a, t) => a + (t.rows_affected ?? 0), 0);
   if (m.columns.length === 0) {
     return (
-      <p className="text-sm muted">
-        {run.writes
+      <EmptyState
+        title={run.writes ? "No result sets" : ACTIVE.has(run.status) ? "Waiting for results" : "No rows returned"}
+        hint={run.writes
           ? `${affected.toLocaleString()} row${affected === 1 ? "" : "s"} changed ${run.finished_at ? "in all" : "so far"}. See Databases for each one.`
           : ACTIVE.has(run.status)
             ? "Waiting for results…"
             : "No rows were returned."}
-      </p>
+        action={
+          run.writes ? null : (
+            <ButtonLink href="/fleet">New fleet query</ButtonLink>
+          )
+        }
+      />
     );
   }
   return (
     <div>
       {m.trimmed.length > 0 ? (
-        <p className="text-sm muted">
+        <Callout tone="info" className="mb-3">
           Some databases returned more rows than are kept ({m.trimmed.slice(0, 5).join(", ")}
           {m.trimmed.length > 5 ? "…" : ""}); raise the row limit or narrow the query.
-        </p>
+        </Callout>
       ) : null}
-      <div className="card fleet-results">
-        <table className="table">
+      <Table wrapClassName="fleet-results">
           <thead>
             <tr>
               <th>database</th>
@@ -171,22 +210,20 @@ function Merged({ run, targets }: { run: FleetRun; targets: FleetTarget[] }) {
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
+      </Table>
     </div>
   );
 }
 
 function Targets({ targets }: { targets: FleetTarget[] }) {
   return (
-    <div className="card">
-      <table className="table">
+    <Table>
         <thead>
           <tr>
             <th>Database</th>
             <th>Status</th>
-            <th>Rows</th>
-            <th>Time</th>
+            <th className="num">Rows</th>
+            <th className="num">Time</th>
             <th>Message</th>
           </tr>
         </thead>
@@ -210,22 +247,21 @@ function Targets({ targets }: { targets: FleetTarget[] }) {
                 <td>
                   <StatusBadge status={t.status} />
                 </td>
-                <td className="text-sm">
+                <td className="num text-sm">
                   {!t.results
                     ? "—"
                     : sets.length > 0
                       ? `${rows.toLocaleString()} returned`
                       : `${(t.rows_affected ?? 0).toLocaleString()} changed`}
                 </td>
-                <td className="text-sm muted">{ms !== null ? formatDuration(ms) : "—"}</td>
-                <td className="text-sm" style={{ color: t.error ? "var(--danger)" : undefined, maxWidth: "28rem" }}>
+                <td className="num text-sm muted">{ms !== null ? formatDuration(ms) : "—"}</td>
+                <td className={`text-sm max-w-md${t.error ? " text-danger" : ""}`}>
                   {t.error ?? ""}
                 </td>
               </tr>
             );
           })}
         </tbody>
-      </table>
-    </div>
+    </Table>
   );
 }

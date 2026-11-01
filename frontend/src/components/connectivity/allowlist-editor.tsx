@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { ErrorText, Field, Modal } from "@/components/ui";
+import { Button, Callout, ErrorText, Field, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useUpdateAllowedCIDRs } from "@/lib/hooks";
 
@@ -62,7 +62,10 @@ export function AllowlistEditor({
 
   return (
     <Modal open onClose={onClose} title="Edit allowed networks">
-      <Field label="Allowed networks (CIDR or IP, comma-separated)">
+      <Field
+        label="Allowed networks (CIDR or IP, comma-separated)"
+        hint="A bare address is treated as a single host. The port stays the same, so existing clients keep working."
+      >
         <input
           className="input"
           value={input}
@@ -73,25 +76,22 @@ export function AllowlistEditor({
           placeholder="203.0.113.7, 10.0.0.0/8"
         />
       </Field>
-      <p className="muted text-sm" style={{ marginTop: ".25rem" }}>
-        A bare address is treated as a single host. The port stays the same, so existing clients keep working.
-      </p>
 
       {confirmAnywhere ? (
-        <div className="card" style={{ padding: ".7rem", marginTop: ".75rem" }}>
-          <strong>0.0.0.0/0 allows connections from any address on the internet.</strong> Press Save again to confirm.
-        </div>
+        <Callout tone="warning" role="alert" title="0.0.0.0/0 allows connections from any address on the internet.">
+          Press Save again to confirm.
+        </Callout>
       ) : null}
 
       <ErrorText message={error ?? undefined} />
 
-      <div className="flex gap-2" style={{ marginTop: "1rem" }}>
-        <button className="btn btn-primary" disabled={update.isPending} onClick={onSave}>
-          {update.isPending ? "Saving…" : "Save"}
-        </button>
-        <button className="btn" disabled={update.isPending} onClick={onClose}>
+      <div className="modal-actions">
+        <Button disabled={update.isPending} onClick={onClose}>
           Cancel
-        </button>
+        </Button>
+        <Button variant="primary" loading={update.isPending} onClick={onSave}>
+          {update.isPending ? "Saving…" : "Save"}
+        </Button>
       </div>
     </Modal>
   );

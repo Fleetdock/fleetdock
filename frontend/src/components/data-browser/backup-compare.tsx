@@ -7,7 +7,7 @@ import { History, RotateCcw, Trash2 } from "lucide-react";
 
 import { useConfirm } from "@/components/confirm";
 import { useToast } from "@/components/toast";
-import { ErrorText, Modal, Spinner } from "@/components/ui";
+import { Badge, Button, Callout, ErrorText, Modal, SegmentedControl, Spinner, type Tone } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { displayValue } from "@/lib/data-browser/history";
 import { formatBytes } from "@/lib/format";
@@ -18,7 +18,7 @@ import { useRowUndo } from "./row-history";
 
 type Kind = DiffItem["kind"];
 const KIND_LABEL: Record<Kind, string> = { changed: "Changed", removed: "Deleted since", added: "Added since" };
-const KIND_BADGE: Record<Kind, string> = { changed: "badge-amber", removed: "badge-red", added: "badge-green" };
+const KIND_BADGE: Record<Kind, Tone> = { changed: "warning", removed: "danger", added: "success" };
 
 /** How many differences one "Compare" collects before pausing. */
 const COLLECT = 200;
@@ -61,15 +61,22 @@ export function BackupCompare({
       ) : live?.status === "ready" ? (
         <ReadyCopy databaseId={databaseId} table={table} copy={live} canWrite={canWrite} canBackup={canBackup} />
       ) : live ? (
-        <div className="callout callout-info flex items-center gap-2">
-          <Spinner /> Restoring the backup from {when(live.backup_created_at)} next to the database… This takes about as long as
-          restoring it would.
-          {live.job_id ? (
-            <Link className="link" href={`/activity/${live.job_id}`} style={{ marginLeft: "auto" }}>
-              Progress
-            </Link>
-          ) : null}
-        </div>
+        <Callout
+          tone="info"
+          icon={false}
+          actions={
+            live.job_id ? (
+              <Link className="link" href={`/activity/${live.job_id}`}>
+                Progress
+              </Link>
+            ) : undefined
+          }
+        >
+          <span className="flex items-center gap-2">
+            <Spinner /> Restoring the backup from {when(live.backup_created_at)} next to the database… This takes about as
+            long as restoring it would.
+          </span>
+        </Callout>
       ) : (
         <PickBackup databaseId={databaseId} canBackup={canBackup} lastError={failed?.error} />
       )}
@@ -91,8 +98,8 @@ function PickBackup({ databaseId, canBackup, lastError }: { databaseId: string; 
     return <p className="text-sm muted">Opening a backup needs the backup:write permission on this database.</p>;
   }
   return (
-    <div className="flex" style={{ flexDirection: "column", gap: ".75rem" }}>
-      <p className="text-sm" style={{ margin: 0 }}>
+    <div className="flex flex-col gap-3">
+      <p className="text-sm m-0">
         Pick a backup. Fleetdock restores it into a temporary database on the same server (it is dropped again after a
         couple of hours), then compares this table with it row by row.
       </p>
@@ -103,7 +110,7 @@ function PickBackup({ databaseId, canBackup, lastError }: { databaseId: string; 
       ) : backups.length === 0 ? (
         <p className="text-sm muted">This database has no completed backups in backup storage yet.</p>
       ) : (
-        <div className="card" style={{ maxHeight: "50vh", overflowY: "auto" }}>
+        <div className="card max-h-[50vh] overflow-y-auto">
           <table className="table">
             <tbody>
               {backups.map((b) => (
@@ -115,16 +122,18 @@ function PickBackup({ databaseId, canBackup, lastError }: { databaseId: string; 
                       {b.verify_status === "passed" ? " · verified" : ""}
                     </div>
                   </td>
-                  <td style={{ textAlign: "right" }}>
-                    <button
-                      className="btn btn-sm btn-primary"
+                  <td className="text-right">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      icon={<History size={14} aria-hidden />}
                       disabled={create.isPending}
                       onClick={() =>
                         create.mutate(b.id, { onError: (e) => setError(e instanceof ApiError ? e.message : "Could not open the backup") })
                       }
                     >
-                      <History size={14} /> Open
-                    </button>
+                      Open
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -241,36 +250,48 @@ function ReadyCopy({
     });
 
   return (
-    <div className="flex" style={{ flexDirection: "column", gap: ".75rem" }}>
-      <div className="callout callout-info backup-copy-banner">
+    <div className="flex flex-col gap-3">
+      <Callout
+        tone="info"
+        icon={false}
+        className="backup-copy-banner"
+        actions={
+          canBackup ? (
+            <>
+              <Button size="sm" disabled={extend.isPending} onClick={() => extend.mutate(copy.id)}>
+                Keep longer
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                icon={<Trash2 size={13} aria-hidden />}
+                disabled={discard.isPending}
+                onClick={() => discard.mutate(copy.id)}
+              >
+                Discard
+              </Button>
+            </>
+          ) : undefined
+        }
+      >
         <span>
           Backup from <strong>{when(copy.backup_created_at)}</strong>, kept until {when(copy.expires_at)}.
         </span>
-        {canBackup ? (
-          <span className="flex gap-2">
-            <button className="btn btn-sm" disabled={extend.isPending} onClick={() => extend.mutate(copy.id)}>
-              Keep longer
-            </button>
-            <button className="btn btn-sm btn-danger" disabled={discard.isPending} onClick={() => discard.mutate(copy.id)}>
-              <Trash2 size={13} /> Discard
-            </button>
-          </span>
-        ) : null}
-      </div>
+      </Callout>
 
-      <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-        <button className="btn btn-primary btn-sm" disabled={running} onClick={() => void compare(undefined, true)}>
-          {running ? <Spinner /> : null} {diff ? "Compare again" : `Compare ${table}`}
-        </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="primary" loading={running} onClick={() => void compare(undefined, true)}>
+          {diff ? "Compare again" : `Compare ${table}`}
+        </Button>
         {running ? (
-          <button className="btn btn-sm" onClick={() => (stop.current = true)}>
+          <Button size="sm" onClick={() => (stop.current = true)}>
             Stop
-          </button>
+          </Button>
         ) : null}
         {next && !running ? (
-          <button className="btn btn-sm" onClick={() => void compare(next)}>
+          <Button size="sm" onClick={() => void compare(next)}>
             Find more
-          </button>
+          </Button>
         ) : null}
         {diff ? (
           <span className="text-sm muted">
@@ -280,7 +301,7 @@ function ReadyCopy({
       </div>
       <ErrorText message={error ?? undefined} />
       {diff?.warnings.map((w) => (
-        <p key={w} className="text-sm muted" style={{ margin: 0 }}>
+        <p key={w} className="text-sm muted m-0">
           {w}
         </p>
       ))}
@@ -290,18 +311,21 @@ function ReadyCopy({
           <p className="text-sm">No differences: the table matches the backup.</p>
         ) : (
           <>
-            <div className="segmented" role="group" aria-label="Show">
-              {(["all", "changed", "removed", "added"] as const).map((k) => (
-                <button key={k} aria-pressed={filter === k} onClick={() => setFilter(k)} style={{ height: "2rem" }}>
-                  {k === "all" ? `All ${diff.items.length}` : `${KIND_LABEL[k]} ${counts[k]}`}
-                </button>
-              ))}
-            </div>
-            <div className="card" style={{ maxHeight: "45vh", overflow: "auto" }}>
+            <SegmentedControl
+              label="Show"
+              value={filter}
+              onChange={setFilter}
+              className="self-start"
+              options={(["all", "changed", "removed", "added"] as const).map((k) => ({
+                value: k,
+                label: k === "all" ? `All ${diff.items.length}` : `${KIND_LABEL[k]} ${counts[k]}`,
+              }))}
+            />
+            <div className="card max-h-[45vh] overflow-auto">
               <table className="table compare-table">
                 <thead>
                   <tr>
-                    {canWrite ? <th style={{ width: "2rem" }} /> : null}
+                    {canWrite ? <th className="w-8" /> : null}
                     <th>Row</th>
                     <th>What differs</th>
                   </tr>
@@ -315,8 +339,8 @@ function ReadyCopy({
                         </td>
                       ) : null}
                       <td>
-                        <span className={`badge ${KIND_BADGE[it.kind]}`}>{KIND_LABEL[it.kind]}</span>
-                        <div className="text-sm" style={{ marginTop: ".2rem" }}>
+                        <Badge tone={KIND_BADGE[it.kind]}>{KIND_LABEL[it.kind]}</Badge>
+                        <div className="text-sm mt-1">
                           <code>{keyText(it.key)}</code>
                         </div>
                       </td>
@@ -330,16 +354,22 @@ function ReadyCopy({
             </div>
             {canWrite ? (
               <div className="flex items-center gap-2">
-                <button className="btn btn-sm" onClick={() => setPicked(new Set(shown.map(({ i }) => i)))}>
+                <Button size="sm" onClick={() => setPicked(new Set(shown.map(({ i }) => i)))}>
                   Select shown
-                </button>
-                <button className="btn btn-sm" disabled={picked.size === 0} onClick={() => setPicked(new Set())}>
+                </Button>
+                <Button size="sm" disabled={picked.size === 0} onClick={() => setPicked(new Set())}>
                   Clear
-                </button>
-                <span style={{ flex: 1 }} />
-                <button className="btn btn-primary btn-sm" disabled={picked.size === 0 || restoreRows.isPending || picked.size > 200} onClick={() => void restore()}>
-                  <RotateCcw size={14} /> Restore {picked.size || ""} from backup
-                </button>
+                </Button>
+                <span className="flex-1" />
+                <Button
+                  size="sm"
+                  variant="primary"
+                  icon={<RotateCcw size={14} aria-hidden />}
+                  disabled={picked.size === 0 || restoreRows.isPending || picked.size > 200}
+                  onClick={() => void restore()}
+                >
+                  Restore {picked.size || ""} from backup
+                </Button>
               </div>
             ) : null}
           </>

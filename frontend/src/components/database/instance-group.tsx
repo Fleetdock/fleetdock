@@ -17,7 +17,16 @@ import {
 
 import { HealthBadge } from "@/components/instance-monitoring";
 import { useErrorToast } from "@/components/toast";
-import { Menu, Spinner, StatusBadge } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  IconButton,
+  Menu,
+  Skeleton,
+  StatusBadge,
+  Table,
+} from "@/components/ui";
 import { engineLabel } from "@/lib/engines";
 import { formatBytes } from "@/lib/format";
 import { useDatabases, useLockDatabase, useUnlockDatabase } from "@/lib/hooks";
@@ -73,24 +82,27 @@ export function InstanceGroup({
   const expanded = open || (q !== "" && dbs.length > 0);
 
   return (
-    <section className="card instance-group" aria-label={instance.name}>
+    <section className="instance-group card" aria-label={instance.name}>
       <div className="instance-group-head">
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
+        <IconButton
+          noTooltip
           aria-expanded={expanded}
-          aria-label={
+          label={
             expanded ? `Collapse ${instance.name}` : `Expand ${instance.name}`
           }
           onClick={() => setOpen(!expanded)}
         >
-          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </button>
+          {expanded ? (
+            <ChevronDown size={16} aria-hidden />
+          ) : (
+            <ChevronRight size={16} aria-hidden />
+          )}
+        </IconButton>
         <div className="instance-group-title">
           <Link href={`/instances/${instance.id}`} className="font-semibold">
             {instance.name}
           </Link>
-          <span className="muted text-sm">
+          <span className="text-sm muted">
             {engineLabel(instance.engine)} {instance.engine_version} ·{" "}
             {instanceLocation(instance, serverName)}
           </span>
@@ -99,14 +111,14 @@ export function InstanceGroup({
           {instance.has_credentials ? (
             <HealthBadge health={instance.health} />
           ) : (
-            <span
-              className="badge badge-amber"
+            <Badge
+              tone="warning"
               title="Add an admin login so Fleetdock can manage this server"
             >
               not connected
-            </span>
+            </Badge>
           )}
-          <span className="muted text-sm hide-sm">
+          <span className="text-sm muted hide-sm">
             {isLoading
               ? "…"
               : `${all.length} database${all.length === 1 ? "" : "s"}`}
@@ -117,13 +129,13 @@ export function InstanceGroup({
             items={[
               {
                 label: "Create database here",
-                icon: <Plus size={15} />,
+                icon: <Plus size={15} aria-hidden />,
                 onSelect: () => onCreateDatabase(instance.id),
                 hidden: !actions.canWrite || !instance.has_credentials,
               },
               {
                 label: "Open server details",
-                icon: <Settings2 size={15} />,
+                icon: <Settings2 size={15} aria-hidden />,
                 onSelect: () => router.push(`/instances/${instance.id}`),
                 hidden: !canManageInstance,
               },
@@ -135,30 +147,45 @@ export function InstanceGroup({
       {expanded ? (
         isLoading ? (
           <div
-            className="flex items-center gap-2 muted text-sm"
-            style={{ padding: ".8rem 1rem" }}
+            role="status"
+            aria-label={`Loading databases on ${instance.name}`}
+            className="px-4 py-3 border-border border-t stack-sm"
           >
-            <Spinner /> Loading databases…
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} width={`${70 - i * 15}%`} />
+            ))}
           </div>
         ) : dbs.length === 0 ? (
-          <p
-            className="muted text-sm"
-            style={{ padding: ".8rem 1rem", margin: 0 }}
-          >
-            {instance.has_credentials
-              ? "No databases found yet. New ones appear here automatically."
-              : "Fleetdock can't see this server's databases without an admin login."}
-          </p>
-        ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <tbody>
-                {dbs.map((d) => (
-                  <DatabaseRow key={d.id} database={d} actions={actions} />
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-border border-t">
+            <p className="flex-1 m-0 text-sm muted">
+              {instance.has_credentials
+                ? "No databases found yet. New ones appear here automatically."
+                : "Fleetdock can't see this server's databases without an admin login."}
+            </p>
+            {instance.has_credentials ? (
+              actions.canWrite ? (
+                <Button
+                  size="sm"
+                  icon={<Plus size={15} aria-hidden />}
+                  onClick={() => onCreateDatabase(instance.id)}
+                >
+                  Create database
+                </Button>
+              ) : null
+            ) : canManageInstance ? (
+              <ButtonLink size="sm" href={`/instances/${instance.id}`}>
+                Add admin login
+              </ButtonLink>
+            ) : null}
           </div>
+        ) : (
+          <Table bare>
+            <tbody>
+              {dbs.map((d) => (
+                <DatabaseRow key={d.id} database={d} actions={actions} />
+              ))}
+            </tbody>
+          </Table>
         )
       ) : null}
     </section>
@@ -175,35 +202,28 @@ export function DatabaseRow({
 }) {
   return (
     <tr>
-      <td style={{ paddingLeft: "2.6rem" }}>
+      <td className="pl-[2.6rem]">
         <span className="flex items-center gap-2">
           <Link href={`/databases/${d.id}`} className="font-medium link-plain">
             {d.name}
           </Link>
           {d.system ? (
-            <span
-              className="badge badge-gray"
-              title="Belongs to the database engine itself. You can browse and back it up, but not remove it."
-            >
+            <Badge title="Belongs to the database engine itself. You can browse and back it up, but not remove it.">
               system
-            </span>
+            </Badge>
           ) : null}
         </span>
       </td>
       <td>
         <StatusBadge status={d.status} />
       </td>
-      <td className="muted hide-sm" style={{ textAlign: "right" }}>
+      <td className="text-right muted hide-sm num">
         {formatBytes(d.size_bytes)}
       </td>
-      <td
-        className="muted hide-sm"
-        style={{ textAlign: "right" }}
-        title="Open connections"
-      >
+      <td className="text-right muted hide-sm num" title="Open connections">
         {d.active_connections ? `${d.active_connections} conn.` : ""}
       </td>
-      <td style={{ textAlign: "right", width: 1 }}>
+      <td className="w-px text-right">
         <DatabaseMenu database={d} actions={actions} />
       </td>
     </tr>
@@ -227,13 +247,13 @@ export function DatabaseMenu({
       items={[
         {
           label: "Back up now",
-          icon: <Archive size={15} />,
+          icon: <Archive size={15} aria-hidden />,
           onSelect: () => actions.onBackup(d),
           hidden: !actions.canBackup,
         },
         {
           label: "Unlock",
-          icon: <Unlock size={15} />,
+          icon: <Unlock size={15} aria-hidden />,
           onSelect: () =>
             unlock.mutate(d.id, {
               onError: toastError("Failed to unlock the database"),
@@ -242,7 +262,7 @@ export function DatabaseMenu({
         },
         {
           label: "Lock (block writes)",
-          icon: <Lock size={15} />,
+          icon: <Lock size={15} aria-hidden />,
           onSelect: () =>
             lock.mutate(d.id, {
               onError: toastError("Failed to lock the database"),
@@ -251,7 +271,7 @@ export function DatabaseMenu({
         },
         {
           label: "Remove…",
-          icon: <Trash2 size={15} />,
+          icon: <Trash2 size={15} aria-hidden />,
           danger: true,
           onSelect: () => actions.onDelete(d),
           hidden: !actions.canWrite || d.system,
