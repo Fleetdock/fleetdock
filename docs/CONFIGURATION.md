@@ -49,6 +49,7 @@ Gateway tuning (`FLEETDOCK_GATEWAY_*`) is described in
 | `FLEETDOCK_HEARTBEAT_TIMEOUT`                         | `2m`                    | no heartbeat for this long ⇒ server `offline`                                                                     |
 | `FLEETDOCK_METRICS_RETENTION`                         | `168h`                  | how long per-heartbeat server metrics history is kept                                                             |
 | `FLEETDOCK_ROW_CHANGE_RETENTION`                      | `168h`                  | how long data-browser edits stay in the change journal and can be undone; `0` turns the journal off                |
+| `FLEETDOCK_AUDIT_RETENTION`                           | `8760h`                 | how long audit log events are kept (365 days); `0` keeps them forever                                             |
 | `FLEETDOCK_CATALOG_REFRESH_INTERVAL`                  | `30m`                   | how often each database's table and column names are re-read for the fleet-wide search (Ctrl/Cmd+K); `0` disables it |
 | `FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL`                  | `15m`                   | how often databases with schema history turned on are checked for structural changes; `0` checks only after DDL made through Fleetdock and on demand |
 | `FLEETDOCK_FLEET_MAX_PARALLEL`                        | `16`                    | how many fleet-query databases one Fleetdock process works on at once (each run also has its own limit, 1–16) |

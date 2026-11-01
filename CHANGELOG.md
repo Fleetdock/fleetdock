@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **ER diagram.** A database's new **Diagram** tab draws its tables and
+  views with their columns, primary keys and row estimates, and every
+  foreign key between them, laid out automatically. Click a table to
+  highlight its relations, double-click it (or its name) to open it in the
+  data browser, find a table by name, show only a table and its neighbours
+  (1–3 steps), narrow a PostgreSQL database to one schema, and download the
+  diagram as PNG or SVG. Positions you drag are kept in the browser.
+  Databases with more than 150 tables open on their most connected table.
+  API: `GET /v1/databases/{id}/diagram`; the column catalog
+  (`GET /v1/databases/{id}/columns`) now also reports `nullable` and
+  `primary_key`.
+- **Audit log.** *Activity → Audit log* shows who did what: sign-ins and
+  failed sign-ins, users, roles, grants and API tokens, servers, database
+  servers and databases, backups, backup storage and schedules,
+  notification settings, console scripts that write (with the script),
+  data-browser edits and undo, structure changes, exports and dumps. Every
+  event carries the user — or the API token, or the CLI — with IP address
+  and client, the resource and the outcome; requests refused for lack of
+  permission are kept as *denied*. Filter by period, kind of action, user
+  and result, open an event for its details, export CSV, or open a
+  database's own events from its menu. Owners and admins can read it
+  (`audit:read`). Events are kept for `FLEETDOCK_AUDIT_RETENTION` (365
+  days; `0` keeps them). `fleetdock reset-admin-password` is recorded too.
+  API: `GET /v1/audit-events`.
+
+### Fixed
+
+- **Deleting a user who appears in the audit trail failed** with "table
+  audit_events is append-only": unlinking their events on delete counted
+  as changing them. Their events now stay, with their email.
+
 ## [0.9.0] - 2026-11-01
 
 ### Security

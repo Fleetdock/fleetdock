@@ -116,3 +116,80 @@ func (s *Service) AdminSchema(ctx context.Context, databaseID uuid.UUID) (*schem
 	conn.Database = db.Name
 	return r.ReadSchema(ctx, conn, db.Name)
 }
+
+// DiagramTable is one table or view of an entity-relationship diagram.
+type DiagramTable struct {
+	// Schema is the PostgreSQL schema; empty on MySQL/MariaDB.
+	Schema string `json:"schema,omitempty"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind"` // "table" or "view"
+	// RowEstimate is the engine's row estimate (statistics, not a count);
+	// absent for views and tables the engine has no estimate for.
+	RowEstimate *int64                 `json:"row_estimate,omitempty"`
+	Columns     []engine.CatalogColumn `json:"columns"`
+}
+
+// Diagram is a database's tables and the foreign keys between them, as the
+// data login sees them. Relation tables are named like DiagramTable
+// identifiers: "schema.table" on PostgreSQL, "table" elsewhere.
+type Diagram struct {
+	Tables    []DiagramTable      `json:"tables"`
+	Relations []engine.ForeignKey `json:"relations"`
+	// Truncated reports that the database has more tables, columns or
+	// foreign keys than are listed.
+	Truncated bool `json:"truncated"`
+}
+
+// Diagram reads what an entity-relationship diagram of the database needs:
+// tables with their columns and keys, row estimates and foreign keys.
+func (s *Service) Diagram(ctx context.Context, databaseID string) (*Diagram, error) {
+	var out *Diagram
+	err := s.scoped(ctx, databaseID, dbaccessdom.ModeRead, opTimeout,
+		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
+			cat, err := catalog(admin)
+			if err != nil {
+				return err
+			}
+			cols, err := cat.Columns(ctx, conn, db.Name)
+			if err != nil {
+				return err
+			}
+			fks, fkTruncated, err := cat.Relations(ctx, conn, db.Name)
+			if err != nil {
+				return err
+			}
+			// Row estimates are a nicety: a login that cannot read the
+			// statistics still gets its diagram.
+			tables, _ := admin.ListTables(ctx, conn, db.Name)
+			out = buildDiagram(cols, fks, tables)
+			out.Truncated = out.Truncated || fkTruncated
+			return nil
+		})
+	return out, err
+}
+
+// buildDiagram joins the column catalog with row estimates.
+func buildDiagram(cols *engine.ColumnCatalog, fks []engine.ForeignKey, tables []engine.TableInfo) *Diagram {
+	rows := make(map[string]int64, len(tables))
+	for _, t := range tables {
+		rows[t.Schema+"\x00"+t.Name] = t.RowCount
+		rows["\x00"+t.Name] = t.RowCount // MySQL/MariaDB report the database as Schema
+	}
+	out := &Diagram{Tables: make([]DiagramTable, 0, len(cols.Tables)), Relations: fks, Truncated: cols.Truncated}
+	if out.Relations == nil {
+		out.Relations = []engine.ForeignKey{}
+	}
+	for _, t := range cols.Tables {
+		dt := DiagramTable{Schema: t.Schema, Name: t.Name, Kind: t.Kind, Columns: t.Columns}
+		if dt.Columns == nil {
+			dt.Columns = []engine.CatalogColumn{}
+		}
+		if t.Kind == "table" {
+			if n, ok := rows[t.Schema+"\x00"+t.Name]; ok && n >= 0 {
+				dt.RowEstimate = &n
+			}
+		}
+		out.Tables = append(out.Tables, dt)
+	}
+	return out
+}

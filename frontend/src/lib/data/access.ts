@@ -44,10 +44,11 @@ export function useRevokeToken() {
 }
 
 // ---- Users & roles (administration) ----
-export function useUsers() {
+export function useUsers(enabled = true) {
   return useQuery({
     queryKey: ["users"],
     queryFn: () => api.get<{ items: User[] }>("/v1/users"),
+    enabled,
   });
 }
 

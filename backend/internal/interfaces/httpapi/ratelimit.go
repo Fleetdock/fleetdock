@@ -1,9 +1,7 @@
 package httpapi
 
 import (
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -75,24 +73,11 @@ func (l *loginLimiter) Middleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// clientIP resolves the caller's IP for rate-limiting. When the API is
-// configured to trust proxy headers, it uses the first (client-most) entry of
-// X-Forwarded-For; otherwise it falls back to the transport peer address. This
-// avoids collapsing every caller behind a reverse proxy into one shared bucket.
+// clientIP resolves the caller's IP for rate-limiting (see the package-level
+// clientIP): behind a trusted proxy, every caller does not collapse into one
+// shared bucket.
 func (l *loginLimiter) clientIP(r *http.Request) string {
-	if l.trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			first := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
-			if first != "" {
-				return first
-			}
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientIP(r, l.trustProxy)
 }
 
 // securityHeaders sets conservative defaults appropriate for a JSON API.

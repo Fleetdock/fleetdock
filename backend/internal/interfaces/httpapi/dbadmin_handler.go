@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	backupcopyapp "github.com/Fleetdock/fleetdock/backend/internal/app/backupcopy"
 	dbadminapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbadmin"
@@ -305,6 +306,8 @@ func (h *DBAdminHandler) Query(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	// Before the access check, so a refused script is logged with its text.
+	auditQuery(r, req.SQL, req.Preview)
 	allowWrite, err := h.interactive(r)
 	if err != nil {
 		writeError(w, err)
@@ -329,6 +332,32 @@ func (h *DBAdminHandler) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// maxAuditedSQL caps the script text kept in the audit log.
+const maxAuditedSQL = 4096
+
+// auditQuery keeps console scripts that change something in the audit log;
+// reads and previews (always rolled back) are left out.
+func auditQuery(r *http.Request, sql string, preview bool) {
+	stmts := engine.SplitStatements(sql)
+	writes := 0
+	for _, st := range stmts {
+		if !engine.IsReadOnly(st) {
+			writes++
+		}
+	}
+	if writes == 0 || preview {
+		auditapp.Skip(r.Context())
+		return
+	}
+	text := sql
+	if len(text) > maxAuditedSQL {
+		text = text[:maxAuditedSQL] + "…"
+	}
+	auditapp.AddMeta(r.Context(), "sql", text)
+	auditapp.AddMeta(r.Context(), "statements", len(stmts))
+	auditapp.AddMeta(r.Context(), "writes", writes)
 }
 
 // CancelQuery handles POST /v1/databases/{id}/query/{qid}/cancel. Only the
@@ -864,6 +893,20 @@ func (h *DBAdminHandler) ReferencedBy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// Diagram handles GET /v1/databases/{id}/diagram.
+func (h *DBAdminHandler) Diagram(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.interactive(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	d, err := h.svc.Diagram(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 // Columns handles GET /v1/databases/{id}/columns.

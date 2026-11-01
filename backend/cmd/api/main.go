@@ -247,6 +247,8 @@ func run() error {
 			RowChanges:         rowChangeRepo,
 			BackupCopies:       copySvc,
 			RowChangeRetention: cfg.RowChangeRetention,
+			Audit:              auditSvc,
+			AuditRetention:     cfg.AuditRetention,
 			CatalogLock:        postgres.CatalogLock(pool),
 		}).Run(ctx)
 		// Fleet queries run on every replica, each taking its share.
@@ -310,6 +312,7 @@ func run() error {
 		CORSOrigin:        cfg.CORSOrigin,
 		CORSCredentials:   cfg.CORSCredentials,
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
+		Audit:             auditSvc,
 		Ready:             pool.Ping,
 		UI:                uiHandler,
 	})

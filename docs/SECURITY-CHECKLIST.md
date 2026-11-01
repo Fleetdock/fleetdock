@@ -89,7 +89,9 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 - [ ] Review **Operations** log for unexpected mutating actions
 - [ ] Configure notification channels for backup failures and server offline events
 - [ ] Ship API JSON logs to a central system; restrict log access (credentials may appear in error messages — avoid logging request bodies)
-- [ ] Connectivity and application-credential changes are written to an append-only `audit_events` table. It is **not yet exposed** through the API or dashboard — read it with `fleetdock psql` if you need the trail
+- [ ] Review the **Audit log** (Activity → Audit log, `GET /v1/audit-events`, owners and admins): sign-ins and failed sign-ins, access changes, changes to servers, databases, backups and notifications, SQL that writes, data-browser edits, structure changes, exports and refused requests, each with the user, API token, IP address and client. Export it as CSV for your SIEM or archive
+- [ ] Set `FLEETDOCK_AUDIT_RETENTION` (365 days by default) to what your policy requires; the table is append-only except for that retention and for unlinking deleted users (their email stays on their events)
+- [ ] The audit log keeps the text of console scripts that write (first 4 KB). If people paste secrets into SQL (`CREATE USER … PASSWORD`), they are in the log too — restrict `audit:read` accordingly
 
 ## Supply chain
 
