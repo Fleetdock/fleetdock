@@ -164,7 +164,7 @@ func (pg *Postgres) ExportRowsCSV(ctx context.Context, p ConnParams, database st
 		return 0, err
 	}
 	meta, err := pg.pgMeta(ctx, conn, req.Table)
-	conn.Close(ctx)
+	_ = conn.Close(ctx)
 	if err != nil {
 		return 0, err
 	}
