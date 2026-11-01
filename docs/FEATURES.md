@@ -87,9 +87,17 @@ Backend (Go):
   - data: filtered, sorted, searchable browser; insert/edit/delete rows by
     primary key (exactly one row or nothing); CSV import and export; SQL file
     import;
-  - ER diagram: a database's **Diagram** tab draws its tables, columns,
-    keys and foreign keys, laid out automatically, with search, a
-    neighbours view and PNG/SVG export (`GET /v1/databases/{id}/diagram`);
+  - ER diagram: a database's **Diagram** page (full window) draws its
+    tables, columns, keys and foreign keys, laid out automatically, with
+    search, a neighbours view and PNG/SVG export
+    (`GET /v1/databases/{id}/diagram`);
+  - full screen (Alt+Shift+F) hides the app's sidebar and top bar; choose
+    and freeze columns; a row panel (Shift+Enter) edits a whole row; taller
+    or compact rows; filters with lists (is one of / none of), ranges,
+    ends with and doesn't contain, started from a column header; Export CSV
+    of exactly the filtered, sorted rows;
+  - SQL console: editor and results side by side vertically with a
+    draggable split, results in the data grid, up to 5,000 rows;
   - undo: every insert, edit and delete made in the data browser is kept in a
     change journal with the row before and after (for
     `FLEETDOCK_ROW_CHANGE_RETENTION`, a week by default). **Undo** right after

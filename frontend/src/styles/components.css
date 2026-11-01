@@ -1870,6 +1870,10 @@
     .form-grid {
       grid-template-columns: 1fr;
     }
+    /* Two figures per row on phones instead of a tall single column. */
+    .stat-strip {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .modal {
       padding: 1rem;
       border-radius: var(--radius-xl) var(--radius-xl) 0 0;
