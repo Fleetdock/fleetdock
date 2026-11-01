@@ -21,7 +21,8 @@ func (m *MariaDB) Columns(ctx context.Context, p ConnParams, database string) (*
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `
-		SELECT c.TABLE_NAME, t.TABLE_TYPE, c.COLUMN_NAME, c.COLUMN_TYPE
+		SELECT c.TABLE_NAME, t.TABLE_TYPE, c.COLUMN_NAME, c.COLUMN_TYPE,
+		       c.IS_NULLABLE = 'YES', c.COLUMN_KEY = 'PRI'
 		FROM information_schema.COLUMNS c
 		JOIN information_schema.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
 		WHERE c.TABLE_SCHEMA = ?
@@ -32,15 +33,16 @@ func (m *MariaDB) Columns(ctx context.Context, p ConnParams, database string) (*
 	defer rows.Close()
 	var b catalogBuilder
 	for rows.Next() {
-		var table, typ, col, colType string
-		if err := rows.Scan(&table, &typ, &col, &colType); err != nil {
+		var table, typ string
+		var col CatalogColumn
+		if err := rows.Scan(&table, &typ, &col.Name, &col.Type, &col.Nullable, &col.PrimaryKey); err != nil {
 			return nil, err
 		}
 		kind := "table"
 		if strings.Contains(strings.ToUpper(typ), "VIEW") {
 			kind = "view"
 		}
-		if !b.add("", table, kind, col, colType) {
+		if !b.add("", table, kind, col) {
 			break
 		}
 	}
@@ -72,6 +74,43 @@ func (m *MariaDB) ReferencedBy(ctx context.Context, p ConnParams, database, tabl
 	}
 	defer rows.Close()
 	return scanIncomingFKs(rows, table)
+}
+
+// Relations lists the foreign keys between the database's tables.
+func (m *MariaDB) Relations(ctx context.Context, p ConnParams, database string) ([]ForeignKey, bool, error) {
+	if !validDBName(database) {
+		return nil, false, fmt.Errorf("invalid database name")
+	}
+	db, err := m.open(p)
+	if err != nil {
+		return nil, false, err
+	}
+	defer db.Close()
+	rows, err := db.QueryContext(ctx, `
+		SELECT k.TABLE_NAME, k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME,
+		       r.DELETE_RULE, r.UPDATE_RULE
+		FROM information_schema.KEY_COLUMN_USAGE k
+		JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+		  ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+		 AND r.TABLE_NAME = k.TABLE_NAME
+		WHERE k.TABLE_SCHEMA = ? AND k.REFERENCED_TABLE_SCHEMA = ?
+		ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION`, database, database)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	var b relationBuilder
+	for rows.Next() {
+		var table, name, col, refTable, refCol, onDel, onUpd string
+		if err := rows.Scan(&table, &name, &col, &refTable, &refCol, &onDel, &onUpd); err != nil {
+			return nil, false, err
+		}
+		if !b.add(table, name, col, refTable, refCol, onDel, onUpd) {
+			break
+		}
+	}
+	fks, truncated := b.result()
+	return fks, truncated, rows.Err()
 }
 
 // scanIncomingFKs groups (table, constraint, column, ref column, rules) rows

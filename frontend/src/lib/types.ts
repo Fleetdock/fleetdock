@@ -781,7 +781,7 @@ export interface ColumnSpec {
 
 export interface ForeignKey {
   name: string;
-  /** The referencing table; set only on incoming keys (referenced-by). */
+  /** The referencing table; set on incoming keys (referenced-by) and diagram relations. */
   table?: string;
   columns: string[];
   ref_table: string;
@@ -822,8 +822,35 @@ export interface ColumnCatalog {
     schema?: string;
     name: string;
     kind: "table" | "view";
-    columns: { name: string; type: string }[];
+    columns: CatalogColumn[];
   }[];
+}
+
+export interface CatalogColumn {
+  name: string;
+  type: string;
+  nullable?: boolean;
+  /** Part of the table's primary key. */
+  primary_key?: boolean;
+}
+
+/** DiagramTable is one table or view of a database's ER diagram. */
+export interface DiagramTable {
+  /** PostgreSQL schema; absent on MySQL/MariaDB. */
+  schema?: string;
+  name: string;
+  kind: "table" | "view";
+  /** Row estimate from the engine's statistics; absent for views. */
+  row_estimate?: number;
+  columns: CatalogColumn[];
+}
+
+/** Diagram is what the database page's Diagram tab draws. */
+export interface Diagram {
+  tables: DiagramTable[];
+  /** Foreign keys between the tables; table and ref_table are "schema.table" on PostgreSQL. */
+  relations: ForeignKey[];
+  truncated: boolean;
 }
 
 /** SchemaSearchHit is a table or column found by the fleet-wide schema search. */

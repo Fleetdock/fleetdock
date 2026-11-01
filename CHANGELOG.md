@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **ER diagram.** A database's new **Diagram** tab draws its tables and
+  views with their columns, primary keys and row estimates, and every
+  foreign key between them, laid out automatically. Click a table to
+  highlight its relations, double-click it (or its name) to open it in the
+  data browser, find a table by name, show only a table and its neighbours
+  (1–3 steps), narrow a PostgreSQL database to one schema, and download the
+  diagram as PNG or SVG. Positions you drag are kept in the browser.
+  Databases with more than 150 tables open on their most connected table.
+  API: `GET /v1/databases/{id}/diagram`; the column catalog
+  (`GET /v1/databases/{id}/columns`) now also reports `nullable` and
+  `primary_key`.
+
 ## [0.9.0] - 2026-11-01
 
 ### Security

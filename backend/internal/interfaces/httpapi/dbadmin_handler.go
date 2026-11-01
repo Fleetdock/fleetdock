@@ -866,6 +866,20 @@ func (h *DBAdminHandler) ReferencedBy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+// Diagram handles GET /v1/databases/{id}/diagram.
+func (h *DBAdminHandler) Diagram(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.interactive(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	d, err := h.svc.Diagram(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}
+
 // Columns handles GET /v1/databases/{id}/columns.
 func (h *DBAdminHandler) Columns(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.interactive(r); err != nil {

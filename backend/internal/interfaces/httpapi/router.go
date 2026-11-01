@@ -204,6 +204,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/tables/{table}/referenced-by", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ReferencedBy))
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
 	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
+	mux.HandleFunc("GET /v1/databases/{id}/diagram", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Diagram))
 	// Backup copies: compare a table with a backup and put rows back.
 	mux.HandleFunc("GET /v1/databases/{id}/backup-copies", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.ListCopies))
 	mux.HandleFunc("POST /v1/databases/{id}/backup-copies", requireResourcePerm(rv, "backup:write", authz.ResourceDatabase, "id", d.DBAdmin.CreateCopy))

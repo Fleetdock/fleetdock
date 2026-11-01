@@ -1,0 +1,208 @@
+/* ER diagram (database page, Diagram tab). */
+@layer components {
+  .erd-search {
+    flex: 1 1 14rem;
+    max-width: 22rem;
+  }
+  .erd-canvas {
+    height: min(70vh, 46rem);
+    min-height: 26rem;
+    padding: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .erd-card {
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    font-size: var(--fs-sm);
+    min-width: 200px;
+    max-width: 340px;
+    transition: opacity 150ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+  }
+  .erd-card-view {
+    border-style: dashed;
+  }
+  .erd-card.is-selected,
+  .erd-card.is-highlighted {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-sm);
+  }
+  .erd-card.is-dimmed {
+    opacity: 0.35;
+  }
+  .erd-card-head {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    height: 40px;
+    padding: 0 0.75rem;
+    line-height: 40px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .erd-card-title {
+    font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .erd-card-title:hover,
+  .erd-card-title:focus-visible {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .erd-card-schema {
+    color: var(--muted);
+    font-weight: 400;
+  }
+  .erd-card-meta {
+    margin-left: auto;
+    flex: none;
+    color: var(--muted);
+    font-size: var(--fs-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .erd-cols {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+  }
+  .erd-col {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 24px;
+    padding: 0 0.75rem 0 0.5rem;
+  }
+  .erd-col.is-active {
+    background: var(--accent-soft);
+  }
+  .erd-col-empty {
+    color: var(--muted);
+    font-style: italic;
+    padding-left: 0.75rem;
+  }
+  .erd-col-icon {
+    width: 14px;
+    flex: none;
+    display: inline-flex;
+    color: var(--muted);
+  }
+  .erd-col-icon.is-pk {
+    color: var(--warning);
+  }
+  .erd-col.is-active .erd-col-icon {
+    color: var(--accent);
+  }
+  .erd-col-name {
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .erd-col-type {
+    margin-left: auto;
+    padding-left: 0.75rem;
+    flex: none;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+    max-width: 50%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .erd-col-null {
+    margin-left: 1px;
+    color: var(--fg-subtle);
+  }
+  .erd-card-more {
+    height: 22px;
+    line-height: 22px;
+    padding: 0 0.75rem;
+    color: var(--muted);
+    font-size: var(--fs-2xs);
+    border-top: 1px solid var(--border);
+  }
+}
+
+/*
+ * React Flow's own stylesheet is not in a cascade layer, so these overrides
+ * are not either: they map its variables onto the dashboard tokens, which
+ * follow light and dark mode.
+ */
+.erd-canvas .react-flow {
+  --xy-background-color: var(--panel);
+  --xy-background-pattern-color: var(--border-strong);
+  --xy-edge-stroke: var(--fg-subtle);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-edge-label-background-color: var(--panel);
+  --xy-edge-label-color: var(--fg);
+  --xy-minimap-background-color: var(--panel-2);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--bg) 70%, transparent);
+  --xy-minimap-node-background-color: var(--border-strong);
+  --xy-minimap-node-stroke-color: transparent;
+  --xy-controls-button-background-color: var(--panel);
+  --xy-controls-button-background-color-hover: var(--panel-2);
+  --xy-controls-button-color: var(--fg);
+  --xy-controls-button-color-hover: var(--fg);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: var(--shadow-sm);
+  --xy-node-boxshadow-selected: none;
+  --xy-node-border-radius: var(--radius-md);
+  font-family: inherit;
+}
+.erd-canvas .react-flow__node-table {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-md);
+}
+.erd-canvas .react-flow__node-table:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.erd-canvas .erd-handle {
+  width: 6px;
+  height: 6px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.erd-canvas .erd-edge .react-flow__edge-path {
+  stroke-width: 1.4;
+}
+.erd-canvas .erd-edge-optional .react-flow__edge-path {
+  stroke-dasharray: 5 4;
+}
+.erd-canvas .erd-edge.is-active .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.erd-canvas .erd-edge.is-dimmed {
+  opacity: 0.25;
+}
+.erd-canvas .react-flow__edge-text {
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+}
+.erd-canvas .react-flow__minimap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+@media (max-width: 640px) {
+  .erd-canvas .react-flow__minimap {
+    display: none;
+  }
+}

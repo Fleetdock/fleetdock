@@ -16,6 +16,7 @@ import {
 import { DatabaseBackups } from "@/components/backup/database-backups";
 import { GrantsSection } from "@/components/database/grants-section";
 import { SchemaHistorySection } from "@/components/database/schema-history";
+import { ERDiagram } from "@/components/database/er-diagram";
 import { IndexHealthCard } from "@/components/database/index-health";
 import { ImportSQLModal } from "@/components/database/import-sql-modal";
 import { MoveDatabaseModal } from "@/components/database/move-database-modal";
@@ -57,7 +58,7 @@ import {
 
 const formatBytes = (n: number) => formatBytesOr(n, "0 B");
 
-const TAB_LABEL = { backups: "Backups", users: "Access", schema: "Schema" } as const;
+const TAB_LABEL = { backups: "Backups", users: "Access", schema: "Schema", diagram: "Diagram" } as const;
 
 export default function DatabaseDetailPage() {
   return (
@@ -89,7 +90,8 @@ function DatabaseDetail() {
   const pathname = usePathname();
   const sp = useSearchParams();
   const tabParam = sp.get("tab");
-  const tab = tabParam === "users" || tabParam === "schema" ? tabParam : "backups";
+  const tab =
+    tabParam === "users" || tabParam === "schema" || tabParam === "diagram" ? tabParam : "backups";
 
   // Tables and the SQL console moved to the Data Browser; old links
   // (?tab=tables|query, ?schema=, ?table=) land there instead.
@@ -243,6 +245,7 @@ function DatabaseDetail() {
                 { id: "backups", label: "Backups" },
                 { id: "users", label: "Access" },
                 { id: "schema", label: "Schema" },
+                { id: "diagram", label: "Diagram" },
               ]}
             />
 
@@ -253,6 +256,8 @@ function DatabaseDetail() {
                 <NoLogin instance={instance} />
               ) : tab === "schema" ? (
                 <SchemaHistorySection database={db} canWrite={canWrite} />
+              ) : tab === "diagram" ? (
+                <ERDiagram database={db} />
               ) : (
                 <GrantsSection databaseId={id} canWrite={canWrite} />
               )}

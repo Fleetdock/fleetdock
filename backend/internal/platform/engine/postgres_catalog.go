@@ -27,7 +27,9 @@ func (pg *Postgres) Columns(ctx context.Context, p ConnParams, database string) 
 	}
 	defer conn.Close(ctx)
 	rows, err := conn.Query(ctx, `
-		SELECT n.nspname, c.relname, c.relkind::text, a.attname, format_type(a.atttypid, a.atttypmod)
+		SELECT n.nspname, c.relname, c.relkind::text, a.attname, format_type(a.atttypid, a.atttypmod),
+		       NOT a.attnotnull,
+		       EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY (i.indkey))
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
@@ -41,15 +43,16 @@ func (pg *Postgres) Columns(ctx context.Context, p ConnParams, database string) 
 	defer rows.Close()
 	var b catalogBuilder
 	for rows.Next() {
-		var schema, table, relkind, col, typ string
-		if err := rows.Scan(&schema, &table, &relkind, &col, &typ); err != nil {
+		var schema, table, relkind string
+		var col CatalogColumn
+		if err := rows.Scan(&schema, &table, &relkind, &col.Name, &col.Type, &col.Nullable, &col.PrimaryKey); err != nil {
 			return nil, err
 		}
 		kind := "table"
 		if relkind == "v" || relkind == "m" {
 			kind = "view"
 		}
-		if !b.add(schema, table, kind, col, typ) {
+		if !b.add(schema, table, kind, col) {
 			break
 		}
 	}
@@ -107,4 +110,56 @@ func (pg *Postgres) ReferencedBy(ctx context.Context, p ConnParams, database, ta
 		out = append(out, fk)
 	}
 	return out, rows.Err()
+}
+
+// Relations lists the foreign keys of every user schema. Keys copied onto
+// partitions are left out: the partitioned parent carries them.
+func (pg *Postgres) Relations(ctx context.Context, p ConnParams, database string) ([]ForeignKey, bool, error) {
+	if !validDBName(database) {
+		return nil, false, fmt.Errorf("invalid database name")
+	}
+	conn, err := pg.connect(ctx, p, database)
+	if err != nil {
+		return nil, false, err
+	}
+	defer conn.Close(ctx)
+	rows, err := conn.Query(ctx, `
+		SELECT n.nspname || '.' || c.relname,
+		       con.conname,
+		       ARRAY(SELECT a.attname FROM unnest(con.conkey) WITH ORDINALITY k(n, o)
+		             JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.n ORDER BY k.o),
+		       rn.nspname || '.' || rc.relname,
+		       ARRAY(SELECT a.attname FROM unnest(con.confkey) WITH ORDINALITY k(n, o)
+		             JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.n ORDER BY k.o),
+		       CASE con.confdeltype WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'r' THEN 'RESTRICT'
+		            WHEN 'd' THEN 'SET DEFAULT' ELSE 'NO ACTION' END,
+		       CASE con.confupdtype WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'r' THEN 'RESTRICT'
+		            WHEN 'd' THEN 'SET DEFAULT' ELSE 'NO ACTION' END
+		FROM pg_constraint con
+		JOIN pg_class c ON c.oid = con.conrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_class rc ON rc.oid = con.confrelid
+		JOIN pg_namespace rn ON rn.oid = rc.relnamespace
+		WHERE con.contype = 'f' AND con.conparentid = 0 AND NOT c.relispartition
+		  AND `+pgUserSchema("n.nspname")+`
+		ORDER BY 1, con.conname
+		LIMIT `+fmt.Sprint(maxCatalogRelations+1))
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	out := []ForeignKey{}
+	truncated := false
+	for rows.Next() {
+		if len(out) >= maxCatalogRelations {
+			truncated = true
+			break
+		}
+		var fk ForeignKey
+		if err := rows.Scan(&fk.Table, &fk.Name, &fk.Columns, &fk.RefTable, &fk.RefColumns, &fk.OnDelete, &fk.OnUpdate); err != nil {
+			return nil, false, err
+		}
+		out = append(out, fk)
+	}
+	return out, truncated, rows.Err()
 }

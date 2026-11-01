@@ -101,7 +101,7 @@ components:
         on_update: {type: string, enum: ["", CASCADE, SET NULL, RESTRICT, NO ACTION]}
         table:
           type: string
-          description: The referencing table. Set only on incoming keys (referenced-by).
+          description: The referencing table. Set on incoming keys (referenced-by) and in diagram relations.
     FleetRun:
       type: object
       properties:
@@ -317,6 +317,38 @@ components:
                   properties:
                     name: {type: string}
                     type: {type: string}
+                    nullable: {type: boolean}
+                    primary_key: {type: boolean, description: Part of the table's primary key.}
+    Diagram:
+      type: object
+      properties:
+        truncated:
+          type: boolean
+          description: The database has more tables, columns or foreign keys than are listed (5000 tables, 100000 columns, 20000 foreign keys).
+        tables:
+          type: array
+          items:
+            type: object
+            properties:
+              schema: {type: string, description: PostgreSQL schema; empty on MySQL/MariaDB.}
+              name: {type: string}
+              kind: {type: string, enum: [table, view]}
+              row_estimate: {type: integer, format: int64, description: The engine's row estimate from statistics; absent for views.}
+              columns:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    type: {type: string}
+                    nullable: {type: boolean}
+                    primary_key: {type: boolean}
+        relations:
+          type: array
+          description: >-
+            Foreign keys between the database's tables. `table` and `ref_table` are "schema.table" on PostgreSQL
+            and the table name on MySQL/MariaDB.
+          items: {$ref: "#/components/schemas/ForeignKey"}
     TableSpec:
       type: object
       properties:
@@ -848,6 +880,23 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ColumnCatalog"}
+
+  /v1/databases/{id}/diagram:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Entity-relationship diagram data
+      description: >-
+        The database's tables and views with their columns, primary keys and row estimates, and every foreign key
+        between them, as the data login sees them. The dashboard draws its Diagram tab from it.
+      responses:
+        "200":
+          description: Diagram
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Diagram"}
 
   /v1/databases/{id}/schema/snapshots:
     get:

@@ -16,6 +16,12 @@ type Catalog interface {
 	// ReferencedBy lists the foreign keys of other tables (and the table
 	// itself) that point at table: its incoming foreign keys.
 	ReferencedBy(ctx context.Context, p ConnParams, database, table string) ([]ForeignKey, error)
+	// Relations lists every foreign key of the database in one round trip:
+	// Table is the referencing table, RefTable the referenced one (both
+	// "schema.table" on PostgreSQL). Keys pointing outside the database are
+	// left out. truncated reports that only the first maxCatalogRelations
+	// keys are listed.
+	Relations(ctx context.Context, p ConnParams, database string) (fks []ForeignKey, truncated bool, err error)
 }
 
 // Catalog size limits: a database beyond them is reported truncated rather
@@ -23,12 +29,18 @@ type Catalog interface {
 const (
 	maxCatalogTables  = 5000
 	maxCatalogColumns = 100000
+	// maxCatalogRelations caps the foreign keys Relations returns.
+	maxCatalogRelations = 20000
 )
 
 // CatalogColumn is one column of a catalog table.
 type CatalogColumn struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+	// Nullable reports that the column accepts NULL.
+	Nullable bool `json:"nullable"`
+	// PrimaryKey reports that the column is part of the table's primary key.
+	PrimaryKey bool `json:"primary_key,omitempty"`
 }
 
 // CatalogTable is a table or view with its columns. Schema is the
@@ -56,7 +68,7 @@ type catalogBuilder struct {
 }
 
 // add appends one column row; it returns false once the limits are reached.
-func (b *catalogBuilder) add(schema, table, kind, column, typ string) bool {
+func (b *catalogBuilder) add(schema, table, kind string, col CatalogColumn) bool {
 	n := len(b.out.Tables)
 	if n == 0 || b.out.Tables[n-1].Schema != schema || b.out.Tables[n-1].Name != table {
 		if n >= maxCatalogTables {
@@ -72,7 +84,7 @@ func (b *catalogBuilder) add(schema, table, kind, column, typ string) bool {
 	}
 	b.columns++
 	t := &b.out.Tables[n-1]
-	t.Columns = append(t.Columns, CatalogColumn{Name: column, Type: typ})
+	t.Columns = append(t.Columns, col)
 	return true
 }
 
@@ -81,6 +93,43 @@ func (b *catalogBuilder) result() *ColumnCatalog {
 		b.out.Tables = []CatalogTable{}
 	}
 	return &b.out
+}
+
+// relationBuilder groups ordered (table, constraint, column) rows into foreign
+// keys and enforces maxCatalogRelations.
+type relationBuilder struct {
+	out       []ForeignKey
+	idx       map[string]int
+	truncated bool
+}
+
+// add appends one column pair of a foreign key; it returns false once the
+// limit is reached.
+func (b *relationBuilder) add(table, name, col, refTable, refCol, onDel, onUpd string) bool {
+	if b.idx == nil {
+		b.idx = map[string]int{}
+	}
+	key := table + "\x00" + name
+	i, ok := b.idx[key]
+	if !ok {
+		if len(b.out) >= maxCatalogRelations {
+			b.truncated = true
+			return false
+		}
+		b.out = append(b.out, ForeignKey{Name: name, Table: table, RefTable: refTable, OnDelete: onDel, OnUpdate: onUpd})
+		i = len(b.out) - 1
+		b.idx[key] = i
+	}
+	b.out[i].Columns = append(b.out[i].Columns, col)
+	b.out[i].RefColumns = append(b.out[i].RefColumns, refCol)
+	return true
+}
+
+func (b *relationBuilder) result() ([]ForeignKey, bool) {
+	if b.out == nil {
+		b.out = []ForeignKey{}
+	}
+	return b.out, b.truncated
 }
 
 // CatalogFor returns the bulk-introspection surface for the engine name.
