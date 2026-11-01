@@ -41,6 +41,8 @@ import {
   Lock,
   History,
   PanelRight,
+  Rows2,
+  Rows3,
   Plus,
   RefreshCw,
   Search,
@@ -53,6 +55,8 @@ import {
 import { cellState, DataGrid, type Cell, type GridRow } from "./data-grid";
 import { BackupCompare } from "./backup-compare";
 import { RowHistory, useRowUndo } from "./row-history";
+import { ColumnsMenu } from "./columns-menu";
+import { RowPanel } from "./row-panel";
 
 const OP_LABEL: Record<string, string> = {
   eq: "=",
@@ -314,15 +318,34 @@ export function TableTab({
   const [showFilters, setShowFilters] = useState(false);
   const [draftFilters, setDraftFilters] = useState<RowFilter[]>([]);
   const [importOpen, setImportOpen] = useState(false);
-  const [panel, setPanel] = useState(() => load("value-panel") === "1");
+  // The right-hand panel: one cell in full, or the whole row as a form.
+  const [side, setSide] = useState<"none" | "value" | "row">(() => {
+    const v = load("value-panel");
+    return v === "1" ? "value" : v === "row" ? "row" : "none";
+  });
+  const panel = side === "value";
+  const showSide = (next: "value" | "row") =>
+    setSide((cur) => {
+      const v = cur === next ? "none" : next;
+      save("value-panel", v === "none" ? null : v === "value" ? "1" : "row");
+      return v;
+    });
+  const togglePanel = () => showSide("value");
+  const toggleRowPanel = () => showSide("row");
+  const openRowPanel = () => {
+    if (side !== "row") showSide("row");
+  };
+  const [density, setDensity] = useState<"compact" | "comfortable">(() =>
+    load("density") === "comfortable" ? "comfortable" : "compact",
+  );
+  const toggleDensity = () =>
+    setDensity((d) => {
+      const next = d === "compact" ? "comfortable" : "compact";
+      save("density", next === "compact" ? null : next);
+      return next;
+    });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
-  const togglePanel = () => {
-    setPanel((v) => {
-      save("value-panel", v ? null : "1");
-      return !v;
-    });
-  };
 
   const readOnlyReason = isView
     ? "Views are read-only."
@@ -393,6 +416,11 @@ export function TableTab({
             >
               Filter{view.filters.length ? ` · ${view.filters.length}` : ""}
             </Button>
+            <ColumnsMenu
+              columns={columns}
+              hidden={view.hidden ?? []}
+              onChange={(hidden) => setView({ hidden, frozen: Math.min(view.frozen ?? 0, columns.length - hidden.length - 1) }, false)}
+            />
           </>
         ) : null}
         <div className="flex-1" />
@@ -430,6 +458,16 @@ export function TableTab({
             >
               <PanelRight size={15} aria-hidden />
             </IconButton>
+            <IconButton
+              noTooltip
+              label="Toggle row panel"
+              active={side === "row"}
+              onClick={toggleRowPanel}
+              title="Row panel: the selected row as a form (Shift+Enter)"
+              aria-pressed={side === "row"}
+            >
+              <Rows3 size={15} aria-hidden />
+            </IconButton>
             {editable ? (
               <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={addRow}>
                 Row
@@ -465,6 +503,12 @@ export function TableTab({
               label: "Copy name",
               icon: <ClipboardCopy size={15} />,
               onSelect: () => void navigator.clipboard?.writeText(tab.name),
+            },
+            {
+              label: density === "compact" ? "Taller rows" : "Compact rows",
+              icon: <Rows2 size={15} />,
+              hidden: view.mode !== "data",
+              onSelect: toggleDensity,
             },
           ]}
         />
@@ -587,6 +631,12 @@ export function TableTab({
                 onReferencing={referencing}
                 editRequest={editRequest}
                 onEditRequestDone={clearEditRequest}
+                hidden={view.hidden}
+                frozen={view.frozen}
+                onHideColumn={(name) => setView({ hidden: [...(view.hidden ?? []), name] }, false)}
+                onFreeze={(frozen) => setView({ frozen }, false)}
+                onRowDetail={openRowPanel}
+                density={density}
                 emptyText={
                   filtered
                     ? "No rows match the search or filters."
@@ -611,6 +661,25 @@ export function TableTab({
               }
               onApply={(v) => cursor && onEdit(cursor.row, cursor.col, v)}
               onClose={togglePanel}
+            />
+          ) : null}
+          {side === "row" ? (
+            <RowPanel
+              row={cursor ? rows[cursor.row] : undefined}
+              label={(() => {
+                const r = cursor ? rows[cursor.row] : undefined;
+                return !r ? "Row" : r.kind === "new" ? "New row" : `Row ${offset + r.index + 1}`;
+              })()}
+              columns={columns}
+              keyCols={key}
+              editable={(() => {
+                const r = cursor ? rows[cursor.row] : undefined;
+                return r?.kind === "new" || (editable && r?.kind === "data" && !r.deleted);
+              })()}
+              onApply={(ci, v) => cursor && onEdit(cursor.row, ci, v)}
+              onPrev={cursor && cursor.row > 0 ? () => setCursor({ row: cursor.row - 1, col: cursor.col }) : undefined}
+              onNext={cursor && cursor.row + 1 < rows.length ? () => setCursor({ row: cursor.row + 1, col: cursor.col }) : undefined}
+              onClose={toggleRowPanel}
             />
           ) : null}
           {historyOpen ? (

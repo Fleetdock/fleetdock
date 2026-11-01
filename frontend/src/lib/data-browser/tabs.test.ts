@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { emptyWorkspace, objectName, parseWorkspace, reducer, serializeWorkspace, type Action, type Workspace } from "./tabs";
+import {
+  emptyWorkspace,
+  frozenOffsets,
+  objectName,
+  parseWorkspace,
+  reducer,
+  serializeWorkspace,
+  visibleColumns,
+  type Action,
+  type Workspace,
+} from "./tabs";
 
 const run = (actions: Action[], ws: Workspace = emptyWorkspace) => actions.reduce(reducer, ws);
 const open = (name: string, preview = false): Action => ({
@@ -127,5 +137,29 @@ describe("workspace persistence", () => {
     expect(ids(ws)).toEqual(["table:a"]);
     expect(ws.active).toBe("table:a");
     expect(ws.tabs[0].view).toMatchObject({ pageSize: 100, page: 1, filters: [] });
+  });
+});
+
+describe("columns", () => {
+  it("keeps hidden and frozen columns across a reload", () => {
+    const raw = JSON.stringify({
+      tabs: [{ kind: "table", name: "a", label: "a", view: { hidden: ["x", 3, "y"], frozen: 2.7 } }],
+    });
+    expect(parseWorkspace(raw).tabs[0].view).toMatchObject({ hidden: ["x", "y"], frozen: 2 });
+    const bad = JSON.stringify({ tabs: [{ kind: "table", name: "a", label: "a", view: { hidden: "x", frozen: -1 } }] });
+    expect(parseWorkspace(bad).tabs[0].view).toMatchObject({ hidden: [], frozen: 0 });
+  });
+
+  it("lists visible columns and never hides them all", () => {
+    expect(visibleColumns(["a", "b", "c"], ["b"])).toEqual([0, 2]);
+    expect(visibleColumns(["a", "b"], ["a", "b"])).toEqual([0]);
+    expect(visibleColumns([], ["a"])).toEqual([]);
+    expect(visibleColumns(["a"], undefined)).toEqual([0]);
+  });
+
+  it("stacks frozen columns after the row numbers", () => {
+    expect(frozenOffsets([100, 80, 120], 2, 52)).toEqual([52, 152]);
+    expect(frozenOffsets([100], 3, 52)).toEqual([52]);
+    expect(frozenOffsets([100], 0, 52)).toEqual([]);
   });
 });

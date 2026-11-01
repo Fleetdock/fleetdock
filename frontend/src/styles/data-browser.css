@@ -1101,4 +1101,135 @@
     border-left: 1px solid var(--border);
     flex-shrink: 0;
   }
+
+  /* Frozen columns stay put when scrolling sideways (offsets set inline). */
+  .dbx-cell.is-frozen {
+    position: sticky;
+    z-index: 1;
+  }
+  .dbx-th.is-frozen {
+    z-index: 3;
+  }
+  .dbx-cell.is-frozen-edge,
+  .dbx-th.is-frozen-edge {
+    border-right: 2px solid var(--border-strong);
+  }
+  /* Comfortable density: taller rows. */
+  .dbx-grid.is-comfortable .dbx-cell {
+    height: 2.4rem;
+  }
+
+  /* Popovers anchored to toolbar buttons (Columns, header filter). */
+  .dbx-popover-root {
+    position: relative;
+    display: inline-flex;
+  }
+  .dbx-popover {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 40;
+    min-width: 16rem;
+    max-width: min(24rem, 92vw);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: 0.5rem;
+  }
+  .dbx-popover.is-right {
+    left: auto;
+    right: 0;
+  }
+  .dbx-columns-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 18rem;
+    overflow: auto;
+  }
+  .dbx-columns-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-sm);
+    cursor: pointer;
+    min-width: 0;
+  }
+  .dbx-columns-item:hover {
+    background: var(--panel-2);
+  }
+  .dbx-columns-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    margin-top: 0.4rem;
+    padding-top: 0.4rem;
+  }
+
+  /* Row panel: the whole row as a form. */
+  .dbx-rowpanel {
+    width: 24rem;
+  }
+  .dbx-rowpanel-list {
+    margin: 0;
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  .dbx-rowpanel-field {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .dbx-rowpanel-field.is-changed {
+    background: color-mix(in srgb, var(--warning) 12%, transparent);
+  }
+  .dbx-rowpanel-field dt {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    min-width: 0;
+    margin-bottom: 0.2rem;
+  }
+  .dbx-rowpanel-field dd {
+    margin: 0;
+  }
+  .dbx-rowpanel-value {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+  .dbx-rowpanel-pre {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    max-height: 9rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono-stack);
+    font-size: 0.76rem;
+  }
+  .dbx-rowpanel-actions {
+    display: inline-flex;
+    gap: 0.1rem;
+    margin-left: auto;
+    flex-shrink: 0;
+    opacity: 0.55;
+  }
+  .dbx-rowpanel-field:hover .dbx-rowpanel-actions,
+  .dbx-rowpanel-field:focus-within .dbx-rowpanel-actions {
+    opacity: 1;
+  }
+  .dbx-rowpanel-edit {
+    font-family: var(--font-mono-stack);
+    font-size: 0.76rem;
+    height: auto;
+    resize: vertical;
+  }
 }

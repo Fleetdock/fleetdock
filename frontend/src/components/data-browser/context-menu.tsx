@@ -61,7 +61,12 @@ function ContextMenu({ x, y, items, onClose }: Open & { onClose: () => void }) {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
+    // The right-click itself can scroll a half-visible column or cell into
+    // view (the browser focuses it); that scroll must not close the menu it
+    // opened. Later scrolling does.
+    const openedAt = performance.now();
     const onScroll = (e: Event) => {
+      if (performance.now() - openedAt < 300) return;
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     document.addEventListener("mousedown", onDown);
