@@ -130,7 +130,7 @@ func (pg *Postgres) ListDatabases(ctx context.Context, p ConnParams) ([]Database
 // CreateDatabase creates a database if it does not already exist. PostgreSQL
 // has no CREATE DATABASE IF NOT EXISTS, so existence is checked first.
 func (pg *Postgres) CreateDatabase(ctx context.Context, p ConnParams, name, charset, collation string) error {
-	if !identRe.MatchString(name) {
+	if !validDBName(name) {
 		return fmt.Errorf("invalid database name %q", name)
 	}
 	conn, err := pg.connect(ctx, p, "postgres")
@@ -151,7 +151,7 @@ func (pg *Postgres) CreateDatabase(ctx context.Context, p ConnParams, name, char
 
 // DropDatabase drops a database by validated identifier.
 func (pg *Postgres) DropDatabase(ctx context.Context, p ConnParams, name string) error {
-	if !identRe.MatchString(name) {
+	if !validDBName(name) {
 		return fmt.Errorf("invalid database name %q", name)
 	}
 	if systemDatabase("postgres", name) {

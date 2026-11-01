@@ -101,7 +101,7 @@ func (pg *Postgres) pgMeta(ctx context.Context, conn *pgx.Conn, name string) (*t
 
 // BrowseRows returns a filtered, sorted page of a table.
 func (pg *Postgres) BrowseRows(ctx context.Context, p ConnParams, database string, req BrowseRequest) (*BrowseResult, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	clampBrowse(&req)
@@ -227,7 +227,7 @@ var pgSessionSettings = []string{"TimeZone", "DateStyle", "IntervalStyle"}
 
 func (pg *Postgres) rowTx(ctx context.Context, p ConnParams, database, table string, session map[string]string,
 	fn func(tx rowTx, meta *tableMeta) (*RowChange, error)) (*RowChange, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)
@@ -298,7 +298,7 @@ func (pg *Postgres) ApplyRowImage(ctx context.Context, p ConnParams, database, t
 
 // ImportCSV loads a CSV into the table in one transaction (all or nothing).
 func (pg *Postgres) ImportCSV(ctx context.Context, p ConnParams, database, table string, r io.Reader, opts ImportOptions) (int64, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return 0, fmt.Errorf("invalid database name")
 	}
 	conn, err := pg.connect(ctx, p, database)

@@ -31,7 +31,7 @@ type queryer interface {
 
 // mysqlMeta loads a table's columns and row key from information_schema.
 func mysqlMeta(ctx context.Context, q queryer, database, table string) (*tableMeta, error) {
-	if !identRe.MatchString(database) {
+	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
 	if !validTableName(table) {

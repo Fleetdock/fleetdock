@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Databases with `-` in their names are managed.** Applications that name
+  databases after UUIDs (`tenant_ffc07774-1db5-…`) had those databases
+  skipped by discovery without a warning, and refused by grants, the data
+  browser and backups. Database names may now contain `-` anywhere but the
+  first character. Charset, collation and role names keep the stricter rule.
+
 - The SQL console now honours a `DELIMITER` line that follows a comment.
 - **Backup verification no longer shows up as a database.** The temporary
   `fdv_…` database a test restore uses was picked up by discovery while it
@@ -55,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   followed by 16 hex digits are now reserved for Fleetdock's temporary
   restores and never registered; ones registered before are removed from
   the inventory.
+
 - **"The database rejected the login" in the data browser** when a
   Fleetdock-managed role was dropped or its password changed outside
   Fleetdock: the role is now repaired and the request retried, and a server

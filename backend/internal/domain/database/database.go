@@ -141,10 +141,12 @@ func validateName(name string) error {
 	if len(name) > 64 {
 		return apperr.Invalid("name", "name must be at most 64 characters")
 	}
-	for _, r := range name {
-		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '$'
+	for i, r := range name {
+		// '-' is allowed (tenant_<uuid> style names), but not first: the name
+		// is passed to dump/restore tools as an argument.
+		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '$' || (r == '-' && i > 0)
 		if !ok {
-			return apperr.Invalid("name", "name may only contain letters, digits, '_' and '$'")
+			return apperr.Invalid("name", "name may only contain letters, digits, '_', '$' and '-' (not first)")
 		}
 	}
 	return nil
