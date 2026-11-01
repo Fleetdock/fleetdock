@@ -1091,4 +1091,14 @@
     color: var(--success);
     text-decoration: none;
   }
+
+  /* Full screen and theme controls at the end of the tab bar. */
+  .dbx-tabbar-trailing {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0 0.35rem;
+    border-left: 1px solid var(--border);
+    flex-shrink: 0;
+  }
 }

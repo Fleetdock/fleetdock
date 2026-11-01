@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useConfirm } from "@/components/confirm";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { CreateTableModal } from "@/components/database/create-table-modal";
 import { QueryConsole } from "@/components/database/query-console";
 import { Button, ButtonLink, EmptyState, IconButton, QueryError, Spinner } from "@/components/ui";
@@ -29,9 +30,10 @@ import {
   type OpenRequest,
   type Tab,
 } from "@/lib/data-browser/tabs";
+import { isFocusShortcut, useBrowserFullscreen, useDataBrowserFocus, useFullscreenSupported } from "@/lib/focus-mode";
 import { useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
-import { Eye, PanelLeftClose, PanelLeftOpen, SquareTerminal, Table2 } from "lucide-react";
+import { Eye, Maximize, Maximize2, Minimize, Minimize2, PanelLeftClose, PanelLeftOpen, SquareTerminal, Table2 } from "lucide-react";
 
 import { DatabaseChooser, DatabasePicker } from "./database-picker";
 import { buildItems, ObjectTree, type ObjectTreeHandle } from "./object-tree";
@@ -147,6 +149,44 @@ export function DataBrowser({
       <section className="dbx-main">{main}</section>
     </div>
   );
+  // Full screen: hide Fleetdock's sidebar and top bar (lib/focus-mode.ts).
+  const [focus, toggleFocus] = useDataBrowserFocus();
+  const [browserFull, toggleBrowserFull] = useBrowserFullscreen();
+  const canBrowserFull = useFullscreenSupported();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isFocusShortcut(e)) {
+        e.preventDefault();
+        toggleFocus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleFocus]);
+  const focusControls = (
+    <>
+      {focus && canBrowserFull ? (
+        <IconButton
+          noTooltip
+          title={browserFull ? "Leave browser full screen" : "Browser full screen"}
+          label={browserFull ? "Leave browser full screen" : "Browser full screen"}
+          onClick={toggleBrowserFull}
+        >
+          {browserFull ? <Minimize size={15} aria-hidden /> : <Maximize size={15} aria-hidden />}
+        </IconButton>
+      ) : null}
+      {focus ? <ThemeToggle size="sm" /> : null}
+      <IconButton
+        noTooltip
+        title={focus ? "Exit full screen (Alt+Shift+F)" : "Full screen (Alt+Shift+F)"}
+        label={focus ? "Exit full screen" : "Full screen"}
+        aria-pressed={focus}
+        onClick={toggleFocus}
+      >
+        {focus ? <Minimize2 size={15} aria-hidden /> : <Maximize2 size={15} aria-hidden />}
+      </IconButton>
+    </>
+  );
   const sideToggle = (
     <>
       {/* noTooltip: these toggles are hidden per breakpoint via display:none, which a tooltip wrapper would defeat. */}
@@ -219,6 +259,7 @@ export function DataBrowser({
       queryParam={queryParam}
       shell={shell}
       sideToggle={sideToggle}
+      focusControls={focusControls}
       dirtyRef={dirtyRef}
       closeDrawer={() => setDrawer(false)}
     />
@@ -232,6 +273,7 @@ function Workspace({
   queryParam,
   shell,
   sideToggle,
+  focusControls,
   dirtyRef,
   closeDrawer,
 }: {
@@ -241,6 +283,7 @@ function Workspace({
   queryParam: string | null;
   shell: (sidebar: ReactNode, main: ReactNode) => ReactNode;
   sideToggle: ReactNode;
+  focusControls: ReactNode;
   dirtyRef: React.RefObject<number>;
   closeDrawer: () => void;
 }) {
@@ -439,6 +482,7 @@ function Workspace({
         onMove={(id, to) => dispatch({ type: "move", id, to })}
         onNewQuery={() => newQuery()}
         leading={sideToggle}
+        trailing={focusControls}
       />
       <div className="dbx-panes">
         {ws.tabs.length === 0 ? (
