@@ -5,6 +5,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -62,15 +63,28 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   // Hovering or focusing the toast stack pauses dismissal so a toast can be
   // read and its action reached; leaving restarts every timer.
+  const stack = useRef<HTMLDivElement>(null);
+  const hovered = useRef(false);
+  const current = useRef<Toast[]>([]);
+  useEffect(() => {
+    current.current = toasts;
+  }, [toasts]);
   const pause = useCallback(() => {
     timers.current.forEach((t) => clearTimeout(t));
   }, []);
   const resume = useCallback(() => {
-    setToasts((list) => {
-      list.forEach((t) => schedule(t.id, Math.min(t.ttl, 4000)));
-      return list;
-    });
+    if (hovered.current || stack.current?.contains(document.activeElement)) return;
+    current.current.forEach((t) => schedule(t.id, Math.min(t.ttl, 4000)));
   }, [schedule]);
+  // Closing a toast from inside the stack removes the focused element
+  // without a blur event, so restart the others' timers explicitly.
+  const dismiss = useCallback(
+    (id: number) => {
+      remove(id);
+      setTimeout(resume, 0);
+    },
+    [remove, resume],
+  );
 
   const push = useCallback(
     (kind: ToastKind, message: string, action?: ToastAction) => {
@@ -90,11 +104,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       <div
+        ref={stack}
         className="toasts"
-        onPointerEnter={pause}
-        onPointerLeave={resume}
+        onPointerEnter={() => {
+          hovered.current = true;
+          pause();
+        }}
+        onPointerLeave={() => {
+          hovered.current = false;
+          resume();
+        }}
         onFocus={pause}
-        onBlur={resume}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) setTimeout(resume, 0);
+        }}
       >
         {/* Errors interrupt (assertive); everything else waits its turn. */}
         <div className="contents" role="alert" aria-live="assertive">
@@ -117,7 +140,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <Link
             href={t.action.href}
             className="link"
-            onClick={() => remove(t.id)}
+            onClick={() => dismiss(t.id)}
           >
             {t.action.label}
           </Link>
@@ -126,7 +149,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             type="button"
             className="link toast-action"
             onClick={() => {
-              remove(t.id);
+              dismiss(t.id);
               (t.action as { onClick: () => void }).onClick();
             }}
           >
@@ -137,7 +160,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           type="button"
           className="toast-close"
           aria-label="Dismiss"
-          onClick={() => remove(t.id)}
+          onClick={() => dismiss(t.id)}
         >
           <X size={14} />
         </button>

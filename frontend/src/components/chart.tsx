@@ -84,9 +84,10 @@ export function MetricChart({
     return { line: segs.join(" "), area: areaParts.join(" ") };
   })();
 
-  const ticks = [lo, (lo + hi) / 2, hi];
-  const timeTicks =
-    n > 1 ? [0, Math.floor((n - 1) / 2), n - 1] : n === 1 ? [0] : [];
+  // Distinct values only: a flat series (lo === hi) or two samples would
+  // otherwise repeat a tick, drawing its label twice under one React key.
+  const ticks = [...new Set([lo, (lo + hi) / 2, hi])];
+  const timeTicks = [...new Set(n > 0 ? [0, Math.floor((n - 1) / 2), n - 1] : [])];
   const spanMs =
     n > 1 ? Date.parse(points[n - 1].t) - Date.parse(points[0].t) : 0;
 

@@ -236,7 +236,9 @@ function DatabaseDetail() {
             <QueryTabs
               label="Database sections"
               panelId="database-tabpanel"
-              onSelect={(t) => router.push(t === "backups" ? pathname : `${pathname}?tab=${t}`)}
+              // replace, not push: arrow keys move between tabs, and each
+              // move must not leave a history entry.
+              onSelect={(t) => router.replace(t === "backups" ? pathname : `${pathname}?tab=${t}`, { scroll: false })}
               tabs={[
                 { id: "backups", label: "Backups" },
                 { id: "users", label: "Access" },
