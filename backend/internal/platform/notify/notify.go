@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/smtp"
+	"strings"
 	"time"
 
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
@@ -104,6 +105,17 @@ func (s *Sender) post(ctx context.Context, url string, body []byte) error {
 	return nil
 }
 
+// headerSafe keeps a value on one header line. Titles carry user-chosen
+// names (a PostgreSQL database may be called "x\r\nBcc: ..."), which must not
+// start new headers.
+var headerSafe = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ")
+
+func emailMessage(from, to string, msg Message) string {
+	return fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: [%s] %s\r\n\r\n%s\r\n",
+		headerSafe.Replace(from), headerSafe.Replace(to), headerSafe.Replace(msg.Severity),
+		headerSafe.Replace(msg.Title), msg.Body)
+}
+
 func (s *Sender) deliverEmail(to string, msg Message) error {
 	if s.smtp.Host == "" {
 		return fmt.Errorf("email delivery is not configured (set FLEETDOCK_SMTP_HOST)")
@@ -112,8 +124,7 @@ func (s *Sender) deliverEmail(to string, msg Message) error {
 		return fmt.Errorf("email channel has no recipient")
 	}
 	addr := s.smtp.Host + ":" + s.smtp.Port
-	body := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: [%s] %s\r\n\r\n%s\r\n",
-		s.smtp.From, to, msg.Severity, msg.Title, msg.Body)
+	body := emailMessage(s.smtp.From, to, msg)
 	var auth smtp.Auth
 	if s.smtp.Username != "" {
 		auth = smtp.PlainAuth("", s.smtp.Username, s.smtp.Password, s.smtp.Host)

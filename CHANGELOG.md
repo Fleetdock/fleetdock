@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unsupported`, `unknown`).
 - **Upgrade checks.** CI upgrades an install of the latest release to the
   new code and checks its data survives.
+- **PostgreSQL 18 and MariaDB 11.8** can be created as new database servers
+  (PostgreSQL 17 is now the default). MySQL 8.0, past its end of life, is no
+  longer offered for new servers; existing ones keep working.
+- **Back where you were after signing in again.** When a session ends, the
+  sign-in page says so and returns to the page you were on; the SQL
+  console keeps the script you were writing (per database, in this
+  browser). Unknown addresses outside the dashboard get a proper "Page not
+  found", and a failure of the whole page an error page instead of a blank
+  one.
 
 ### Changed
 
@@ -46,6 +55,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose applied migrations have changed, instead of running against a
   schema it does not match. With `FLEETDOCK_RUN_MIGRATIONS=false` it also
   refuses to start while migrations are pending.
+- **The image ships the PostgreSQL 18 client** (on Alpine 3.23, with
+  Node.js 24), so backups of PostgreSQL 18 servers work: a newer `pg_dump`
+  reads older servers, never the reverse. CI now dumps and restores MySQL
+  8.4, MariaDB 11.4 and PostgreSQL 16 and 18 with the image's own tools.
+- **CI before every release**: the release workflow runs the whole CI suite
+  (integration, upgrade, end-to-end and image-scan jobs included) before it
+  publishes. CI gained the Playwright end-to-end tests against a booted
+  stack, `govulncheck`, `npm audit` for runtime dependencies, a Trivy scan
+  of the image, Dependabot for base images, and a floor under backend test
+  coverage.
 - Release candidates (`v1.0.0-rc.1`) no longer move the `latest` image tag
   and are published as pre-releases. Releases also ship an arm64 API
   binary.
@@ -91,6 +110,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Passwords longer than 72 bytes failed with a server error.** bcrypt
   refuses them; they are now rejected with a clear message (72 plain
   letters, fewer with accents or non-Latin letters).
+- **Creating a PostgreSQL 18 server failed**: the official image keeps its
+  data under `/var/lib/postgresql` from 18 on and refuses the old volume
+  path.
+- **Email alerts could gain headers**: a title carrying a name with a line
+  break (PostgreSQL allows one in a database name) could add headers such
+  as `Bcc:`. Header values are now kept on one line.
 - **A backup could be restored to a database server of another engine**,
   failing only when the restore ran. Restoring, copying or moving now
   requires the same engine family (PostgreSQL, or MySQL/MariaDB), and the

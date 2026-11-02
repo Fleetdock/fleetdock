@@ -4,13 +4,14 @@
 # database and check that everything is still there and still works.
 #
 # Usage: scripts/ci/upgrade-test.sh [OLD_REF]
-#   OLD_REF      tag to upgrade from (default: the newest release tag)
+#   OLD_REF      tag to upgrade from (default: the newest release tag before this commit)
 #   DATABASE_URL an empty PostgreSQL database (required)
 # Needs: git (with tags), go, curl, jq.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OLD_REF="${1:-$(git -C "$ROOT" tag --list 'v*' --sort=-v:refname | grep -v -- - | head -n 1)}"
+# The newest release that is not this commit (on a release tag, the one before).
+OLD_REF="${1:-$(git -C "$ROOT" tag --list 'v*' --sort=-v:refname --no-contains HEAD | grep -v -- - | head -n 1)}"
 : "${DATABASE_URL:?set DATABASE_URL to an empty PostgreSQL database}"
 [ -n "$OLD_REF" ] || { echo "no release tag to upgrade from" >&2; exit 1; }
 

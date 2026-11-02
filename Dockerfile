@@ -56,11 +56,13 @@ RUN LDFLAGS="-s -w -X ${VERSION_PKG}.Version=${VERSION} -X ${VERSION_PKG}.Commit
 # alpine (not distroless): the control plane shells out to mariadb-dump /
 # mariadb and pg_dump / psql for backups and restores of *external* instances,
 # and hosts the dashboard's node runtime.
-# 3.22 rather than 3.20 for nodejs 22 — 3.20 ships node 20.15, which satisfies
-# Next 16's >=20.9 only by coincidence. It also moves postgresql-client 16 -> 17,
-# which is the safe direction (a newer pg_dump reads older servers).
-FROM alpine:3.22
-RUN apk add --no-cache ca-certificates mariadb-client postgresql-client su-exec nodejs \
+# 3.23 for nodejs 24 and the PostgreSQL 18 client: a newer pg_dump reads older
+# servers, never the reverse, so the client must be at least as new as the
+# newest PostgreSQL Fleetdock supports. MySQL is dumped with mariadb-dump
+# (Alpine ships no Oracle client); scripts/ci/dump-tools-test.sh checks both
+# against every supported engine.
+FROM alpine:3.23
+RUN apk add --no-cache ca-certificates mariadb-client postgresql18-client su-exec nodejs \
  && addgroup -g 1000 fleetdock \
  && adduser -D -H -u 1000 -G fleetdock app \
  && mkdir -p /var/lib/fleetdock/gateway \

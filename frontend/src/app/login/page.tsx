@@ -2,9 +2,9 @@
 
 import { Archive, Database, Server } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
-import { ApiError, api } from "@/lib/api";
+import { ApiError, api, safeNext } from "@/lib/api";
 import { clearLegacyToken } from "@/lib/auth";
 import { Button, Callout, Field, Input } from "@/components/ui";
 import { Logo } from "@/components/logo";
@@ -15,6 +15,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Set when the dashboard sent us here because the session ended: say so,
+  // and go back to the page afterwards.
+  const [expired, setExpired] = useState(false);
+  const [next, setNext] = useState<string | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setExpired(q.get("expired") === "1");
+    setNext(safeNext(q.get("next")));
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -25,7 +34,7 @@ export default function LoginPage() {
       // body is for API clients and is deliberately not kept.
       await api.post("/v1/auth/login", { email, password });
       clearLegacyToken();
-      router.replace("/dashboard");
+      router.replace(next ?? "/dashboard");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Login failed");
     } finally {
@@ -71,6 +80,11 @@ export default function LoginPage() {
               Use the account your Fleetdock admin created for you.
             </p>
           </div>
+          {expired ? (
+            <Callout tone="info" className="mb-4" role="status">
+              Your session ended. Sign in again to continue where you were.
+            </Callout>
+          ) : null}
           <form onSubmit={onSubmit}>
             <Field label="Email">
               <Input
