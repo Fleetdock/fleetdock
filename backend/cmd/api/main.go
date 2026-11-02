@@ -56,12 +56,22 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/notify"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/uiproxy"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 	"github.com/Fleetdock/fleetdock/backend/internal/worker"
 )
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
+		v := version.Get()
+		fmt.Printf("fleetdock %s", v.Version)
+		if v.Commit != "" {
+			fmt.Printf(" (%s)", v.Commit)
+		}
+		fmt.Println()
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
 		if err := resetPassword(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -97,7 +107,8 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("starting", "env", cfg.Env)
+	v := version.Get()
+	slog.Info("starting", "env", cfg.Env, "version", v.Version, "commit", v.Commit)
 
 	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -110,6 +121,8 @@ func run() error {
 			return err
 		}
 		slog.Info("migrations applied")
+	} else if err := postgres.CheckSchema(ctx, pool); err != nil {
+		return err
 	}
 
 	// Repositories (infra adapters).

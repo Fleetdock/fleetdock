@@ -61,7 +61,9 @@ jobs:
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            # A pre-release tag (v1.0.0-rc.1) must not move `latest`, or every
+            # `fleetdock update` would pick up the release candidate.
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ github.ref_name }}
@@ -94,6 +96,10 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
 
       # Cheap guards for the two ways this image silently breaks: a node too old
       # for Next, and a dashboard bundle that did not get copied.
@@ -107,17 +113,25 @@ jobs:
           docker run --rm --entrypoint sh "$IMG" -c 'test -f /opt/fleetdock/ui/server.js'
           docker run --rm --entrypoint sh "$IMG" -c 'test -d /opt/fleetdock/ui/.next/static'
           docker run --rm --entrypoint sh "$IMG" -c 'test -x /opt/fleetdock/agents/fleetdock-agent-linux-amd64'
+          docker run --rm --entrypoint sh "$IMG" -c 'cd /opt/fleetdock/agents && sha256sum -c SHA256SUMS'
+          # The binaries must report the tag, or agents and the dashboard show "dev".
+          want="${GITHUB_REF_NAME#v}"
+          got="$(docker run --rm --entrypoint /api "$IMG" version)"
+          echo "$got"
+          case "$got" in "fleetdock $want"*) ;; *) echo "::error::image reports '$got', expected $want"; exit 1 ;; esac
 
       - name: Build release archives
         working-directory: backend
         run: |
           mkdir -p ../dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/fleetdock-agent-linux-amd64 ./cmd/agent
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/fleetdock-agent-linux-arm64 ./cmd/agent
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/fleetdock-api-linux-amd64 ./cmd/api
+          pkg=github.com/Fleetdock/fleetdock/backend/internal/version
+          ldflags="-s -w -X $pkg.Version=${GITHUB_REF_NAME} -X $pkg.Commit=${GITHUB_SHA} -X $pkg.Date=${{ github.event.head_commit.timestamp }}"
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="$ldflags" \
+              -o ../dist/fleetdock-agent-linux-$arch ./cmd/agent
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="$ldflags" \
+              -o ../dist/fleetdock-api-linux-$arch ./cmd/api
+          done
           cd ../dist && sha256sum fleetdock-* > SHA256SUMS
 
       - name: Package release tarballs
@@ -125,7 +139,7 @@ jobs:
           tar -czf fleetdock-agents-${{ github.ref_name }}.tar.gz -C dist \
             fleetdock-agent-linux-amd64 fleetdock-agent-linux-arm64 SHA256SUMS
           tar -czf fleetdock-api-${{ github.ref_name }}.tar.gz -C dist \
-            fleetdock-api-linux-amd64 SHA256SUMS
+            fleetdock-api-linux-amd64 fleetdock-api-linux-arm64 SHA256SUMS
 
       - name: Generate release notes
         run: |
@@ -150,6 +164,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          # v1.0.0-rc.1 and the like are published as pre-releases.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body_path: release-notes.md
           files: |

@@ -25,6 +25,7 @@ import {
   StatusBadge,
   Time,
 } from "@/components/ui";
+import { AgentUpdateNotice } from "@/components/agent-update";
 import { InstallCommand } from "@/components/install-command";
 import { AddServerWizard } from "@/components/database/add-server-wizard";
 import { engineLabel } from "@/lib/engines";
@@ -92,6 +93,8 @@ export default function ServerDetailPage() {
         }
       />
 
+      <AgentUpdateNotice server={server} />
+
       <div className="stat-strip">
         <StatTile
           label="Database servers"
@@ -110,7 +113,16 @@ export default function ServerDetailPage() {
           label="Agent"
           icon={<Activity size={13} aria-hidden />}
           value={server.agent_version ?? "—"}
-          hint={server.agent_version ? "Installed version" : "Not connected yet"}
+          hint={
+            !server.agent_version
+              ? "Not connected yet"
+              : server.agent_status === "outdated"
+                ? "Update available"
+                : server.agent_status === "unsupported"
+                  ? "Too old: update it"
+                  : "Installed version"
+          }
+          hintTone={server.agent_status === "unsupported" ? "danger" : undefined}
         />
       </div>
 

@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Fleetdock knows its version.** Release builds stamp the version and
+  commit into the control plane and the agent. The dashboard shows it at
+  the bottom of the sidebar, `fleetdock version` and `/api version` print
+  it, `GET /v1/version` reports it with the oldest supported agent, the
+  served OpenAPI document carries it, and agents report their real version
+  instead of `0.1.0`.
+- **Agent updates.** A server whose agent is older than the control plane
+  shows **Update** in the server list, an *Agent update available* notice
+  with the command on its page, and an item on the overview (*Agent too
+  old* when it is below the supported minimum). Running the installer
+  without a registration token updates an enrolled agent in place, keeping
+  its identity. API: servers report `agent_status` (`current`, `outdated`,
+  `unsupported`, `unknown`).
+- **Upgrade checks.** CI upgrades an install of the latest release to the
+  new code and checks its data survives.
+
+### Changed
+
+- **Safer upgrades.** Fleetdock records the SHA-256 of every migration and
+  refuses to start on a metadata database migrated by a newer version, or
+  whose applied migrations have changed, instead of running against a
+  schema it does not match. With `FLEETDOCK_RUN_MIGRATIONS=false` it also
+  refuses to start while migrations are pending.
+- Release candidates (`v1.0.0-rc.1`) no longer move the `latest` image tag
+  and are published as pre-releases. Releases also ship an arm64 API
+  binary.
+
+### Security
+
+- **The agent installer checks what it downloads**: the binary must match
+  the SHA-256 the control plane publishes
+  (`GET /agent/v1/binary/{os}/{arch}/sha256`). It is written beside the
+  old one and renamed into place, so an update no longer fails on a
+  running binary.
+
+## [0.9.3] - 2026-11-02
+
+### Added
+
 - **Choose PostgreSQL schemas.** In databases with several schemas, the
   data browser's table tree and the ER diagram show the schemas you pick
   (a picker above the table search and in the diagram's toolbar: tick
@@ -28,35 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in that view (`/data?db=…&table=…&saved=<id>`). API:
   `/v1/databases/{id}/table-views`; changes are audited as `table_view.*`.
 
+## [0.9.2] - 2026-11-01
+
 ### Added
 
-- **ER diagram.** A database's **Diagram** page draws its tables and
-  views with their columns, primary keys and row estimates, and every
-  foreign key between them, laid out automatically. Click a table to
-  highlight its relations, double-click it (or its name) to open it in the
-  data browser, find a table by name, show only a table and its neighbours
-  (1–3 steps), narrow a PostgreSQL database to one schema, and download the
-  diagram as PNG or SVG. Positions you drag are kept in the browser.
-  Databases with more than 150 tables open on their most connected table.
-  The diagram has its own page (`/databases/{id}/diagram`) that uses the
-  whole window, opened from the database page's **Diagram** button or the
-  data browser's table list.
-  API: `GET /v1/databases/{id}/diagram`; the column catalog
-  (`GET /v1/databases/{id}/columns`) now also reports `nullable` and
-  `primary_key`.
-- **Audit log.** *Activity → Audit log* shows who did what: sign-ins and
-  failed sign-ins, users, roles, grants and API tokens, servers, database
-  servers and databases, backups, backup storage and schedules,
-  notification settings, console scripts that write (with the script),
-  data-browser edits and undo, structure changes, exports and dumps. Every
-  event carries the user — or the API token, or the CLI — with IP address
-  and client, the resource and the outcome; requests refused for lack of
-  permission are kept as *denied*. Filter by period, kind of action, user
-  and result, open an event for its details, export CSV, or open a
-  database's own events from its menu. Owners and admins can read it
-  (`audit:read`). Events are kept for `FLEETDOCK_AUDIT_RETENTION` (365
-  days; `0` keeps them). `fleetdock reset-admin-password` is recorded too.
-  API: `GET /v1/audit-events`.
 - **Data browser full screen.** A button at the end of the tab bar, or
   Alt+Shift+F, hides Fleetdock's sidebar and top bar; remembered per
   browser. In full screen the bar also offers the browser's own full
@@ -80,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The ER diagram has its own page** (`/databases/{id}/diagram`) that
+  uses the whole window, opened from the database page's **Diagram** button
+  or the data browser's table list.
 - **The database page is organised in tabs**: Overview (details, how to
   connect, last backup and schedule, index health), Connection (private and
   public access, app credentials), Backups, Access and Schema. Tabs that
@@ -95,12 +112,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Deleting a user who appears in the audit trail failed** with "table
-  audit_events is append-only": unlinking their events on delete counted
-  as changing them. Their events now stay, with their email.
 - A right-click that scrolled a half-visible column or cell into view
   closed the menu it had just opened.
 - Numbers in foreign-key columns no longer hide under the follow button.
+
+## [0.9.1] - 2026-11-01
+
+### Added
+
+- **ER diagram.** A database's **Diagram** tab draws its tables and
+  views with their columns, primary keys and row estimates, and every
+  foreign key between them, laid out automatically. Click a table to
+  highlight its relations, double-click it (or its name) to open it in the
+  data browser, find a table by name, show only a table and its neighbours
+  (1–3 steps), narrow a PostgreSQL database to one schema, and download the
+  diagram as PNG or SVG. Positions you drag are kept in the browser.
+  Databases with more than 150 tables open on their most connected table.
+  API: `GET /v1/databases/{id}/diagram`; the column catalog
+  (`GET /v1/databases/{id}/columns`) now also reports `nullable` and
+  `primary_key`.
+- **Audit log.** *Activity → Audit log* shows who did what: sign-ins and
+  failed sign-ins, users, roles, grants and API tokens, servers, database
+  servers and databases, backups, backup storage and schedules,
+  notification settings, console scripts that write (with the script),
+  data-browser edits and undo, structure changes, exports and dumps. Every
+  event carries the user — or the API token, or the CLI — with IP address
+  and client, the resource and the outcome; requests refused for lack of
+  permission are kept as *denied*. Filter by period, kind of action, user
+  and result, open an event for its details, export CSV, or open a
+  database's own events from its menu. Owners and admins can read it
+  (`audit:read`). Events are kept for `FLEETDOCK_AUDIT_RETENTION` (365
+  days; `0` keeps them). `fleetdock reset-admin-password` is recorded too.
+  API: `GET /v1/audit-events`.
+
+### Fixed
+
+- **Deleting a user who appears in the audit trail failed** with "table
+  audit_events is append-only": unlinking their events on delete counted
+  as changing them. Their events now stay, with their email.
 
 ## [0.9.0] - 2026-11-01
 

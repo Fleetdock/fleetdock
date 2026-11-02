@@ -1816,6 +1816,28 @@ paths:
         "503":
           description: Unavailable
 
+  /v1/version:
+    get:
+      tags: [Health]
+      security: [{bearerAuth: []}]
+      summary: Running version
+      description: >
+        The control plane's version and commit, and the oldest agent version
+        it still supports. Servers report `agent_status` against these.
+      responses:
+        "200":
+          description: Version
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, min_agent_version]
+                properties:
+                  version: {type: string, example: "1.0.0", description: '"dev" for a build without a version'}
+                  commit: {type: string, example: "e7d37df1a2b3"}
+                  date: {type: string}
+                  min_agent_version: {type: string, example: "0.1.0"}
+
   /openapi.yaml:
     get:
       tags: [Docs]
@@ -1858,6 +1880,23 @@ paths:
       responses:
         "200":
           description: Binary
+
+  /agent/v1/binary/{os}/{arch}/sha256:
+    get:
+      tags: [Agent]
+      summary: Agent binary checksum
+      description: The SHA-256 of the binary, as hex; `install.sh` checks downloads against it.
+      parameters:
+        - {name: os, in: path, required: true, schema: {type: string}}
+        - {name: arch, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Hex SHA-256 followed by a newline
+          content:
+            text/plain:
+              schema: {type: string}
+        "404":
+          description: No binary for this platform
 
   /agent/v1/register:
     post:

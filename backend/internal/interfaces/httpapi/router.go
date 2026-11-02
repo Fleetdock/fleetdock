@@ -8,6 +8,7 @@ import (
 	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
 // RouterDeps are the handlers and middleware the router wires together.
@@ -78,6 +79,12 @@ func NewRouter(d RouterDeps) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 
+	// The running build, for the dashboard's footer and support requests.
+	// Signed-in users only: the exact version helps an attacker pick exploits.
+	mux.HandleFunc("GET /v1/version", requirePerm("", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, version.Get())
+	}))
+
 	// Public: API documentation (spec + Redoc page).
 	mux.HandleFunc("GET /openapi.yaml", d.Docs.Spec)
 	mux.HandleFunc("GET /docs", d.Docs.Page)
@@ -85,6 +92,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	// Public: agent install script + binaries.
 	mux.HandleFunc("GET /install.sh", d.Install.Script)
 	mux.HandleFunc("GET /agent/v1/binary/{os}/{arch}", d.Install.Binary)
+	mux.HandleFunc("GET /agent/v1/binary/{os}/{arch}/sha256", d.Install.BinarySum)
 
 	// Agent protocol (agent bearer token, not user JWT).
 	mux.HandleFunc("POST /agent/v1/register", d.Agents.Register)

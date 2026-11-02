@@ -568,6 +568,13 @@ EOT
     ;;
 
   version)
+    # What the running control plane reports (stamped at build time), then
+    # the tag this install is pinned to.
+    if running="$(dc exec -T fleetdock /api version 2>/dev/null)"; then
+      echo "running:   ${running}"
+    else
+      echo "running:   (not running)"
+    fi
     echo "image tag: $(getenv FLEETDOCK_RELEASE_TAG)"
     dc images fleetdock 2>/dev/null | tail -n +2 || true
     ;;

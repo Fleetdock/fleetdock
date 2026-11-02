@@ -97,6 +97,32 @@ jobs:
           go run ./cmd/migrate
           go run ./cmd/migrate
 
+  upgrade:
+    # An install of the previous release, upgraded in place to this commit:
+    # its users, API tokens, notification channels and backup storage must
+    # survive, and the new version must start on the database the old one
+    # created.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_PASSWORD: rootpw}
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the release tags
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache-dependency-path: backend/go.sum
+      - name: upgrade from the latest release
+        env:
+          DATABASE_URL: postgres://postgres:rootpw@127.0.0.1:54329/postgres?sslmode=disable
+        run: scripts/ci/upgrade-test.sh
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -139,7 +165,8 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck -s sh scripts/install.sh scripts/fleetdock \
             backend/docker-entrypoint.sh \
-            backend/internal/interfaces/httpapi/install_script.sh
+            backend/internal/interfaces/httpapi/install_script.sh \
+            scripts/ci/upgrade-test.sh
 
   docker:
     runs-on: ubuntu-latest

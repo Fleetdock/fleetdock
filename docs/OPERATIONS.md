@@ -72,14 +72,14 @@ Stop the API during restore to avoid concurrent writes.
 
 ```bash
 fleetdock update              # latest
-fleetdock update --tag v0.2.0 # a specific release
+fleetdock update --tag v1.0.0 # a specific release
 ```
 
 ### Compose (build from source)
 
 ```bash
 git fetch origin
-git checkout v0.2.0   # or main for latest
+git checkout v1.0.0   # or main for latest
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
@@ -90,16 +90,60 @@ default). To apply migrations without serving traffic:
 docker compose run --rm fleetdock /api   # or: make backend-migrate locally
 ```
 
-Set `FLEETDOCK_RUN_MIGRATIONS=false` only if you run migrations as a separate job.
+Set `FLEETDOCK_RUN_MIGRATIONS=false` only if you run migrations as a separate
+job. A process started that way checks the schema and refuses to start while
+migrations are pending, so it never serves against a schema it does not match.
+
+The API also refuses to start in two cases, with a message saying what to do:
+
+- **The metadata database was migrated by a newer Fleetdock.** It would run
+  against tables it does not know. Run the newer version, or
+  roll back properly (below).
+- **A migration that was already applied has changed.** Fleetdock records each
+  migration's SHA-256; a different file means the schema may not match the
+  code.
+
+### Which version is running
+
+The dashboard shows it at the bottom of the sidebar. From the shell:
+
+```bash
+fleetdock version                           # install.sh installs
+docker compose exec fleetdock /api version  # compose
+```
+
+The API reports it at `GET /v1/version` (signed in), with the oldest agent
+version it supports.
 
 ### Upgrade checklist
 
 1. Read [CHANGELOG.md](../CHANGELOG.md) for breaking changes
-2. Back up metadata Postgres (above)
+2. Back up metadata Postgres (above); `fleetdock update` does this for you
 3. Deploy new images / rebuild
-4. Confirm `GET /readyz` returns `ready`
-5. Spot-check: login, server list, trigger a connection test on an instance
-6. Watch the **Operations** page for stuck jobs after upgrade
+4. Confirm `GET /readyz` returns `ready` and the sidebar shows the new version
+5. Spot-check: sign in, open the server list and a database
+6. Watch **Activity** for stuck tasks after the upgrade
+7. Update the agents (below)
+
+### Updating agents
+
+Agents keep working across a control-plane upgrade, but each release may fix
+them too. A server whose agent is older than the control plane shows
+**Update** in the server list, an *Agent update available* notice on its page
+and an item on the overview; an agent older than the oldest supported version
+is marked *too old*.
+
+To update one, run this on the machine:
+
+```bash
+curl -sSL https://fleetdock.example.com/install.sh | sudo sh
+```
+
+Without a registration token, the installer updates the enrolled agent in
+place: it downloads the binary from your Fleetdock, checks it against the
+SHA-256 the control plane publishes (`/agent/v1/binary/{os}/{arch}/sha256`),
+replaces it and restarts the service. The server keeps its identity and
+token. The new version shows on the server's page after the next heartbeat.
 
 ### Rollback
 
@@ -107,8 +151,10 @@ Set `FLEETDOCK_RUN_MIGRATIONS=false` only if you run migrations as a separate jo
 2. Restore the metadata database backup taken before upgrade
 3. Redeploy the previous image tag
 
-Do not roll back only the API binary if migrations already advanced — restore
-the database to match the older schema or stay on the new version.
+Do not roll back only the API binary if migrations already advanced: from 1.0
+on, an older version refuses to start on the newer schema (earlier versions
+start and misbehave). Restore the database to match the older version, or stay
+on the new one.
 
 ## Encryption key rotation
 

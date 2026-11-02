@@ -3,6 +3,16 @@ export interface Paginated<T> {
   pagination: { total: number; limit: number; offset: number };
 }
 
+export type AgentStatus = "current" | "outdated" | "unsupported" | "unknown";
+
+/** GET /v1/version: the running control plane. */
+export interface VersionInfo {
+  version: string;
+  commit?: string;
+  date?: string;
+  min_agent_version: string;
+}
+
 export interface Server {
   id: string;
   name: string;
@@ -10,6 +20,8 @@ export interface Server {
   address?: string | null;
   status: string;
   agent_version?: string | null;
+  /** How the agent's version compares with this Fleetdock; absent before it reports. */
+  agent_status?: AgentStatus;
   mariadb_version?: string | null;
   os?: string | null;
   labels: Record<string, string>;
@@ -594,6 +606,8 @@ export interface Overview {
 export interface AttentionItem {
   kind:
     | "server_offline"
+    | "agent_outdated"
+    | "agent_unsupported"
     | "instance_unreachable"
     | "backup_failed"
     | "backup_check_failed"

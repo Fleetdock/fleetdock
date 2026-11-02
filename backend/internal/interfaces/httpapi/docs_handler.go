@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Fleetdock/fleetdock/backend/internal/openapi"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
 // DocsHandler serves the OpenAPI spec and a self-contained Redoc docs page.
@@ -17,7 +18,7 @@ func NewDocsHandler() *DocsHandler { return &DocsHandler{} }
 func (h *DocsHandler) Spec(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(openapi.Spec)
+	_, _ = w.Write(openapi.SpecFor(version.Get().Version))
 }
 
 const redocPage = `<!doctype html>

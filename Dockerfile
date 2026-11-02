@@ -28,19 +28,29 @@ RUN npm run build \
 # ---- control plane build ----
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS api
 ARG TARGETARCH
+# Stamped into every binary (internal/version); the release workflow passes the
+# tag, a local `docker build` reports "dev".
+ARG VERSION=dev
+ARG COMMIT=
+ARG BUILD_DATE=
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
-      go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
-# Cross-compile agent binaries; the API serves them at /agent/v1/binary/{os}/{arch}
-# so `install.sh` works without any external release hosting. Both arches ship
-# in every image, because a control plane manages servers of either.
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
+ENV VERSION_PKG=github.com/Fleetdock/fleetdock/backend/internal/version
+# Also cross-compiles the agent binaries: the API serves them at
+# /agent/v1/binary/{os}/{arch} so `install.sh` works without any external
+# release hosting. Both arches ship in every image, because a control plane
+# manages servers of either. Their checksums are served next to them, so the
+# installer can verify the download.
+RUN LDFLAGS="-s -w -X ${VERSION_PKG}.Version=${VERSION} -X ${VERSION_PKG}.Commit=${COMMIT} -X ${VERSION_PKG}.Date=${BUILD_DATE}" \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
+      go build -trimpath -ldflags="$LDFLAGS" -o /out/api ./cmd/api \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" \
       -o /out/agents/fleetdock-agent-linux-amd64 ./cmd/agent \
- && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
-      -o /out/agents/fleetdock-agent-linux-arm64 ./cmd/agent
+ && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" \
+      -o /out/agents/fleetdock-agent-linux-arm64 ./cmd/agent \
+ && cd /out/agents && sha256sum fleetdock-agent-* > SHA256SUMS
 
 # ---- runtime ----
 # alpine (not distroless): the control plane shells out to mariadb-dump /
