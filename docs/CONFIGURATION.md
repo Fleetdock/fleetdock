@@ -46,6 +46,7 @@ Gateway tuning (`FLEETDOCK_GATEWAY_*`) is described in
 | `FLEETDOCK_PUBLIC_URL`                                | `http://localhost:8080` | URL agents/installers use to reach the API                                                                        |
 | `FLEETDOCK_AGENT_BIN_DIR`                             | `/opt/fleetdock/agents` | where cross-compiled agent binaries live                                                                          |
 | `FLEETDOCK_WORKER_ENABLED`                            | `true`                  | in-process worker (external-instance ops, offline detection, scheduled backups, retention, alerts, notifications) |
+| `FLEETDOCK_METRICS_TOKEN`                             | —                       | enables `GET /metrics` (Prometheus) for scrapers sending it as a bearer token; unset, the endpoint answers 404     |
 | `FLEETDOCK_HEARTBEAT_TIMEOUT`                         | `2m`                    | no heartbeat for this long ⇒ server `offline`                                                                     |
 | `FLEETDOCK_METRICS_RETENTION`                         | `168h`                  | how long per-heartbeat server metrics history is kept                                                             |
 | `FLEETDOCK_ROW_CHANGE_RETENTION`                      | `168h`                  | how long data-browser edits stay in the change journal and can be undone; `0` turns the journal off                |

@@ -52,6 +52,10 @@ components:
       type: http
       scheme: bearer
       description: Agent bearer token (fleeta_ prefix)
+    metricsAuth:
+      type: http
+      scheme: bearer
+      description: The value of FLEETDOCK_METRICS_TOKEN.
     cookieAuth:
       type: apiKey
       in: cookie
@@ -853,6 +857,21 @@ components:
         roles: {type: array, items: {type: string}}
         status: {type: string}
         updated_at: {type: string, format: date-time}
+
+    OwnedAPIToken:
+      type: object
+      required: [id, name, prefix, scopes, created_at, user_id, user_email]
+      properties:
+        created_at: {type: string, format: date-time}
+        expires_at: {type: [string, 'null'], format: date-time}
+        id: {type: string}
+        last_used_at: {type: [string, 'null'], format: date-time}
+        name: {type: string}
+        prefix: {type: string}
+        revoked_at: {type: [string, 'null'], format: date-time}
+        scopes: {type: array, items: {type: string}}
+        user_email: {type: string}
+        user_id: {type: string}
 
 paths:
   /v1/saved-queries/{id}:
@@ -2040,7 +2059,7 @@ paths:
         "200":
           description: Ready
         "503":
-          description: Unavailable
+          description: Unavailable (the metadata database, or the background worker has stopped)
         default: {$ref: "#/components/responses/Error"}
 
   /v1/version:
@@ -2064,6 +2083,27 @@ paths:
                   commit: {type: string, example: "e7d37df1a2b3"}
                   date: {type: string}
                   min_agent_version: {type: string, example: "0.1.0"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /metrics:
+    get:
+      tags: [Health]
+      security: [{metricsAuth: []}]
+      summary: Prometheus metrics
+      description: >
+        The control plane's metrics in the Prometheus text format: build,
+        HTTP requests and latency, finished operations, the worker's last
+        run, and fleet gauges (servers, database servers, databases,
+        backups, operations). Enabled by FLEETDOCK_METRICS_TOKEN, which the
+        scraper sends as a bearer token; 404 while it is unset.
+      responses:
+        "200":
+          description: Metrics
+          content:
+            text/plain:
+              schema: {type: string}
+        "404":
+          description: Metrics are not enabled
         default: {$ref: "#/components/responses/Error"}
 
   /openapi.yaml:
@@ -3965,6 +4005,36 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/NewAPIToken"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/api-tokens:
+    get:
+      tags: [Tokens]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      summary: Everyone's API tokens
+      description: >
+        Every user's API tokens that are neither revoked nor expired, with
+        their owners (at most 1,000, newest first). For administrators
+        (user:write), to find and revoke tokens of people who left or of
+        compromised accounts.
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/OwnedAPIToken"}}}}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/api-tokens/{id}:
+    delete:
+      tags: [Tokens]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      summary: Revoke anyone's API token
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Revoked
         default: {$ref: "#/components/responses/Error"}
 
   /v1/tokens/{id}:

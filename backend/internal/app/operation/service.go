@@ -24,6 +24,7 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/metrics"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/storage"
 )
 
@@ -519,6 +520,7 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 	if err := s.jobs.Complete(ctx, id, status, result, errMsg); err != nil {
 		return err
 	}
+	metrics.JobFinished(string(j.Type), string(status))
 
 	var p Params
 	_ = json.Unmarshal(j.Params, &p)

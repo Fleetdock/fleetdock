@@ -27,6 +27,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PostgreSQL 18 and MariaDB 11.8** can be created as new database servers
   (PostgreSQL 17 is now the default). MySQL 8.0, past its end of life, is no
   longer offered for new servers; existing ones keep working.
+- **Prometheus metrics.** `GET /metrics` reports the build, HTTP requests
+  and latency, finished operations by type and result, the worker's last
+  run, and fleet gauges (servers, database servers, databases, backups and
+  failures in the last 24 hours, running operations, the last backup).
+  Enabled by `FLEETDOCK_METRICS_TOKEN`, which the scraper sends as a bearer
+  token. `/readyz` now also fails when the background worker has stopped.
+- **Administrators see everyone's API tokens.** *Access → API tokens* lists
+  other users' working tokens (owner, scopes, expiry, last use) for anyone
+  who manages users, and revokes them. API: `GET /v1/api-tokens`,
+  `DELETE /v1/api-tokens/{id}`.
+- **Metadata backups you can schedule.** `fleetdock backup-db --keep N`
+  keeps the newest N; the docs give a nightly cron line that also copies
+  them off the host.
+- **Signed releases.** Images and the checksum files are signed with
+  cosign (keyless, from the release workflow); RELEASING.md shows how to
+  verify them.
 - **Back where you were after signing in again.** When a session ends, the
   sign-in page says so and returns to the page you were on; the SQL
   console keeps the script you were writing (per database, in this
@@ -82,6 +98,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Password guessing against one account is stopped.** After 10 failed
+  sign-ins to an account within 15 minutes, it refuses sign-in for the rest
+  of those minutes, from any address (the per-address limit still applies
+  too). Refusals are in the audit log.
+- **New API tokens expire after 90 days by default** (7 days to 1 year, or
+  never, with a warning).
 - **Notification secrets are encrypted.** Webhook and Slack URLs and the
   SMTP password of notification channels are kept in the encrypted secret
   store like other credentials, instead of in plain text in the channel's

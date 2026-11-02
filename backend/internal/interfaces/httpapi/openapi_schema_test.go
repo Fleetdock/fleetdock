@@ -29,6 +29,7 @@ var documentedResponses = map[string]any{
 	"RoleGrant":     roleGrantResponse{},
 	"APIToken":      tokenResponse{},
 	"NewAPIToken":   createTokenResponse{},
+	"OwnedAPIToken": ownedTokenResponse{},
 	"AgentToken":    regTokenResponse{},
 	"NewAgentToken": createdRegTokenResponse{},
 	"Destination":   destinationResponse{},

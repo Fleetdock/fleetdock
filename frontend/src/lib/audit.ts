@@ -19,6 +19,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "role.delete": "Deleted role",
   "api_token.create": "Created API token",
   "api_token.revoke": "Revoked API token",
+  "api_token.revoke_any": "Revoked another user's API token",
   "agent_token.create": "Created agent install token",
   "agent_token.revoke": "Revoked agent install token",
   "server.register": "Added server",

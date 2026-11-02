@@ -270,6 +270,12 @@ export interface ApiToken {
   created_at: string;
 }
 
+/** GET /v1/api-tokens: someone's live token, for administrators. */
+export interface OwnedApiToken extends ApiToken {
+  user_id: string;
+  user_email: string;
+}
+
 export type ScopeType = "global" | "server" | "database";
 
 export interface Grant {

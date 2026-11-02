@@ -53,6 +53,7 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/interfaces/httpapi"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/auth"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/crypto"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/metrics"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/notify"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/uiproxy"
@@ -341,6 +342,9 @@ func run() error {
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
 		Audit:             auditSvc,
 		Ready:             pool.Ping,
+		WorkerEnabled:     cfg.WorkerEnabled,
+		MetricsToken:      cfg.MetricsToken,
+		MetricsGauges:     fleetGauges(statsRepo),
 		UI:                uiHandler,
 	})
 
@@ -379,4 +383,41 @@ func run() error {
 		}
 	}
 	return shutdownErr
+}
+
+// fleetGauges reads the fleet-wide counts the overview shows, for /metrics.
+func fleetGauges(stats *postgres.StatsRepository) func(context.Context) []metrics.Gauge {
+	return func(ctx context.Context) []metrics.Gauge {
+		s, err := stats.Summary(ctx)
+		if err != nil {
+			slog.Warn("metrics: fleet summary", "error", err.Error())
+			return []metrics.Gauge{{Name: "up", Help: "1 when the fleet summary could be read.", Value: 0}}
+		}
+		g := func(name, help string, v int, kv ...string) metrics.Gauge {
+			var labels map[string]string
+			if len(kv) == 2 {
+				labels = map[string]string{kv[0]: kv[1]}
+			}
+			return metrics.Gauge{Name: name, Help: help, Labels: labels, Value: float64(v)}
+		}
+		out := []metrics.Gauge{
+			{Name: "up", Help: "1 when the fleet summary could be read.", Value: 1},
+			g("servers", "Servers by agent status.", s.ServersOnline, "status", "online"),
+			g("servers", "Servers by agent status.", s.ServersOffline, "status", "offline"),
+			g("database_servers", "Database servers (instances) by kind.", s.InstancesManaged, "kind", "managed"),
+			g("database_servers", "Database servers (instances) by kind.", s.InstancesExternal, "kind", "external"),
+			g("databases", "Databases by status.", s.DatabasesActive, "status", "active"),
+			g("databases", "Databases by status.", s.DatabasesTotal-s.DatabasesActive, "status", "other"),
+			g("backups_24h", "Backups finished in the last 24 hours, by result.", s.BackupsCompleted24h, "status", "completed"),
+			g("backups_24h", "Backups finished in the last 24 hours, by result.", s.BackupsFailed24h, "status", "failed"),
+			g("operations_running", "Operations running now.", s.OperationsRunning),
+			g("operations_failed_24h", "Operations failed in the last 24 hours.", s.OperationsFailed24h),
+			g("backup_schedules_enabled", "Enabled backup schedules.", s.SchedulesEnabled),
+		}
+		if s.LastBackupAt != nil {
+			out = append(out, metrics.Gauge{Name: "last_backup_seconds", Help: "When the last backup finished, as a Unix time.",
+				Value: float64(s.LastBackupAt.Unix())})
+		}
+		return out
+	}
 }

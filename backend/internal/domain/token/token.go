@@ -20,6 +20,8 @@ type Token struct {
 	ExpiresAt  *time.Time
 	RevokedAt  *time.Time
 	CreatedAt  time.Time
+	// OwnerEmail is filled by ListActive only (the administrators' view).
+	OwnerEmail string
 }
 
 // Lookup is the result of resolving a presented token hash.
@@ -34,6 +36,11 @@ type Repository interface {
 	Create(ctx context.Context, t *Token, hash string) error
 	ListByUser(ctx context.Context, userID uuid.UUID) ([]*Token, error)
 	Revoke(ctx context.Context, userID, id uuid.UUID) error
+	// ListActive returns every user's tokens that are neither revoked nor
+	// expired, with their owners' emails, newest first.
+	ListActive(ctx context.Context) ([]*Token, error)
+	// RevokeAny revokes a token whoever owns it, returning its owner.
+	RevokeAny(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	// ResolveHash returns the owner + scopes for a valid (non-revoked, unexpired) token.
 	ResolveHash(ctx context.Context, hash string) (Lookup, error)
 }

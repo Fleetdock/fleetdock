@@ -25,7 +25,9 @@ type oneInstance struct {
 	inst *instancedom.Instance
 }
 
-func (r oneInstance) GetByID(context.Context, uuid.UUID) (*instancedom.Instance, error) { return r.inst, nil }
+func (r oneInstance) GetByID(context.Context, uuid.UUID) (*instancedom.Instance, error) {
+	return r.inst, nil
+}
 
 func TestRestore_RefusesAnotherEngineFamily(t *testing.T) {
 	user, ref := "root", "secret-ref"

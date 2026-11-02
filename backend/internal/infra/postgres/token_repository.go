@@ -80,6 +80,51 @@ func (r *TokenRepository) Revoke(ctx context.Context, userID, id uuid.UUID) erro
 	return nil
 }
 
+// ListActive implements tokendom.Repository.
+func (r *TokenRepository) ListActive(ctx context.Context) ([]*tokendom.Token, error) {
+	const q = `
+		SELECT t.id, t.user_id, t.name, t.prefix, t.scopes, t.last_used_at, t.expires_at, t.revoked_at, t.created_at,
+		       COALESCE(u.email, '')
+		FROM api_tokens t
+		LEFT JOIN users u ON u.id = t.user_id
+		WHERE t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())
+		ORDER BY t.created_at DESC
+		LIMIT 1000`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, apperr.Internal(fmt.Errorf("list active tokens: %w", err))
+	}
+	defer rows.Close()
+	out := make([]*tokendom.Token, 0)
+	for rows.Next() {
+		var t tokendom.Token
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Prefix, &t.Scopes,
+			&t.LastUsedAt, &t.ExpiresAt, &t.RevokedAt, &t.CreatedAt, &t.OwnerEmail); err != nil {
+			return nil, apperr.Internal(err)
+		}
+		if t.Scopes == nil {
+			t.Scopes = []string{}
+		}
+		out = append(out, &t)
+	}
+	return out, rows.Err()
+}
+
+// RevokeAny implements tokendom.Repository.
+func (r *TokenRepository) RevokeAny(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	var owner uuid.UUID
+	err := r.pool.QueryRow(ctx,
+		`UPDATE api_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL RETURNING user_id`, id,
+	).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, apperr.NotFound("token not found")
+	}
+	if err != nil {
+		return uuid.Nil, apperr.Internal(fmt.Errorf("revoke token: %w", err))
+	}
+	return owner, nil
+}
+
 func (r *TokenRepository) ResolveHash(ctx context.Context, hash string) (tokendom.Lookup, error) {
 	const q = `
 		SELECT id, user_id, scopes FROM api_tokens

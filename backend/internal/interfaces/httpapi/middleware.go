@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/metrics"
 )
 
 // recoverer converts a panic into a 500 response instead of crashing the server.
@@ -57,6 +59,7 @@ func requestLogger(next http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 
+		metrics.ObserveRequest(r.Method, rec.status, time.Since(start))
 		slog.Info("request",
 			"id", rid,
 			"method", r.Method,

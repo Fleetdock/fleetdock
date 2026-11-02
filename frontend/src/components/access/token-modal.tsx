@@ -3,9 +3,19 @@
 import { useMemo, useState, type FormEvent } from "react";
 
 import { FormError } from "@/components/access/form-error";
-import { Button, Checkbox, Field, HelpText, Input, Modal } from "@/components/ui";
+import { Button, Checkbox, Field, HelpText, Input, Modal, Select } from "@/components/ui";
 import { fieldError } from "@/lib/errors";
 import { useCreateToken, useMe } from "@/lib/hooks";
+
+/** Token lifetimes offered, in hours ("" = never expires). */
+const LIFETIMES = [
+  { label: "7 days", hours: "168" },
+  { label: "30 days", hours: "720" },
+  { label: "90 days", hours: "2160" },
+  { label: "1 year", hours: "8760" },
+  { label: "Never", hours: "" },
+] as const;
+const DEFAULT_LIFETIME = "2160";
 
 export function CreateTokenModal({
   open,
@@ -20,9 +30,8 @@ export function CreateTokenModal({
   const { data: me } = useMe();
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<string[]>([]);
-  const [ttlHours, setTtlHours] = useState("");
+  const [ttlHours, setTtlHours] = useState<string>(DEFAULT_LIFETIME);
   const [error, setError] = useState<unknown>(null);
-  const [ttlError, setTtlError] = useState<string | null>(null);
 
   // A token can only carry scopes the user actually holds (at any scope).
   const available = useMemo(() => {
@@ -37,17 +46,12 @@ export function CreateTokenModal({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setTtlError(null);
-    const ttl = ttlHours.trim() === "" ? undefined : Number(ttlHours);
-    if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
-      setTtlError("Expiry must be a positive number of hours.");
-      return;
-    }
+    const ttl = ttlHours === "" ? undefined : Number(ttlHours);
     try {
       const res = await create.mutateAsync({ name, scopes, ttl_hours: ttl });
       setName("");
       setScopes([]);
-      setTtlHours("");
+      setTtlHours(DEFAULT_LIFETIME);
       onClose();
       onCreated(res.token);
     } catch (err) {
@@ -85,17 +89,21 @@ export function CreateTokenModal({
           {fieldError(error, "scopes") ? <p className="field-error">{fieldError(error, "scopes")}</p> : null}
         </fieldset>
         <Field
-          label="Expires after (hours)"
-          hint="Optional. Leave empty for a token that never expires."
-          error={ttlError ?? fieldError(error, "ttl_hours")}
+          label="Expires after"
+          hint={
+            ttlHours === ""
+              ? "A token that never expires works until someone revokes it, even if it leaks or is forgotten. Prefer a lifetime, and make a new token when it ends."
+              : "Make a new token before it ends; anything using this one then stops working."
+          }
+          error={fieldError(error, "ttl_hours")}
         >
-          <Input
-            type="number"
-            min={1}
-            value={ttlHours}
-            onChange={(e) => setTtlHours(e.target.value)}
-            placeholder="never"
-          />
+          <Select value={ttlHours} onChange={(e) => setTtlHours(e.target.value)}>
+            {LIFETIMES.map((l) => (
+              <option key={l.label} value={l.hours}>
+                {l.label}
+              </option>
+            ))}
+          </Select>
         </Field>
         <FormError error={error} fields={["name", "scopes", "ttl_hours"]} fallback="Failed to create token" />
         <div className="modal-actions">

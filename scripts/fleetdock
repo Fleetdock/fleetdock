@@ -136,7 +136,9 @@ Usage: fleetdock <command>
   config get <KEY> | set <KEY> <VALUE>
   env [--reveal]        Show configuration; secrets redacted unless --reveal
   psql                  A psql shell on the metadata database
-  backup-db [file]      pg_dump of the metadata database (runs before every update)
+  backup-db [--keep N] [file]
+                        pg_dump of the metadata database (runs before every
+                        update); --keep keeps only the newest N in backups/
   rotate-keys           Replace FLEETDOCK_ENCRYPTION_KEY, re-encrypting stored
                         credentials under the new key
   reset-admin-password [email]
@@ -443,10 +445,22 @@ EOF
 
   backup-db)
     need_root
+    keep=""
+    if [ "${1:-}" = "--keep" ]; then
+      keep="${2:?usage: fleetdock backup-db [--keep <count>] [file]}"
+      case "$keep" in *[!0-9]*|"" ) echo "error: --keep takes a number of backups" >&2; exit 1 ;; esac
+      shift 2
+    fi
     mkdir -p "${FLEETDOCK_DIR}/backups"
     out="${1:-${FLEETDOCK_DIR}/backups/metadata-$(date +%Y%m%d-%H%M%S).sql.gz}"
     backup_db "$out"
     echo "Wrote ${out}"
+    if [ -n "$keep" ] && [ "$keep" -gt 0 ]; then
+      # Keep the newest <count> automatic backups (names sort by time).
+      # shellcheck disable=SC2012
+      ls -1 "${FLEETDOCK_DIR}/backups"/metadata-*.sql.gz 2>/dev/null | sort -r | tail -n +"$((keep + 1))" |
+        while IFS= read -r old; do rm -f "$old" && echo "Removed ${old}"; done
+    fi
     echo "Restore with: gunzip -c ${out} | fleetdock psql"
     echo "Stored credentials inside are encrypted with FLEETDOCK_ENCRYPTION_KEY — keep"
     echo "a copy of .env (fleetdock backup-config) alongside it, or they are unreadable."

@@ -93,7 +93,8 @@ On every `v*` tag push:
    `v<tag>`, `<tag>`, `<major>.<minor>` and `latest`.
 2. Verifies the image boots: node version, dashboard bundle present, agent
    binaries executable.
-3. Cross-compiles Linux agent binaries (`amd64`, `arm64`) and the API binary (`amd64`)
+3. Signs the image with cosign (keyless), and cross-compiles the Linux agent
+   and API binaries (`amd64`, `arm64`), stamped with the version
 4. Creates a GitHub Release with tarballs, `SHA256SUMS`, and the installer
    artefacts (`install.sh`, `fleetdock`, `docker-compose.yml`) so a release can
    be installed from a pinned tag
@@ -102,6 +103,24 @@ On every `v*` tag push:
 Nothing deployment-specific is baked into the image. There is no
 `NEXT_PUBLIC_API_URL` build argument any more: the dashboard calls the API on
 whatever origin serves it, so one image works for every self-hoster.
+
+## Verifying a release
+
+Images and checksum files are signed with [cosign](https://docs.sigstore.dev/)
+keyless signing: the signature proves they were built by this repository's
+release workflow from a `v*` tag. Image and SBOM/provenance attestations are
+attached to the image too.
+
+```bash
+cosign verify ghcr.io/fleetdock/fleetdock:v1.0.0 \
+  --certificate-identity-regexp '^https://github.com/Fleetdock/fleetdock/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/Fleetdock/fleetdock/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum -c SHA256SUMS --ignore-missing
+```
 
 ## GHCR visibility
 

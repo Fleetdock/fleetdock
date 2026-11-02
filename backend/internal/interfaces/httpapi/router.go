@@ -2,12 +2,16 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
+	"strings"
 	"time"
 
 	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/metrics"
 	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
@@ -51,6 +55,13 @@ type RouterDeps struct {
 	Audit *auditapp.Service
 	// Ready reports whether dependencies (the metadata database) are healthy.
 	Ready func(ctx context.Context) error
+	// WorkerEnabled makes /readyz also require the background worker to be
+	// turning (it is not on API-only replicas).
+	WorkerEnabled bool
+	// MetricsToken enables GET /metrics for scrapers that send it as a
+	// bearer token; MetricsGauges adds fleet gauges read at scrape time.
+	MetricsToken  string
+	MetricsGauges func(ctx context.Context) []metrics.Gauge
 	// UI, when non-nil, serves every path the API does not own: the bundled
 	// dashboard, reverse-proxied to a co-resident Node process. Nil keeps the
 	// API-only behaviour, where unknown paths 404.
@@ -76,7 +87,36 @@ func NewRouter(d RouterDeps) http.Handler {
 				return
 			}
 		}
+		if d.WorkerEnabled && metrics.WorkerStalled(2*time.Minute) {
+			// Backups, schedules and alerts all run on the worker: a process
+			// whose worker stopped turning is not doing its job.
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable", "reason": "worker stalled"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	})
+
+	// Prometheus metrics, for a scraper holding FLEETDOCK_METRICS_TOKEN.
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		if d.MetricsToken == "" {
+			http.NotFound(w, r)
+			return
+		}
+		got, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !bearer || subtle.ConstantTimeCompare([]byte(got), []byte(d.MetricsToken)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
+			writeError(w, apperr.Unauthorized("a valid metrics token is required"))
+			return
+		}
+		var gauges []metrics.Gauge
+		if d.MetricsGauges != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			gauges = d.MetricsGauges(ctx)
+			cancel()
+		}
+		v := version.Get()
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		_ = metrics.Write(w, v.Version, v.Commit, gauges)
 	})
 
 	// The running build, for the dashboard's footer and support requests.
@@ -320,6 +360,9 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/tokens", requirePerm("token:write", d.Tokens.Create))
 	mux.HandleFunc("GET /v1/tokens", requirePerm("token:read", d.Tokens.List))
 	mux.HandleFunc("DELETE /v1/tokens/{id}", requirePerm("token:write", d.Tokens.Revoke))
+	// Everyone's API tokens, for the administrators who manage users.
+	mux.HandleFunc("GET /v1/api-tokens", requirePerm("user:write", d.Tokens.ListActive))
+	mux.HandleFunc("DELETE /v1/api-tokens/{id}", requirePerm("user:write", d.Tokens.RevokeAny))
 
 	// Audit log
 	auditHandler := &AuditHandler{svc: d.Audit}

@@ -36,6 +36,7 @@ var auditRoutes = map[string]auditRoute{
 	"DELETE /v1/roles/{id}":                       {action: "role.delete", resourceType: "role", idParam: "id"},
 	"POST /v1/tokens":                             {action: "api_token.create", resourceType: "api_token", fromResponse: true},
 	"DELETE /v1/tokens/{id}":                      {action: "api_token.revoke", resourceType: "api_token", idParam: "id"},
+	"DELETE /v1/api-tokens/{id}":                  {action: "api_token.revoke_any", resourceType: "api_token", idParam: "id"},
 	"POST /v1/agent-tokens":                       {action: "agent_token.create", resourceType: "agent_token", fromResponse: true},
 	"DELETE /v1/agent-tokens/{id}":                {action: "agent_token.revoke", resourceType: "agent_token", idParam: "id"},
 

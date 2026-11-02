@@ -36,10 +36,17 @@ fleetdock backup-db /mnt/offsite/meta.sql.gz
 ```
 
 `fleetdock update` takes the same backup automatically before upgrading and
-stops if it fails (override with `FLEETDOCK_SKIP_BACKUP=1`). Schedule
-`fleetdock backup-db` nightly (cron/systemd timer) and copy the files off the
-host. Restore into an empty database with
-`gunzip -c metadata-….sql.gz | fleetdock psql`.
+stops if it fails (override with `FLEETDOCK_SKIP_BACKUP=1`). Restore into an
+empty database with `gunzip -c metadata-….sql.gz | fleetdock psql`.
+
+Take one every night, keep two weeks, and copy them off the host (a backup on
+the same disk does not survive the disk). For example, in root's crontab:
+
+```cron
+17 3 * * * /usr/local/bin/fleetdock backup-db --keep 14 && aws s3 sync /opt/fleetdock/backups s3://my-bucket/fleetdock-metadata/
+```
+
+(`rclone sync` or `restic` work the same way.)
 
 Stored credentials in the dump are encrypted with `FLEETDOCK_ENCRYPTION_KEY`:
 keep `fleetdock backup-config` (the `.env`) alongside, or they are unreadable.
@@ -214,15 +221,33 @@ up by hash, not signed with it. To revoke API tokens, revoke them under
 
 ## Monitoring
 
-### Health endpoints
+### Health endpoints and metrics
 
 | Endpoint | Auth | Use |
 |----------|------|-----|
 | `GET /healthz` | None | Liveness — process is up |
-| `GET /readyz` | None | Readiness — metadata DB ping succeeds |
+| `GET /readyz` | None | Readiness — the metadata database answers and, where the worker runs, it has turned in the last 2 minutes |
+| `GET /metrics` | `FLEETDOCK_METRICS_TOKEN` as a bearer token | Prometheus metrics; 404 while the token is unset |
 
 Point your load balancer or uptime checker at `/healthz`. Use `/readyz` for
 dependency-aware routing.
+
+`/metrics` reports the build (`fleetdock_build_info`), HTTP requests and
+latency, operations finished by type and result
+(`fleetdock_operations_finished_total`), when the worker last ran
+(`fleetdock_worker_last_run_seconds`), and fleet gauges: servers online and
+offline, database servers, databases, backups and failed backups in the last
+24 hours, operations running, the time of the last backup. Set a long random
+`FLEETDOCK_METRICS_TOKEN` (`fleetdock config set FLEETDOCK_METRICS_TOKEN …`)
+and scrape with:
+
+```yaml
+scrape_configs:
+  - job_name: fleetdock
+    scheme: https
+    authorization: {credentials: "<FLEETDOCK_METRICS_TOKEN>"}
+    static_configs: [{targets: ["fleetdock.example.com"]}]
+```
 
 ### What to alert on
 
@@ -278,8 +303,13 @@ start.
 | Data | Default retention | Config |
 |------|-------------------|--------|
 | Server metrics samples | 7 days | `FLEETDOCK_METRICS_RETENTION` |
+| Audit log | 365 days | `FLEETDOCK_AUDIT_RETENTION` (`0` keeps everything) |
+| Row changes (data browser undo) | 7 days | `FLEETDOCK_ROW_CHANGE_RETENTION` |
+| Fleet query runs and results | 30 days | `FLEETDOCK_FLEET_RUN_RETENTION` |
+| Opened backup copies | 2 hours | `FLEETDOCK_BACKUP_COPY_TTL` |
 | Soft-deleted databases | 7 days | Built-in recovery window |
 | Backup objects | Per schedule / manual | Destination + schedule retention |
+| Metadata backups (`fleetdock backup-db`) | Until removed | `--keep N` |
 
 ## Support and releases
 

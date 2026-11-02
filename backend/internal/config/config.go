@@ -42,6 +42,9 @@ type Config struct {
 	// when the API sits behind a trusted reverse proxy that sets the header;
 	// otherwise clients could spoof it to evade rate limiting.
 	TrustProxyHeaders bool
+	// MetricsToken enables GET /metrics (Prometheus) for scrapers sending it
+	// as a bearer token. Empty disables the endpoint.
+	MetricsToken string
 
 	// EncryptionKey protects secrets at rest (instance credentials, S3 keys).
 	EncryptionKey string
@@ -248,6 +251,7 @@ func Load() (Config, error) {
 		CORSOrigin:        getenv("FLEETDOCK_CORS_ORIGIN", "http://localhost:3000"),
 		CORSCredentials:   getenvBool("FLEETDOCK_CORS_CREDENTIALS", false),
 		TrustProxyHeaders: getenvBool("FLEETDOCK_TRUST_PROXY_HEADERS", false),
+		MetricsToken:      os.Getenv("FLEETDOCK_METRICS_TOKEN"),
 
 		EncryptionKey:     getenv("FLEETDOCK_ENCRYPTION_KEY", "dev-insecure-encryption-key"),
 		EncryptionKeyID:   getenv("FLEETDOCK_ENCRYPTION_KEY_ID", "master-1"),
