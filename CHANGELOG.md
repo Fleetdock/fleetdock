@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Choose PostgreSQL schemas.** In databases with several schemas, the
+  data browser's table tree and the ER diagram show the schemas you pick
+  (a picker above the table search and in the diagram's toolbar: tick
+  schemas, **Only**, or **All schemas**), remembered per database and
+  shared between the two. A database opens on `public`, or its biggest
+  schema. Searching the tree still finds tables in the other schemas
+  ("N more in other schemas — Show"). In the diagram, a foreign key into a
+  schema that is not shown draws that table as a dashed card with
+  **Show schema**. API: `GET /v1/databases/{id}/diagram?schemas=a,b`; the
+  response lists every schema with its counts.
+- **Saved table views.** Save a table's filters, search, sort, hidden and
+  frozen columns, widths and page size as a named view (the **Views** menu
+  in the data browser's toolbar), private or shared with everyone who can
+  open the database. Only its author changes a view; someone with
+  `database:write` may delete a shared one. The menu marks a tab that has
+  drifted from its view and offers **Update**; **Copy link** opens the table
+  in that view (`/data?db=…&table=…&saved=<id>`). API:
+  `/v1/databases/{id}/table-views`; changes are audited as `table_view.*`.
+
+### Added
+
 - **ER diagram.** A database's **Diagram** page draws its tables and
   views with their columns, primary keys and row estimates, and every
   foreign key between them, laid out automatically. Click a table to

@@ -11,7 +11,7 @@ var _ Catalog = (*MariaDB)(nil)
 
 // Columns lists the database's tables and views with their columns from
 // information_schema, which already hides objects the login cannot read.
-func (m *MariaDB) Columns(ctx context.Context, p ConnParams, database string) (*ColumnCatalog, error) {
+func (m *MariaDB) Columns(ctx context.Context, p ConnParams, database string, _ ...string) (*ColumnCatalog, error) {
 	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
@@ -77,7 +77,7 @@ func (m *MariaDB) ReferencedBy(ctx context.Context, p ConnParams, database, tabl
 }
 
 // Relations lists the foreign keys between the database's tables.
-func (m *MariaDB) Relations(ctx context.Context, p ConnParams, database string) ([]ForeignKey, bool, error) {
+func (m *MariaDB) Relations(ctx context.Context, p ConnParams, database string, _ ...string) ([]ForeignKey, bool, error) {
 	if !validDBName(database) {
 		return nil, false, fmt.Errorf("invalid database name")
 	}
@@ -111,6 +111,11 @@ func (m *MariaDB) Relations(ctx context.Context, p ConnParams, database string) 
 	}
 	fks, truncated := b.result()
 	return fks, truncated, rows.Err()
+}
+
+// SchemaCounts is nil: on MySQL and MariaDB the database is the schema.
+func (m *MariaDB) SchemaCounts(context.Context, ConnParams, string) ([]SchemaCount, error) {
+	return nil, nil
 }
 
 // scanIncomingFKs groups (table, constraint, column, ref column, rules) rows

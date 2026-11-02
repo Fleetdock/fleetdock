@@ -29,6 +29,7 @@ function DataBrowserRoute() {
       tableParam={sp.get("table")}
       viewParam={sp.get("view")}
       queryParam={sp.get("query")}
+      savedParam={sp.get("saved")}
     />
   );
 }

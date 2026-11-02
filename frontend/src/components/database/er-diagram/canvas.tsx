@@ -21,7 +21,7 @@ import { Crosshair, Download, LayoutGrid, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button, Callout, HelpText, IconButton, Menu, SearchInput, SegmentedControl, Select, Toolbar } from "@/components/ui";
+import { Button, Callout, HelpText, IconButton, Menu, SearchInput, SegmentedControl, Select, Spinner, Toolbar } from "@/components/ui";
 import { loadJSON, save as saveStorage } from "@/lib/data-browser/storage";
 import { friendlyError } from "@/lib/errors";
 import type { Diagram } from "@/lib/types";
@@ -36,10 +36,11 @@ import {
   mostConnected,
   neighbourhood,
   relationLabel,
-  schemasOf,
   usableSaved,
 } from "./graph";
 import { type Positions, layoutGraph } from "./layout";
+import { SchemaPicker } from "@/components/data-browser/schema-picker";
+import { toggleSchema, type SchemaSelection, type SchemaSummary } from "@/lib/data-browser/schemas";
 import { HEADER_HANDLE, TableNode, type TableNodeType, handleId } from "./table-node";
 
 const nodeTypes = { table: TableNode };
@@ -51,6 +52,14 @@ export interface CanvasProps {
   databaseId: string;
   databaseName: string;
   data: Diagram;
+  /** PostgreSQL schemas: all of them, the chosen ones, and how to change the choice. */
+  summary: SchemaSummary[];
+  selection: SchemaSelection;
+  onSelection: (sel: SchemaSelection) => void;
+  /** Schemas whose tables are in data; other schemas' tables become ghost cards. */
+  shownSchemas?: Set<string>;
+  /** Another selection is loading; data is still the previous one. */
+  loading?: boolean;
 }
 
 /** ERCanvas draws the diagram; it is loaded on demand with React Flow and ELK. */
@@ -66,18 +75,17 @@ function tableHref(databaseId: string, id: string, kind: "table" | "view") {
   return `/data?db=${encodeURIComponent(databaseId)}&${kind === "view" ? "view" : "table"}=${encodeURIComponent(id)}`;
 }
 
-function Canvas({ databaseId, databaseName, data }: CanvasProps) {
+function Canvas({ databaseId, databaseName, data, summary, selection, onSelection, shownSchemas, loading }: CanvasProps) {
   const router = useRouter();
   const flow = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
-  const g = useMemo(() => buildGraph(data), [data]);
-  const schemas = useMemo(() => schemasOf(g), [g]);
-  const large = g.tables.size > LARGE_DIAGRAM;
+  const g = useMemo(() => buildGraph(data, shownSchemas), [data, shownSchemas]);
+  const ghostCount = useMemo(() => [...g.tables.values()].filter((t) => t.ghost).length, [g]);
+  const large = g.tables.size - ghostCount > LARGE_DIAGRAM;
 
   const [mode, setMode] = useState<Mode>(large ? "focus" : "all");
   const [focus, setFocus] = useState<string | null>(() => (large ? mostConnected(g) : null));
   const [depth, setDepth] = useState(1);
-  const [schema, setSchema] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -86,16 +94,28 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
   const [relayout, setRelayout] = useState(0);
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<TableNodeType>([]);
 
-  // The tables on the canvas: everything, or a neighbourhood, narrowed to
-  // one PostgreSQL schema.
+  // Another schema choice loaded: forget a selection or focus that is gone,
+  // and start large diagrams on their most connected table.
+  const [graphFor, setGraphFor] = useState(g);
+  if (graphFor !== g) {
+    setGraphFor(g);
+    if (selected && !g.tables.has(selected)) setSelected(null);
+    if (focus && !g.tables.has(focus)) setFocus(large ? mostConnected(g) : null);
+    if (large && mode === "all" && !focus) {
+      setMode("focus");
+      setFocus(mostConnected(g));
+    }
+  }
+
+  // The tables on the canvas: everything loaded (the chosen schemas, plus
+  // ghost cards for their neighbours elsewhere), or a neighbourhood.
   const visible = useMemo(() => {
-    let ids: string[] =
+    const ids: string[] =
       mode === "focus" && focus ? [...neighbourhood(g, [focus], depth)] : [...g.tables.keys()];
-    if (schema) ids = ids.filter((id) => g.tables.get(id)?.schema === schema || id === focus);
     return ids.sort();
-  }, [g, mode, focus, depth, schema]);
-  // Only the whole, unfiltered diagram keeps the positions people drag to.
-  const persistent = mode === "all" && !schema;
+  }, [g, mode, focus, depth]);
+  // The neighbourhood view is a lens; positions people drag in the full view are kept.
+  const persistent = mode === "all";
   const visibleKey = visible.join("\n");
 
   const cards = useMemo(() => {
@@ -174,11 +194,12 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
         keys: g.keyColumns.get(id) ?? new Set<string>(),
         href: tableHref(databaseId, id, t.kind),
         activeColumns: active.columns.get(id) ?? new Set<string>(),
+        onShowSchema: t.ghost ? () => onSelection(toggleSchema(selection, t.schema ?? "", summary)) : undefined,
         highlighted: id === focus && mode === "focus",
         dimmed: selected !== null && !active.tables.has(id),
       };
     },
-    [g, cards, databaseId, active, focus, mode, selected],
+    [g, cards, databaseId, active, focus, mode, selected, onSelection, selection, summary],
   );
 
   // New positions: rebuild the nodes. Fit once they are measured.
@@ -249,7 +270,8 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
 
   const onDragStop = useCallback(() => {
     if (!persistent) return;
-    const out: SavedPositions = {};
+    // Merged into what is saved: other schema selections keep their positions.
+    const out: SavedPositions = { ...loadJSON<SavedPositions>(positionsKey(databaseId), {}, isSavedPositions) };
     for (const n of flow.getNodes()) out[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
     saveStorage(positionsKey(databaseId), JSON.stringify(out));
   }, [persistent, flow, databaseId]);
@@ -279,9 +301,6 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
     setNotice(null);
     if (mode === "focus") {
       setFocus(hit);
-      setSelected(hit);
-    } else if (!visible.includes(hit)) {
-      setSchema("");
       setSelected(hit);
     } else {
       centerOn(hit);
@@ -322,13 +341,14 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
       ? { id: "truncated", tone: "warning" as const, dismissible: true, text: "Only part of this database is shown: it has more tables, columns or foreign keys than the diagram reads at once." }
       : null,
     large && mode === "focus"
-      ? { id: "large", tone: "info" as const, dismissible: true, text: `This database has ${g.tables.size} tables, so the diagram starts with one table and its neighbours. Search for a table to move the focus, or show all tables.` }
+      ? { id: "large", tone: "info" as const, dismissible: true, text: `${summary.length > 1 ? "These schemas have" : "This database has"} ${g.tables.size - ghostCount} tables, so the diagram starts with one table and its neighbours. Search for a table to move the focus, choose fewer schemas, or show all tables.` }
       : null,
     notice ? { id: `notice:${notice}`, tone: "warning" as const, dismissible: true, text: notice } : null,
     layoutError ? { id: "layout", tone: "danger" as const, dismissible: false, text: layoutError } : null,
   ].filter((n): n is NonNullable<typeof n> => n !== null && !dismissed.includes(n.id));
 
-  const counts = `${visible.length} of ${g.tables.size} table${g.tables.size === 1 ? "" : "s"} · ${relations.length} relation${relations.length === 1 ? "" : "s"}`;
+  const own = g.tables.size - ghostCount;
+  const counts = `${visible.filter((id) => !g.tables.get(id)?.ghost).length} of ${own} table${own === 1 ? "" : "s"}${ghostCount ? ` + ${ghostCount} from other schemas` : ""} · ${relations.length} relation${relations.length === 1 ? "" : "s"}`;
   const tableOptions = useMemo(() => [...g.tables.keys()].sort(), [g]);
 
   return (
@@ -372,16 +392,12 @@ function Canvas({ databaseId, databaseName, data }: CanvasProps) {
             <option value={3}>3 steps</option>
           </Select>
         ) : null}
-        {schemas.length > 1 ? (
-          <Select size="sm" className="w-auto" aria-label="Schema" value={schema} onChange={(e) => setSchema(e.target.value)}>
-            <option value="">All schemas</option>
-            {schemas.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
+        {summary.length > 1 ? (
+          <div className="erd-schema">
+            <SchemaPicker summary={summary} selection={selection} onChange={onSelection} />
+          </div>
         ) : null}
+        {loading ? <Spinner label="Loading schemas" /> : null}
         <div className="toolbar-spacer" />
         <span className="text-xs text-muted num">{counts}</span>
         <HelpText label="How to read the diagram">

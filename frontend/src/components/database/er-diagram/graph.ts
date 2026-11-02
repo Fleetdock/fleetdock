@@ -42,9 +42,25 @@ export interface Graph {
  * buildGraph indexes the diagram. Relations whose ends are not listed (a table
  * the login cannot read, or one cut by truncation) are dropped.
  */
-export function buildGraph(d: Diagram): Graph {
+export function buildGraph(d: Diagram, shownSchemas?: Set<string>): Graph {
   const tables = new Map<string, DiagramTable>();
   for (const t of d.tables) tables.set(tableId(t), t);
+  // A key into or out of a schema that is not shown draws the other table as
+  // a ghost card, so the relation stays visible. Only when shownSchemas is
+  // given (PostgreSQL with a schema filter).
+  const ghost = (id: string) => {
+    if (!shownSchemas || tables.has(id)) return;
+    const dot = id.indexOf(".");
+    if (dot <= 0 || shownSchemas.has(id.slice(0, dot))) return;
+    tables.set(id, { schema: id.slice(0, dot), name: id.slice(dot + 1), kind: "table", columns: [], ghost: true });
+  };
+  for (const fk of d.relations) {
+    const known = tables.has(fk.table ?? "") || tables.has(fk.ref_table);
+    if (known) {
+      ghost(fk.table ?? "");
+      ghost(fk.ref_table);
+    }
+  }
   const keyColumns = new Map<string, Set<string>>();
   const degree = new Map<string, number>();
   const mark = (table: string, cols: string[]) => {
@@ -114,6 +130,7 @@ export function mostConnected(g: Graph): string | null {
   let best: string | null = null;
   let bestN = -1;
   for (const id of [...g.tables.keys()].sort()) {
+    if (g.tables.get(id)?.ghost) continue;
     const n = g.degree.get(id) ?? 0;
     if (n > bestN) {
       best = id;
@@ -126,7 +143,7 @@ export function mostConnected(g: Graph): string | null {
 /** schemasOf lists the PostgreSQL schemas present, sorted; empty on MySQL/MariaDB. */
 export function schemasOf(g: Graph): string[] {
   const s = new Set<string>();
-  for (const t of g.tables.values()) if (t.schema) s.add(t.schema);
+  for (const t of g.tables.values()) if (t.schema && !t.ghost) s.add(t.schema);
   return [...s].sort();
 }
 
@@ -150,6 +167,10 @@ export const CARD = { header: 40, row: 24, footer: 22, minWidth: 200, maxWidth: 
 
 /** cardSize estimates a card's rendered size from its text. */
 export function cardSize(t: DiagramTable, cols: CardColumns): { width: number; height: number } {
+  if (t.ghost) {
+    const w = Math.round(Math.min(CARD.maxWidth, Math.max(CARD.minWidth, tableId(t).length * CARD.charWidth + CARD.padding)));
+    return { width: w, height: CARD.header + 34 };
+  }
   const longest = Math.max(
     tableId(t).length + 6,
     ...cols.shown.map((c) => c.name.length + c.type.length + 2),

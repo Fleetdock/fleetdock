@@ -34,8 +34,9 @@ import { load, save } from "@/lib/data-browser/storage";
 import { PAGE_SIZES, splitName, type Action, type OpenRequest, type Tab, type TableView } from "@/lib/data-browser/tabs";
 import { fkByColumn, followFilters, referencingFilters, type RowRecord } from "@/lib/data-browser/fk";
 import { describeValue, filterFor, fromDraft, opLabel, toDraft } from "@/lib/data-browser/filters";
-import { exportTableCSV, useApplyRowChanges, useBrowseRows, useForeignKeys, useReferencedBy } from "@/lib/hooks";
-import type { ForeignKey, RowFilter, SortKey } from "@/lib/types";
+import { applySavedState } from "@/lib/data-browser/view-state";
+import { exportTableCSV, useTableViews, useApplyRowChanges, useBrowseRows, useForeignKeys, useReferencedBy } from "@/lib/hooks";
+import type { ForeignKey, RowFilter, SavedTableView, SortKey } from "@/lib/types";
 import {
   ClipboardCopy,
   Download,
@@ -58,6 +59,7 @@ import { cellState, DataGrid, type Cell, type GridRow } from "./data-grid";
 import { BackupCompare } from "./backup-compare";
 import { RowHistory, useRowUndo } from "./row-history";
 import { ColumnsMenu } from "./columns-menu";
+import { ViewsMenu } from "./views-menu";
 import { RowPanel } from "./row-panel";
 
 
@@ -77,6 +79,8 @@ export function TableTab({
   onDirty,
   onOpen,
   onNewQuery,
+  applySaved,
+  onSavedApplied,
 }: {
   databaseId: string;
   tab: Tab;
@@ -88,6 +92,9 @@ export function TableTab({
   onDirty: (id: string, changes: number) => void;
   onOpen: (req: OpenRequest) => void;
   onNewQuery: (sql?: string) => void;
+  /** A saved view to apply once the table's views load (a ?saved= link). */
+  applySaved?: string;
+  onSavedApplied?: () => void;
 }) {
   const view = tab.view;
   const isView = tab.kind === "view";
@@ -97,6 +104,20 @@ export function TableTab({
     (patch: Partial<TableView>, pin = true) => dispatch({ type: "update", id: tab.id, view: patch, pin }),
     [dispatch, tab.id],
   );
+
+  // ---- saved views ----
+  const savedViews = useTableViews(databaseId, tab.name, Boolean(applySaved));
+  const applyView = useCallback(
+    (v: SavedTableView) => setView(applySavedState(v.state, v.id)),
+    [setView],
+  );
+  useEffect(() => {
+    if (!applySaved || !savedViews.isFetched) return;
+    const v = savedViews.data?.find((x) => x.id === applySaved);
+    if (v) applyView(v);
+    else push("error", "That saved view is gone, or it is not shared with you. Showing the whole table.");
+    onSavedApplied?.();
+  }, [applySaved, savedViews.isFetched, savedViews.data, applyView, push, onSavedApplied]);
 
   // ---- search (debounced into the tab state) ----
   const [searchInput, setSearchInput] = useState(view.search);
@@ -433,6 +454,13 @@ export function TableTab({
             >
               Filter{view.filters.length ? ` · ${view.filters.length}` : ""}
             </Button>
+            <ViewsMenu
+              databaseId={databaseId}
+              table={tab.name}
+              view={view}
+              onApply={applyView}
+              onClearSaved={() => setView({ savedView: undefined }, false)}
+            />
             <ColumnsMenu
               columns={columns}
               hidden={view.hidden ?? []}

@@ -352,9 +352,40 @@ components:
           description: >-
             Secret-free details: the table for data and structure changes, the script (first 4 KB) and statement
             counts for sql.execute, and the like.
+    TableView:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        database_id: {type: string, format: uuid}
+        table: {type: string, description: The table, as the data browser names it ("schema.table" on PostgreSQL).}
+        name: {type: string}
+        state:
+          type: object
+          description: The dashboard's view state (filters, sort, search, hidden and frozen columns, widths, page size). Opaque to the API; at most 64 KB.
+        shared: {type: boolean, description: Listed to everyone who can read the database.}
+        created_by: {type: string, format: uuid}
+        author_email: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    TableViewInput:
+      type: object
+      properties:
+        table: {type: string, description: Required on create; cannot change.}
+        name: {type: string, minLength: 1, maxLength: 100}
+        state: {type: object}
+        shared: {type: boolean}
     Diagram:
       type: object
       properties:
+        schemas:
+          type: array
+          description: Every PostgreSQL schema with its tables and views, whatever the filter. Absent on MySQL/MariaDB.
+          items:
+            type: object
+            properties:
+              name: {type: string}
+              tables: {type: integer}
+              views: {type: integer}
         truncated:
           type: boolean
           description: The database has more tables, columns or foreign keys than are listed (5000 tables, 100000 columns, 20000 foreign keys).
@@ -924,6 +955,12 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
+        - name: schemas
+          in: query
+          schema: {type: string}
+          description: >-
+            Comma-separated PostgreSQL schemas (at most 100). Only their tables are returned, with the foreign keys
+            that start or end in them; a key may then name a table of another schema. Ignored on MySQL/MariaDB.
       summary: Entity-relationship diagram data
       description: >-
         The database's tables and views with their columns, primary keys and row estimates, and every foreign key
@@ -934,6 +971,73 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Diagram"}
+
+  /v1/databases/{id}/table-views:
+    get:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: List saved table views
+      description: Your own saved views of the database's tables and the ones others shared. Requires database:read.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: table, in: query, schema: {type: string}, description: Only views of this table.}
+      responses:
+        "200":
+          description: Views
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/components/schemas/TableView"}}
+    post:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Save a table view
+      parameters: [{$ref: "#/components/parameters/ResourceID"}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TableViewInput"}
+      responses:
+        "201":
+          description: Saved
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TableView"}
+        "409": {description: You already have a view with this name on this table}
+
+  /v1/databases/{id}/table-views/{viewId}:
+    patch:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Change a saved table view
+      description: Only its author can change it.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: viewId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TableViewInput"}
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TableView"}
+    delete:
+      tags: [Data]
+      security: [{bearerAuth: []}]
+      summary: Delete a saved table view
+      description: Its author can delete it; a shared view can also be deleted by someone with database:write.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: viewId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "204": {description: Deleted}
 
   /v1/databases/{id}/schema/snapshots:
     get:

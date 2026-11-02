@@ -121,3 +121,32 @@ describe("saved positions", () => {
     expect(usableSaved({}, [])).toBe(false);
   });
 });
+
+describe("ghost tables", () => {
+  const d: Diagram = {
+    truncated: false,
+    tables: [
+      { schema: "billing", name: "invoices", kind: "table", columns: [col("id", { primary_key: true }), col("company_id")] },
+      { schema: "billing", name: "lines", kind: "table", columns: [col("invoice_id")] },
+    ],
+    relations: [
+      { name: "fk_co", table: "billing.invoices", columns: ["company_id"], ref_table: "crm.companies", ref_columns: ["id"], on_delete: "", on_update: "" },
+      { name: "fk_inv", table: "billing.lines", columns: ["invoice_id"], ref_table: "billing.invoices", ref_columns: ["id"], on_delete: "", on_update: "" },
+      // A table of a shown schema the login cannot read: no ghost, the relation is dropped.
+      { name: "fk_hidden", table: "billing.lines", columns: ["invoice_id"], ref_table: "billing.secret", ref_columns: ["id"], on_delete: "", on_update: "" },
+    ],
+  };
+
+  it("draws tables of other schemas as ghosts", () => {
+    const g = buildGraph(d, new Set(["billing"]));
+    expect(g.tables.get("crm.companies")).toMatchObject({ ghost: true, schema: "crm", name: "companies", columns: [] });
+    expect(g.tables.has("billing.secret")).toBe(false);
+    expect(g.relations.map((r) => r.name)).toEqual(["fk_co", "fk_inv"]);
+    expect(schemasOf(g)).toEqual(["billing"]);
+    expect(mostConnected(g)).toBe("billing.invoices");
+  });
+
+  it("draws no ghosts without a schema filter", () => {
+    expect(buildGraph(d).tables.has("crm.companies")).toBe(false);
+  });
+});

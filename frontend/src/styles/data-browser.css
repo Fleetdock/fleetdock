@@ -1369,4 +1369,168 @@
   .dbx-grid-skeleton-row {
     height: 1.85rem;
   }
+
+  /* PostgreSQL schema picker (table tree, diagram toolbar). */
+  .dbx-schema-button {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    width: 100%;
+    min-width: 0;
+    height: 2rem;
+    padding: 0 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--panel);
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+  }
+  .dbx-schema-button:hover {
+    border-color: var(--border-strong);
+  }
+  .dbx-schema-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .dbx-schema-button[aria-expanded="true"] {
+    border-color: var(--accent);
+  }
+  .dbx-schema-count {
+    flex: none;
+    font-size: var(--fs-2xs);
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .dbx-popover-root:has(> .dbx-schema-button) {
+    display: flex;
+    width: 100%;
+  }
+  .dbx-schema-pop {
+    min-width: 17rem;
+  }
+  .dbx-schema-list {
+    border-top: 1px solid var(--border);
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+  }
+  .dbx-schema-row {
+    display: flex;
+    align-items: center;
+  }
+  .dbx-schema-row .dbx-columns-item {
+    flex: 1;
+  }
+  .dbx-schema-only {
+    flex: none;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: var(--fs-2xs);
+    padding: 0.2rem 0.4rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    opacity: 0;
+  }
+  .dbx-schema-row:hover .dbx-schema-only,
+  .dbx-schema-only:focus-visible {
+    opacity: 1;
+  }
+  .dbx-schema-only:hover {
+    background: var(--accent-soft);
+  }
+  @media (hover: none) {
+    .dbx-schema-only {
+      opacity: 1;
+    }
+  }
+  /* Search matches in schemas that are not shown. */
+  .dbx-tree-more {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    padding: 0.45rem 0.6rem;
+    cursor: pointer;
+  }
+  .dbx-tree-more:hover .link {
+    text-decoration: underline;
+  }
+
+  /* Saved table views menu. */
+  .dbx-views-label {
+    max-width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dbx-views-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--warning);
+    flex: none;
+  }
+  .dbx-views-pop {
+    min-width: 19rem;
+  }
+  .dbx-view-group {
+    font-size: var(--fs-2xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    padding: 0.4rem 0.4rem 0.2rem;
+  }
+  .dbx-view-row {
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius-sm);
+  }
+  .dbx-view-row:hover,
+  .dbx-view-row.is-active {
+    background: var(--panel-2);
+  }
+  .dbx-view-row.is-active .dbx-view-apply {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .dbx-view-apply {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.4rem;
+    border: 0;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--fs-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+  .dbx-view-actions {
+    display: inline-flex;
+    flex: none;
+    opacity: 0;
+  }
+  .dbx-view-row:hover .dbx-view-actions,
+  .dbx-view-row:focus-within .dbx-view-actions {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .dbx-view-actions {
+      opacity: 1;
+    }
+  }
 }

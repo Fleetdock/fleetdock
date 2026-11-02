@@ -19,6 +19,8 @@ export type TableNodeData = {
   activeColumns: Set<string>;
   highlighted: boolean;
   dimmed: boolean;
+  /** Ghost cards (a table of a schema that is not shown): add its schema. */
+  onShowSchema?: () => void;
 };
 
 export type TableNodeType = Node<TableNodeData, "table">;
@@ -33,6 +35,23 @@ export const handleId = (column: string, side: "s" | "t") => `${column}:${side}`
 function TableNodeImpl({ data, selected }: NodeProps<TableNodeType>) {
   const { table, cols, keys, href, activeColumns, highlighted, dimmed } = data;
   const id = tableId(table);
+  if (table.ghost) {
+    return (
+      <div className={cx("erd-card erd-card-ghost", selected && "is-selected", dimmed && "is-dimmed")}>
+        <div className="erd-card-head">
+          <Handle type="target" position={Position.Left} id={handleId(HEADER_HANDLE, "t")} className="erd-handle" />
+          <span className="erd-card-title" title={`${id} is in a schema that is not shown`}>
+            <span className="erd-card-schema">{table.schema}.</span>
+            {table.name}
+          </span>
+          <Handle type="source" position={Position.Right} id={handleId(HEADER_HANDLE, "s")} className="erd-handle" />
+        </div>
+        <button type="button" className="erd-ghost-show nodrag" onClick={data.onShowSchema}>
+          Show schema {table.schema}
+        </button>
+      </div>
+    );
+  }
   return (
     <div
       className={cx(
