@@ -28,6 +28,16 @@ tags:
   - name: Databases
   - name: DBAdmin
     x-displayName: Database admin
+  - name: Data
+    x-displayName: Data browser
+    description: Browse, filter, edit and export rows; saved table views.
+  - name: Structure
+    description: Tables, columns and indexes; the ER diagram; schema history and comparison.
+  - name: Console
+    x-displayName: SQL console
+    description: Run SQL, query history and saved queries.
+  - name: Monitoring
+    description: Live sessions, locks, server status and query insights.
   - name: Operations
   - name: Backups
   - name: Destinations

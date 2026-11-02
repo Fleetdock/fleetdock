@@ -134,3 +134,35 @@ func TestOpenAPI_OperationsAreComplete(t *testing.T) {
 		}
 	}
 }
+
+// Every tag an operation uses must be declared, or documentation generators
+// drop those operations.
+func TestOpenAPI_TagsDeclared(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	spec, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "..", "..", "openapi", "openapi.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Tags  []struct{ Name string } `yaml:"tags"`
+		Paths map[string]map[string]struct {
+			Tags []string `yaml:"tags"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(spec, &doc); err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, tag := range doc.Tags {
+		declared[tag.Name] = true
+	}
+	for path, ops := range doc.Paths {
+		for method, op := range ops {
+			for _, tag := range op.Tags {
+				if !declared[tag] {
+					t.Errorf("%s %s uses undeclared tag %q", strings.ToUpper(method), path, tag)
+				}
+			}
+		}
+	}
+}
