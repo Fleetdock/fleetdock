@@ -12,6 +12,14 @@ export const ENGINES: Record<
 
 export const ENGINE_IDS = Object.keys(ENGINES) as EngineId[];
 
+/**
+ * engineFamily groups engines whose dumps load into each other: an engine id
+ * ("mariadb"), or the dump tool a backup records ("pg_dump").
+ */
+export function engineFamily(engineOrTool: string): "postgres" | "mysql" {
+  return engineOrTool === "postgres" || engineOrTool === "pg_dump" ? "postgres" : "mysql";
+}
+
 /** engineLabel returns the display name of an engine id ("postgres" → "PostgreSQL"). */
 export function engineLabel(id: string): string {
   return ENGINES[id as EngineId]?.label ?? id;

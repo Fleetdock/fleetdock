@@ -40,7 +40,7 @@ Gateway tuning (`FLEETDOCK_GATEWAY_*`) is described in
 | `FLEETDOCK_ENV`                                       | `development`           | `production` refuses to start with default secrets                                                                |
 | `FLEETDOCK_HTTP_ADDR`                                 | `:8080`                 |                                                                                                                   |
 | `FLEETDOCK_JWT_SECRET`                                | dev default             | set a strong secret in production (min. 16 characters, 32+ recommended)                                           |
-| `FLEETDOCK_ENCRYPTION_KEY`                            | dev default             | primary key that encrypts credentials/S3 keys at rest; rotate via `make rotate-keys` (see Security)               |
+| `FLEETDOCK_ENCRYPTION_KEY`                            | dev default             | primary key that encrypts stored credentials; rotate with `fleetdock rotate-keys` (see OPERATIONS.md)               |
 | `FLEETDOCK_ENCRYPTION_KEY_ID`                         | `master-1`              | id stamped on secrets wrapped by the primary key; use a new id when rotating                                      |
 | `FLEETDOCK_ENCRYPTION_KEYS_OLD`                       | —                       | retired keys still needed to decrypt during rotation, as `id=secret,id2=secret2`                                  |
 | `FLEETDOCK_PUBLIC_URL`                                | `http://localhost:8080` | URL agents/installers use to reach the API                                                                        |

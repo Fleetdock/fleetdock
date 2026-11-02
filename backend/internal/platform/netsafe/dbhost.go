@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -146,4 +147,16 @@ func DialDB(ctx context.Context, network, addr string) (net.Conn, error) {
 		return conn, nil
 	}
 	return nil, lastErr
+}
+
+// ServiceTransport is an HTTP transport for user-configured service
+// endpoints the control plane calls with credentials, such as S3-compatible
+// backup storage. It applies the database dial policy: link-local and
+// metadata addresses and the metadata database are refused, loopback only
+// when allowed, private networks stay reachable (MinIO on the LAN). Without a
+// configured policy (the agent) it dials anything.
+func ServiceTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.DialContext = DialDB
+	return t
 }

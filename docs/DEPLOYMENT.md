@@ -240,7 +240,7 @@ server {
     location / {
         proxy_pass http://fleetdock:8080;
         proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
@@ -249,6 +249,12 @@ server {
 Keep `FLEETDOCK_TRUST_PROXY_HEADERS=true` only while the API is reachable
 _solely_ through the proxy. If port 8080 is also exposed, a client can spoof
 `X-Forwarded-For` and evade the login rate limiter.
+
+Fleetdock takes the client's address from the **last** `X-Forwarded-For`
+entry, the one your proxy adds. Set it to `$remote_addr` as above. If another
+proxy or a CDN sits in front of nginx, use nginx's `real_ip` module
+(`set_real_ip_from` + `real_ip_header`) so `$remote_addr` is the visitor, not
+the CDN.
 
 ### Split origins
 

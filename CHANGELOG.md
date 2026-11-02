@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Key rotation in one command.** `fleetdock rotate-keys` replaces
+  `FLEETDOCK_ENCRYPTION_KEY` and re-encrypts every stored credential, with
+  backups first and the old key put back if anything fails. The image now
+  includes it as `/api rotate-keys` (the separate `cmd/rotate-keys` program
+  is gone), and the compose file passes `FLEETDOCK_ENCRYPTION_KEY_ID` and
+  `FLEETDOCK_ENCRYPTION_KEYS_OLD` to the container.
 - **Safer upgrades.** Fleetdock records the SHA-256 of every migration and
   refuses to start on a metadata database migrated by a newer version, or
   whose applied migrations have changed, instead of running against a
@@ -38,11 +44,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Notification secrets are encrypted.** Webhook and Slack URLs and the
+  SMTP password of notification channels are kept in the encrypted secret
+  store like other credentials, instead of in plain text in the channel's
+  settings. Channels saved by earlier versions are encrypted on the first
+  start.
+- **Backup storage endpoints follow the database host rules**: an S3
+  endpoint on a link-local or cloud-metadata address, the metadata database,
+  or loopback in production is refused.
+- **Client addresses behind a proxy can no longer be chosen by the client.**
+  With `FLEETDOCK_TRUST_PROXY_HEADERS`, Fleetdock takes the last
+  `X-Forwarded-For` entry (the one the proxy adds) instead of the first.
+  Behind nginx with `$proxy_add_x_forwarded_for`, the first could be set by
+  the client to dodge the login limit and appear as anyone in the audit
+  log. The nginx example now sets `$remote_addr`.
+- Agent enrolment (`POST /agent/v1/register`) is rate limited like sign-in.
+- The API docs page loads a pinned Redoc version checked by its integrity
+  hash, instead of whatever `latest` served.
 - **The agent installer checks what it downloads**: the binary must match
   the SHA-256 the control plane publishes
   (`GET /agent/v1/binary/{os}/{arch}/sha256`). It is written beside the
   old one and renamed into place, so an update no longer fails on a
   running binary.
+
+### Fixed
+
+- **Passwords longer than 72 bytes failed with a server error.** bcrypt
+  refuses them; they are now rejected with a clear message (72 plain
+  letters, fewer with accents or non-Latin letters).
+- **A backup could be restored to a database server of another engine**,
+  failing only when the restore ran. Restoring, copying or moving now
+  requires the same engine family (PostgreSQL, or MySQL/MariaDB), and the
+  dialogs only offer such servers.
 
 ## [0.9.3] - 2026-11-02
 

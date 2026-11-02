@@ -137,6 +137,8 @@ Usage: fleetdock <command>
   env [--reveal]        Show configuration; secrets redacted unless --reveal
   psql                  A psql shell on the metadata database
   backup-db [file]      pg_dump of the metadata database (runs before every update)
+  rotate-keys           Replace FLEETDOCK_ENCRYPTION_KEY, re-encrypting stored
+                        credentials under the new key
   reset-admin-password [email]
                         Set a new password for a dashboard user (default: the
                         bootstrap admin), reactivate it and end its sessions
@@ -448,6 +450,56 @@ EOF
     echo "Restore with: gunzip -c ${out} | fleetdock psql"
     echo "Stored credentials inside are encrypted with FLEETDOCK_ENCRYPTION_KEY — keep"
     echo "a copy of .env (fleetdock backup-config) alongside it, or they are unreadable."
+    ;;
+
+  rotate-keys)
+    # Promote a new encryption key and re-wrap every stored secret under it.
+    # The old key stays readable until every secret has moved, and both the
+    # metadata database and .env are backed up first.
+    need_root
+    stamp="$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "${FLEETDOCK_DIR}/backups"
+    backup_db "${FLEETDOCK_DIR}/backups/metadata-${stamp}.sql.gz"
+    cp -p "$ENV_FILE" "${FLEETDOCK_DIR}/backups/env-before-rotate-${stamp}"
+    old_id="$(getenv FLEETDOCK_ENCRYPTION_KEY_ID)"
+    old_id="${old_id:-master-1}"
+    old_key="$(getenv FLEETDOCK_ENCRYPTION_KEY)"
+    old_list="$(getenv FLEETDOCK_ENCRYPTION_KEYS_OLD)"
+    new_id="key-${stamp}"
+    new_key="$(openssl rand -base64 32 | tr -d '\n')"
+    [ -n "$old_key" ] && [ -n "$new_key" ] || { echo "error: could not read the current key or make a new one (is openssl installed?)" >&2; exit 1; }
+    restore_env() {
+      cp -p "${FLEETDOCK_DIR}/backups/env-before-rotate-${stamp}" "$ENV_FILE"
+      dc up -d >/dev/null 2>&1 || true
+    }
+    setenv FLEETDOCK_ENCRYPTION_KEYS_OLD "${old_list:+${old_list},}${old_id}=${old_key}"
+    setenv FLEETDOCK_ENCRYPTION_KEY "$new_key"
+    setenv FLEETDOCK_ENCRYPTION_KEY_ID "$new_id"
+    echo "==> Restarting with the new key (the old one stays readable)"
+    dc up -d
+    # A docker-compose.yml from before 1.0 does not pass the old keys on.
+    # shellcheck disable=SC2016
+    if ! dc exec -T fleetdock sh -c 'test -n "$FLEETDOCK_ENCRYPTION_KEYS_OLD"' 2>/dev/null; then
+      restore_env
+      echo "error: this install's docker-compose.yml does not pass FLEETDOCK_ENCRYPTION_KEYS_OLD to the container." >&2
+      echo "Run 'fleetdock update' first, then try again. Nothing was changed." >&2
+      exit 1
+    fi
+    echo "==> Re-encrypting stored credentials"
+    if ! dc exec -T fleetdock /api rotate-keys; then
+      restore_env
+      echo "error: rotation failed; the previous key is back in place. Backups: ${FLEETDOCK_DIR}/backups/*-${stamp}*" >&2
+      exit 1
+    fi
+    # Every secret is under the new key now: the old ones are no longer needed.
+    setenv FLEETDOCK_ENCRYPTION_KEYS_OLD ""
+    dc up -d
+    echo ""
+    echo "Done: credentials are encrypted with key ${new_id}."
+    echo "Keep a copy of the new .env (fleetdock backup-config): the old key no longer decrypts them."
+    echo "Metadata backups taken before now still need the old key, which is in"
+    echo "${FLEETDOCK_DIR}/backups/env-before-rotate-${stamp}: keep it with them, and delete"
+    echo "them together when you no longer need them."
     ;;
 
   reset-admin-password)

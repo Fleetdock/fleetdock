@@ -158,54 +158,59 @@ on the new one.
 
 ## Encryption key rotation
 
-Instance passwords and S3 destination keys are **envelope-encrypted**. Rotating
-`FLEETDOCK_ENCRYPTION_KEY` re-wraps data keys only; ciphertext payloads are untouched.
+Stored credentials (database server passwords, SSH keys, backup storage keys,
+notification webhook URLs and SMTP passwords) are **envelope-encrypted**: each
+has its own data key, wrapped by `FLEETDOCK_ENCRYPTION_KEY`. Rotating the key
+re-wraps the data keys only; the encrypted payloads are untouched.
+
+### Installed with install.sh
+
+```bash
+fleetdock rotate-keys
+```
+
+It backs up the metadata database and `.env`, generates a new key under a new
+id, restarts with the old key still readable, re-wraps every secret, then drops
+the old key. If anything fails, the previous `.env` is put back. Afterwards
+keep a copy of the new `.env` (`fleetdock backup-config`): metadata backups
+taken before the rotation still need the old key, which is saved next to them
+as `backups/env-before-rotate-<time>`.
+
+### Compose, or the API binary
 
 **Never reuse a key id with a different secret.**
 
-### Steps
+1. Keep the current key readable and promote a new one under a new id:
 
-1. Generate a new secret (32+ random bytes, base64 or hex)
-2. Set environment before running the rotation job:
+   ```bash
+   FLEETDOCK_ENCRYPTION_KEYS_OLD="master-1=<current key>"   # comma-separate several
+   FLEETDOCK_ENCRYPTION_KEY="<new key, 32+ random bytes, base64>"
+   FLEETDOCK_ENCRYPTION_KEY_ID="master-2"
+   ```
 
-```bash
-export FLEETDOCK_ENCRYPTION_KEYS_OLD="master-1=<current-secret>"
-export FLEETDOCK_ENCRYPTION_KEY="<new-secret>"
-export FLEETDOCK_ENCRYPTION_KEY_ID="master-2"
-```
+   (`master-1` is the default id when `FLEETDOCK_ENCRYPTION_KEY_ID` was never set.)
 
-3. Run the offline re-wrap (API can stay up; rotation is read/write on secrets table):
+2. Restart the control plane with these settings, then re-wrap:
 
-```bash
-make rotate-keys
-# or inside the control-plane container:
-docker compose exec fleetdock /api  # not applicable — use migrate binary
-docker compose run --rm -e FLEETDOCK_DATABASE_URL -e FLEETDOCK_ENCRYPTION_KEY \
-  -e FLEETDOCK_ENCRYPTION_KEY_ID -e FLEETDOCK_ENCRYPTION_KEYS_OLD \
-  fleetdock sh -c 'go run ./cmd/rotate-keys'  # if Go toolchain in image
-```
+   ```bash
+   docker compose exec fleetdock /api rotate-keys   # or: make rotate-keys
+   ```
 
-The production image contains only the compiled API. Run rotation from a checkout
-or a one-off container with the repo:
+   It reports how many secrets it re-wrapped; run again, it reports them all
+   current.
 
-```bash
-cd backend && go run ./cmd/rotate-keys
-```
-
-4. When the tool reports **0 secrets remaining** under the old key, update
-   production env: remove `FLEETDOCK_ENCRYPTION_KEYS_OLD`, keep `master-2` as primary
-5. Restart the API
-
-Full details: [FEATURES.md — Security](FEATURES.md#security).
+3. Remove `FLEETDOCK_ENCRYPTION_KEYS_OLD` and restart.
 
 ## JWT secret rotation
 
-Rotating `FLEETDOCK_JWT_SECRET` **invalidates all active sessions and API tokens**
-derived from user login (not agent tokens). Plan a maintenance window:
+Rotating `FLEETDOCK_JWT_SECRET` signs everyone out of the dashboard. API tokens
+(`fleetd_…`) and agent tokens are not affected: they are random secrets looked
+up by hash, not signed with it. To revoke API tokens, revoke them under
+**Access → API tokens**.
 
-1. Announce logout to users
-2. Update `FLEETDOCK_JWT_SECRET` and restart API
-3. Users log in again; revoke and recreate long-lived API tokens
+1. Announce the sign-out to users
+2. Update `FLEETDOCK_JWT_SECRET` and restart the control plane
+3. Users sign in again
 
 ## Monitoring
 

@@ -15,10 +15,12 @@ type loginLimiter struct {
 	limit      int
 	window     time.Duration
 	trustProxy bool
+	message    string // the 429's message
 }
 
 func newLoginLimiter(limit int, window time.Duration, trustProxy bool) *loginLimiter {
-	l := &loginLimiter{hits: make(map[string][]time.Time), limit: limit, window: window, trustProxy: trustProxy}
+	l := &loginLimiter{hits: make(map[string][]time.Time), limit: limit, window: window, trustProxy: trustProxy,
+		message: "too many login attempts; try again in a minute"}
 	go l.gc()
 	return l
 }
@@ -65,7 +67,7 @@ func (l *loginLimiter) Middleware(next http.HandlerFunc) http.HandlerFunc {
 			w.Header().Set("Retry-After", "60")
 			writeJSON(w, http.StatusTooManyRequests, errorBody{Error: errorDetail{
 				Code:    "rate_limited",
-				Message: "too many login attempts; try again in a minute",
+				Message: l.message,
 			}})
 			return
 		}

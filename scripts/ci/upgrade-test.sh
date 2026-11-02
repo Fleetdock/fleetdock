@@ -95,6 +95,11 @@ api GET /v1/notification-channels | jq -e '[.items // . | .[] | select(.name == 
 api GET /v1/backup-destinations | jq -e '[.items // . | .[] | select(.name == "upgrade-s3")] | length == 1' >/dev/null ||
   fail "the backup destination is gone"
 api GET /v1/version | jq -e '.version' >/dev/null || fail "/v1/version is missing"
+if command -v psql >/dev/null 2>&1; then
+  # Channel secrets saved by the old version are encrypted on the first start.
+  plain="$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM notification_channels WHERE config::text LIKE '%hooks.example.com%'")"
+  [ "$plain" = 0 ] || fail "a notification channel's webhook URL is still stored in plain text"
+fi
 stop
 
 echo "==> Restarting: the upgraded database must be accepted again"

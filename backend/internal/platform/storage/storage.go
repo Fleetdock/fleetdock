@@ -13,6 +13,8 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 )
 
 // Config identifies one bucket + credential pair.
@@ -47,6 +49,9 @@ func New(cfg Config) (*Client, error) {
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: secure,
 		Region: region,
+		// The endpoint is user input: refuse metadata and link-local
+		// addresses (and loopback in production), like database hosts.
+		Transport: netsafe.ServiceTransport(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("storage: new client: %w", err)

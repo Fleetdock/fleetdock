@@ -95,7 +95,10 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /agent/v1/binary/{os}/{arch}/sha256", d.Install.BinarySum)
 
 	// Agent protocol (agent bearer token, not user JWT).
-	mux.HandleFunc("POST /agent/v1/register", d.Agents.Register)
+	// Enrolment takes a registration token: limit guessing like logins.
+	regLimiter := newLoginLimiter(10, time.Minute, d.TrustProxyHeaders)
+	regLimiter.message = "too many enrolment attempts; try again in a minute"
+	mux.HandleFunc("POST /agent/v1/register", regLimiter.Middleware(d.Agents.Register))
 	mux.HandleFunc("POST /agent/v1/heartbeat", d.Agents.Auth(d.Agents.Heartbeat))
 	mux.HandleFunc("POST /agent/v1/jobs/claim", d.Agents.Auth(d.Agents.Claim))
 	mux.HandleFunc("POST /agent/v1/jobs/{id}/status", d.Agents.Auth(d.Agents.UpdateJob))

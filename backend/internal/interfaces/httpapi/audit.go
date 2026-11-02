@@ -16,15 +16,19 @@ import (
 	auditdom "github.com/Fleetdock/fleetdock/backend/internal/domain/audit"
 )
 
-// clientIP is the caller's address. With trustProxy it is the first
-// (client-most) X-Forwarded-For entry; otherwise the transport peer, so a
-// client cannot choose the address it is logged or rate-limited under.
+// clientIP is the caller's address. With trustProxy it is the last
+// X-Forwarded-For entry: the one the trusted proxy in front of Fleetdock
+// added for the peer it saw. Earlier entries come from the client (a proxy
+// that appends, like nginx's $proxy_add_x_forwarded_for, keeps whatever the
+// client sent), so taking the first would let a caller pick the address it
+// is logged and rate-limited under. Without trustProxy it is the transport
+// peer.
 func clientIP(r *http.Request, trustProxy bool) string {
 	if trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			first := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
-			if first != "" {
-				return first
+		if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+			parts := strings.Split(xff[len(xff)-1], ",")
+			if last := strings.TrimSpace(parts[len(parts)-1]); last != "" {
+				return last
 			}
 		}
 	}

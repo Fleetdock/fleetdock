@@ -72,6 +72,13 @@ func main() {
 		fmt.Println()
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "rotate-keys" {
+		if err := rotateKeys(); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
 		if err := resetPassword(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -195,7 +202,12 @@ func run() error {
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
 		Password: cfg.SMTPPassword, From: cfg.SMTPFrom,
 	})
-	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc)
+	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc).WithSecrets(secretsSvc)
+	if n, err := notifSvc.SealExisting(ctx); err != nil {
+		return fmt.Errorf("encrypt notification channel secrets: %w", err)
+	} else if n > 0 {
+		slog.Info("encrypted the secrets of notification channels saved before 1.0", "channels", n)
+	}
 	schemaSvc := schemahistoryapp.NewService(postgres.NewSchemaHistoryRepository(pool), dbadminSvc, databaseRepo,
 		cfg.SchemaSnapshotInterval)
 	schemaSvc.SetNotifier(notifSvc)
@@ -237,7 +249,7 @@ func run() error {
 
 	// One-time admin bootstrap.
 	if created, err := authSvc.EnsureAdmin(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
-		return err
+		return fmt.Errorf("create the first admin from FLEETDOCK_ADMIN_EMAIL/FLEETDOCK_ADMIN_PASSWORD: %w", err)
 	} else if created {
 		slog.Info("bootstrapped admin account", "email", cfg.AdminEmail)
 	}

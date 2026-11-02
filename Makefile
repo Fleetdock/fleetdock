@@ -69,8 +69,8 @@ backend-migrate: ## Apply DB migrations and exit (needs FLEETDOCK_DATABASE_URL)
 	cd $(BACKEND) && $(GO_RUN) ./cmd/migrate
 
 .PHONY: rotate-keys
-rotate-keys: ## Re-wrap secrets under a new FLEETDOCK_ENCRYPTION_KEY (see cmd/rotate-keys)
-	cd $(BACKEND) && $(GO_RUN) ./cmd/rotate-keys
+rotate-keys: ## Re-wrap secrets under a new FLEETDOCK_ENCRYPTION_KEY (see docs/OPERATIONS.md)
+	cd $(BACKEND) && $(GO_RUN) ./cmd/api rotate-keys
 
 ## ----- Frontend (Next.js) -----
 
