@@ -1369,4 +1369,100 @@
   .dbx-grid-skeleton-row {
     height: 1.85rem;
   }
+
+  /* PostgreSQL schema picker (table tree, diagram toolbar). */
+  .dbx-schema-button {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    width: 100%;
+    min-width: 0;
+    height: 2rem;
+    padding: 0 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--panel);
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+  }
+  .dbx-schema-button:hover {
+    border-color: var(--border-strong);
+  }
+  .dbx-schema-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .dbx-schema-button[aria-expanded="true"] {
+    border-color: var(--accent);
+  }
+  .dbx-schema-count {
+    flex: none;
+    font-size: var(--fs-2xs);
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .dbx-popover-root:has(> .dbx-schema-button) {
+    display: flex;
+    width: 100%;
+  }
+  .dbx-schema-pop {
+    min-width: 17rem;
+  }
+  .dbx-schema-list {
+    border-top: 1px solid var(--border);
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+  }
+  .dbx-schema-row {
+    display: flex;
+    align-items: center;
+  }
+  .dbx-schema-row .dbx-columns-item {
+    flex: 1;
+  }
+  .dbx-schema-only {
+    flex: none;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: var(--fs-2xs);
+    padding: 0.2rem 0.4rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    opacity: 0;
+  }
+  .dbx-schema-row:hover .dbx-schema-only,
+  .dbx-schema-only:focus-visible {
+    opacity: 1;
+  }
+  .dbx-schema-only:hover {
+    background: var(--accent-soft);
+  }
+  @media (hover: none) {
+    .dbx-schema-only {
+      opacity: 1;
+    }
+  }
+  /* Search matches in schemas that are not shown. */
+  .dbx-tree-more {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    padding: 0.45rem 0.6rem;
+    cursor: pointer;
+  }
+  .dbx-tree-more:hover .link {
+    text-decoration: underline;
+  }
 }

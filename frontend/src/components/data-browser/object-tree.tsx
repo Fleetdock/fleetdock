@@ -6,6 +6,14 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, 
 import { useToast } from "@/components/toast";
 import { Button, IconButton, Input, Spinner } from "@/components/ui";
 import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells";
+import {
+  isSelected,
+  loadSelection,
+  resolveSelection,
+  saveSelection,
+  summarizeSchemas,
+  type SchemaSelection,
+} from "@/lib/data-browser/schemas";
 import { collapsedSchemas, saveCollapsedSchemas } from "@/lib/data-browser/storage";
 import { objectName, type OpenRequest } from "@/lib/data-browser/tabs";
 import { formatBytes } from "@/lib/format";
@@ -34,6 +42,7 @@ import {
 } from "lucide-react";
 
 import { useContextMenu } from "./context-menu";
+import { SchemaPicker } from "./schema-picker";
 
 export type TreeItem = {
   kind: "table" | "view" | "object";
@@ -164,21 +173,57 @@ export const ObjectTree = forwardRef<
   // Routine groups start collapsed; tables and views are what people open most.
   const [openKinds, setOpenKinds] = useState<Set<string>>(new Set());
   const q = query.trim().toLowerCase();
-  const relations = useMemo(() => items.filter((i) => i.kind !== "object"), [items]);
-  const schemas = useMemo(() => [...new Set(items.map((i) => i.schema))], [items]);
+
+  // PostgreSQL schemas to show: one remembered choice per database (shared
+  // with the ER diagram). Everything else below works on the chosen ones.
+  const summary = useMemo(() => summarizeSchemas(items), [items]);
+  const [storedSel, setStoredSel] = useState(() => loadSelection(databaseId));
+  const [selFor, setSelFor] = useState(databaseId);
+  if (selFor !== databaseId) {
+    setSelFor(databaseId);
+    setStoredSel(loadSelection(databaseId));
+  }
+  const selection = resolveSelection(storedSel, summary);
+  const pickSchemas = summary.length > 1;
+  const changeSelection = (sel: SchemaSelection) => {
+    setStoredSel(sel);
+    saveSelection(databaseId, sel);
+    setCursor(-1);
+  };
+  const scoped = useMemo(
+    () => (pickSchemas ? items.filter((i) => isSelected(selection, i.schema)) : items),
+    // selection is derived from storedSel and summary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, pickSchemas, storedSel, summary],
+  );
+  // While searching, matches in the other schemas can be shown on request.
+  const [showOthers, setShowOthers] = useState(false);
+  const [othersFor, setOthersFor] = useState(q);
+  if (othersFor !== q) {
+    setOthersFor(q);
+    setShowOthers(false);
+  }
+
+  const relations = useMemo(() => scoped.filter((i) => i.kind !== "object"), [scoped]);
+  const schemas = useMemo(() => [...new Set(scoped.map((i) => i.schema))], [scoped]);
   const grouped = schemas.length > 1;
   const isMatch = (i: TreeItem) => !q || i.label.toLowerCase().includes(q) || `${i.schema}.${i.label}`.toLowerCase().includes(q);
   const matches = relations.filter(isMatch);
+  const otherMatches =
+    q && pickSchemas
+      ? items.filter((i) => i.kind !== "object" && !isSelected(selection, i.schema) && isMatch(i))
+      : [];
   const objectGroups = OBJECT_KINDS.map((g) => ({
     ...g,
-    list: items
+    list: scoped
       .filter((i) => i.kind === "object" && i.sub === g.kind && isMatch(i))
       .sort((a, b) => a.schema.localeCompare(b.schema) || a.label.localeCompare(b.label)),
   })).filter((g) => g.list.length > 0);
-  const objectCount = items.length - relations.length;
+  const objectCount = scoped.length - relations.length;
   // What is on screen, in order: collapsed groups hide their items unless searching.
   const visible = [
     ...(grouped && !q ? matches.filter((i) => !collapsed.has(i.schema)) : matches),
+    ...(showOthers ? otherMatches : []),
     ...objectGroups.flatMap((g) => (q || openKinds.has(g.kind) ? g.list : [])),
   ];
 
@@ -301,7 +346,9 @@ export const ObjectTree = forwardRef<
           <Table2 size={14} className="dbx-tree-icon" />
         )}
         <span className="truncate flex-1">
-          {item.kind === "object" && grouped ? <span className="muted">{item.schema}.</span> : null}
+          {(item.kind === "object" && grouped) || (pickSchemas && !isSelected(selection, item.schema)) ? (
+            <span className="muted">{item.schema}.</span>
+          ) : null}
           <Highlight text={item.label} query={q} />
         </span>
         {item.rows !== undefined ? <span className="dbx-tree-count">{compactCount(item.rows)}</span> : null}
@@ -325,9 +372,13 @@ export const ObjectTree = forwardRef<
         </Button>
       </div>
     );
-  } else if (relations.length === 0 && objectCount === 0) {
-    body = <div className="dbx-tree-note">This database has no tables yet.</div>;
-  } else if (matches.length === 0 && objectGroups.length === 0) {
+  } else if (relations.length === 0 && objectCount === 0 && !q) {
+    body = (
+      <div className="dbx-tree-note">
+        {items.length === 0 ? "This database has no tables yet." : "No tables in the chosen schemas."}
+      </div>
+    );
+  } else if (matches.length === 0 && objectGroups.length === 0 && otherMatches.length === 0) {
     body = <div className="dbx-tree-note">Nothing matches “{query}”.</div>;
   } else if (matches.length === 0) {
     body = null;
@@ -366,6 +417,19 @@ export const ObjectTree = forwardRef<
       );
     });
   }
+
+  // Matches of the search in schemas that are not shown.
+  const othersBody =
+    otherMatches.length === 0 || isLoading || error ? null : showOthers ? (
+      <div className="dbx-tree-others">
+        <div className="dbx-tree-title px-[.45rem] pt-[.7rem] pb-1">In other schemas</div>
+        {otherMatches.map((i) => renderItem(i))}
+      </div>
+    ) : (
+      <button type="button" className="dbx-tree-more" onClick={() => setShowOthers(true)}>
+        {otherMatches.length} more in other schemas — <span className="link">Show</span>
+      </button>
+    );
 
   // Routines, triggers, sequences and events, below the tables.
   const objectsBody =
@@ -440,6 +504,11 @@ export const ObjectTree = forwardRef<
           </IconButton>
         </span>
       </div>
+      {pickSchemas ? (
+        <div className="mx-[.6rem] mb-[.4rem]">
+          <SchemaPicker summary={summary} selection={selection} onChange={changeSelection} />
+        </div>
+      ) : null}
       <div className="dbx-search mx-[.6rem] mb-[.4rem]">
         <Search size={14} aria-hidden />
         <Input
@@ -471,6 +540,7 @@ export const ObjectTree = forwardRef<
       </div>
       <div className="dbx-tree-list" ref={listRef}>
         {body}
+        {othersBody}
         {objectsBody}
       </div>
       {ctx.element}
