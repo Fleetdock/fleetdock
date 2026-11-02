@@ -1465,4 +1465,72 @@
   .dbx-tree-more:hover .link {
     text-decoration: underline;
   }
+
+  /* Saved table views menu. */
+  .dbx-views-label {
+    max-width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dbx-views-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--warning);
+    flex: none;
+  }
+  .dbx-views-pop {
+    min-width: 19rem;
+  }
+  .dbx-view-group {
+    font-size: var(--fs-2xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    padding: 0.4rem 0.4rem 0.2rem;
+  }
+  .dbx-view-row {
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius-sm);
+  }
+  .dbx-view-row:hover,
+  .dbx-view-row.is-active {
+    background: var(--panel-2);
+  }
+  .dbx-view-row.is-active .dbx-view-apply {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .dbx-view-apply {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.4rem;
+    border: 0;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--fs-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+  .dbx-view-actions {
+    display: inline-flex;
+    flex: none;
+    opacity: 0;
+  }
+  .dbx-view-row:hover .dbx-view-actions,
+  .dbx-view-row:focus-within .dbx-view-actions {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .dbx-view-actions {
+      opacity: 1;
+    }
+  }
 }

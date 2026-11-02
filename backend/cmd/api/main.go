@@ -44,6 +44,7 @@ import (
 	secretsapp "github.com/Fleetdock/fleetdock/backend/internal/app/secrets"
 	serverapp "github.com/Fleetdock/fleetdock/backend/internal/app/server"
 	summaryapp "github.com/Fleetdock/fleetdock/backend/internal/app/summary"
+	tableviewapp "github.com/Fleetdock/fleetdock/backend/internal/app/tableview"
 	tokenapp "github.com/Fleetdock/fleetdock/backend/internal/app/token"
 	userapp "github.com/Fleetdock/fleetdock/backend/internal/app/user"
 	"github.com/Fleetdock/fleetdock/backend/internal/config"
@@ -299,6 +300,7 @@ func run() error {
 		Search:            httpapi.NewSearchHandler(catalogSvc, dbadminSvc, resolver),
 		Fleet:             httpapi.NewFleetHandler(fleetSvc),
 		Console:           httpapi.NewConsoleHandler(consoleapp.NewService(consoleRepo), resolver),
+		TableViews:        httpapi.NewTableViewHandler(tableviewapp.NewService(postgres.NewTableViewRepository(pool)), resolver),
 		Connectivity:      httpapi.NewConnectivityHandler(endpointSvc),
 		DBCredentials:     httpapi.NewDBCredentialHandler(credentialSvc),
 		Agents:            httpapi.NewAgentHandler(agentSvc, opsSvc),

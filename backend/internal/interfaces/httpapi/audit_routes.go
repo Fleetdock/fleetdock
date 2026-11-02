@@ -73,6 +73,9 @@ var auditRoutes = map[string]auditRoute{
 	"DELETE /v1/databases/{id}/credentials/{credentialId}":      {action: "credential.revoke", resourceType: "database", idParam: "id"},
 	"POST /v1/databases/{id}/grants":                            {action: "db_grant.add", resourceType: "database", idParam: "id"},
 	"POST /v1/databases/{id}/grants/revoke":                     {action: "db_grant.revoke", resourceType: "database", idParam: "id"},
+	"POST /v1/databases/{id}/table-views":                       {action: "table_view.create", resourceType: "database", idParam: "id"},
+	"PATCH /v1/databases/{id}/table-views/{viewId}":             {action: "table_view.update", resourceType: "database", idParam: "id"},
+	"DELETE /v1/databases/{id}/table-views/{viewId}":            {action: "table_view.delete", resourceType: "database", idParam: "id"},
 	"PUT /v1/databases/{id}/schema/watch":                       {action: "schema.watch", resourceType: "database", idParam: "id"},
 	"POST /v1/moves":                                            {action: "database.move", resourceType: "operation", fromResponse: true},
 

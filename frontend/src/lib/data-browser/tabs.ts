@@ -24,6 +24,8 @@ export interface TableView {
   hidden?: string[];
   /** How many of the visible columns stay put while scrolling sideways. */
   frozen?: number;
+  /** The saved view this tab was last set to (its id). */
+  savedView?: string;
 }
 
 export interface Tab {
@@ -268,7 +270,13 @@ function parseView(v: unknown): TableView {
     widths,
     hidden: Array.isArray(v.hidden) ? v.hidden.filter((h): h is string => typeof h === "string").slice(0, 500) : [],
     frozen: typeof v.frozen === "number" && v.frozen > 0 ? Math.min(20, Math.floor(v.frozen)) : 0,
+    ...(typeof v.savedView === "string" ? { savedView: v.savedView } : {}),
   };
+}
+
+/** parseViewState validates a view state that came from elsewhere (a saved view). */
+export function parseViewState(v: unknown): TableView {
+  return parseView(v);
 }
 
 /**

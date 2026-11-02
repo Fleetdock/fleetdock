@@ -1174,3 +1174,18 @@ export interface AuditPage {
   items: AuditEvent[];
   next_cursor?: string;
 }
+
+/** SavedTableView is a named data-browser view of a table (GET /v1/databases/{id}/table-views). */
+export interface SavedTableView {
+  id: string;
+  database_id: string;
+  table: string;
+  name: string;
+  /** The tab view state it restores (lib/data-browser/view-state.ts). */
+  state: Record<string, unknown>;
+  shared: boolean;
+  created_by?: string;
+  author_email?: string;
+  created_at: string;
+  updated_at: string;
+}

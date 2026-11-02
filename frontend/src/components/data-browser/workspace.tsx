@@ -89,11 +89,14 @@ export function DataBrowser({
   databaseId,
   tableParam,
   viewParam,
+  savedParam,
   queryParam,
 }: {
   databaseId: string | null;
   tableParam: string | null;
   viewParam: string | null;
+  /** ?saved=: a saved table view to apply to ?table= once it opens. */
+  savedParam?: string | null;
   queryParam: string | null;
 }) {
   const router = useRouter();
@@ -257,6 +260,7 @@ export function DataBrowser({
       db={db}
       tableParam={tableParam}
       viewParam={viewParam}
+      savedParam={savedParam}
       queryParam={queryParam}
       shell={shell}
       sideToggle={sideToggle}
@@ -271,6 +275,7 @@ function Workspace({
   db,
   tableParam,
   viewParam,
+  savedParam,
   queryParam,
   shell,
   sideToggle,
@@ -281,6 +286,8 @@ function Workspace({
   db: Database;
   tableParam: string | null;
   viewParam: string | null;
+  /** ?saved=: a saved table view to apply to ?table= once it opens. */
+  savedParam?: string | null;
   queryParam: string | null;
   shell: (sidebar: ReactNode, main: ReactNode) => ReactNode;
   sideToggle: ReactNode;
@@ -357,6 +364,12 @@ function Workspace({
     queryOpened.current = true;
     newQuery(queryParam === "draft" ? (takeQueryDraft(db.id) ?? undefined) : undefined);
   }, [queryParam, newQuery, db.id]);
+
+  // ?saved= applies a saved view to the ?table= tab, once (the tab does it when the views load).
+  const [pendingSaved, setPendingSaved] = useState<{ table: string; id: string } | null>(() =>
+    savedParam && tableParam ? { table: tableParam, id: savedParam } : null,
+  );
+  const savedDone = useCallback(() => setPendingSaved(null), []);
 
   // ?table= / ?view= opens (or focuses) that tab; the active tab is written back.
   useEffect(() => {
@@ -509,6 +522,8 @@ function Workspace({
                 onDirty={onDirty}
                 onOpen={open}
                 onNewQuery={newQuery}
+                applySaved={pendingSaved && t.kind === "table" && t.name === pendingSaved.table ? pendingSaved.id : undefined}
+                onSavedApplied={savedDone}
               />
             </div>
           ) : null,
@@ -544,6 +559,8 @@ function TabContent({
   onDirty,
   onOpen,
   onNewQuery,
+  applySaved,
+  onSavedApplied,
 }: {
   tab: Tab;
   active: boolean;
@@ -555,6 +572,8 @@ function TabContent({
   onDirty: (id: string, n: number) => void;
   onOpen: (req: OpenRequest) => void;
   onNewQuery: (sql?: string) => void;
+  applySaved?: string;
+  onSavedApplied?: () => void;
 }) {
   if (tab.kind === "object") {
     return <ObjectTab databaseId={db.id} tab={tab} dialect={dialect} onOpen={onOpen} onNewQuery={onNewQuery} />;
@@ -578,6 +597,8 @@ function TabContent({
       onDirty={onDirty}
       onOpen={onOpen}
       onNewQuery={onNewQuery}
+      applySaved={applySaved}
+      onSavedApplied={onSavedApplied}
     />
   );
 }
