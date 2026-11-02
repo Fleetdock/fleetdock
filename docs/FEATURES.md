@@ -91,6 +91,10 @@ Backend (Go):
     tables, columns, keys and foreign keys, laid out automatically, with
     search, a neighbours view and PNG/SVG export
     (`GET /v1/databases/{id}/diagram`);
+  - PostgreSQL schemas: the table tree and the diagram show the schemas
+    you pick (remembered per database); searching still finds the others;
+  - saved table views: named filters, sort and columns, private or shared,
+    with a link (`/v1/databases/{id}/table-views`);
   - full screen (Alt+Shift+F) hides the app's sidebar and top bar; choose
     and freeze columns; a row panel (Shift+Enter) edits a whole row; taller
     or compact rows; filters with lists (is one of / none of), ranges,

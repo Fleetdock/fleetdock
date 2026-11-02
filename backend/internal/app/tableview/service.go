@@ -168,7 +168,7 @@ func (s *Service) Delete(ctx context.Context, databaseID, viewID string, userID 
 	if err != nil {
 		return err
 	}
-	if !owns(v, userID) && !(v.Shared && canWrite) {
+	if !owns(v, userID) && (!v.Shared || !canWrite) {
 		return apperr.Forbidden("only the person who saved this view, or someone who can change the database, can delete it")
 	}
 	return s.repo.Delete(ctx, v.DatabaseID, v.ID)

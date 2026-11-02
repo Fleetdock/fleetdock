@@ -12,7 +12,9 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
-type memRepo struct{ views map[uuid.UUID]*tableviewdom.View }
+type memRepo struct {
+	views map[uuid.UUID]*tableviewdom.View
+}
 
 func (m *memRepo) List(_ context.Context, db uuid.UUID, table string, user uuid.UUID) ([]tableviewdom.View, error) {
 	var out []tableviewdom.View
