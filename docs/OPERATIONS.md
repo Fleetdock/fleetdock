@@ -132,6 +132,30 @@ version it supports.
 6. Watch **Activity** for stuck tasks after the upgrade
 7. Update the agents (below)
 
+### Upgrading from 0.x to 1.0
+
+1.0 upgrades in place from 0.9 (and from earlier 0.x through the same
+migrations). What changes on the way:
+
+1. **Back up first.** `fleetdock update` does; otherwise `fleetdock backup-db`
+   or `pg_dump` (above), and keep `.env`.
+2. **Update the control plane**: `fleetdock update --tag v1.0.0`, or pull the
+   image and restart. On its first start 1.0 records a checksum for every
+   migration already applied and encrypts the secrets of notification
+   channels saved before (webhook URLs, SMTP password). Check the sidebar shows
+   the new version.
+3. **Update the agents**: every server shows **Update** (agents before 1.0
+   reported themselves as 0.1.0). Run the update command on each (below).
+4. **API clients**: `POST /v1/instances/{id}/test-connection` and
+   `…/import-databases` are gone (use `POST /v1/instances/{id}/probe`), and
+   responses no longer carry `mariadb_version` (read `engine_version`).
+5. **Behind nginx**: set `proxy_set_header X-Forwarded-For $remote_addr;`
+   (see [DEPLOYMENT.md](DEPLOYMENT.md)) so sign-in limits and the audit log
+   see the client's address.
+6. **Compose installs managed by hand**: take the new `docker-compose.yml`; it
+   passes `FLEETDOCK_ENCRYPTION_KEY_ID`, `FLEETDOCK_ENCRYPTION_KEYS_OLD` and
+   `FLEETDOCK_METRICS_TOKEN` to the container (`fleetdock update` fetches it).
+
 ### Updating agents
 
 Agents keep working across a control-plane upgrade, but each release may fix
@@ -253,7 +277,9 @@ scrape_configs:
 
 - `/readyz` non-200 for > 2 minutes
 - Disk full on the host (agent heartbeats and metrics accumulate)
-- Backup operations failing (dashboard **Operations** or notification rules)
+- Backup operations failing (dashboard **Activity**, notification rules, or
+  `fleetdock_backups_24h{status="failed"}` in `/metrics`)
+- Agents outdated or too old (overview items; update them as below)
 - Servers stuck `offline` (heartbeat timeout default: 2 minutes)
 - Instances whose health is `unreachable` (the dashboard shows the probe result
   per instance; managed instances the control plane cannot reach directly show
@@ -314,5 +340,5 @@ start.
 ## Support and releases
 
 - Security issues: [SECURITY.md](../SECURITY.md)
-- Version support: latest `0.1.x` on `main`
+- Version support and compatibility: [RELEASING.md](../RELEASING.md#compatibility-promise-from-10)
 - Release artifacts: GitHub Releases + GHCR images (see [DEPLOYMENT.md](DEPLOYMENT.md))

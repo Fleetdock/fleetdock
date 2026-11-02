@@ -33,42 +33,48 @@ maps them to the names in the code and API.
   about three minutes and return when they reappear. Nothing is deleted.
   **Check now** on an instance runs the check immediately.
 - **Operation** — every async action (create/drop database, backup, restore,
-  import, connection test) is a tracked job with status/progress/error,
+  import, provisioning) is a tracked job with status/progress/error,
   visible on the **Activity** page. Managed-instance jobs are claimed by the
   agent; external-instance jobs run on the control plane's built-in worker.
 - **Backup destination** (_backup storage_) — an S3 / Cloudflare R2 /
   S3-compatible bucket.
   Secret keys (and instance passwords) are envelope-encrypted at rest with
   `FLEETDOCK_ENCRYPTION_KEY`.
-- **Backup / Restore** — the engine's own dump tool (`mariadb-dump`,
-  `mysqldump` or `pg_dump`) piped through gzip, streamed to the bucket via
-  presigned URLs (agents never see storage credentials). Restoring into a
-  different instance and/or database name is how you **move a database to
-  another server**.
+- **Backup / Restore** — a logical dump (`mariadb-dump` for MySQL and
+  MariaDB, `pg_dump` for PostgreSQL; the image ships the PostgreSQL 18 client,
+  which reads every supported server) piped through gzip, streamed to the
+  bucket via presigned URLs (agents never see storage credentials). Restoring
+  into a different instance of the same engine family and/or database name is
+  how you **move a database to another server**.
 
 ## What's implemented
 
 Backend (Go):
 
-- **Auth** — email/password login issuing JWTs, `/auth/me`, bcrypt hashing.
+- **Auth** — email/password sign-in into an httpOnly session cookie (JWT
+  with a token epoch, so a password change ends every session), bcrypt
+  hashing, per-address and per-account limits on failed sign-ins.
 - **RBAC** — permission-based middleware; roles (`owner`, `admin`, `operator`,
   `viewer`) seeded with a permission catalog (incl. `operation:*`, `backup:*`,
   `destination:*`).
-- **API tokens** — create / list / revoke; scoped like sessions.
+- **API tokens** — create / list / revoke, limited to permissions the creator
+  holds, 90-day expiry by default; administrators see and revoke everyone's.
 - **Servers & agents** — one-command install, single-use registration tokens,
   agent enrollment + bearer-token auth, heartbeats + health snapshots,
-  offline detection.
+  offline detection, version checks (outdated agents are flagged) and in-place
+  agent updates with checksum verification.
 - **Instances** — managed & external, engine field (MariaDB, MySQL or
-  PostgreSQL, via a pluggable engine registry), encrypted admin credentials, connection test, import
-  of existing databases.
+  PostgreSQL, via a pluggable engine registry), encrypted admin credentials,
+  health checks and discovery of existing databases every minute.
 - **Databases** — create (physical when credentials exist) / list / lock /
   unlock / soft-delete (7-day recovery window).
 - **Operations engine** — jobs table with `FOR UPDATE SKIP LOCKED` claiming,
   payload enrichment (credentials + presigned URLs) at claim time, completion
   side effects, control-plane worker for external instances.
 - **Backups** — destinations (S3/R2/S3-compatible) with encrypted secrets and
-  a "test bucket" action; manual backups (`mariadb-dump`, gzip, sha256,
-  size); restore to any instance/name (= move).
+  a "test bucket" action; manual and scheduled backups (gzip, sha256, size),
+  automatic test restores; restore to any instance of the same engine family
+  and any name (= move).
 
 - **Users & roles** — full account administration API: list/create/edit/
   suspend/delete users, assign global roles, admin password reset. Custom
@@ -200,14 +206,18 @@ Backend (Go):
   browser (`.sql.gz`) without any backup storage. The control plane runs the
   dump (it must reach the database port, as for the data browser) and keeps
   nothing; the file can be restored with Import SQL.
-- **Hardening** — login rate limiting (per client IP), security headers and CSP,
-  `/healthz` (liveness) and `/readyz` (metadata DB ping) probes, and
-  `FLEETDOCK_ENV=production` mode that refuses to boot with insecure default secrets.
+- **Hardening** — sign-in limits (per client IP and per account), security
+  headers and CSP, `/healthz` (liveness) and `/readyz` (metadata DB and worker)
+  probes, `/metrics` (Prometheus, behind `FLEETDOCK_METRICS_TOKEN`), and
+  `FLEETDOCK_ENV=production` mode that refuses to boot with insecure default
+  secrets. Migrations are checksummed; the API refuses a schema from a newer
+  version.
 
 Frontend (Next.js): login, dashboard shell, servers (connect flow with
-install command), instances (external DBs, test connection, import),
-databases (create, lock/unlock, delete, backup), backups (trigger, restore /
-move), destinations (S3/R2 CRUD + test), operations log with live refresh,
+install command, agent updates), database servers (create in Docker or
+connect anywhere, health, Check now), databases (create, lock/unlock, delete,
+backup), backups (trigger, restore / move, schedules, storage with a test),
+Activity (operations with live refresh, audit log),
 users administration (create/edit/suspend/delete, roles, password reset),
 a roles page (view every role's permissions, create/edit/delete custom roles
 with a grouped permission picker), and a profile page (edit name/email,
@@ -299,11 +309,14 @@ drop of source`) copies or relocates a database to another instance, across
   a **new id**, then run the offline re-wrap:
 
   ```sh
+  fleetdock rotate-keys    # install.sh installs: does every step below, with backups
+
+  # elsewhere:
   export FLEETDOCK_ENCRYPTION_KEYS_OLD="master-1=<old-secret>"   # keep old key readable
   export FLEETDOCK_ENCRYPTION_KEY="<new-secret>"                 # new primary secret
   export FLEETDOCK_ENCRYPTION_KEY_ID="master-2"                  # new primary id
-  make rotate-keys                                          # re-wrap every secret
-  # once it reports 0 remaining, drop FLEETDOCK_ENCRYPTION_KEYS_OLD and keep the new key
+  /api rotate-keys          # or: make rotate-keys — re-wraps every secret
+  # once it reports every secret current, drop FLEETDOCK_ENCRYPTION_KEYS_OLD
   ```
 
   Rotation requires a new key id — reusing the same id with a different secret

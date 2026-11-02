@@ -54,12 +54,13 @@ also go to the previous minor for three months after a new one ships.
 ## Release checklist
 
 1. Merge all changes for the release into `main`
-2. Update **[CHANGELOG.md](CHANGELOG.md)** — move `[Unreleased]` entries under a new version heading with today's date
+2. Update **[CHANGELOG.md](CHANGELOG.md)** — move `[Unreleased]` entries under a new version heading with today's date, and add its compare link at the bottom
 3. Open a PR if the changelog commit is not on `main` yet
-4. Create and push the tag (see below)
-5. Wait for the **[Release workflow](.github/workflows/release.yml)** to finish on GitHub Actions
-6. Verify the [GitHub Release](https://github.com/Fleetdock/fleetdock/releases) and GHCR images
-7. Optionally announce (release notes, blog, social)
+4. For a minor or major release, tag a release candidate first (`v1.1.0-rc.1`): it is published as a pre-release and leaves `latest` alone. Install it on a fresh VM with `install.sh --tag v1.1.0-rc.1`, upgrade a copy of a real install to it, enrol and update an agent, then go on
+5. Create and push the tag (see below)
+6. Wait for the **[Release workflow](.github/workflows/release.yml)** to finish on GitHub Actions: it runs the whole CI suite first
+7. Verify the [GitHub Release](https://github.com/Fleetdock/fleetdock/releases) and GHCR images: `/api version` in the image prints the tag, and the signatures verify (below)
+8. Optionally announce (release notes, blog, social)
 
 ## Tag and push
 

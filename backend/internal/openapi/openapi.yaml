@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Fleetdock API
-  version: 0.1.0
+  version: 1.0.0
   description: |
     Self-hosted database control plane API. User routes require a Bearer JWT or
     API token (`fleetd_` prefix). Agent routes under `/agent/v1` use agent bearer

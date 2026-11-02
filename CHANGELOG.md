@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Upgrading from 0.x: see
+[OPERATIONS.md — Upgrading from 0.x to 1.0](docs/OPERATIONS.md#upgrading-from-0x-to-10).
+
 ### Added
 
 - **Fleetdock knows its version.** Release builds stamp the version and
@@ -837,6 +840,11 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/Fleetdock/fleetdock/compare/v0.9.2...v0.9.3
+[0.9.2]: https://github.com/Fleetdock/fleetdock/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/Fleetdock/fleetdock/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/Fleetdock/fleetdock/compare/v0.8.5...v0.9.0
+[0.8.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.8.0
 [0.3.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.3.0
 [0.1.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.1.0
