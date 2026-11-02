@@ -22,7 +22,6 @@ export interface Server {
   agent_version?: string | null;
   /** How the agent's version compares with this Fleetdock; absent before it reports. */
   agent_status?: AgentStatus;
-  mariadb_version?: string | null;
   os?: string | null;
   labels: Record<string, string>;
   tags: string[];
@@ -46,7 +45,6 @@ export interface Instance {
   provisioned: boolean;
   container_id?: string | null;
   engine_version: string;
-  mariadb_version: string; // back-compat alias of engine_version
   port: number;
   status: string;
   labels: Record<string, string>;
@@ -321,7 +319,6 @@ export interface CreateInstanceInput {
   name: string;
   engine?: string;
   engine_version?: string;
-  mariadb_version?: string; // back-compat
   port: number;
   username?: string;
   password?: string;

@@ -76,3 +76,61 @@ func parseOpenAPIRoutes(spec []byte) map[string]struct{} {
 func normalizeRoute(method, path string) string {
 	return method + " " + path
 }
+
+// TestOpenAPI_OperationsAreComplete holds every operation to the 1.0 API
+// contract: a summary, at least one success response, the shared error
+// response, and an authentication scheme on every /v1 route except the
+// public ones.
+func TestOpenAPI_OperationsAreComplete(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	spec, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "..", "..", "openapi", "openapi.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type operation struct {
+		Summary   string           `yaml:"summary"`
+		Security  []map[string]any `yaml:"security"`
+		Responses map[string]any   `yaml:"responses"`
+	}
+	var doc struct {
+		Paths map[string]map[string]operation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(spec, &doc); err != nil {
+		t.Fatal(err)
+	}
+	public := map[string]bool{"POST /v1/auth/login": true}
+	for path, ops := range doc.Paths {
+		for method, op := range ops {
+			if method == "parameters" {
+				continue
+			}
+			name := strings.ToUpper(method) + " " + path
+			if op.Summary == "" {
+				t.Errorf("%s: no summary", name)
+			}
+			success := false
+			for code := range op.Responses {
+				if strings.HasPrefix(code, "2") || strings.HasPrefix(code, "3") {
+					success = true
+				}
+			}
+			if !success {
+				t.Errorf("%s: no success response", name)
+			}
+			if _, ok := op.Responses["default"]; !ok {
+				t.Errorf("%s: no default (error) response", name)
+			}
+			if strings.HasPrefix(path, "/v1/") && !public[name] {
+				schemes := map[string]bool{}
+				for _, s := range op.Security {
+					for k := range s {
+						schemes[k] = true
+					}
+				}
+				if !schemes["bearerAuth"] || !schemes["cookieAuth"] {
+					t.Errorf("%s: security must list bearerAuth and cookieAuth, has %v", name, op.Security)
+				}
+			}
+		}
+	}
+}

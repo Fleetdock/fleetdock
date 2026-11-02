@@ -62,6 +62,17 @@ components:
         also send the header `X-Fleetdock-CSRF: 1`, or they are refused with
         403. Requests with an Authorization bearer token need no such header.
 
+  responses:
+    Error:
+      description: >
+        The request failed. 401 unauthorized (no or expired session/token),
+        403 forbidden (missing permission, or a cookie request without the
+        CSRF header), 404 not_found, 409 conflict, 422 invalid (with `field`
+        naming the input at fault), 429 rate_limited, 500 internal.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+
   parameters:
     ResourceID:
       name: id
@@ -79,6 +90,26 @@ components:
         type: string
 
   schemas:
+    Pagination:
+      type: object
+      required: [total, limit, offset]
+      properties:
+        total: {type: integer, description: Matching items across all pages.}
+        limit: {type: integer}
+        offset: {type: integer}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [unauthorized, forbidden, not_found, conflict, invalid, rate_limited, internal]
+            message: {type: string, description: Human-readable; safe to show.}
+            field: {type: string, description: "For invalid: the request field at fault."}
     ColumnSpec:
       type: object
       properties:
@@ -225,7 +256,7 @@ components:
         status: {type: string, enum: [inserted, updated, deleted]}
         change_id: {type: string, format: uuid, description: The journal entry; absent when the journal is off.}
         undoable: {type: boolean}
-        note: {type: string, description: Why the change cannot be undone, when it cannot.}
+        note: {type: string, description: "Why the change cannot be undone, when it cannot."}
     RowChange:
       type: object
       properties:
@@ -326,13 +357,13 @@ components:
       properties:
         id: {type: string, format: uuid}
         created_at: {type: string, format: date-time}
-        actor_user_id: {type: string, format: uuid, description: Absent for the system and for failed logins, and once the user is deleted.}
+        actor_user_id: {type: string, format: uuid, description: "Absent for the system and for failed logins, and once the user is deleted."}
         actor_email: {type: string, description: The user's email at the time; kept after the user is deleted.}
         actor_kind:
           type: string
           enum: [user, api_token, system, anonymous]
           description: How the actor authenticated. `system` is the CLI; `anonymous` a failed login.
-        token_id: {type: string, format: uuid, description: The API token used, when actor_kind is api_token.}
+        token_id: {type: string, format: uuid, description: "The API token used, when actor_kind is api_token."}
         ip: {type: string}
         user_agent: {type: string}
         action:
@@ -357,7 +388,7 @@ components:
       properties:
         id: {type: string, format: uuid}
         database_id: {type: string, format: uuid}
-        table: {type: string, description: The table, as the data browser names it ("schema.table" on PostgreSQL).}
+        table: {type: string, description: 'The table, as the data browser names it ("schema.table" on PostgreSQL).'}
         name: {type: string}
         state:
           type: object
@@ -508,11 +539,6 @@ components:
         latency_ms: {type: integer}
         error: {type: string}
         checked_at: {type: string, format: date-time}
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
     LoginRequest:
       type: object
       required: [email, password]
@@ -524,75 +550,67 @@ components:
           type: string
     LoginResponse:
       type: object
+      required: [token, user]
       properties:
-        token:
-          type: string
+        token: {type: string}
+        user: {type: object, properties: {email: {type: string}, id: {type: string}}, required: [id, email]}
     Server:
       type: object
+      required: [id, name, hostname, status, labels, tags, created_at, updated_at, version]
       properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        hostname:
-          type: string
-        status:
-          type: string
+        id: {type: string, format: uuid}
+        name: {type: string}
+        hostname: {type: string}
+        status: {type: string}
+        address: {type: [string, 'null']}
+        agent_status: {type: string}
+        agent_version: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+        labels: {type: object, additionalProperties: {type: string}}
+        last_heartbeat_at: {type: [string, 'null'], format: date-time}
+        os: {type: [string, 'null']}
+        tags: {type: array, items: {type: string}}
+        updated_at: {type: string, format: date-time}
+        version: {type: integer}
     Instance:
       type: object
+      required: [id, name, engine, kind, has_credentials, tls_mode, provisioned, engine_version, port, status, labels, tags, created_at, updated_at, version, data_access]
       properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        engine:
-          type: string
-          enum: [mariadb, mysql, postgres]
-        kind:
-          type: string
-          enum: [managed, external]
-        tls_mode:
-          type: string
-          enum: [disable, prefer, require, verify-full]
-          description: How the control plane secures connections to the instance.
-        health:
-          $ref: "#/components/schemas/InstanceHealth"
-        ssh_tunnel:
-          $ref: "#/components/schemas/SSHTunnel"
-        data_access:
-          type: string
-          enum: [admin, login, managed]
-          description: >
-            Login the table browser, SQL console, exports and SQL imports use:
-            `admin` — the instance's admin login (only instance administrators
-            may use them); `login` — the dedicated `data_username`;
-            `managed` — read-only and read-write roles Fleetdock creates per
-            database.
-        data_username:
-          type: string
-          nullable: true
-          description: The dedicated data login (data_access `login` only).
+        id: {type: string, format: uuid}
+        name: {type: string}
+        engine: {type: string, enum: [mariadb, mysql, postgres]}
+        kind: {type: string, enum: [managed, external]}
+        tls_mode: {type: string, enum: [disable, prefer, require, verify-full], description: How the control plane secures connections to the instance.}
+        health: {$ref: '#/components/schemas/InstanceHealth'}
+        ssh_tunnel: {$ref: '#/components/schemas/SSHTunnel'}
+        data_access: {type: string, enum: [admin, login, managed], description: 'Login the table browser, SQL console, exports and SQL imports use: `admin` — the instance''s admin login (only instance administrators may use them); `login` — the dedicated `data_username`; `managed` — read-only and read-write roles Fleetdock creates per database.'}
+        data_username: {type: string, nullable: true, description: The dedicated data login (data_access `login` only).}
+        container_id: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+        engine_version: {type: string}
+        has_credentials: {type: boolean}
+        host: {type: [string, 'null']}
+        labels: {type: object, additionalProperties: {type: string}}
+        port: {type: integer}
+        provisioned: {type: boolean}
+        server_id: {type: [string, 'null']}
+        status: {type: string}
+        tags: {type: array, items: {type: string}}
+        updated_at: {type: string, format: date-time}
+        username: {type: [string, 'null']}
+        version: {type: integer}
     SSHTunnel:
       type: object
       nullable: true
-      description: >
-        SSH bastion an external instance is reached through (null when it is
-        reached directly). The instance host is resolved on the bastion.
+      description: SSH bastion an external instance is reached through (null when it is reached
+        directly). The instance host is resolved on the bastion.
+      required: [host, port, username, auth_method]
       properties:
         host: {type: string}
         port: {type: integer, default: 22}
         username: {type: string}
-        auth_method:
-          type: string
-          enum: [password, key]
-        host_key_fingerprint:
-          type: string
-          nullable: true
-          description: >
-            SHA256 fingerprint of the bastion host key, pinned on the first
-            successful connection (trust on first use); null until then.
+        auth_method: {type: string, enum: [password, key]}
+        host_key_fingerprint: {type: string, nullable: true, description: 'SHA256 fingerprint of the bastion host key, pinned on the first successful connection (trust on first use); null until then.'}
     SSHTunnelInput:
       type: object
       required: [host, username, auth_method]
@@ -611,81 +629,236 @@ components:
         passphrase: {type: string, writeOnly: true, description: "Passphrase of an encrypted private key."}
     InstanceRef:
       type: object
-      description: >
-        Summary of the instance a database lives on, embedded in list and get
-        responses so clients need no second request to resolve the name.
+      description: Summary of the instance a database lives on, embedded in list and get responses
+        so clients need no second request to resolve the name.
+      required: [id, name, engine, kind, provisioned, has_credentials]
       properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        engine:
-          type: string
-        kind:
-          type: string
-          enum: [managed, external]
-        server_id:
-          type: string
-          format: uuid
-          nullable: true
-        provisioned:
-          type: boolean
-        has_credentials:
-          type: boolean
+        id: {type: string, format: uuid}
+        name: {type: string}
+        engine: {type: string}
+        kind: {type: string, enum: [managed, external]}
+        server_id: {type: string, format: uuid, nullable: true}
+        provisioned: {type: boolean}
+        has_credentials: {type: boolean}
     Database:
       type: object
+      required: [id, instance_id, name, charset, collation, status, system, size_bytes, active_connections, labels, tags, created_at, updated_at, version]
       properties:
-        id:
-          type: string
-          format: uuid
-        instance_id:
-          type: string
-          format: uuid
-        instance:
-          $ref: "#/components/schemas/InstanceRef"
-        name:
-          type: string
-        status:
-          type: string
+        id: {type: string, format: uuid}
+        instance_id: {type: string, format: uuid}
+        instance: {$ref: '#/components/schemas/InstanceRef'}
+        name: {type: string}
+        status: {type: string}
+        active_connections: {type: integer}
+        charset: {type: string}
+        collation: {type: string}
+        created_at: {type: string, format: date-time}
+        labels: {type: object, additionalProperties: {type: string}}
+        locked_at: {type: [string, 'null'], format: date-time}
+        locked_by: {type: [string, 'null']}
+        missing_since: {type: [string, 'null'], format: date-time}
+        size_bytes: {type: integer}
+        system: {type: boolean}
+        tags: {type: array, items: {type: string}}
+        updated_at: {type: string, format: date-time}
+        version: {type: integer}
     Backup:
       type: object
+      required: [id, database_id, type, engine, status, created_at]
       properties:
-        id:
-          type: string
-          format: uuid
-        status:
-          type: string
-        database_name:
-          type: string
-          description: Name of the backed-up database.
-        instance_name:
-          type: string
-          description: Name of the database server it lives on.
+        id: {type: string, format: uuid}
+        status: {type: string}
+        database_name: {type: string, description: Name of the backed-up database.}
+        instance_name: {type: string, description: Name of the database server it lives on.}
+        checksum: {type: [string, 'null']}
+        completed_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+        database_id: {type: string}
+        destination_id: {type: [string, 'null']}
+        engine: {type: string}
+        error: {type: [string, 'null']}
+        operation_id: {type: [string, 'null']}
+        size_bytes: {type: [integer, 'null']}
+        started_at: {type: [string, 'null'], format: date-time}
+        storage_url: {type: [string, 'null']}
+        type: {type: string}
+        verified_at: {type: [string, 'null'], format: date-time}
+        verify_error: {type: [string, 'null']}
+        verify_status: {type: [string, 'null']}
     Operation:
       type: object
+      required: [id, type, resource_type, status, progress, created_at]
       properties:
-        id:
-          type: string
-          format: uuid
-        type:
-          type: string
-        status:
-          type: string
-        resource_type:
-          type: string
-        resource_id:
-          type: string
-          format: uuid
-        resource_name:
-          type: string
-          description: Display name of the resource (for a backup, its database).
+        id: {type: string, format: uuid}
+        type: {type: string}
+        status: {type: string}
+        resource_type: {type: string}
+        resource_id: {type: string, format: uuid}
+        resource_name: {type: string, description: 'Display name of the resource (for a backup, its database).'}
+        completed_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+        error: {type: [string, 'null']}
+        params: {}
+        progress: {type: integer}
+        result: {}
+        server_id: {type: [string, 'null']}
+        started_at: {type: [string, 'null'], format: date-time}
+
+    APIToken:
+      type: object
+      required: [id, name, prefix, scopes, created_at]
+      properties:
+        created_at: {type: string, format: date-time}
+        expires_at: {type: [string, 'null'], format: date-time}
+        id: {type: string}
+        last_used_at: {type: [string, 'null'], format: date-time}
+        name: {type: string}
+        prefix: {type: string}
+        revoked_at: {type: [string, 'null'], format: date-time}
+        scopes: {type: array, items: {type: string}}
+
+    AgentToken:
+      type: object
+      required: [id, name, expires_at, created_at]
+      properties:
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        id: {type: string}
+        name: {type: string}
+        server_id: {type: [string, 'null']}
+        used_at: {type: [string, 'null'], format: date-time}
+
+    AlertRule:
+      type: object
+      required: [id, name, target_type, metric, comparator, threshold, for_seconds, severity, channel_ids, enabled, created_at]
+      properties:
+        channel_ids: {type: array, items: {type: string}}
+        comparator: {type: string}
+        created_at: {type: string, format: date-time}
+        enabled: {type: boolean}
+        for_seconds: {type: integer}
+        id: {type: string}
+        metric: {type: string}
+        name: {type: string}
+        severity: {type: string}
+        target_id: {type: [string, 'null']}
+        target_type: {type: string}
+        threshold: {type: number}
+
+    Channel:
+      type: object
+      required: [id, name, type, config, enabled, created_at]
+      properties:
+        config: {type: object, additionalProperties: {type: string}}
+        created_at: {type: string, format: date-time}
+        enabled: {type: boolean}
+        id: {type: string}
+        name: {type: string}
+        type: {type: string}
+
+    Destination:
+      type: object
+      required: [id, name, provider, bucket, access_key_id, created_at]
+      properties:
+        access_key_id: {type: string}
+        bucket: {type: string}
+        created_at: {type: string, format: date-time}
+        endpoint: {type: string}
+        id: {type: string}
+        name: {type: string}
+        prefix: {type: string}
+        provider: {type: string}
+        region: {type: string}
+
+    Me:
+      type: object
+      required: [id, email, permissions, grants]
+      properties:
+        email: {type: string}
+        grants: {type: array, items: {type: object, properties: {permission: {type: string}, scope_id: {type: string}, scope_type: {type: string}}, required: [permission, scope_type]}}
+        id: {type: string}
+        permissions: {type: array, items: {type: string}}
+
+    NewAPIToken:
+      type: object
+      required: [id, name, prefix, scopes, created_at, token]
+      properties:
+        created_at: {type: string, format: date-time}
+        expires_at: {type: [string, 'null'], format: date-time}
+        id: {type: string}
+        last_used_at: {type: [string, 'null'], format: date-time}
+        name: {type: string}
+        prefix: {type: string}
+        revoked_at: {type: [string, 'null'], format: date-time}
+        scopes: {type: array, items: {type: string}}
+        token: {type: string}
+
+    NewAgentToken:
+      type: object
+      required: [id, name, expires_at, created_at, token, install_command]
+      properties:
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        id: {type: string}
+        install_command: {type: string}
+        name: {type: string}
+        server_id: {type: [string, 'null']}
+        token: {type: string}
+        used_at: {type: [string, 'null'], format: date-time}
+
+    Role:
+      type: object
+      required: [id, name, description, is_system, permissions]
+      properties:
+        description: {type: string}
+        id: {type: string}
+        is_system: {type: boolean}
+        name: {type: string}
+        permissions: {type: array, items: {type: string}}
+
+    RoleGrant:
+      type: object
+      required: [id, role, scope_type]
+      properties:
+        id: {type: string}
+        role: {type: string}
+        scope_id: {type: [string, 'null']}
+        scope_type: {type: string}
+
+    Schedule:
+      type: object
+      required: [id, database_id, destination_id, cron, engine, retention_days, enabled, created_at]
+      properties:
+        created_at: {type: string, format: date-time}
+        cron: {type: string}
+        database_id: {type: string}
+        database_name: {type: string}
+        destination_id: {type: string}
+        enabled: {type: boolean}
+        engine: {type: string}
+        id: {type: string}
+        instance_name: {type: string}
+        last_run_at: {type: [string, 'null'], format: date-time}
+        next_run_at: {type: [string, 'null'], format: date-time}
+        retention_days: {type: integer}
+
+    User:
+      type: object
+      required: [id, email, name, status, roles, created_at, updated_at]
+      properties:
+        created_at: {type: string, format: date-time}
+        email: {type: string}
+        id: {type: string}
+        name: {type: string}
+        roles: {type: array, items: {type: string}}
+        status: {type: string}
+        updated_at: {type: string, format: date-time}
 
 paths:
   /v1/saved-queries/{id}:
     patch:
       tags: [Console]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Update a saved query
@@ -702,20 +875,22 @@ paths:
       responses:
         "200":
           description: Updated
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Console]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Delete a saved query
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/saved-queries:
     get:
       tags: [Console]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Your saved queries
       parameters:
         - name: database_id
@@ -725,9 +900,10 @@ paths:
       responses:
         "200":
           description: Saved queries
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Console]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Save a query
       requestBody:
         required: true
@@ -742,11 +918,12 @@ paths:
       responses:
         "201":
           description: Saved
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/db-users/password:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Set a database account's password
@@ -767,11 +944,12 @@ paths:
       responses:
         "200":
           description: Changed
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/import-sql:
     post:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - name: destination_id
@@ -797,11 +975,12 @@ paths:
       responses:
         "202":
           description: Import operation started
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/query-history:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Your console history for this database
@@ -809,11 +988,12 @@ paths:
       responses:
         "200":
           description: History
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/query/{qid}/cancel:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - name: qid
@@ -827,11 +1007,12 @@ paths:
       responses:
         "202":
           description: Cancelling
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backups/{id}/verify:
     post:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Verify backup (test restore)
@@ -843,11 +1024,12 @@ paths:
       responses:
         "202":
           description: Verification operation started
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backups/{id}/download:
     get:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Download link
@@ -864,11 +1046,12 @@ paths:
                 properties:
                   url: {type: string}
                   expires_at: {type: string, format: date-time}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/objects:
     get:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: List views, routines, triggers, sequences and events
@@ -890,11 +1073,12 @@ paths:
                         name: {type: string}
                         table: {type: string}
                         definition: {type: string, nullable: true}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/foreign-keys:
     get:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - $ref: "#/components/parameters/TableName"
@@ -910,11 +1094,12 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/ForeignKey"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/referenced-by:
     get:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - $ref: "#/components/parameters/TableName"
@@ -931,11 +1116,12 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/ForeignKey"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/columns:
     get:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: List every table's columns
@@ -948,11 +1134,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ColumnCatalog"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/diagram:
     get:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - name: schemas
@@ -971,11 +1158,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Diagram"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/table-views:
     get:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List saved table views
       description: Your own saved views of the database's tables and the ones others shared. Requires database:read.
       parameters:
@@ -990,9 +1178,10 @@ paths:
                 type: object
                 properties:
                   items: {type: array, items: {$ref: "#/components/schemas/TableView"}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Save a table view
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       requestBody:
@@ -1007,11 +1196,12 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/TableView"}
         "409": {description: You already have a view with this name on this table}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/table-views/{viewId}:
     patch:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Change a saved table view
       description: Only its author can change it.
       parameters:
@@ -1028,9 +1218,10 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/TableView"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete a saved table view
       description: Its author can delete it; a shared view can also be deleted by someone with database:write.
       parameters:
@@ -1038,11 +1229,12 @@ paths:
         - {name: viewId, in: path, required: true, schema: {type: string, format: uuid}}
       responses:
         "204": {description: Deleted}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/schema/snapshots:
     get:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: Schema history of a database
       description: The database's watch setting and its snapshots, newest first (up to 200). Needs data access.
@@ -1057,9 +1249,10 @@ paths:
                   watch: {$ref: "#/components/schemas/SchemaWatch"}
                   interval_seconds: {type: integer, description: How often watched databases are checked; 0 = only by hand.}
                   items: {type: array, items: {$ref: "#/components/schemas/SchemaSnapshot"}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: Snapshot the schema now
       description: >-
@@ -1084,11 +1277,12 @@ paths:
                 properties:
                   snapshot: {$ref: "#/components/schemas/SchemaSnapshot"}
                   created: {type: boolean}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/schema/snapshots/{snapshotId}:
     get:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: snapshotId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1104,11 +1298,12 @@ paths:
                   snapshot: {$ref: "#/components/schemas/SchemaSnapshot"}
                   previous: {$ref: "#/components/schemas/SchemaSnapshot"}
                   changes: {type: array, items: {$ref: "#/components/schemas/SchemaChange"}}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/schema/watch:
     put:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: Turn schema history on or off
       description: >-
@@ -1130,11 +1325,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/SchemaWatch"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/fleet-runs:
     post:
       tags: [Fleet]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Run a script on many databases
       description: >-
         Queues the script to run on each database (up to 500), a few at a time, in the background. Every database
@@ -1163,9 +1359,10 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/FleetRun"}
+        default: {$ref: "#/components/responses/Error"}
     get:
       tags: [Fleet]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Your recent fleet runs
       responses:
         "200":
@@ -1176,11 +1373,12 @@ paths:
                 type: object
                 properties:
                   items: {type: array, items: {$ref: "#/components/schemas/FleetRun"}}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/fleet-runs/{id}:
     get:
       tags: [Fleet]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: A fleet run
       description: Only the user who started a run can see it.
@@ -1190,11 +1388,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/FleetRun"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/fleet-runs/{id}/targets:
     get:
       tags: [Fleet]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: A fleet run's databases and their results
       responses:
@@ -1206,11 +1405,12 @@ paths:
                 type: object
                 properties:
                   items: {type: array, items: {$ref: "#/components/schemas/FleetTarget"}}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/fleet-runs/{id}/results.csv:
     get:
       tags: [Fleet]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: Merged results as CSV
       description: >-
@@ -1222,11 +1422,12 @@ paths:
           content:
             text/csv:
               schema: {type: string}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/fleet-runs/{id}/resume:
     post:
       tags: [Fleet]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: Continue a run paused after its first database
       responses:
@@ -1236,11 +1437,12 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/FleetRun"}
         "409": {description: The run is not paused}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/fleet-runs/{id}/cancel:
     post:
       tags: [Fleet]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: Cancel a run
       description: Databases not started are skipped; statements running are killed on their server.
@@ -1251,11 +1453,12 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/FleetRun"}
         "409": {description: The run is over}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/fleet-runs/{id}/retry:
     post:
       tags: [Fleet]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters: [{$ref: "#/components/parameters/ResourceID"}]
       summary: Retry the databases that did not succeed
       description: Re-queues a failed or canceled run's failed, skipped, canceled and interrupted databases.
@@ -1265,12 +1468,13 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/FleetRun"}
-        "409": {description: The run is still going, or nothing is left to retry}
+        "409": {description: "The run is still going, or nothing is left to retry"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/schema/compare:
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Compare two schemas and write the migration script
       description: >-
         Compares the target database with the source (a database as it is now, or one of its snapshots) and returns the
@@ -1303,11 +1507,12 @@ paths:
                   sql: {type: string, description: The migration script; empty when the schemas match.}
                   changes: {type: array, items: {$ref: "#/components/schemas/SchemaChange"}}
                   review: {type: integer, description: Steps left commented out or needing a manual change.}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/index-insights:
     get:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Unused and redundant indexes
@@ -1323,11 +1528,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/IndexInsights"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/explain:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Explain a statement
@@ -1356,13 +1562,14 @@ paths:
                 properties:
                   format: {type: string, enum: [postgres, mysql, mariadb, mysql-tree]}
                   analyzed: {type: boolean}
-                  plan: {description: The engine's JSON plan, as returned by the server.}
+                  plan: {description: "The engine's JSON plan, as returned by the server."}
                   text: {type: string, description: The plan as text (mysql-tree).}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/top-queries:
     get:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: database, in: query, schema: {type: string}, description: Only statements run in this database.}
@@ -1398,11 +1605,12 @@ paths:
                         rows_examined: {type: integer, description: MySQL/MariaDB only.}
                         no_index_used: {type: integer, description: Runs without a good index (MySQL/MariaDB).}
                         cache_hit_pct: {type: number, description: Shared-buffer hit ratio (PostgreSQL).}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/changes:
     get:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: table, in: query, schema: {type: string}}
@@ -1423,11 +1631,12 @@ paths:
                 type: object
                 properties:
                   items: {type: array, items: {$ref: "#/components/schemas/RowChange"}}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/changes/{changeId}/undo:
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: changeId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1449,11 +1658,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/UndoResult"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/changes/undo:
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Undo a whole save
@@ -1477,11 +1687,12 @@ paths:
                 type: object
                 properties:
                   items: {type: array, items: {$ref: "#/components/schemas/UndoResult"}}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/backup-copies:
     get:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: List backup copies
@@ -1495,9 +1706,10 @@ paths:
                 type: object
                 properties:
                   items: {type: array, items: {$ref: "#/components/schemas/BackupCopy"}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Open a backup for comparison
@@ -1521,11 +1733,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/BackupCopy"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/backup-copies/{copyId}:
     get:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1536,9 +1749,10 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/BackupCopy"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1547,11 +1761,12 @@ paths:
       responses:
         "204":
           description: Dropping
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/backup-copies/{copyId}/extend:
     post:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1563,11 +1778,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/BackupCopy"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/backup-copies/{copyId}/diff:
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1610,11 +1826,12 @@ paths:
                         backup: {type: array, items: {type: string, nullable: true}}
                         changed: {type: array, items: {type: string}}
                         live_hash: {type: string}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/backup-copies/{copyId}/restore-rows:
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - {name: copyId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1659,11 +1876,12 @@ paths:
                         conflict: {type: boolean}
                         error: {type: string}
                         change_id: {type: string, format: uuid}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/search/schema:
     get:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Search table and column names across the fleet
       description: >-
         Matches table, view and column names in every database Fleetdock indexes (refreshed every
@@ -1684,11 +1902,12 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/SchemaSearchHit"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/indexes/drop:
     post:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - $ref: "#/components/parameters/TableName"
@@ -1705,11 +1924,12 @@ paths:
       responses:
         "200":
           description: Dropped
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/indexes:
     post:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - $ref: "#/components/parameters/TableName"
@@ -1727,11 +1947,12 @@ paths:
       responses:
         "201":
           description: Created
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/rename:
     post:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - $ref: "#/components/parameters/TableName"
@@ -1747,11 +1968,12 @@ paths:
       responses:
         "200":
           description: Renamed
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/truncate:
     post:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - $ref: "#/components/parameters/TableName"
@@ -1759,11 +1981,12 @@ paths:
       responses:
         "200":
           description: Done
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/drop:
     post:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - $ref: "#/components/parameters/TableName"
@@ -1771,11 +1994,12 @@ paths:
       responses:
         "200":
           description: Done
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}:
     patch:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
         - $ref: "#/components/parameters/TableName"
@@ -1797,6 +2021,7 @@ paths:
       responses:
         "200":
           description: Altered
+        default: {$ref: "#/components/responses/Error"}
 
   /healthz:
     get:
@@ -1805,6 +2030,7 @@ paths:
       responses:
         "200":
           description: OK
+        default: {$ref: "#/components/responses/Error"}
 
   /readyz:
     get:
@@ -1815,11 +2041,12 @@ paths:
           description: Ready
         "503":
           description: Unavailable
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/version:
     get:
       tags: [Health]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Running version
       description: >
         The control plane's version and commit, and the oldest agent version
@@ -1837,6 +2064,7 @@ paths:
                   commit: {type: string, example: "e7d37df1a2b3"}
                   date: {type: string}
                   min_agent_version: {type: string, example: "0.1.0"}
+        default: {$ref: "#/components/responses/Error"}
 
   /openapi.yaml:
     get:
@@ -1845,6 +2073,7 @@ paths:
       responses:
         "200":
           description: OpenAPI document
+        default: {$ref: "#/components/responses/Error"}
 
   /docs:
     get:
@@ -1853,6 +2082,7 @@ paths:
       responses:
         "200":
           description: HTML docs page
+        default: {$ref: "#/components/responses/Error"}
 
   /install.sh:
     get:
@@ -1861,6 +2091,7 @@ paths:
       responses:
         "200":
           description: Shell script
+        default: {$ref: "#/components/responses/Error"}
 
   /agent/v1/binary/{os}/{arch}:
     get:
@@ -1880,6 +2111,7 @@ paths:
       responses:
         "200":
           description: Binary
+        default: {$ref: "#/components/responses/Error"}
 
   /agent/v1/binary/{os}/{arch}/sha256:
     get:
@@ -1897,6 +2129,7 @@ paths:
               schema: {type: string}
         "404":
           description: No binary for this platform
+        default: {$ref: "#/components/responses/Error"}
 
   /agent/v1/register:
     post:
@@ -1905,6 +2138,7 @@ paths:
       responses:
         "200":
           description: Enrolled
+        default: {$ref: "#/components/responses/Error"}
 
   /agent/v1/heartbeat:
     post:
@@ -1914,6 +2148,7 @@ paths:
       responses:
         "200":
           description: OK
+        default: {$ref: "#/components/responses/Error"}
 
   /agent/v1/jobs/claim:
     post:
@@ -1923,6 +2158,7 @@ paths:
       responses:
         "200":
           description: Job or empty
+        default: {$ref: "#/components/responses/Error"}
 
   /agent/v1/jobs/{id}/status:
     post:
@@ -1939,6 +2175,7 @@ paths:
       responses:
         "200":
           description: Updated
+        default: {$ref: "#/components/responses/Error"}
 
   /agent/v1/jobs/{id}/logs:
     post:
@@ -1955,6 +2192,7 @@ paths:
       responses:
         "200":
           description: Appended
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/auth/login:
     post:
@@ -1976,20 +2214,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/auth/me:
     get:
       tags: [Auth]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Current user
       responses:
         "200":
           description: User profile
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Me"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/auth/logout:
     post:
       tags: [Auth]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Log out
       description: >
         Invalidates every browser session (JWT) issued to the caller so far,
@@ -1998,103 +2241,132 @@ paths:
       responses:
         "204":
           description: Logged out
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/profile:
     get:
       tags: [Profile]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Get profile
       responses:
         "200":
           description: Profile
+        default: {$ref: "#/components/responses/Error"}
     patch:
       tags: [Profile]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update profile
       responses:
         "200":
           description: Updated
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/User"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/profile/password:
     post:
       tags: [Profile]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Change own password
       responses:
         "200":
           description: Changed
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/users:
     get:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List users
       responses:
         "200":
           description: User list
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/User"}}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create user
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/User"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/users/{id}:
     patch:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update user
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Updated
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/User"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete user
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/users/{id}/password:
     post:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Reset user password
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Reset
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/users/{id}/role-grants:
     get:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List a user's role grants (global and scoped)
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Grants
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/RoleGrant"}}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Grant a role to a user at a scope (global, server or database)
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "201":
           description: Granted
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RoleGrant"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/users/{id}/role-grants/{grantId}:
     delete:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Revoke a user's role grant
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -2105,56 +2377,71 @@ paths:
       responses:
         "204":
           description: Revoked
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/roles:
     get:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List roles
       responses:
         "200":
           description: Roles
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/Role"}}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create role
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Role"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/roles/{id}:
     patch:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update role
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Updated
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Role"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete role
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/permissions:
     get:
       tags: [Users]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Permission catalog
       responses:
         "200":
           description: Permissions
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/overview:
     get:
       tags: [Overview]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Fleet overview dashboard
       description: |
         Fleet-wide counts, first-run setup progress, and up to 20 open problems
@@ -2191,27 +2478,36 @@ paths:
                         name: {type: string}
                         message: {type: string}
                         since: {type: string, format: date-time}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/servers:
     get:
       tags: [Servers]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List servers
       responses:
         "200":
           description: Server list
+          content:
+            application/json:
+              schema: {type: object, required: [items, pagination], properties: {items: {type: array, items: {$ref: "#/components/schemas/Server"}}, pagination: {$ref: "#/components/schemas/Pagination"}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Servers]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Register server metadata
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Server"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/servers/{id}:
     get:
       tags: [Servers]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Get server
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -2222,40 +2518,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Server"
+        default: {$ref: "#/components/responses/Error"}
     patch:
       tags: [Servers]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update server metadata
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Updated server
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Server"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Servers]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete server
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/servers/{id}/metrics:
     get:
       tags: [Overview]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Server health metrics history
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Metrics series
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/servers/{id}/agent-token:
     delete:
       tags: [AgentTokens]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Revoke a server's agent token
       description: >
         Revokes the server's agent bearer token immediately. The agent can no
@@ -2266,11 +2569,12 @@ paths:
       responses:
         "204":
           description: Revoked
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/servers/{id}/agent-token/rotate:
     post:
       tags: [AgentTokens]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Rotate a server's agent token
       description: >
         Revokes the server's agent bearer token and returns a single-use,
@@ -2282,45 +2586,62 @@ paths:
       responses:
         "201":
           description: Re-enrollment token with raw secret and install command
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NewAgentToken"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/agent-tokens:
     get:
       tags: [AgentTokens]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List registration tokens
       responses:
         "200":
           description: Tokens
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/AgentToken"}}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [AgentTokens]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create registration token
       responses:
         "201":
           description: Token with raw secret
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NewAgentToken"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/agent-tokens/{id}:
     delete:
       tags: [AgentTokens]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Revoke registration token
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Revoked
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances:
     get:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List instances
       responses:
         "200":
           description: Instances
+          content:
+            application/json:
+              schema: {type: object, required: [items, pagination], properties: {items: {type: array, items: {$ref: "#/components/schemas/Instance"}}, pagination: {$ref: "#/components/schemas/Pagination"}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Register external instance
       requestBody:
         content:
@@ -2350,29 +2671,35 @@ paths:
       responses:
         "201":
           description: Created
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/provision:
     post:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Provision managed instance
       responses:
         "202":
           description: Provisioning started
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}:
     get:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Get instance
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Instance
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Instance"}
+        default: {$ref: "#/components/responses/Error"}
     patch:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update instance
       description: >
         Partial update. Omitted fields are left unchanged. `username: ""`
@@ -2418,20 +2745,25 @@ paths:
       responses:
         "200":
           description: Updated instance
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Instance"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete instance
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/processes:
     get:
       tags: [Monitoring]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List sessions
       description: >
         Active sessions on the instance (MySQL/MariaDB PROCESSLIST,
@@ -2449,11 +2781,12 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/Process"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/processes/{pid}/kill:
     post:
       tags: [Monitoring]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Cancel or terminate a session
       description: >
         Cancels the session's running statement (KILL QUERY /
@@ -2476,11 +2809,12 @@ paths:
       responses:
         "204":
           description: Signalled
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/status:
     get:
       tags: [Monitoring]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Server status counters
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -2495,11 +2829,12 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/Setting"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/variables:
     get:
       tags: [Monitoring]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Server configuration
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -2514,44 +2849,48 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/Setting"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/start:
     post:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Start instance
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "202":
           description: Started
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/stop:
     post:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Stop instance
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "202":
           description: Stopped
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/restart:
     post:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Restart instance
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "202":
           description: Restarted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/probe:
     post:
       tags: [Instances]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Check now
       description: >
         Checks the database server immediately — reachability, version,
@@ -2566,157 +2905,148 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/InstanceHealth"}
-
-  /v1/instances/{id}/test-connection:
-    post:
-      tags: [Instances]
-      security: [{bearerAuth: []}]
-      summary: Test instance connectivity (deprecated)
-      deprecated: true
-      description: Use POST /v1/instances/{id}/probe, which also refreshes the database list.
-      parameters:
-        - $ref: "#/components/parameters/ResourceID"
-      responses:
-        "200":
-          description: Result
-
-  /v1/instances/{id}/import-databases:
-    post:
-      tags: [Instances]
-      security: [{bearerAuth: []}]
-      summary: Import databases from instance (deprecated)
-      deprecated: true
-      description: >
-        Databases are now discovered automatically every minute; use
-        POST /v1/instances/{id}/probe to refresh immediately.
-      parameters:
-        - $ref: "#/components/parameters/ResourceID"
-      responses:
-        "202":
-          description: Import started
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases:
     get:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List databases
       responses:
         "200":
           description: Databases
+          content:
+            application/json:
+              schema: {type: object, required: [items, pagination], properties: {items: {type: array, items: {$ref: "#/components/schemas/Database"}}, pagination: {$ref: "#/components/schemas/Pagination"}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create database
       responses:
         "201":
           description: Created
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}:
     get:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Get database
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Database
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Database"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete database
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/lock:
     post:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Lock database
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Locked
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/unlock:
     post:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Unlock database
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Unlocked
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/connectivity:
     get:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Get database connectivity
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Connectivity
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/public-access:
     post:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Enable public database access
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "202":
           description: Accepted
+        default: {$ref: "#/components/responses/Error"}
     patch:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update public access allowlist
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "202":
           description: Accepted
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Disable public database access
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "202":
           description: Accepted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/credentials:
     get:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List application credentials
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Credentials
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create application credential
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "201":
           description: Created
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/credentials/{credentialId}/rotate:
     post:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Rotate application credential
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -2727,11 +3057,12 @@ paths:
       responses:
         "200":
           description: Rotated
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/credentials/{credentialId}:
     delete:
       tags: [Databases]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Revoke application credential
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -2742,126 +3073,138 @@ paths:
       responses:
         "204":
           description: Revoked
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/db-users:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List DB users on instance
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Users
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create DB user
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "201":
           description: Created
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/db-users/drop:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Drop DB user
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Dropped
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/db-users/grants:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: User grants on instance
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Grants
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/grants:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Grant privileges
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Granted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/grants/revoke:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Revoke privileges
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Revoked
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/grants:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Schema grants
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Grants
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Grant on database
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Granted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/grants/revoke:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Revoke on database
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Revoked
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/db-users:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: DB users for database
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Users
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List tables
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Tables
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Structure]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Create table
@@ -2877,11 +3220,12 @@ paths:
       responses:
         "201":
           description: Created
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/rows:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Browse table rows
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -2893,10 +3237,11 @@ paths:
       responses:
         "200":
           description: Rows
+        default: {$ref: "#/components/responses/Error"}
 
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Insert a row
       description: Omitted columns take their defaults. Requires database:write.
       parameters:
@@ -2917,9 +3262,10 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/RowEditResult"}
+        default: {$ref: "#/components/responses/Error"}
     patch:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update one row
       description: >
         `key` must give every row-key column. The change must match exactly
@@ -2943,11 +3289,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/RowEditResult"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/schema:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Table schema
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -2959,11 +3306,12 @@ paths:
       responses:
         "200":
           description: Schema
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/browse:
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Browse rows with filters and sorting
       description: >
         Returns a page of rows. Filters and sort columns are validated against
@@ -2985,11 +3333,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/BrowseResult"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/rows/delete:
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete one row
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -3009,11 +3358,12 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/RowEditResult"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/import:
     post:
       tags: [Data]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Import CSV
       description: >
         The body is the CSV itself (max 100 MB). Its header row names table
@@ -3040,11 +3390,12 @@ paths:
                 type: object
                 properties:
                   imported: {type: integer, format: int64}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/tables/{table}/export:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Export table CSV
       parameters:
         - $ref: "#/components/parameters/ResourceID"
@@ -3056,9 +3407,10 @@ paths:
       responses:
         "200":
           description: Export URL
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Export the selected rows as CSV
       description: >-
         Streams the rows a browse request selects — its filters, search and sort, not its page — as CSV, up to the
@@ -3076,11 +3428,12 @@ paths:
           content:
             text/csv:
               schema: {type: string}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/query:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: SQL query console
       description: >
         Runs one or more statements (split on `;` outside literals, comments
@@ -3154,22 +3507,24 @@ paths:
                     properties:
                       statement: {type: integer, description: 1-based index of the failed statement}
                       message: {type: string}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/export:
     post:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Export query results
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Export URL
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/dump/check:
     post:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Check a downloaded backup can start
       description: >
         Verifies that a one-off dump of the database can start: the dump tool
@@ -3182,11 +3537,12 @@ paths:
       responses:
         "204":
           description: The dump can start
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/databases/{id}/dump:
     get:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Download a one-off backup
       description: >
         Streams a gzip-compressed SQL dump of the database (the same
@@ -3204,51 +3560,62 @@ paths:
           content:
             application/gzip:
               schema: {type: string, format: binary}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/db-privileges:
     get:
       tags: [DBAdmin]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Privilege catalog
       responses:
         "200":
           description: Privileges
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/operations:
     get:
       tags: [Operations]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List operations
       responses:
         "200":
           description: Operations
+          content:
+            application/json:
+              schema: {type: object, required: [items, pagination], properties: {items: {type: array, items: {$ref: "#/components/schemas/Operation"}}, pagination: {$ref: "#/components/schemas/Pagination"}}}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/operations/{id}:
     get:
       tags: [Operations]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Get operation
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Operation
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Operation"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/operations/{id}/logs:
     get:
       tags: [Operations]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Operation logs
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Log lines
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backups:
     get:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List backups
       parameters:
         - name: database_id
@@ -3261,27 +3628,36 @@ paths:
       responses:
         "200":
           description: Backups (each with database_name and instance_name)
+          content:
+            application/json:
+              schema: {type: object, required: [items, pagination], properties: {items: {type: array, items: {$ref: "#/components/schemas/Backup"}}, pagination: {$ref: "#/components/schemas/Pagination"}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Trigger backup
       responses:
         "202":
           description: Backup started
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backups/{id}:
     get:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Get backup
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Backup
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Backup"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       summary: Delete backup
@@ -3289,197 +3665,245 @@ paths:
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backups/{id}/restore:
     post:
       tags: [Backups]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Restore backup
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "202":
           description: Restore started
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/moves:
     post:
       tags: [Moves]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Start database move
       responses:
         "202":
           description: Move started
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backup-destinations:
     get:
       tags: [Destinations]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List backup destinations
       responses:
         "200":
           description: Destinations
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/Destination"}}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Destinations]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create destination
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Destination"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backup-destinations/{id}:
     patch:
       tags: [Destinations]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update destination
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Updated
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Destination"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Destinations]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete destination
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backup-destinations/{id}/test:
     post:
       tags: [Destinations]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Test destination connectivity
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Result
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backup-schedules:
     get:
       tags: [Schedules]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List backup schedules
       responses:
         "200":
           description: Schedules
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Schedules]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create schedule
       responses:
         "201":
           description: Created
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/backup-schedules/{id}:
     patch:
       tags: [Schedules]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update schedule
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Updated
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Schedules]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete schedule
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/notification-channels:
     get:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List notification channels
       responses:
         "200":
           description: Channels
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/Channel"}}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create channel
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Channel"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/notification-channels/{id}:
     patch:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update channel
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Updated
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Channel"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete channel
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/notification-channels/{id}/test:
     post:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Test notification channel
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Sent
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/alert-rules:
     get:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List alert rules
       responses:
         "200":
           description: Rules
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/AlertRule"}}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create alert rule
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AlertRule"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/alert-rules/{id}:
     patch:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Update alert rule
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "200":
           description: Updated
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AlertRule"}
+        default: {$ref: "#/components/responses/Error"}
     delete:
       tags: [Notifications]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Delete alert rule
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Deleted
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/audit-events:
     get:
       tags: [Audit]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List audit events
       description: >-
         Who did what, newest first: sign-ins, access changes, changes to servers, databases, backups and
@@ -3517,30 +3941,40 @@ paths:
                   next_cursor: {type: string, description: Absent on the last page.}
             text/csv:
               schema: {type: string}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/tokens:
     get:
       tags: [Tokens]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: List API tokens
       responses:
         "200":
           description: Tokens
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: "#/components/schemas/APIToken"}}}}
+        default: {$ref: "#/components/responses/Error"}
     post:
       tags: [Tokens]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Create API token
       responses:
         "201":
           description: Token with raw secret
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NewAPIToken"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/tokens/{id}:
     delete:
       tags: [Tokens]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Revoke API token
       parameters:
         - $ref: "#/components/parameters/ResourceID"
       responses:
         "204":
           description: Revoked
+        default: {$ref: "#/components/responses/Error"}

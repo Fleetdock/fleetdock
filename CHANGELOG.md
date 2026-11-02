@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The API's 1.0 contract.** [RELEASING.md](RELEASING.md) states what 1.x
+  keeps stable (the `/v1` API, agents, configuration, upgrades) and how
+  things are deprecated. The OpenAPI document now describes every
+  operation's error response (`{error: {code, message, field}}`), the
+  cookie session next to bearer tokens, and the response bodies of servers,
+  database servers, databases, backups, operations, users, roles, tokens,
+  backup storage, schedules, notification channels and alert rules; a test
+  keeps those in step with what the handlers return.
 - **Key rotation in one command.** `fleetdock rotate-keys` replaces
   `FLEETDOCK_ENCRYPTION_KEY` and re-encrypts every stored credential, with
   backups first and the old key put back if anything fails. The image now
@@ -41,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release candidates (`v1.0.0-rc.1`) no longer move the `latest` image tag
   and are published as pre-releases. Releases also ship an arm64 API
   binary.
+
+### Removed
+
+- **Deprecated API routes.** `POST /v1/instances/{id}/test-connection` and
+  `POST /v1/instances/{id}/import-databases` are gone; use
+  `POST /v1/instances/{id}/probe`, which checks the connection and refreshes
+  the database list (databases are also discovered every minute).
+- **`mariadb_version` in API responses.** Servers and database servers
+  report `engine_version` only; registering a database server takes
+  `engine_version` (the `mariadb_version` alias is no longer read). Agents
+  may still send it.
 
 ### Security
 

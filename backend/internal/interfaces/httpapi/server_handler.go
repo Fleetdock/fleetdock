@@ -57,7 +57,6 @@ type serverResponse struct {
 	Status          string            `json:"status"`
 	AgentVersion    *string           `json:"agent_version,omitempty"`
 	AgentStatus     string            `json:"agent_status,omitempty"`
-	MariaDBVersion  *string           `json:"mariadb_version,omitempty"`
 	OS              *string           `json:"os,omitempty"`
 	Labels          map[string]string `json:"labels"`
 	Tags            []string          `json:"tags"`
@@ -91,7 +90,6 @@ func toServerResponse(s *serverdom.Server) serverResponse {
 		Address:         s.Address,
 		Status:          string(s.Status),
 		AgentVersion:    s.AgentVersion,
-		MariaDBVersion:  s.MariaDBVersion,
 		OS:              s.OS,
 		Labels:          s.Labels,
 		Tags:            s.Tags,

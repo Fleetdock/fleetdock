@@ -49,21 +49,19 @@ func NewInstanceHandler(svc *instanceapp.Service, resolver *authzapp.Resolver) *
 }
 
 type registerInstanceRequest struct {
-	Kind          string `json:"kind"` // managed (default) | external
-	ServerID      string `json:"server_id"`
-	Host          string `json:"host"`
-	Name          string `json:"name"`
-	Engine        string `json:"engine"`
-	EngineVersion string `json:"engine_version"`
-	// Back-compat alias for engine_version.
-	MariaDBVersion string            `json:"mariadb_version"`
-	Port           int               `json:"port"`
-	Username       string            `json:"username"`
-	Password       string            `json:"password"` // write-only
-	TLSMode        string            `json:"tls_mode"`
-	Labels         map[string]string `json:"labels"`
-	Tags           []string          `json:"tags"`
-	SSHTunnel      *sshTunnelRequest `json:"ssh_tunnel"`
+	Kind          string            `json:"kind"` // managed (default) | external
+	ServerID      string            `json:"server_id"`
+	Host          string            `json:"host"`
+	Name          string            `json:"name"`
+	Engine        string            `json:"engine"`
+	EngineVersion string            `json:"engine_version"`
+	Port          int               `json:"port"`
+	Username      string            `json:"username"`
+	Password      string            `json:"password"` // write-only
+	TLSMode       string            `json:"tls_mode"`
+	Labels        map[string]string `json:"labels"`
+	Tags          []string          `json:"tags"`
+	SSHTunnel     *sshTunnelRequest `json:"ssh_tunnel"`
 	// DataAccess: admin (default) | login | managed. DataUsername and
 	// DataPassword (write-only) are the login used with "login".
 	DataAccess   string `json:"data_access"`
@@ -128,7 +126,6 @@ type instanceResponse struct {
 	Provisioned    bool                `json:"provisioned"`
 	ContainerID    *string             `json:"container_id,omitempty"`
 	EngineVersion  string              `json:"engine_version"`
-	MariaDBVersion string              `json:"mariadb_version"` // back-compat
 	Port           int                 `json:"port"`
 	Status         string              `json:"status"`
 	Labels         map[string]string   `json:"labels"`
@@ -161,7 +158,6 @@ func toInstanceResponse(in *instancedom.Instance) instanceResponse {
 		Provisioned:    in.Provisioned(),
 		ContainerID:    in.ContainerID,
 		EngineVersion:  in.EngineVersion,
-		MariaDBVersion: in.EngineVersion,
 		Port:           in.Port,
 		Status:         string(in.Status),
 		Labels:         in.Labels,
@@ -199,9 +195,6 @@ func (h *InstanceHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	engineVersion := req.EngineVersion
-	if engineVersion == "" {
-		engineVersion = req.MariaDBVersion
-	}
 	in, err := h.svc.Register(r.Context(), instanceapp.RegisterInput{
 		Kind:          req.Kind,
 		ServerID:      req.ServerID,
@@ -366,36 +359,6 @@ func (h *InstanceHandler) List(w http.ResponseWriter, r *http.Request) {
 		items = append(items, toInstanceResponse(in))
 	}
 	writeJSON(w, http.StatusOK, paginated(items, res.Total, res.Limit, res.Offset))
-}
-
-// TestConnection handles POST /v1/instances/{id}/test-connection.
-func (h *InstanceHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
-	res, err := h.svc.TestConnection(r.Context(), r.PathValue("id"), callerID(r))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"mode":         res.Mode,
-		"ok":           res.OK,
-		"version":      res.Version,
-		"error":        res.Error,
-		"operation_id": res.OperationID,
-	})
-}
-
-// ImportDatabases handles POST /v1/instances/{id}/import-databases.
-func (h *InstanceHandler) ImportDatabases(w http.ResponseWriter, r *http.Request) {
-	res, err := h.svc.ImportDatabases(r.Context(), r.PathValue("id"), callerID(r))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"mode":         res.Mode,
-		"imported":     res.Imported,
-		"operation_id": res.OperationID,
-	})
 }
 
 // callerID extracts the authenticated user's id, if any.

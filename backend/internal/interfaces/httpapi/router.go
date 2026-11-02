@@ -160,8 +160,6 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/instances/{id}/stop", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("stop")))
 	mux.HandleFunc("POST /v1/instances/{id}/restart", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("restart")))
 	mux.HandleFunc("POST /v1/instances/{id}/probe", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.Probe))
-	mux.HandleFunc("POST /v1/instances/{id}/test-connection", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.TestConnection))
-	mux.HandleFunc("POST /v1/instances/{id}/import-databases", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.ImportDatabases))
 
 	// Databases. Create authorizes the target instance inside the handler.
 	mux.HandleFunc("POST /v1/databases", requireAnyPerm("database:write", d.Databases.Create))
