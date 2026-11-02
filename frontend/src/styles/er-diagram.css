@@ -114,6 +114,35 @@
     max-width: 340px;
     transition: opacity 150ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease);
   }
+  .erd-card-ghost {
+    border-style: dashed;
+    background: var(--panel-2);
+    box-shadow: none;
+    min-width: 0;
+  }
+  .erd-card-ghost .erd-card-head {
+    background: transparent;
+  }
+  .erd-ghost-show {
+    display: block;
+    width: 100%;
+    padding: 0.35rem 0.75rem 0.5rem;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: var(--fs-2xs);
+    text-align: left;
+    cursor: pointer;
+  }
+  .erd-ghost-show:hover,
+  .erd-ghost-show:focus-visible {
+    text-decoration: underline;
+  }
+  .erd-schema {
+    width: 15rem;
+    max-width: 100%;
+  }
   .erd-card-view {
     border-style: dashed;
   }

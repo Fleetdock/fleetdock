@@ -142,6 +142,28 @@ func TestIntegrationCatalog(t *testing.T) {
 					rels[1].Table != "billing.lines" || rels[1].RefTable != "billing.invoices" {
 					t.Errorf("cross-schema relations = %+v", rels[:2])
 				}
+
+				// Limited to one schema: its tables, and the keys that cross into it.
+				billing, err := c.eng.Columns(ctx, root, db, "billing")
+				if err != nil || len(billing.Tables) != 2 || billing.Tables[0].Schema != "billing" {
+					t.Errorf("billing columns = %+v, %v", billing, err)
+				}
+				rels, _, err = c.eng.Relations(ctx, root, db, "billing")
+				if err != nil || len(rels) != 2 {
+					t.Errorf("billing relations = %+v, %v", rels, err)
+				}
+				pub, _, err := c.eng.Relations(ctx, root, db, "public")
+				if err != nil || len(pub) != 4 {
+					// items, notes, staff (self) and billing.invoices -> public.staff
+					t.Errorf("public relations = %+v, %v", pub, err)
+				}
+				counts, err := c.eng.SchemaCounts(ctx, root, db)
+				if err != nil || len(counts) != 2 || counts[0].Name != "billing" || counts[0].Tables != 2 ||
+					counts[1].Name != "public" || counts[1].Tables != 4 || counts[1].Views != 1 {
+					t.Errorf("schema counts = %+v, %v", counts, err)
+				}
+			} else if counts, err := c.eng.SchemaCounts(ctx, root, db); err != nil || counts != nil {
+				t.Errorf("mysql schema counts = %+v, %v", counts, err)
 			}
 			none, err := c.eng.ReferencedBy(ctx, root, db, map[bool]string{true: "public.notes", false: "notes"}[isPG])
 			if err != nil || len(none) != 0 {

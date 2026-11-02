@@ -621,13 +621,19 @@ export function useSchemaColumns(databaseId: string) {
 
 // useDiagram loads a database's tables, columns and foreign keys for its ER
 // diagram (GET /v1/databases/{id}/diagram).
-export function useDiagram(databaseId: string) {
+// useDiagram loads a database's diagram, limited to some PostgreSQL schemas
+// when schemas is given. The previous diagram stays on screen while another
+// selection loads.
+export function useDiagram(databaseId: string, schemas?: string[], enabled = true) {
+  const key = schemas?.join(",") ?? "";
   return useQuery({
-    queryKey: ["diagram", databaseId],
-    queryFn: () => api.get<Diagram>(`/v1/databases/${databaseId}/diagram`),
-    enabled: Boolean(databaseId),
+    queryKey: ["diagram", databaseId, key],
+    queryFn: () =>
+      api.get<Diagram>(`/v1/databases/${databaseId}/diagram${key ? `?schemas=${encodeURIComponent(key)}` : ""}`),
+    enabled: Boolean(databaseId) && enabled,
     staleTime: 60_000,
     retry: false,
+    placeholderData: (prev) => prev,
   });
 }
 

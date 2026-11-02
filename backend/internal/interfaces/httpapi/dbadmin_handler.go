@@ -925,12 +925,45 @@ func (h *DBAdminHandler) Diagram(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	d, err := h.svc.Diagram(r.Context(), r.PathValue("id"))
+	schemas, err := schemaParam(r.URL.Query().Get("schemas"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	d, err := h.svc.Diagram(r.Context(), r.PathValue("id"), schemas)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, d)
+}
+
+// maxSchemaFilter caps the schemas one diagram request may name.
+const maxSchemaFilter = 100
+
+// schemaParam parses a comma-separated list of schema names; empty means all.
+// Names are bound as query parameters, so only their size is checked.
+func schemaParam(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range strings.Split(raw, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		if len(s) > 128 {
+			return nil, apperr.Invalid("schemas", "schema names are at most 128 characters")
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	if len(out) > maxSchemaFilter {
+		return nil, apperr.Invalid("schemas", fmt.Sprintf("at most %d schemas", maxSchemaFilter))
+	}
+	return out, nil
 }
 
 // Columns handles GET /v1/databases/{id}/columns.

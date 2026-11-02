@@ -12,7 +12,9 @@ import (
 type Catalog interface {
 	// Columns lists the tables and views of a database with their columns,
 	// in ordinal order. Only objects the login can read are included.
-	Columns(ctx context.Context, p ConnParams, database string) (*ColumnCatalog, error)
+	// schemas, when given, limits it to those PostgreSQL schemas (MySQL and
+	// MariaDB have none and ignore it).
+	Columns(ctx context.Context, p ConnParams, database string, schemas ...string) (*ColumnCatalog, error)
 	// ReferencedBy lists the foreign keys of other tables (and the table
 	// itself) that point at table: its incoming foreign keys.
 	ReferencedBy(ctx context.Context, p ConnParams, database, table string) ([]ForeignKey, error)
@@ -21,7 +23,19 @@ type Catalog interface {
 	// "schema.table" on PostgreSQL). Keys pointing outside the database are
 	// left out. truncated reports that only the first maxCatalogRelations
 	// keys are listed.
-	Relations(ctx context.Context, p ConnParams, database string) (fks []ForeignKey, truncated bool, err error)
+	// schemas, when given, keeps the keys whose referencing or referenced
+	// table is in one of them.
+	Relations(ctx context.Context, p ConnParams, database string, schemas ...string) (fks []ForeignKey, truncated bool, err error)
+	// SchemaCounts lists the user schemas with their number of tables and
+	// views; nil on engines without schemas.
+	SchemaCounts(ctx context.Context, p ConnParams, database string) ([]SchemaCount, error)
+}
+
+// SchemaCount is one PostgreSQL schema and how many tables and views it has.
+type SchemaCount struct {
+	Name   string `json:"name"`
+	Tables int    `json:"tables"`
+	Views  int    `json:"views"`
 }
 
 // Catalog size limits: a database beyond them is reported truncated rather

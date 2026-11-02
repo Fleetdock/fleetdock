@@ -355,6 +355,15 @@ components:
     Diagram:
       type: object
       properties:
+        schemas:
+          type: array
+          description: Every PostgreSQL schema with its tables and views, whatever the filter. Absent on MySQL/MariaDB.
+          items:
+            type: object
+            properties:
+              name: {type: string}
+              tables: {type: integer}
+              views: {type: integer}
         truncated:
           type: boolean
           description: The database has more tables, columns or foreign keys than are listed (5000 tables, 100000 columns, 20000 foreign keys).
@@ -924,6 +933,12 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - $ref: "#/components/parameters/ResourceID"
+        - name: schemas
+          in: query
+          schema: {type: string}
+          description: >-
+            Comma-separated PostgreSQL schemas (at most 100). Only their tables are returned, with the foreign keys
+            that start or end in them; a key may then name a table of another schema. Ignored on MySQL/MariaDB.
       summary: Entity-relationship diagram data
       description: >-
         The database's tables and views with their columns, primary keys and row estimates, and every foreign key

@@ -133,16 +133,21 @@ type DiagramTable struct {
 // data login sees them. Relation tables are named like DiagramTable
 // identifiers: "schema.table" on PostgreSQL, "table" elsewhere.
 type Diagram struct {
-	Tables    []DiagramTable      `json:"tables"`
-	Relations []engine.ForeignKey `json:"relations"`
+	// Schemas lists every PostgreSQL schema with its table count, whatever
+	// the filter, so a picker can offer them; absent on MySQL/MariaDB.
+	Schemas   []engine.SchemaCount `json:"schemas,omitempty"`
+	Tables    []DiagramTable       `json:"tables"`
+	Relations []engine.ForeignKey  `json:"relations"`
 	// Truncated reports that the database has more tables, columns or
 	// foreign keys than are listed.
 	Truncated bool `json:"truncated"`
 }
 
 // Diagram reads what an entity-relationship diagram of the database needs:
-// tables with their columns and keys, row estimates and foreign keys.
-func (s *Service) Diagram(ctx context.Context, databaseID string) (*Diagram, error) {
+// tables with their columns and keys, row estimates and foreign keys. With
+// schemas, only the tables of those PostgreSQL schemas are read, and the keys
+// that reach into or out of them.
+func (s *Service) Diagram(ctx context.Context, databaseID string, schemas []string) (*Diagram, error) {
 	var out *Diagram
 	err := s.scoped(ctx, databaseID, dbaccessdom.ModeRead, opTimeout,
 		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
@@ -150,11 +155,11 @@ func (s *Service) Diagram(ctx context.Context, databaseID string) (*Diagram, err
 			if err != nil {
 				return err
 			}
-			cols, err := cat.Columns(ctx, conn, db.Name)
+			cols, err := cat.Columns(ctx, conn, db.Name, schemas...)
 			if err != nil {
 				return err
 			}
-			fks, fkTruncated, err := cat.Relations(ctx, conn, db.Name)
+			fks, fkTruncated, err := cat.Relations(ctx, conn, db.Name, schemas...)
 			if err != nil {
 				return err
 			}
@@ -163,6 +168,9 @@ func (s *Service) Diagram(ctx context.Context, databaseID string) (*Diagram, err
 			tables, _ := admin.ListTables(ctx, conn, db.Name)
 			out = buildDiagram(cols, fks, tables)
 			out.Truncated = out.Truncated || fkTruncated
+			if out.Schemas, err = cat.SchemaCounts(ctx, conn, db.Name); err != nil {
+				return err
+			}
 			return nil
 		})
 	return out, err

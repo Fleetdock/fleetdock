@@ -17,7 +17,7 @@ func pgUserSchema(col string) string {
 // every user schema with their columns. Partitions are left out (their parent
 // is listed), as are relations the login has no privilege on — pg_catalog
 // lists them all, unlike information_schema.
-func (pg *Postgres) Columns(ctx context.Context, p ConnParams, database string) (*ColumnCatalog, error) {
+func (pg *Postgres) Columns(ctx context.Context, p ConnParams, database string, schemas ...string) (*ColumnCatalog, error) {
 	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
 	}
@@ -36,7 +36,8 @@ func (pg *Postgres) Columns(ctx context.Context, p ConnParams, database string) 
 		WHERE c.relkind IN ('r','p','v','m','f') AND NOT c.relispartition
 		  AND `+pgUserSchema("n.nspname")+`
 		  AND has_any_column_privilege(c.oid, 'SELECT')
-		ORDER BY n.nspname, c.relname, a.attnum`)
+		  AND (cardinality($1::text[]) = 0 OR n.nspname = ANY($1::text[]))
+		ORDER BY n.nspname, c.relname, a.attnum`, schemaList(schemas))
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func (pg *Postgres) ReferencedBy(ctx context.Context, p ConnParams, database, ta
 
 // Relations lists the foreign keys of every user schema. Keys copied onto
 // partitions are left out: the partitioned parent carries them.
-func (pg *Postgres) Relations(ctx context.Context, p ConnParams, database string) ([]ForeignKey, bool, error) {
+func (pg *Postgres) Relations(ctx context.Context, p ConnParams, database string, schemas ...string) ([]ForeignKey, bool, error) {
 	if !validDBName(database) {
 		return nil, false, fmt.Errorf("invalid database name")
 	}
@@ -142,8 +143,9 @@ func (pg *Postgres) Relations(ctx context.Context, p ConnParams, database string
 		JOIN pg_namespace rn ON rn.oid = rc.relnamespace
 		WHERE con.contype = 'f' AND con.conparentid = 0 AND NOT c.relispartition
 		  AND `+pgUserSchema("n.nspname")+`
+		  AND (cardinality($1::text[]) = 0 OR n.nspname = ANY($1::text[]) OR rn.nspname = ANY($1::text[]))
 		ORDER BY 1, con.conname
-		LIMIT `+fmt.Sprint(maxCatalogRelations+1))
+		LIMIT `+fmt.Sprint(maxCatalogRelations+1), schemaList(schemas))
 	if err != nil {
 		return nil, false, err
 	}
@@ -162,4 +164,49 @@ func (pg *Postgres) Relations(ctx context.Context, p ConnParams, database string
 		out = append(out, fk)
 	}
 	return out, truncated, rows.Err()
+}
+
+// schemaList is the bind value of an optional schema filter: an empty array
+// means every schema.
+func schemaList(schemas []string) []string {
+	if schemas == nil {
+		return []string{}
+	}
+	return schemas
+}
+
+// SchemaCounts lists the user schemas with their tables and views (those the
+// login can read), including schemas without any.
+func (pg *Postgres) SchemaCounts(ctx context.Context, p ConnParams, database string) ([]SchemaCount, error) {
+	if !validDBName(database) {
+		return nil, fmt.Errorf("invalid database name")
+	}
+	conn, err := pg.connect(ctx, p, database)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+	rows, err := conn.Query(ctx, `
+		SELECT n.nspname,
+		       count(c.oid) FILTER (WHERE c.relkind IN ('r','p','f')),
+		       count(c.oid) FILTER (WHERE c.relkind IN ('v','m'))
+		FROM pg_namespace n
+		LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r','p','f','v','m')
+		     AND NOT c.relispartition AND has_any_column_privilege(c.oid, 'SELECT')
+		WHERE `+pgUserSchema("n.nspname")+`
+		GROUP BY n.nspname
+		ORDER BY n.nspname`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SchemaCount{}
+	for rows.Next() {
+		var c SchemaCount
+		if err := rows.Scan(&c.Name, &c.Tables, &c.Views); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
