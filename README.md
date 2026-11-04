@@ -9,6 +9,14 @@ An open-source, self-hosted **dashboard for your databases** — MariaDB, MySQL
 and PostgreSQL. Manage database servers, databases, users and backups from one
 place instead of SSH, without handing your credentials to a SaaS vendor.
 
+Think of it as one web GUI for every database server you run: a data browser
+and SQL console like phpMyAdmin or pgAdmin, plus what those don't do — SQL
+across up to 500 databases at once, scheduled backups to your own S3 bucket,
+restores, and moving databases between servers.
+[How it compares](https://fleetdock.dev/alternatives) ·
+[Guides](https://fleetdock.dev/guides) ·
+[Documentation](https://fleetdock.dev/docs)
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/overview.png">
   <img alt="The Fleetdock overview: servers, databases, backups and recent activity" src="docs/screenshots/light/overview.png">
