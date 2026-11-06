@@ -67,7 +67,7 @@ func TestRestore_IncompleteBackup(t *testing.T) {
 
 func TestBackupKey(t *testing.T) {
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	got := backupKey("prod", "mydb", id)
+	got := backupKey("prod", "mydb", id, ".sql.gz")
 	want := "prod/backups/mydb/11111111-1111-1111-1111-111111111111.sql.gz"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)

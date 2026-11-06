@@ -21,11 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server settings, per-database size). Read-only console logins are also
   pinned to ClickHouse's `readonly` mode, so the server refuses their writes.
   Not available on ClickHouse yet, and refused by the API: editing rows (its
-  `UPDATE`/`DELETE` are asynchronous mutations; use the SQL console),
-  backups, restores, schedules, moves, dumps and SQL imports, creating
-  ClickHouse servers as containers, table-structure editing, write previews
-  and query insights. Migration `0030` adds the engine, its secret kind and
-  its connectivity protocol.
+  `UPDATE`/`DELETE` are asynchronous mutations; use the SQL console), SQL
+  file imports, comparing a table with a backup, creating ClickHouse servers
+  as containers, table-structure editing, write previews and query insights.
+  Migration `0030` adds the engine, its secret kind and its connectivity
+  protocol.
+- **ClickHouse backups.** Backups, scheduled backups, retention, restores
+  (under the same or a new name, onto any ClickHouse server), verification,
+  moves and one-off dump downloads now work on ClickHouse. ClickHouse has no
+  dump tool, so Fleetdock writes its own dump over the HTTP interface: every
+  table, dictionary and view definition, and the rows of data-holding tables
+  and materialized views in ClickHouse's Native format, gzip-compressed and
+  checksummed like the other engines' backups (`.fdch.gz`). Nothing needs
+  installing on the control plane or the agent. A restore under another name
+  repoints views at the new database and restores `Replicated*MergeTree`
+  tables as plain `*MergeTree`, so the copy never joins the original's
+  replication. Definitions whose credentials the server masks (dictionary
+  sources, MySQL/S3/Kafka tables) are reported in the backup's log; they are
+  included only when the server shows secrets
+  (`display_secrets_in_show_and_select`). ClickHouse backups restore only into
+  ClickHouse, and SQL dumps never into it; the API refuses both. Migration
+  `0031` records the new dump tool.
 - **Choose PostgreSQL schemas.** In databases with several schemas, the
   data browser's table tree and the ER diagram show the schemas you pick
   (a picker above the table search and in the diagram's toolbar: tick

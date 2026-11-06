@@ -1,9 +1,12 @@
 package engine
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 )
@@ -153,4 +156,56 @@ func chDeref(s *string) string {
 		return "<nil>"
 	}
 	return *s
+}
+
+func TestRewriteCHDatabase(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"CREATE TABLE src.t (a UInt8) ENGINE = Memory", "CREATE TABLE `dst`.t (a UInt8) ENGINE = Memory"},
+		{"CREATE VIEW src.v AS SELECT * FROM `src`.t JOIN \"src\".u USING (id)", "CREATE VIEW `dst`.v AS SELECT * FROM `dst`.t JOIN `dst`.u USING (id)"},
+		// Literals, comments, other qualifiers and look-alike names stay.
+		{"SELECT 'src.t', x.src.y, srcx.t, a.src FROM src.t -- src.t", "SELECT 'src.t', x.src.y, srcx.t, a.src FROM `dst`.t -- src.t"},
+		{"SOURCE(CLICKHOUSE(DB 'src' TABLE 'src'))", "SOURCE(CLICKHOUSE(DB 'dst' TABLE 'src'))"},
+	}
+	for _, tc := range cases {
+		if got := rewriteCHDatabase(tc.in, "src", "dst"); got != tc.want {
+			t.Errorf("rewrite(%q)\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestCHRestoreDDLReplicated(t *testing.T) {
+	in := "CREATE TABLE src.t (v UInt64) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/src/t', '{replica}', v) ORDER BY v"
+	got, notes := chRestoreDDL(in, "src", "copy", true)
+	want := "CREATE TABLE `copy`.t (v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY v"
+	if got != want || len(notes) != 1 {
+		t.Fatalf("got %q (%v), want %q", got, notes, want)
+	}
+	if got, _ := chRestoreDDL("CREATE TABLE src.t (v UInt8) ENGINE = ReplicatedMergeTree ORDER BY v", "src", "copy", true); got != "CREATE TABLE `copy`.t (v UInt8) ENGINE = MergeTree() ORDER BY v" {
+		t.Fatalf("bare Replicated engine: %q", got)
+	}
+	// Restoring under the same name keeps the definition as it was.
+	if got, notes := chRestoreDDL(in, "src", "src", false); got != in || notes != nil {
+		t.Fatalf("same-name restore changed the DDL: %q", got)
+	}
+}
+
+func TestCHChunkFraming(t *testing.T) {
+	var buf bytes.Buffer
+	bw := bufio.NewWriter(&buf)
+	payload := bytes.Repeat([]byte("x"), chDumpChunk+10)
+	if err := writeCHRecord(bw, chDumpRecord{Type: "object", Name: "t"}, payload); err != nil {
+		t.Fatal(err)
+	}
+	_ = bw.Flush()
+	br := bufio.NewReader(&buf)
+	if rec, err := readCHHeader(br); err != nil || rec.Name != "t" {
+		t.Fatalf("header: %+v %v", rec, err)
+	}
+	got, err := io.ReadAll(&chChunkReader{r: br})
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("payload round trip: %d bytes, %v", len(got), err)
+	}
+	if _, err := io.ReadAll(&chChunkReader{r: bufio.NewReader(bytes.NewReader([]byte{0, 0, 1}))}); err == nil {
+		t.Fatal("a cut chunk header must fail")
+	}
 }

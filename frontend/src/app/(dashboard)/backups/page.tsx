@@ -91,7 +91,7 @@ export default function BackupsPage() {
       <NewBackupModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        // Engines without backups (ClickHouse) are not offered.
+        // Engines without backups are not offered.
         databases={(databases?.items ?? []).filter((d) => engineSupports(d.instance?.engine, "backups"))}
         destinations={destinations?.items ?? []}
       />

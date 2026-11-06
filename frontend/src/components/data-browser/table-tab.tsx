@@ -552,7 +552,7 @@ export function TableTab({
             {
               label: "Compare with a backup…",
               icon: <ArchiveRestore size={15} />,
-              hidden: isView || !engineSupports(engine, "backups"),
+              hidden: isView || !engineSupports(engine, "backupCompare"),
               onSelect: () => setCompareOpen(true),
             },
             {

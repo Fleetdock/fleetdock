@@ -5,8 +5,12 @@ export type EngineId = "mariadb" | "mysql" | "postgres" | "clickhouse";
 export type EngineFeature =
   /** Insert, edit and delete rows in the data browser (and undo, CSV import). */
   | "rowEditing"
-  /** Backups, restores, scheduled backups, SQL imports and moves. */
+  /** Backups, restores, scheduled backups and moves. */
   | "backups"
+  /** Load a .sql file into a database. */
+  | "sqlImport"
+  /** Compare a table row by row with a restored backup copy. */
+  | "backupCompare"
   /** Fleetdock creates the engine as a container on a connected server. */
   | "provisioning"
   /** Create, alter, rename, truncate and drop tables and indexes from the dashboard. */
@@ -38,7 +42,7 @@ export const ENGINES: Record<EngineId, EngineInfo> = {
     versions: ["25.8", "25.3", "24.8"],
     port: 8123,
     adminUser: "default",
-    lacks: ["rowEditing", "backups", "provisioning", "structureEditing", "preview", "insights"],
+    lacks: ["rowEditing", "sqlImport", "backupCompare", "provisioning", "structureEditing", "preview", "insights"],
     portHint: "The HTTP interface: 8123, or 8443 with TLS.",
   },
 };
@@ -54,4 +58,18 @@ export function engineLabel(id: string): string {
 export function engineSupports(id: string | undefined, feature: EngineFeature): boolean {
   const e = id ? ENGINES[id as EngineId] : undefined;
   return !e?.lacks?.includes(feature);
+}
+
+/** The dump tool of a ClickHouse backup (backups.engine). */
+export const CLICKHOUSE_DUMP_TOOL = "clickhouse-native";
+
+/**
+ * canRestoreInto reports whether data from a source engine can be restored
+ * into a target engine: ClickHouse backups are not SQL dumps, so they only go
+ * into ClickHouse, and SQL dumps never do. Pass the backup's tool or the
+ * source database's engine as source.
+ */
+export function canRestoreInto(source: string | undefined, target: string | undefined): boolean {
+  const ch = (e: string | undefined) => e === "clickhouse" || e === CLICKHOUSE_DUMP_TOOL;
+  return ch(source) === ch(target);
 }

@@ -20,6 +20,9 @@ func DumpPreflight(engineName string) error {
 	if err != nil {
 		return err
 	}
+	if _, ok := eng.(engine.Dumper); ok {
+		return nil // dumps in-process; no tool to install
+	}
 	binaries, _, _ := eng.DumpArgs(engine.ConnParams{}, "")
 	_, err = lookPath(binaries)
 	return err
@@ -36,6 +39,9 @@ func Dump(ctx context.Context, engineName string, c engine.ConnParams, database 
 	eng, err := engine.For(engineName)
 	if err != nil {
 		return err
+	}
+	if d, ok := eng.(engine.Dumper); ok {
+		return dumpInProcess(ctx, d, c, database, w, onStart)
 	}
 	conn, closeTunnel, err := cliConn(ctx, c, NopSink{})
 	if err != nil {
@@ -82,6 +88,38 @@ func Dump(ctx context.Context, engineName string, c engine.ConnParams, database 
 	}
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("dump failed: %s", firstLine(stderr.String()))
+	}
+	return gz.Close()
+}
+
+// dumpInProcess streams an engine.Dumper's dump. The first bytes are held
+// back until the dump has produced them, so a dump that fails to start (bad
+// login, unreachable host) is still an error, not a broken download.
+func dumpInProcess(ctx context.Context, d engine.Dumper, c engine.ConnParams, database string, w io.Writer, onStart func()) error {
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		err := d.Dump(ctx, c, database, pw, func(string) {})
+		_ = pw.CloseWithError(err)
+		done <- err
+	}()
+	out := bufio.NewReaderSize(pr, 64<<10)
+	if _, err := out.Peek(1); err != nil {
+		_ = pr.CloseWithError(err)
+		if derr := <-done; derr != nil {
+			return fmt.Errorf("dump failed: %w", derr)
+		}
+		return errors.New("dump failed: nothing was produced")
+	}
+	onStart()
+	gz := gzip.NewWriter(w)
+	if _, err := io.Copy(gz, out); err != nil {
+		_ = pr.CloseWithError(err)
+		<-done
+		return fmt.Errorf("stream dump: %w", err)
+	}
+	if err := <-done; err != nil {
+		return fmt.Errorf("dump failed: %w", err)
 	}
 	return gz.Close()
 }

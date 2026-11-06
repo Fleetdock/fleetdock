@@ -80,6 +80,9 @@ type chRequest struct {
 	sessionID string
 	// queryID names the statement in system.processes so it can be killed.
 	queryID string
+	// body, when set, is the statement's input data (INSERT ... FORMAT);
+	// the statement then travels in the URL.
+	body io.Reader
 }
 
 // chResponse is an open response: the caller reads the body and closes it.
@@ -281,13 +284,18 @@ func (c *ClickHouse) open(ctx context.Context, p ConnParams, req chRequest) (*ch
 	for k, v := range req.params {
 		q.Set("param_"+k, v)
 	}
+	var body io.Reader = strings.NewReader(req.query)
+	if req.body != nil {
+		q.Set("query", req.query)
+		body = req.body
+	}
 	u := url.URL{
 		Scheme:   chScheme(p),
 		Host:     net.JoinHostPort(p.Host, strconv.Itoa(p.Port)),
 		Path:     "/",
 		RawQuery: q.Encode(),
 	}
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(req.query))
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +303,9 @@ func (c *ClickHouse) open(ctx context.Context, p ConnParams, req chRequest) (*ch
 	// server or proxy access logs.
 	hreq.Header.Set("X-ClickHouse-User", p.User)
 	hreq.Header.Set("X-ClickHouse-Key", p.Password)
-	hreq.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	if req.body == nil {
+		hreq.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	}
 
 	resp, err := c.client(p).Do(hreq)
 	if err != nil {

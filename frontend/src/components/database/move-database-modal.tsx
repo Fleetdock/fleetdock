@@ -17,6 +17,7 @@ import {
 import { ApiError } from "@/lib/api";
 import { useDestinations, useInstances, useStartMove } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
+import { canRestoreInto } from "@/lib/engines";
 
 export function MoveDatabaseModal({
   database,
@@ -85,7 +86,10 @@ export function MoveDatabaseModal({
               <option value="">Select a database server…</option>
               {(instances?.items ?? [])
                 .filter(
-                  (i) => i.id !== database.instance_id && i.has_credentials,
+                  (i) =>
+                    i.id !== database.instance_id &&
+                    i.has_credentials &&
+                    canRestoreInto(database.instance?.engine, i.engine),
                 )
                 .map((i) => (
                   <option key={i.id} value={i.id}>
