@@ -76,7 +76,7 @@ import { ColumnsMenu } from "./columns-menu";
 import { ViewsMenu } from "./views-menu";
 import { RowPanel } from "./row-panel";
 import { GridSkeleton } from "./skeleton";
-
+import { engineLabel, engineSupports } from "@/lib/engines";
 
 /**
  * TableTab is one open table or view: its rows in an editable grid with
@@ -89,8 +89,8 @@ export function TableTab({
   active,
   canWrite,
   canBackup,
-  dialect,
   engine,
+  dialect,
   dispatch,
   onDirty,
   onOpen,
@@ -103,9 +103,9 @@ export function TableTab({
   active: boolean;
   canWrite: boolean;
   canBackup: boolean;
-  dialect: Dialect;
-  /** Engine of the database, for the command panel's editor. */
+  /** The instance's engine id: some engines' rows cannot be edited here, and the command panel's editor follows it. */
   engine?: string;
+  dialect: Dialect;
   dispatch: Dispatch<Action>;
   onDirty: (id: string, changes: number) => void;
   onOpen: (req: OpenRequest) => void;
@@ -189,7 +189,8 @@ export function TableTab({
 
   const columns = useMemo(() => data?.columns ?? [], [data]);
   const key = useMemo(() => data?.key ?? [], [data]);
-  const editable = canWrite && !isView && key.length > 0;
+  const rowEditing = engineSupports(engine, "rowEditing");
+  const editable = canWrite && !isView && rowEditing && key.length > 0;
 
   const rows = useMemo<GridRow[]>(() => {
     const out: GridRow[] = pending.inserts.map((r) => ({ kind: "new", id: r.id, values: r.values, error: pending.errors[r.id] }));
@@ -432,7 +433,9 @@ export function TableTab({
 
   const readOnlyReason = isView
     ? "Views are read-only."
-    : !canWrite
+    : !rowEditing
+      ? `${engineLabel(engine ?? "")} tables are read-only here. Change data with the SQL console.`
+      : !canWrite
       ? "You have read-only access to this database."
       : data && key.length === 0
         ? "This table has no primary key or NOT NULL unique key, so rows can't be edited here. Use the SQL console."
@@ -591,11 +594,16 @@ export function TableTab({
                   (err: unknown) => push("error", err instanceof Error ? err.message : "Export failed"),
                 ),
             },
-            { label: "Import CSV…", icon: <Upload size={15} />, hidden: !canWrite || isView, onSelect: () => setImportOpen(true) },
+            {
+              label: "Import CSV…",
+              icon: <Upload size={15} />,
+              hidden: !canWrite || isView || !rowEditing,
+              onSelect: () => setImportOpen(true),
+            },
             {
               label: "Compare with a backup…",
               icon: <ArchiveRestore size={15} />,
-              hidden: isView,
+              hidden: isView || !engineSupports(engine, "backups"),
               onSelect: () => setCompareOpen(true),
             },
             {
@@ -666,7 +674,7 @@ export function TableTab({
             databaseId={databaseId}
             table={tab.name}
             dialect={dialect}
-            canWrite={canWrite && !isView}
+            canWrite={canWrite && !isView && engineSupports(engine, "structureEditing")}
             onTableGone={(renamed) => {
               if (renamed) {
                 // Renames keep the schema; the structure editor reports the bare new name.

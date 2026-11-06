@@ -145,10 +145,7 @@ func (s *Service) Create(ctx context.Context, databaseID string, in CreateInput,
 		}
 	}
 	cred.SecretRef = fmt.Sprintf("database/%s/credential/%s", db.ID, cred.ID)
-	kind := secretdom.KindMariaDBUser
-	if inst.Engine == instancedom.EnginePostgres {
-		kind = secretdom.KindPostgresUser
-	}
+	kind := secretdom.UserKind(string(inst.Engine))
 	if err := s.secrets.Put(ctx, cred.SecretRef, kind, []byte(password)); err != nil {
 		_ = admin.DropDBUser(ctx, conn, cred.Username, cred.AccountHost)
 		return nil, err
@@ -217,10 +214,7 @@ func (s *Service) Rotate(ctx context.Context, databaseID, credentialID string, a
 	if err := engine.RotatePassword(ctx, admin, conn, cred.Username, cred.AccountHost, password); err != nil {
 		return nil, apperr.FromEngine(err, "database")
 	}
-	kind := secretdom.KindMariaDBUser
-	if inst.Engine == instancedom.EnginePostgres {
-		kind = secretdom.KindPostgresUser
-	}
+	kind := secretdom.UserKind(string(inst.Engine))
 	if err := s.secrets.Put(ctx, cred.SecretRef, kind, []byte(password)); err != nil {
 		return nil, err
 	}

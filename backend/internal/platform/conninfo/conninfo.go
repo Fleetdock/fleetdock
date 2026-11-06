@@ -32,7 +32,7 @@ func BuildURL(t endpointdom.Target, user, password, database string) (string, er
 	if t.Port < 1 || t.Port > 65535 {
 		return "", fmt.Errorf("invalid port")
 	}
-	scheme, err := scheme(t.Protocol)
+	scheme, err := scheme(t.Protocol, t.TLSMode)
 	if err != nil {
 		return "", err
 	}
@@ -82,17 +82,33 @@ func CLICommand(t endpointdom.Target, user, database string) string {
 		}
 		return fmt.Sprintf("%s -h %s -P %d -u %s -p --ssl-mode=%s %s",
 			client, t.Host, t.Port, user, sslMode(t.Protocol, t.TLSMode), database)
+	case endpointdom.ProtocolClickHouse:
+		// The HTTP interface is what the endpoint exposes; clickhouse-client
+		// speaks the native protocol on another port, so curl is the client
+		// that is sure to work. --user without a password prompts for it.
+		return fmt.Sprintf("curl --user %s '%s://%s:%d/?database=%s' --data-binary 'SELECT 1'",
+			user, clickhouseScheme(t.TLSMode), t.Host, t.Port, url.QueryEscape(database))
 	default:
 		return ""
 	}
 }
 
-func scheme(protocol endpointdom.Protocol) (string, error) {
+// clickhouseScheme is the HTTP interface's URL scheme for a TLS mode.
+func clickhouseScheme(tlsMode endpointdom.TLSMode) string {
+	if tlsMode == endpointdom.TLSRequired {
+		return "https"
+	}
+	return "http"
+}
+
+func scheme(protocol endpointdom.Protocol, tlsMode endpointdom.TLSMode) (string, error) {
 	switch protocol {
 	case endpointdom.ProtocolPostgreSQL:
 		return "postgresql", nil
 	case endpointdom.ProtocolMySQL, endpointdom.ProtocolMariaDB:
 		return "mysql", nil
+	case endpointdom.ProtocolClickHouse:
+		return clickhouseScheme(tlsMode), nil
 	default:
 		return "", fmt.Errorf("unsupported protocol %q", protocol)
 	}

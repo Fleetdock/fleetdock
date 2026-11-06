@@ -13,7 +13,8 @@ type Group = { key: string; label: string; engine?: string; items: Database[] };
 
 /** EngineMark is a small engine-coloured tag ("PG", "My", "Ma"). */
 export function EngineMark({ engine }: { engine?: string }) {
-  const short = engine === "postgres" ? "PG" : engine === "mariadb" ? "Ma" : engine === "mysql" ? "My" : "DB";
+  const short =
+    engine === "postgres" ? "PG" : engine === "mariadb" ? "Ma" : engine === "mysql" ? "My" : engine === "clickhouse" ? "CH" : "DB";
   return (
     <span className={`dbx-engine dbx-engine-${engine ?? "other"}`} title={engine ? engineLabel(engine) : undefined}>
       {short}

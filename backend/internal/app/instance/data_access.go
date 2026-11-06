@@ -15,10 +15,7 @@ import (
 func dataSecretRef(id uuid.UUID) string { return "instance/" + id.String() + "/data" }
 
 func dataSecretKind(inst *instancedom.Instance) secretdom.Kind {
-	if inst.Engine == instancedom.EnginePostgres {
-		return secretdom.KindPostgresUser
-	}
-	return secretdom.KindMariaDBUser
+	return secretdom.UserKind(string(inst.Engine))
 }
 
 // DataAccessInput selects the login used for the table browser, SQL console,

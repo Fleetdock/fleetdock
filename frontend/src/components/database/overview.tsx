@@ -12,6 +12,7 @@ import { engineLabel } from "@/lib/engines";
 import { formatBytes } from "@/lib/format";
 import { useBackups, useConnectivity, useSchedules } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
+import { engineSupports } from "@/lib/engines";
 
 /**
  * DatabaseOverview is the database page's landing tab: what the database is,
@@ -22,11 +23,14 @@ export function DatabaseOverview({
   database,
   hasCreds,
   canBackup,
+  backups = true,
   tabHref,
 }: {
   database: Database;
   hasCreds: boolean;
   canBackup: boolean;
+  /** Whether the engine supports backups at all. */
+  backups?: boolean;
   tabHref: (tab: string) => string;
 }) {
   const instance = database.instance;
@@ -57,8 +61,10 @@ export function DatabaseOverview({
         />
       </div>
       <ConnectCard database={database} manageHref={tabHref("connection")} />
-      <BackupCard database={database} canBackup={canBackup} manageHref={tabHref("backups")} />
-      {hasCreds ? <IndexHealthCard databaseId={database.id} browserHref={browserHref} /> : null}
+      {backups ? <BackupCard database={database} canBackup={canBackup} manageHref={tabHref("backups")} /> : null}
+      {hasCreds && engineSupports(database.instance?.engine, "insights") ? (
+        <IndexHealthCard databaseId={database.id} browserHref={browserHref} />
+      ) : null}
     </div>
   );
 }

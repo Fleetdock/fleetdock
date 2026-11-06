@@ -36,6 +36,8 @@ const (
 	ProtocolPostgreSQL Protocol = "postgresql"
 	ProtocolMySQL      Protocol = "mysql"
 	ProtocolMariaDB    Protocol = "mariadb"
+	// ProtocolClickHouse is ClickHouse's HTTP interface.
+	ProtocolClickHouse Protocol = "clickhouse"
 )
 
 // TLSMode is the desired TLS behavior for clients.
@@ -115,6 +117,8 @@ func ProtocolForEngine(engine string) (Protocol, error) {
 		return ProtocolMySQL, nil
 	case "mariadb":
 		return ProtocolMariaDB, nil
+	case "clickhouse":
+		return ProtocolClickHouse, nil
 	default:
 		return "", apperr.Invalid("engine", "unsupported engine for connectivity")
 	}

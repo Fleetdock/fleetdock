@@ -592,7 +592,7 @@ components:
       properties:
         id: {type: string, format: uuid}
         name: {type: string}
-        engine: {type: string, enum: [mariadb, mysql, postgres]}
+        engine: {type: string, enum: [mariadb, mysql, postgres, clickhouse]}
         kind: {type: string, enum: [managed, external]}
         tls_mode: {type: string, enum: [disable, prefer, require, verify-full], description: How the control plane secures connections to the instance.}
         health: {$ref: '#/components/schemas/InstanceHealth'}
@@ -2704,7 +2704,10 @@ paths:
                 server_id: {type: string, format: uuid}
                 host: {type: string}
                 name: {type: string}
-                engine: {type: string, enum: [mariadb, mysql, postgres]}
+                engine:
+                  type: string
+                  enum: [mariadb, mysql, postgres, clickhouse]
+                  description: ClickHouse is reached over its HTTP interface (port 8123, or 8443 with TLS).
                 engine_version: {type: string}
                 port: {type: integer}
                 username: {type: string}

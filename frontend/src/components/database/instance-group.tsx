@@ -27,7 +27,7 @@ import {
   StatusBadge,
   Table,
 } from "@/components/ui";
-import { engineLabel } from "@/lib/engines";
+import { engineLabel, engineSupports } from "@/lib/engines";
 import { formatBytes } from "@/lib/format";
 import { useDatabases, useLockDatabase, useUnlockDatabase } from "@/lib/hooks";
 import type { Database, Instance } from "@/lib/types";
@@ -249,7 +249,7 @@ export function DatabaseMenu({
           label: "Back up now",
           icon: <Archive size={15} aria-hidden />,
           onSelect: () => actions.onBackup(d),
-          hidden: !actions.canBackup,
+          hidden: !actions.canBackup || !engineSupports(d.instance?.engine, "backups"),
         },
         {
           label: "Unlock",

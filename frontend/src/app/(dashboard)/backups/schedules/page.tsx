@@ -34,6 +34,7 @@ import { useDataTable } from "@/lib/use-data-table";
 import { describeCron, isCron } from "@/lib/cron";
 import type { Schedule } from "@/lib/types";
 import { useConfirm } from "@/components/confirm";
+import { engineSupports } from "@/lib/engines";
 
 const CRON_PRESETS: { label: string; value: string }[] = [
   { label: "Every hour", value: "0 * * * *" },
@@ -259,9 +260,11 @@ function ScheduleModal({ mode, schedule, open, onClose }: ScheduleModalProps) {
           <Field label="Database">
             <Select value={databaseId} onChange={(e) => setDatabaseId(e.target.value)} required>
               <option value="">Select a database…</option>
-              {databases?.items.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
+              {databases?.items
+                .filter((d) => engineSupports(d.instance?.engine, "backups"))
+                .map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
             </Select>
           </Field>
         ) : null}
