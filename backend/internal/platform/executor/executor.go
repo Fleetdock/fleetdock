@@ -145,18 +145,7 @@ func Execute(ctx context.Context, jobType string, p *Payload, sink LogSink) (jso
 // runBackup dumps one database, gzips it into a temp file (hashing as it
 // goes), then uploads it via the presigned PUT URL.
 func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink) (*Result, error) {
-	conn, closeTunnel, err := cliConn(ctx, p.Conn, sink)
-	if err != nil {
-		return nil, err
-	}
-	defer closeTunnel()
-	binaries, args, env := eng.DumpArgs(conn, p.Database)
-	bin, err := lookPath(binaries)
-	if err != nil {
-		return nil, err
-	}
-
-	tmp, err := os.CreateTemp("", "dbm-backup-*.sql.gz")
+	tmp, err := os.CreateTemp("", "dbm-backup-*.gz")
 	if err != nil {
 		return nil, fmt.Errorf("create temp file: %w", err)
 	}
@@ -169,17 +158,9 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 	gz := gzip.NewWriter(io.MultiWriter(tmp, hasher))
 
 	sink.Log("info", "dumping database "+p.Database)
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Env = append(os.Environ(), env...)
-	cmd.Stdout = gz
-	var stderr strings.Builder
-	tee := newLineSink(sink, "stderr")
-	cmd.Stderr = io.MultiWriter(&stderr, tee)
-	if err := cmd.Run(); err != nil {
-		tee.Close()
-		return nil, fmt.Errorf("dump failed: %s: %w", firstLine(stderr.String()), err)
+	if err := dumpTo(ctx, eng, p.Conn, p.Database, gz, sink); err != nil {
+		return nil, err
 	}
-	tee.Close()
 	if err := gz.Close(); err != nil {
 		return nil, fmt.Errorf("compress: %w", err)
 	}
@@ -262,20 +243,73 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload, sink LogSink
 	}
 	defer gz.Close()
 
-	var stream io.Reader = gz
+	if d, ok := eng.(engine.Dumper); ok {
+		sink.Log("info", "restoring")
+		if err := d.Restore(ctx, p.Conn, p.Database, gz, func(s string) { sink.Log("info", s) }); err != nil {
+			return nil, fmt.Errorf("restore failed: %w", err)
+		}
+	} else if err := restoreWithTool(ctx, eng, p, gz, sink); err != nil {
+		return nil, err
+	}
+
+	// Verify the restore produced a schema.
+	tables, err := eng.CountTables(ctx, p.Conn, p.Database)
+	if err != nil {
+		return nil, fmt.Errorf("restore verification failed: %w", err)
+	}
+	sink.Log("info", fmt.Sprintf("restore verified: %d tables", tables))
+	return &Result{OK: true, TableCount: tables}, nil
+}
+
+// dumpTo writes a logical dump of database to w: in-process for engines that
+// implement engine.Dumper, otherwise through the engine's dump tool.
+func dumpTo(ctx context.Context, eng engine.Client, c engine.ConnParams, database string, w io.Writer, sink LogSink) error {
+	if d, ok := eng.(engine.Dumper); ok {
+		if err := d.Dump(ctx, c, database, w, func(s string) { sink.Log("info", s) }); err != nil {
+			return fmt.Errorf("dump failed: %w", err)
+		}
+		return nil
+	}
+	conn, closeTunnel, err := cliConn(ctx, c, sink)
+	if err != nil {
+		return err
+	}
+	defer closeTunnel()
+	binaries, args, env := eng.DumpArgs(conn, database)
+	bin, err := lookPath(binaries)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdout = w
+	var stderr strings.Builder
+	tee := newLineSink(sink, "stderr")
+	cmd.Stderr = io.MultiWriter(&stderr, tee)
+	if err := cmd.Run(); err != nil {
+		tee.Close()
+		return fmt.Errorf("dump failed: %s: %w", firstLine(stderr.String()), err)
+	}
+	tee.Close()
+	return nil
+}
+
+// restoreWithTool feeds a decompressed SQL dump to the engine's client tool.
+func restoreWithTool(ctx context.Context, eng engine.Client, p *Payload, gz io.Reader, sink LogSink) error {
+	stream := gz
 	if p.Engine == "postgres" {
 		stream = newPGDumpCompat(gz)
 	}
 
 	conn, closeTunnel, err := cliConn(ctx, p.Conn, sink)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer closeTunnel()
 	binaries, args, env := eng.RestoreArgs(conn, p.Database)
 	bin, err := lookPath(binaries)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	sink.Log("info", "restoring SQL stream")
 	cmd := exec.CommandContext(ctx, bin, args...)
@@ -286,17 +320,10 @@ func runRestore(ctx context.Context, eng engine.Client, p *Payload, sink LogSink
 	cmd.Stderr = io.MultiWriter(&stderr, tee)
 	if err := cmd.Run(); err != nil {
 		tee.Close()
-		return nil, fmt.Errorf("restore failed: %s: %w", firstLine(stderr.String()), err)
+		return fmt.Errorf("restore failed: %s: %w", firstLine(stderr.String()), err)
 	}
 	tee.Close()
-
-	// Verify the restore produced a schema.
-	tables, err := eng.CountTables(ctx, p.Conn, p.Database)
-	if err != nil {
-		return nil, fmt.Errorf("restore verification failed: %w", err)
-	}
-	sink.Log("info", fmt.Sprintf("restore verified: %d tables", tables))
-	return &Result{OK: true, TableCount: tables}, nil
+	return nil
 }
 
 // cliConn returns the parameters the dump/restore CLI tools should use. The

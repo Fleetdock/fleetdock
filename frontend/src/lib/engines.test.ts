@@ -10,7 +10,9 @@ describe("engines", () => {
 
   it("knows what ClickHouse lacks", () => {
     expect(engineSupports("clickhouse", "rowEditing")).toBe(false);
-    expect(engineSupports("clickhouse", "backups")).toBe(false);
+    expect(engineSupports("clickhouse", "backups")).toBe(true);
+    expect(engineSupports("clickhouse", "sqlImport")).toBe(false);
+    expect(engineSupports("clickhouse", "backupCompare")).toBe(false);
     expect(engineSupports("clickhouse", "provisioning")).toBe(false);
     expect(engineSupports("clickhouse", "structureEditing")).toBe(false);
   });

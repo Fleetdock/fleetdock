@@ -87,7 +87,7 @@ function DatabaseDetail() {
   const canOn = useCanOn();
   const scope = { databaseId: id, serverId: instance?.server_id ?? undefined };
   const canWrite = canOn("database:write", scope);
-  // Engines without backups (ClickHouse) have no backups, moves or SQL imports.
+  // Engines without backups have no backups or moves.
   const backups = engineSupports(instance?.engine, "backups");
   const canMove = canOn("backup:write", scope) && backups;
   const canAudit = useCan()("audit:read");
@@ -197,7 +197,7 @@ function DatabaseDetail() {
                     label: "Import SQL",
                     icon: <FileUp size={15} />,
                     onSelect: () => setImportOpen(true),
-                    hidden: !(canWrite && !db.system && canMove && hasCreds),
+                    hidden: !(canWrite && !db.system && canMove && hasCreds && engineSupports(instance?.engine, "sqlImport")),
                   },
                   {
                     label: "Remove database",

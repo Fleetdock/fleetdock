@@ -90,9 +90,14 @@ func (e Engine) AdminUser() string {
 	return "root"
 }
 
-// SupportsBackups reports whether Fleetdock can back up and restore the
-// engine's databases. ClickHouse has no logical dump tool Fleetdock drives yet.
-func (e Engine) SupportsBackups() bool { return e != EngineClickHouse }
+// SupportsSQLImport reports whether a .sql file can be loaded into the
+// engine's databases. Fleetdock's ClickHouse backups are not SQL, and loading
+// SQL scripts into ClickHouse is not supported yet.
+func (e Engine) SupportsSQLImport() bool { return e != EngineClickHouse }
+
+// SupportsBackupCompare reports whether a table can be compared row by row
+// with a restored backup copy (it needs row keys, which ClickHouse lacks).
+func (e Engine) SupportsBackupCompare() bool { return e != EngineClickHouse }
 
 // SupportsProvisioning reports whether Fleetdock can create the engine as a
 // container on a server.
