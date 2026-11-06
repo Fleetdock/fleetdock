@@ -17,35 +17,63 @@ import (
 type Engine string
 
 const (
-	EngineMariaDB  Engine = "mariadb"
-	EngineMySQL    Engine = "mysql"
-	EnginePostgres Engine = "postgres"
+	EngineMariaDB    Engine = "mariadb"
+	EngineMySQL      Engine = "mysql"
+	EnginePostgres   Engine = "postgres"
+	EngineClickHouse Engine = "clickhouse"
 )
 
 // Valid reports whether e is a supported engine.
 func (e Engine) Valid() bool {
 	switch e {
-	case EngineMariaDB, EngineMySQL, EnginePostgres:
+	case EngineMariaDB, EngineMySQL, EnginePostgres, EngineClickHouse:
 		return true
 	}
 	return false
 }
 
-// DefaultPort is the engine's conventional listening port.
+// DefaultPort is the engine's conventional listening port. ClickHouse is
+// reached over its HTTP interface.
 func (e Engine) DefaultPort() int {
-	if e == EnginePostgres {
+	switch e {
+	case EnginePostgres:
 		return 5432
+	case EngineClickHouse:
+		return 8123
 	}
 	return 3306
 }
 
 // AdminUser is the engine's default superuser account name.
 func (e Engine) AdminUser() string {
-	if e == EnginePostgres {
+	switch e {
+	case EnginePostgres:
 		return "postgres"
+	case EngineClickHouse:
+		return "default"
 	}
 	return "root"
 }
+
+// SupportsSQLImport reports whether a .sql file can be loaded into the
+// engine's databases. Fleetdock's ClickHouse backups are not SQL, and loading
+// SQL scripts into ClickHouse is not supported yet.
+func (e Engine) SupportsSQLImport() bool { return e != EngineClickHouse }
+
+// SupportsBackupCompare reports whether a table can be compared row by row
+// with a restored backup copy (it needs row keys, which ClickHouse lacks).
+func (e Engine) SupportsBackupCompare() bool { return e != EngineClickHouse }
+
+// CanRestoreInto reports whether a backup of an e database can be restored
+// into a target engine. ClickHouse backups are not SQL dumps, so they only
+// restore into ClickHouse, and SQL dumps never do.
+func (e Engine) CanRestoreInto(target Engine) bool {
+	return (e == EngineClickHouse) == (target == EngineClickHouse)
+}
+
+// SupportsProvisioning reports whether Fleetdock can create the engine as a
+// container on a server.
+func (e Engine) SupportsProvisioning() bool { return e != EngineClickHouse }
 
 // Kind distinguishes managed from external instances.
 type Kind string

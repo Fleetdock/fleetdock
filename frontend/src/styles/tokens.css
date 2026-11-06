@@ -61,6 +61,7 @@
   --engine-postgres: #336791;
   --engine-mysql: #00758f;
   --engine-mariadb: #a0522d;
+  --engine-clickhouse: #856600;
   --dbx-view: #7c3aed;
 
   /* SQL syntax */
@@ -152,6 +153,7 @@
   --engine-postgres: #4b7bab;
   --engine-mysql: #1188a8;
   --engine-mariadb: #b0653f;
+  --engine-clickhouse: #9a7a12;
   --dbx-view: #a78bfa;
 
   --syntax-keyword: #c4b5fd;

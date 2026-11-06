@@ -21,6 +21,7 @@ import (
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 )
 
 // Service implements backup use cases.
@@ -97,7 +98,7 @@ func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind stri
 	}
 
 	backupID := uuid.New()
-	key := backupKey(dest.Prefix, db.Name, backupID)
+	key := backupKey(dest.Prefix, db.Name, backupID, engine.DumpExtension(string(inst.Engine)))
 
 	params := operationapp.Params{
 		InstanceID:    inst.ID.String(),
@@ -191,6 +192,10 @@ func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, er
 	}
 	if !inst.HasCredentials() {
 		return nil, apperr.Invalid("target_instance_id", "the target instance has no admin credentials")
+	}
+	if src := engineOfBackup(b.Engine); !src.CanRestoreInto(inst.Engine) {
+		return nil, apperr.Invalid("target_instance_id",
+			fmt.Sprintf("a %s backup cannot be restored into a %s server", b.Engine, inst.Engine))
 	}
 
 	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
@@ -292,6 +297,9 @@ func (s *Service) RestoreCopy(ctx context.Context, backupID, copyID uuid.UUID, s
 	if !inst.HasCredentials() {
 		return nil, apperr.Invalid("backup_id", "the instance has no admin credentials")
 	}
+	if !inst.Engine.SupportsBackupCompare() {
+		return nil, apperr.Invalid("backup_id", fmt.Sprintf("tables of %s databases cannot be compared with a backup yet", inst.Engine))
+	}
 	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
 	if err != nil {
 		return nil, err
@@ -362,6 +370,9 @@ func (s *Service) ImportSQL(ctx context.Context, in ImportInput) (*jobdom.Job, e
 	}
 	if !inst.HasCredentials() {
 		return nil, apperr.Invalid("id", "the instance has no admin credentials")
+	}
+	if !inst.Engine.SupportsSQLImport() {
+		return nil, apperr.Invalid("id", fmt.Sprintf("SQL files cannot be imported into %s databases yet; use the SQL console", inst.Engine))
 	}
 	destID, err := uuid.Parse(in.DestinationID)
 	if err != nil {
@@ -489,6 +500,8 @@ func dumpTool(e instancedom.Engine) string {
 		return "pg_dump"
 	case instancedom.EngineMySQL:
 		return "mysqldump"
+	case instancedom.EngineClickHouse:
+		return clickhouseDumpTool
 	default:
 		return "mariadb-dump"
 	}
@@ -501,8 +514,20 @@ func executorFor(inst *instancedom.Instance) *uuid.UUID {
 	return nil
 }
 
-func backupKey(prefix, dbName string, id uuid.UUID) string {
-	return path.Join(prefix, "backups", dbName, id.String()+".sql.gz")
+func backupKey(prefix, dbName string, id uuid.UUID, ext string) string {
+	return path.Join(prefix, "backups", dbName, id.String()+ext)
+}
+
+// clickhouseDumpTool is the backups.engine value of a ClickHouse backup.
+const clickhouseDumpTool = "clickhouse-native"
+
+// engineOfBackup is the instance engine a backup's dump tool belongs to, as
+// far as restoring is concerned.
+func engineOfBackup(tool string) instancedom.Engine {
+	if tool == clickhouseDumpTool {
+		return instancedom.EngineClickHouse
+	}
+	return instancedom.EngineMariaDB
 }
 
 func keyFromStorageURL(storageURL, bucket string) (string, error) {

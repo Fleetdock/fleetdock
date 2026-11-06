@@ -75,10 +75,19 @@ jobs:
         ports: ["54329:5432"]
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 20
+      clickhouse:
+        image: clickhouse/clickhouse-server:25.8
+        env: {CLICKHOUSE_PASSWORD: rootpw, CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"}
+        ports: ["18123:8123"]
+        options: >-
+          --ulimit nofile=262144:262144
+          --health-cmd "wget -qO- http://127.0.0.1:8123/ping"
+          --health-interval 5s --health-timeout 5s --health-retries 30
     env:
       FLEETDOCK_IT_MARIADB: 127.0.0.1:33061
       FLEETDOCK_IT_MYSQL: 127.0.0.1:33062
       FLEETDOCK_IT_POSTGRES: 127.0.0.1:54329
+      FLEETDOCK_IT_CLICKHOUSE: 127.0.0.1:18123
       FLEETDOCK_IT_PASSWORD: rootpw
     steps:
       - uses: actions/checkout@v7

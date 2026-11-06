@@ -52,6 +52,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
+import { engineSupports } from "@/lib/engines";
 
 /** Rows a statement may return, as offered in the console (the API caps it at 5000). */
 const ROW_LIMITS = [200, 1000, 5000] as const;
@@ -250,7 +251,9 @@ export function QueryConsole({
             </span>
             <HelpText label="About the SQL console">
               {canWrite
-                ? 'Several statements separated by ";" run in order on one session. You are asked to confirm before anything writes; Preview runs a script and rolls it back.'
+                ? engineSupports(engine, "preview")
+                  ? 'Several statements separated by ";" run in order on one session. You are asked to confirm before anything writes; Preview runs a script and rolls it back.'
+                  : 'Several statements separated by ";" run in order on one session. You are asked to confirm before anything writes. There are no transactions here: statements that ran stay applied even if a later one fails.'
                 : "Run read-only SQL against this database. You do not have write access."}
             </HelpText>
             <Button
@@ -323,7 +326,7 @@ export function QueryConsole({
                 Cancel
               </Button>
             ) : null}
-            {canWrite && writeStatements(sql).length > 0 ? (
+            {canWrite && engineSupports(engine, "preview") && writeStatements(sql).length > 0 ? (
               <Button
                 size="sm"
                 icon={<FlaskConical size={14} aria-hidden />}
@@ -334,25 +337,29 @@ export function QueryConsole({
                 Preview
               </Button>
             ) : null}
-            <Button
-              size="sm"
-              icon={<ListTree size={14} aria-hidden />}
-              loading={explain.isPending}
-              onClick={() => void onExplain(false)}
-              disabled={run.isPending || !sql.trim()}
-              title="Show how the database would run this statement, without running it"
-            >
-              Explain
-            </Button>
-            <Button
-              size="sm"
-              icon={<Gauge size={14} aria-hidden />}
-              onClick={() => void onExplain(true)}
-              disabled={run.isPending || explain.isPending || !sql.trim()}
-              title="Run this read and show where the time went (rolled back)"
-            >
-              Analyze
-            </Button>
+            {engineSupports(engine, "insights") ? (
+              <>
+                <Button
+                  size="sm"
+                  icon={<ListTree size={14} aria-hidden />}
+                  loading={explain.isPending}
+                  onClick={() => void onExplain(false)}
+                  disabled={run.isPending || !sql.trim()}
+                  title="Show how the database would run this statement, without running it"
+                >
+                  Explain
+                </Button>
+                <Button
+                  size="sm"
+                  icon={<Gauge size={14} aria-hidden />}
+                  onClick={() => void onExplain(true)}
+                  disabled={run.isPending || explain.isPending || !sql.trim()}
+                  title="Run this read and show where the time went (rolled back)"
+                >
+                  Analyze
+                </Button>
+              </>
+            ) : null}
             <Button
               size="sm"
               variant="primary"

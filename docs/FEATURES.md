@@ -58,8 +58,8 @@ Backend (Go):
 - **Servers & agents** — one-command install, single-use registration tokens,
   agent enrollment + bearer-token auth, heartbeats + health snapshots,
   offline detection.
-- **Instances** — managed & external, engine field (MariaDB, MySQL or
-  PostgreSQL, via a pluggable engine registry), encrypted admin credentials, connection test, import
+- **Instances** — managed & external, engine field (MariaDB, MySQL,
+  PostgreSQL or ClickHouse, via a pluggable engine registry), encrypted admin credentials, connection test, import
   of existing databases.
 - **Databases** — create (physical when credentials exist) / list / lock /
   unlock / soft-delete (7-day recovery window).
@@ -80,6 +80,28 @@ Backend (Go):
 - **Profile** — self-service name/email update and password change (requires
   the current password). Suspended accounts cannot log in and existing
   sessions/tokens stop working immediately.
+- **ClickHouse** — connect existing ClickHouse servers over the HTTP
+  interface (8123, or 8443 with TLS; directly or via an SSH tunnel). Health
+  checks, database import/create/drop, SQL console (one server session per
+  run, so `SET` and temporary tables carry over; no transactions, so earlier
+  statements stay applied if a later one fails), a read-only data browser
+  (filters, search, sort, CSV export; values bound as typed query
+  parameters), table structure and DDL, views, autocompletion and schema
+  search, accounts and grants (MySQL-style privilege names are mapped, e.g.
+  `DELETE` → `ALTER DELETE`; ones without an equivalent are refused),
+  application credentials, and monitoring (running queries with cancel,
+  `system.metrics`, `system.server_settings`, database sizes). Read-only
+  logins are pinned to `readonly = 2`. Backups (manual, scheduled, verified,
+  restored, moved, downloaded) use Fleetdock's own dump, written over the
+  HTTP interface with no tool to install: definitions plus Native-format rows
+  of data-holding tables and materialized views (`.fdch.gz`). Each table is
+  read in one query (one snapshot per table, none across tables). Restoring
+  under a new name repoints views and restores `Replicated*MergeTree` tables
+  as plain `*MergeTree`. Credentials the server masks in definitions are
+  reported in the backup log and are only included when the server shows
+  secrets. Not yet supported: row editing, SQL file import, comparing a table
+  with a backup, provisioning ClickHouse as a container, structure editing,
+  write previews and query insights.
 - **Live DB administration** — for **MariaDB, MySQL, and PostgreSQL**:
   - accounts and grants: list/create/drop users (MariaDB `user@host`,
     PostgreSQL roles), set passwords, view grants, grant/revoke schema

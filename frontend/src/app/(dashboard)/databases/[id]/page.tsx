@@ -51,6 +51,7 @@ import {
   Table2,
   Trash2,
 } from "lucide-react";
+import { engineSupports } from "@/lib/engines";
 
 const formatBytes = (n: number) => formatBytesOr(n, "0 B");
 
@@ -86,7 +87,9 @@ function DatabaseDetail() {
   const canOn = useCanOn();
   const scope = { databaseId: id, serverId: instance?.server_id ?? undefined };
   const canWrite = canOn("database:write", scope);
-  const canMove = canOn("backup:write", scope);
+  // Engines without backups have no backups or moves.
+  const backups = engineSupports(instance?.engine, "backups");
+  const canMove = canOn("backup:write", scope) && backups;
   const canAudit = useCan()("audit:read");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -194,7 +197,7 @@ function DatabaseDetail() {
                     label: "Import SQL",
                     icon: <FileUp size={15} />,
                     onSelect: () => setImportOpen(true),
-                    hidden: !(canWrite && !db.system && canMove && hasCreds),
+                    hidden: !(canWrite && !db.system && canMove && hasCreds && engineSupports(instance?.engine, "sqlImport")),
                   },
                   {
                     label: "Remove database",
@@ -262,7 +265,7 @@ function DatabaseDetail() {
           tabs={[
             { id: "overview", label: "Overview" },
             { id: "connection", label: "Connection" },
-            { id: "backups", label: "Backups" },
+            { id: "backups", label: "Backups", hidden: !backups },
             { id: "users", label: "Access", hidden: !hasCreds },
             { id: "schema", label: "Schema", hidden: !hasCreds },
           ]}
@@ -270,7 +273,7 @@ function DatabaseDetail() {
 
         <div id="database-tabpanel" role="tabpanel" aria-label={TAB_LABEL[tab]} className="db-tab-panel">
           {tab === "overview" ? (
-            <DatabaseOverview database={db} hasCreds={hasCreds} canBackup={canMove} tabHref={tabHref} />
+            <DatabaseOverview database={db} hasCreds={hasCreds} canBackup={canMove} backups={backups} tabHref={tabHref} />
           ) : tab === "connection" ? (
             <>
               <ConnectivitySection databaseId={id} databaseName={db.name} canWrite={canWrite} />
