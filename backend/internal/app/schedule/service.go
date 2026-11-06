@@ -18,6 +18,8 @@ import (
 // BackupRunner triggers a scheduled backup (satisfied by *backupapp.Service).
 type BackupRunner interface {
 	TriggerScheduled(ctx context.Context, databaseID, destinationID, scheduleID uuid.UUID, retentionDays int, createdBy *uuid.UUID) error
+	// CheckBackupable refuses databases whose engine cannot be backed up.
+	CheckBackupable(ctx context.Context, databaseID uuid.UUID) error
 }
 
 // Service implements backup-schedule use cases.
@@ -54,6 +56,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*scheduledom.Sche
 		return nil, apperr.Invalid("destination_id", "destination_id must be a valid UUID")
 	}
 	if _, err := s.databases.GetByID(ctx, dbID); err != nil {
+		return nil, err
+	}
+	if err := s.backups.CheckBackupable(ctx, dbID); err != nil {
 		return nil, err
 	}
 	if _, err := s.dests.GetByID(ctx, destID); err != nil {

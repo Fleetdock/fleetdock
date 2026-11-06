@@ -121,8 +121,16 @@ type DBObject struct {
 	Definition *string `json:"definition"`
 }
 
+// ObjectReader lists a database's foreign keys and non-table objects. It is
+// read-only, so engines without DDL editing (ClickHouse) can still offer it.
+type ObjectReader interface {
+	ForeignKeys(ctx context.Context, p ConnParams, database, table string) ([]ForeignKey, error)
+	Objects(ctx context.Context, p ConnParams, database string) ([]DBObject, error)
+}
+
 // Structure is the DDL surface of an engine.
 type Structure interface {
+	ObjectReader
 	CreateTable(ctx context.Context, p ConnParams, database string, spec TableSpec) error
 	AlterTable(ctx context.Context, p ConnParams, database, table string, ops []AlterOp) error
 	DropTable(ctx context.Context, p ConnParams, database, table string) error
@@ -130,8 +138,6 @@ type Structure interface {
 	RenameTable(ctx context.Context, p ConnParams, database, table, newName string) error
 	CreateIndex(ctx context.Context, p ConnParams, database, table string, spec IndexSpec) error
 	DropIndex(ctx context.Context, p ConnParams, database, table, index string) error
-	ForeignKeys(ctx context.Context, p ConnParams, database, table string) ([]ForeignKey, error)
-	Objects(ctx context.Context, p ConnParams, database string) ([]DBObject, error)
 }
 
 // StructureFor returns the DDL surface for the engine name.

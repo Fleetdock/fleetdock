@@ -1,6 +1,6 @@
 // Package engine abstracts database-engine-specific operations behind a
 // small interface so the control plane and agent stay engine-agnostic.
-// MariaDB/MySQL and PostgreSQL register Client implementations; live
+// MariaDB/MySQL, PostgreSQL and ClickHouse register Client implementations; live
 // administration (Admin) is implemented per engine in *_admin.go.
 package engine
 
@@ -103,8 +103,9 @@ type Client interface {
 // (information_schema, performance_schema) are not listed at all — they cannot
 // be dumped, so importing them would only produce backups that always fail.
 var systemDatabases = map[string]map[string]bool{
-	"postgres": {"postgres": true},
-	"mysql":    {"mysql": true, "sys": true},
+	"postgres":   {"postgres": true},
+	"mysql":      {"mysql": true, "sys": true},
+	"clickhouse": chSystemDatabases,
 }
 
 // IsSystemDatabase reports whether name is an engine-owned database that must

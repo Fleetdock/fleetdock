@@ -74,10 +74,7 @@ func secretRef(db *databasedom.Database, mode dbaccessdom.Mode) string {
 }
 
 func secretKind(inst *instancedom.Instance) secretdom.Kind {
-	if inst.Engine == instancedom.EnginePostgres {
-		return secretdom.KindPostgresUser
-	}
-	return secretdom.KindMariaDBUser
+	return secretdom.UserKind(string(inst.Engine))
 }
 
 // Conn returns connection parameters for the database's console role of the

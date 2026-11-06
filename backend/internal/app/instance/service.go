@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"time"
 
@@ -227,6 +228,9 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 	eng := instancedom.Engine(in.Engine)
 	if eng == "" {
 		eng = instancedom.EngineMariaDB
+	}
+	if !eng.SupportsProvisioning() {
+		return nil, nil, apperr.Invalid("engine", fmt.Sprintf("Fleetdock cannot create %s instances yet; connect an existing server instead", eng))
 	}
 	inst, err := instancedom.NewProvisioned(serverID, in.Name, eng, in.EngineVersion, in.Port)
 	if err != nil {

@@ -5,8 +5,8 @@
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](backend/go.mod)
 [![Website](https://img.shields.io/badge/website-fleetdock.dev-0ea5e9)](https://fleetdock.dev)
 
-An open-source, self-hosted **dashboard for your databases** — MariaDB, MySQL
-and PostgreSQL. Manage database servers, databases, users and backups from one
+An open-source, self-hosted **dashboard for your databases** — MariaDB, MySQL,
+PostgreSQL and ClickHouse. Manage database servers, databases, users and backups from one
 place instead of SSH, without handing your credentials to a SaaS vendor.
 
 <picture>
@@ -105,9 +105,10 @@ Your browser ──HTTPS──► Fleetdock (dashboard + API, one container)
 ```
 
 - **Server** — a machine running the Fleetdock agent.
-- **Database server** (an _instance_ in the API) — one MariaDB, MySQL or
-  PostgreSQL process: created by Fleetdock on one of your servers, already
-  running there, or reachable anywhere over the network.
+- **Database server** (an _instance_ in the API) — one MariaDB, MySQL,
+  PostgreSQL or ClickHouse process: created by Fleetdock on one of your
+  servers (not ClickHouse yet), already running there, or reachable anywhere
+  over the network.
 - **Database** — found automatically on each database server Fleetdock has a
   login for.
 - **Backup storage** — an S3, Cloudflare R2 or S3-compatible bucket. Stored

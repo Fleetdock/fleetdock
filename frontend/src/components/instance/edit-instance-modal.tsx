@@ -11,6 +11,7 @@ import { fieldError } from "@/lib/errors";
 import { useUpdateInstance } from "@/lib/hooks";
 import { sshChanged, sshDraft, sshInput } from "@/lib/ssh-tunnel";
 import type { Instance, TLSMode, UpdateInstanceInput } from "@/lib/types";
+import { ENGINES, type EngineId } from "@/lib/engines";
 
 /** EditInstanceModal edits a database server's connection and logins. Pass null to close it. */
 export function EditInstanceModal({
@@ -162,7 +163,7 @@ export function EditInstanceModal({
               className="input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder={instance.engine === "postgres" ? "postgres" : "root"}
+              placeholder={ENGINES[instance.engine as EngineId]?.adminUser ?? "root"}
               autoComplete="off"
             />
           </Field>

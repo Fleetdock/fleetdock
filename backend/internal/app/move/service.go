@@ -8,6 +8,7 @@ package moveapp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
@@ -72,6 +73,9 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*jobdom.Job, error)
 	}
 	if !tgt.HasCredentials() {
 		return nil, apperr.Invalid("target_instance_id", "the target instance has no admin credentials")
+	}
+	if !tgt.Engine.SupportsBackups() {
+		return nil, apperr.Invalid("target_instance_id", fmt.Sprintf("databases cannot be moved to %s yet", tgt.Engine))
 	}
 	targetName := in.TargetDatabase
 	if targetName == "" {
