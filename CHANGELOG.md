@@ -27,10 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are never followed and only ClickHouse's own error text is shown. Not
   available on ClickHouse yet, and refused by the API: editing rows (its
   `UPDATE`/`DELETE` are asynchronous mutations; use the SQL console), SQL
-  file imports, comparing a table with a backup, creating ClickHouse
-  servers as containers, public access through the gateway, table-structure
-  editing, write previews and query insights. Migration
-  `0030` adds the engine, its secret kind and its connectivity protocol.
+  file imports, comparing a table with a backup, public access through the
+  gateway, table-structure editing, write previews and query insights.
+  Migration `0030` adds the engine, its secret kind and its connectivity
+  protocol.
 - **ClickHouse backups.** Backups, scheduled backups, retention, restores
   (under the same or a new name, onto any ClickHouse server), verification,
   moves and one-off dump downloads now work on ClickHouse. ClickHouse has no
@@ -55,6 +55,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`display_secrets_in_show_and_select`). ClickHouse backups restore only into
   ClickHouse, and SQL dumps never into it; the API refuses both. Migration
   `0031` records the new dump tool.
+- **Create ClickHouse servers.** **Servers → (a server) → Create database
+  server** now offers ClickHouse (25.8, 25.3, 24.8): the agent runs the
+  official `clickhouse` image with a persistent volume, a generated password
+  for the `default` login (with SQL-driven account management, so console
+  roles and credentials work), the recommended open-files limit, and its
+  HTTP interface published on the port you pick. The operation succeeds only
+  once the server answers, so a container that fails to start fails the
+  operation instead of appearing as running. Start, stop, restart and remove
+  work as for the other engines.
 
 ## [0.11.0] - 2026-11-11
 

@@ -46,8 +46,8 @@ export const ENGINES: Record<EngineId, EngineInfo> = {
     versions: ["25.8", "25.3", "24.8"],
     port: 8443,
     adminUser: "default",
-    lacks: ["rowEditing", "sqlImport", "backupCompare", "provisioning", "structureEditing", "preview", "insights"],
-    portHint: "The HTTP interface: 8443 with TLS, or 8123 without.",
+    lacks: ["rowEditing", "sqlImport", "backupCompare", "structureEditing", "preview", "insights"],
+    portHint: "The HTTP interface: 8443 with TLS, or 8123 without. A server Fleetdock creates serves plain HTTP on the port you pick.",
     defaultTLS: "require",
   },
 };

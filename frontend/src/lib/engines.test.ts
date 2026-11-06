@@ -13,7 +13,7 @@ describe("engines", () => {
     expect(engineSupports("clickhouse", "backups")).toBe(true);
     expect(engineSupports("clickhouse", "sqlImport")).toBe(false);
     expect(engineSupports("clickhouse", "backupCompare")).toBe(false);
-    expect(engineSupports("clickhouse", "provisioning")).toBe(false);
+    expect(engineSupports("clickhouse", "provisioning")).toBe(true);
     expect(engineSupports("clickhouse", "structureEditing")).toBe(false);
   });
 

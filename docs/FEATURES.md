@@ -109,8 +109,11 @@ Backend (Go):
   leaves out streaming tables (Kafka, S3Queue, ...) and the views reading
   them. Credentials the server masks in definitions are
   reported in the backup log and are only included when the server shows
-  secrets. Not yet supported: row editing, SQL file import, comparing a table
-  with a backup, provisioning ClickHouse as a container, public access
+  secrets. Fleetdock can also create ClickHouse servers on a connected server
+  (official `clickhouse` image, persistent volume, generated `default`
+  password with SQL account management, HTTP interface on the chosen port;
+  the operation waits until the server answers). Not yet supported: row
+  editing, SQL file import, comparing a table with a backup, public access
   through the gateway, structure editing, write previews and query insights.
 - **Live DB administration** — for **MariaDB, MySQL, and PostgreSQL**:
   - accounts and grants: list/create/drop users (MariaDB `user@host`,

@@ -99,10 +99,6 @@ func (e Engine) SupportsSQLImport() bool { return e != EngineClickHouse }
 // with a restored backup copy (it needs row keys, which ClickHouse lacks).
 func (e Engine) SupportsBackupCompare() bool { return e != EngineClickHouse }
 
-// SupportsProvisioning reports whether Fleetdock can create the engine as a
-// container on a server.
-func (e Engine) SupportsProvisioning() bool { return e != EngineClickHouse }
-
 // Kind distinguishes managed from external instances.
 type Kind string
 
