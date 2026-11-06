@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ClickHouse database servers.** Connect an existing ClickHouse server
+  (self-hosted or ClickHouse Cloud) under **Databases → Connect database
+  server**. Fleetdock reaches it over the HTTP interface (port 8123, or
+  8443 with TLS), directly or through an SSH tunnel. What works: connection
+  test and health checks, importing, creating and dropping databases, the
+  SQL console, a **read-only** data browser (filters, search, sort, CSV
+  export), table structure and DDL, views, editor autocompletion and schema
+  search, accounts and grants, application credentials (readonly /
+  readwrite / admin), and monitoring (running queries with cancel, metrics,
+  server settings, per-database size). Read-only console logins are also
+  pinned to ClickHouse's `readonly` mode, so the server refuses their writes.
+  Not available on ClickHouse yet, and refused by the API: editing rows (its
+  `UPDATE`/`DELETE` are asynchronous mutations; use the SQL console),
+  backups, restores, schedules, moves, dumps and SQL imports, creating
+  ClickHouse servers as containers, table-structure editing, write previews
+  and query insights. Migration `0030` adds the engine, its secret kind and
+  its connectivity protocol.
 - **Choose PostgreSQL schemas.** In databases with several schemas, the
   data browser's table tree and the ER diagram show the schemas you pick
   (a picker above the table search and in the diagram's toolbar: tick

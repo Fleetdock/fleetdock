@@ -549,7 +549,7 @@ components:
           type: string
         engine:
           type: string
-          enum: [mariadb, mysql, postgres]
+          enum: [mariadb, mysql, postgres, clickhouse]
         kind:
           type: string
           enum: [managed, external]
@@ -2293,7 +2293,10 @@ paths:
                 server_id: {type: string, format: uuid}
                 host: {type: string}
                 name: {type: string}
-                engine: {type: string, enum: [mariadb, mysql, postgres]}
+                engine:
+                  type: string
+                  enum: [mariadb, mysql, postgres, clickhouse]
+                  description: ClickHouse is reached over its HTTP interface (port 8123, or 8443 with TLS).
                 engine_version: {type: string}
                 port: {type: integer}
                 username: {type: string}

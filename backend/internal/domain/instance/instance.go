@@ -17,35 +17,51 @@ import (
 type Engine string
 
 const (
-	EngineMariaDB  Engine = "mariadb"
-	EngineMySQL    Engine = "mysql"
-	EnginePostgres Engine = "postgres"
+	EngineMariaDB    Engine = "mariadb"
+	EngineMySQL      Engine = "mysql"
+	EnginePostgres   Engine = "postgres"
+	EngineClickHouse Engine = "clickhouse"
 )
 
 // Valid reports whether e is a supported engine.
 func (e Engine) Valid() bool {
 	switch e {
-	case EngineMariaDB, EngineMySQL, EnginePostgres:
+	case EngineMariaDB, EngineMySQL, EnginePostgres, EngineClickHouse:
 		return true
 	}
 	return false
 }
 
-// DefaultPort is the engine's conventional listening port.
+// DefaultPort is the engine's conventional listening port. ClickHouse is
+// reached over its HTTP interface.
 func (e Engine) DefaultPort() int {
-	if e == EnginePostgres {
+	switch e {
+	case EnginePostgres:
 		return 5432
+	case EngineClickHouse:
+		return 8123
 	}
 	return 3306
 }
 
 // AdminUser is the engine's default superuser account name.
 func (e Engine) AdminUser() string {
-	if e == EnginePostgres {
+	switch e {
+	case EnginePostgres:
 		return "postgres"
+	case EngineClickHouse:
+		return "default"
 	}
 	return "root"
 }
+
+// SupportsBackups reports whether Fleetdock can back up and restore the
+// engine's databases. ClickHouse has no logical dump tool Fleetdock drives yet.
+func (e Engine) SupportsBackups() bool { return e != EngineClickHouse }
+
+// SupportsProvisioning reports whether Fleetdock can create the engine as a
+// container on a server.
+func (e Engine) SupportsProvisioning() bool { return e != EngineClickHouse }
 
 // Kind distinguishes managed from external instances.
 type Kind string

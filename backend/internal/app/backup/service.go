@@ -78,6 +78,29 @@ func (s *Service) TriggerScheduled(ctx context.Context, databaseID, destinationI
 	return err
 }
 
+// requireBackups refuses backup, restore and SQL import on engines Fleetdock
+// cannot dump or load.
+func requireBackups(inst *instancedom.Instance, field string) error {
+	if !inst.Engine.SupportsBackups() {
+		return apperr.Invalid(field, fmt.Sprintf("backups, restores and SQL imports are not supported for %s yet", inst.Engine))
+	}
+	return nil
+}
+
+// CheckBackupable reports whether a database can be backed up, so a schedule
+// is refused when it is created rather than failing at every run.
+func (s *Service) CheckBackupable(ctx context.Context, databaseID uuid.UUID) error {
+	db, err := s.databases.GetByID(ctx, databaseID)
+	if err != nil {
+		return err
+	}
+	inst, err := s.instances.GetByID(ctx, db.InstanceID)
+	if err != nil {
+		return err
+	}
+	return requireBackups(inst, "database_id")
+}
+
 func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind string, scheduleID *uuid.UUID, expiresAt *time.Time, move *MoveSpec, createdBy *uuid.UUID) (*backupdom.Backup, *jobdom.Job, error) {
 	db, err := s.databases.GetByID(ctx, dbID)
 	if err != nil {
@@ -90,6 +113,9 @@ func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind stri
 	if !inst.HasCredentials() {
 		return nil, nil, apperr.Invalid("database_id",
 			"the instance has no admin credentials; add a username/password to the instance to enable backups")
+	}
+	if err := requireBackups(inst, "database_id"); err != nil {
+		return nil, nil, err
 	}
 	dest, err := s.dests.GetByID(ctx, destID)
 	if err != nil {
@@ -192,6 +218,9 @@ func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, er
 	if !inst.HasCredentials() {
 		return nil, apperr.Invalid("target_instance_id", "the target instance has no admin credentials")
 	}
+	if err := requireBackups(inst, "target_instance_id"); err != nil {
+		return nil, err
+	}
 
 	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
 	if err != nil {
@@ -244,6 +273,9 @@ func (s *Service) Verify(ctx context.Context, backupID string, createdBy *uuid.U
 	}
 	if !inst.HasCredentials() {
 		return nil, apperr.Invalid("id", "the instance has no admin credentials")
+	}
+	if err := requireBackups(inst, "id"); err != nil {
+		return nil, err
 	}
 	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
 	if err != nil {
@@ -362,6 +394,9 @@ func (s *Service) ImportSQL(ctx context.Context, in ImportInput) (*jobdom.Job, e
 	}
 	if !inst.HasCredentials() {
 		return nil, apperr.Invalid("id", "the instance has no admin credentials")
+	}
+	if err := requireBackups(inst, "id"); err != nil {
+		return nil, err
 	}
 	destID, err := uuid.Parse(in.DestinationID)
 	if err != nil {

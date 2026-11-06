@@ -24,10 +24,11 @@ import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { useKillProcess, useProcesses, useServerStatus, useServerVariables } from "@/lib/hooks";
 import type { InstanceHealth, Process, Setting } from "@/lib/types";
+import { engineSupports } from "@/lib/engines";
 
 type Tab = "sessions" | "queries" | "status" | "variables";
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: Tab; label: string; hidden?: boolean }[] = [
   { id: "sessions", label: "Sessions" },
   { id: "queries", label: "Top queries" },
   { id: "status", label: "Status" },
@@ -61,14 +62,24 @@ export function HealthBadge({ health }: { health?: InstanceHealth | null }) {
  * cancel / terminate), most expensive statements, status counters and
  * configuration.
  */
-export function InstanceMonitoring({ instanceId, canKill }: { instanceId: string; canKill: boolean }) {
+export function InstanceMonitoring({
+  instanceId,
+  canKill,
+  engine,
+}: {
+  instanceId: string;
+  canKill: boolean;
+  /** The instance's engine id; top queries need the engine's insights. */
+  engine?: string;
+}) {
   const [tab, setTab] = useState<Tab>("sessions");
+  const tabs = TABS.map((t) => (t.id === "queries" ? { ...t, hidden: !engineSupports(engine, "insights") } : t));
   const panelId = useId();
   const current = TABS.find((t) => t.id === tab)!;
   return (
     <section className="section">
       <SectionHeader title="Monitoring" description="Live activity and configuration, read directly from the server." />
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="Monitoring views" panelId={panelId} />
+      <Tabs tabs={tabs} value={tab} onChange={setTab} label="Monitoring views" panelId={panelId} />
       <div id={panelId} role="tabpanel" aria-label={current.label} className="mt-3">
         {tab === "sessions" ? <Sessions instanceId={instanceId} canKill={canKill} /> : null}
         {tab === "queries" ? <TopQueriesView instanceId={instanceId} /> : null}
