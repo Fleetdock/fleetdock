@@ -13,7 +13,7 @@ func TestDumpFilename(t *testing.T) {
 		"":           "table-20261012-143005.sql.gz",
 	}
 	for in, want := range cases {
-		if got := dumpFilename(in, at); got != want {
+		if got := dumpFilename(in, ".sql.gz", at); got != want {
 			t.Errorf("dumpFilename(%q) = %q, want %q", in, got, want)
 		}
 	}

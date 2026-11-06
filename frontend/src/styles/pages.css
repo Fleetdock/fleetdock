@@ -178,6 +178,9 @@
   .dbx-engine-mariadb {
     background: var(--engine-mariadb);
   }
+  .dbx-engine-clickhouse {
+    background: var(--engine-clickhouse);
+  }
 
   /* ---- metric charts ---- */
   .chart-card {

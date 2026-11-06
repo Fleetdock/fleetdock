@@ -49,7 +49,7 @@ export default function LoginPage() {
           <ul className="auth-points">
             <li>
               <Database size={16} aria-hidden />
-              MariaDB, MySQL and PostgreSQL in one dashboard
+              MariaDB, MySQL, PostgreSQL and ClickHouse in one dashboard
             </li>
             <li>
               <Archive size={16} aria-hidden />

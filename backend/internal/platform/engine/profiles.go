@@ -194,6 +194,8 @@ func RotatePassword(ctx context.Context, admin Admin, p ConnParams, user, host, 
 		_, err = conn.Exec(ctx, fmt.Sprintf(
 			"ALTER ROLE %s WITH PASSWORD %s", quotePGIdent(user), pgPasswordLiteral(password)))
 		return err
+	case *ClickHouse:
+		return a.setPassword(ctx, p, user, password)
 	default:
 		return fmt.Errorf("engine does not support password rotation")
 	}

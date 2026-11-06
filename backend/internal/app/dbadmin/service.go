@@ -862,6 +862,14 @@ func structure(admin engine.Admin) (engine.Structure, error) {
 	return st, nil
 }
 
+func objectReader(admin engine.Admin) (engine.ObjectReader, error) {
+	r, ok := admin.(engine.ObjectReader)
+	if !ok {
+		return nil, apperr.Invalid("engine", "this engine does not support listing schema objects")
+	}
+	return r, nil
+}
+
 // withStructure runs a DDL change as the database's read-write role.
 func (s *Service) withStructure(ctx context.Context, databaseID string,
 	fn func(ctx context.Context, st engine.Structure, conn engine.ConnParams, db string) error) error {
@@ -951,11 +959,11 @@ func (s *Service) ForeignKeys(ctx context.Context, databaseID, table string) ([]
 	var out []engine.ForeignKey
 	err := s.scoped(ctx, databaseID, dbaccessdom.ModeRead, opTimeout,
 		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			st, err := structure(admin)
+			r, err := objectReader(admin)
 			if err != nil {
 				return err
 			}
-			out, err = st.ForeignKeys(ctx, conn, db.Name, table)
+			out, err = r.ForeignKeys(ctx, conn, db.Name, table)
 			return err
 		})
 	return out, err
@@ -966,11 +974,11 @@ func (s *Service) Objects(ctx context.Context, databaseID string) ([]engine.DBOb
 	var out []engine.DBObject
 	err := s.scoped(ctx, databaseID, dbaccessdom.ModeRead, opTimeout,
 		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
-			st, err := structure(admin)
+			r, err := objectReader(admin)
 			if err != nil {
 				return err
 			}
-			out, err = st.Objects(ctx, conn, db.Name)
+			out, err = r.Objects(ctx, conn, db.Name)
 			return err
 		})
 	return out, err
@@ -1070,14 +1078,18 @@ func (s *Service) CheckDump(ctx context.Context, databaseID string) error {
 // Dump streams a gzip-compressed SQL dump of the database to w without
 // storing it anywhere. onStart receives the database name just before the
 // first byte is written.
-func (s *Service) Dump(ctx context.Context, databaseID string, w io.Writer, onStart func(dbName string)) error {
+//
+// onStart also receives the dump's file extension (".sql.gz", or ".fdch.gz"
+// for ClickHouse).
+func (s *Service) Dump(ctx context.Context, databaseID string, w io.Writer, onStart func(dbName, ext string)) error {
 	db, engineName, conn, err := s.dumpTarget(ctx, databaseID)
 	if err != nil {
 		return err
 	}
 	cctx, cancel := context.WithTimeout(ctx, dumpTimeout)
 	defer cancel()
-	if err := executor.Dump(cctx, engineName, conn, db.Name, w, func() { onStart(db.Name) }); err != nil {
+	ext := engine.DumpExtension(engineName)
+	if err := executor.Dump(cctx, engineName, conn, db.Name, w, func() { onStart(db.Name, ext) }); err != nil {
 		return apperr.Invalid("database", err.Error())
 	}
 	return nil

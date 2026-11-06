@@ -27,6 +27,10 @@ func IsPermissionDenied(err error) bool {
 	if errors.As(err, &pg) {
 		return pg.Code == "42501" // insufficient_privilege
 	}
+	var ch *ClickHouseError
+	if errors.As(err, &ch) {
+		return ch.Code == chAccessDenied
+	}
 	return false
 }
 
@@ -42,6 +46,13 @@ func IsLoginRejected(err error) bool {
 	if errors.As(err, &pg) {
 		// invalid_authorization_specification, invalid_password
 		return pg.Code == "28000" || pg.Code == "28P01"
+	}
+	var ch *ClickHouseError
+	if errors.As(err, &ch) {
+		switch ch.Code {
+		case chAuthenticationFailed, chUnknownUser, chWrongPassword, chRequiredPassword, chIPAddressNotAllowed:
+			return true
+		}
 	}
 	return false
 }

@@ -60,7 +60,10 @@ func connectionFailure(err error) (string, bool) {
 	// "Access denied for user" and must stay visible, so match the login form.
 	case strings.Contains(msg, "password authentication failed"),
 		strings.Contains(msg, "access denied for user") && strings.Contains(msg, "(using password"),
-		strings.Contains(msg, "no pg_hba.conf entry"):
+		strings.Contains(msg, "no pg_hba.conf entry"),
+		// ClickHouse: "user: Authentication failed: password is incorrect, or
+		// there is no user with such name."
+		strings.Contains(msg, "authentication failed: password is incorrect"):
 		return "the database rejected the login; check the username, password and allowed hosts", true
 	case strings.Contains(msg, "host is not allowed"):
 		return "this database host is not allowed", true

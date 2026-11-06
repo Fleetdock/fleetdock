@@ -41,6 +41,7 @@ import { buildItems, ObjectTree, type ObjectTreeHandle } from "./object-tree";
 import { TabBar, type CloseKind } from "./tab-bar";
 import { ObjectTab } from "./object-tab";
 import { TableTab } from "./table-tab";
+import { engineSupports } from "@/lib/engines";
 
 const MIN_SIDE = 200;
 const MAX_SIDE = 520;
@@ -475,7 +476,7 @@ function Workspace({
       error={listError ? (listError as Error).message : undefined}
       dialect={dialect}
       activeName={activeTab && activeTab.kind !== "query" ? activeTab.name : null}
-      canWrite={canWrite && !db.system}
+      canWrite={canWrite && !db.system && engineSupports(db.instance?.engine, "structureEditing")}
       onOpen={open}
       onNewQuery={newQuery}
       onCreateTable={() => setCreating(true)}
@@ -592,6 +593,7 @@ function TabContent({
       active={active}
       canWrite={canWrite}
       canBackup={canBackup}
+      engine={db.instance?.engine}
       dialect={dialect}
       dispatch={dispatch}
       onDirty={onDirty}
