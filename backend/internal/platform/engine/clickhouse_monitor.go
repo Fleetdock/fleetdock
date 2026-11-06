@@ -45,10 +45,14 @@ func (c *ClickHouse) KillProcess(ctx context.Context, p ConnParams, id int64, _ 
 
 // ServerStatus reports the server's current metrics plus version and uptime.
 func (c *ClickHouse) ServerStatus(ctx context.Context, p ConnParams) ([]Setting, error) {
+	// UNION ALL branches arrive in any order, so order explicitly: version
+	// and uptime first, then the metrics by name.
 	rows, err := c.rows(ctx, p, chRequest{query: `
-		SELECT 'Version', version()
-		UNION ALL SELECT 'Uptime', toString(uptime())
-		UNION ALL SELECT metric, toString(value) FROM (SELECT metric, value FROM system.metrics ORDER BY metric)`})
+		SELECT name, value FROM (
+			SELECT 0 AS o, 'Version' AS name, version() AS value
+			UNION ALL SELECT 1, 'Uptime', toString(uptime())
+			UNION ALL SELECT 2, metric, toString(value) FROM system.metrics
+		) ORDER BY o, name`})
 	if err != nil {
 		return nil, err
 	}
