@@ -71,10 +71,6 @@ func (e Engine) CanRestoreInto(target Engine) bool {
 	return (e == EngineClickHouse) == (target == EngineClickHouse)
 }
 
-// SupportsProvisioning reports whether Fleetdock can create the engine as a
-// container on a server.
-func (e Engine) SupportsProvisioning() bool { return e != EngineClickHouse }
-
 // Kind distinguishes managed from external instances.
 type Kind string
 

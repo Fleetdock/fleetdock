@@ -99,9 +99,12 @@ Backend (Go):
   under a new name repoints views and restores `Replicated*MergeTree` tables
   as plain `*MergeTree`. Credentials the server masks in definitions are
   reported in the backup log and are only included when the server shows
-  secrets. Not yet supported: row editing, SQL file import, comparing a table
-  with a backup, provisioning ClickHouse as a container, structure editing,
-  write previews and query insights.
+  secrets. Fleetdock can also create ClickHouse servers on a connected server
+  (official `clickhouse` image, persistent volume, generated `default`
+  password with SQL account management, HTTP interface on the chosen port;
+  the operation waits until the server answers). Not yet supported: row
+  editing, SQL file import, comparing a table with a backup, structure
+  editing, write previews and query insights.
 - **Live DB administration** — for **MariaDB, MySQL, and PostgreSQL**:
   - accounts and grants: list/create/drop users (MariaDB `user@host`,
     PostgreSQL roles), set passwords, view grants, grant/revoke schema

@@ -107,8 +107,7 @@ Your browser ──HTTPS──► Fleetdock (dashboard + API, one container)
 - **Server** — a machine running the Fleetdock agent.
 - **Database server** (an _instance_ in the API) — one MariaDB, MySQL,
   PostgreSQL or ClickHouse process: created by Fleetdock on one of your
-  servers (not ClickHouse yet), already running there, or reachable anywhere
-  over the network.
+  servers, already running there, or reachable anywhere over the network.
 - **Database** — found automatically on each database server Fleetdock has a
   login for.
 - **Backup storage** — an S3, Cloudflare R2 or S3-compatible bucket. Stored

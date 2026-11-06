@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // runProvision performs a Docker container lifecycle action for a managed
@@ -24,7 +25,7 @@ func runProvision(ctx context.Context, jobType string, p *Payload, sink LogSink)
 	switch jobType {
 	case "provision_instance":
 		sink.Log("info", "provisioning container "+spec.ContainerName)
-		return provisionContainer(ctx, p.Engine, spec)
+		return provisionContainer(ctx, p.Engine, spec, sink)
 	case "start_instance":
 		sink.Log("info", "starting container "+spec.ContainerName)
 		return &Result{OK: true}, dockerSimple(ctx, "start", spec.ContainerName)
@@ -46,10 +47,29 @@ type engineContainer struct {
 	rootEnv      string // env var carrying the superuser password
 	dataPath     string // container path to persist as a volume
 	internalPort int    // port the engine listens on inside the container
+	// env is extra, non-secret environment for the container.
+	env []string
+	// runArgs are extra `docker run` flags.
+	runArgs []string
+	// readyCmd, when set, is run inside the container until it succeeds:
+	// provisioning reports success only once the engine answers.
+	readyCmd []string
 }
+
+// readyTimeout bounds the wait for a new container's readyCmd.
+var readyTimeout = 90 * time.Second
 
 func engineContainerFor(eng string) engineContainer {
 	switch eng {
+	case "clickhouse":
+		return engineContainer{
+			rootEnv: "CLICKHOUSE_PASSWORD", dataPath: "/var/lib/clickhouse", internalPort: 8123,
+			// The default user manages accounts and grants with SQL, which
+			// Fleetdock's console roles and credentials need.
+			env:      []string{"CLICKHOUSE_USER=default", "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1"},
+			runArgs:  []string{"--ulimit", "nofile=262144:262144"},
+			readyCmd: []string{"wget", "-qO-", "http://127.0.0.1:8123/ping"},
+		}
 	case "postgres":
 		return engineContainer{rootEnv: "POSTGRES_PASSWORD", dataPath: "/var/lib/postgresql/data", internalPort: 5432}
 	case "mysql":
@@ -62,7 +82,7 @@ func engineContainerFor(eng string) engineContainer {
 // provisionContainer launches a database engine container with a named volume
 // and a published port. The root password is passed via a temporary env-file
 // (removed immediately) so it never appears in the process list.
-func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec) (*Result, error) {
+func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, sink LogSink) (*Result, error) {
 	image := spec.Image
 	if image == "" {
 		image = eng // engine name doubles as the Docker Hub image (e.g. "mariadb")
@@ -75,7 +95,7 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec) (*
 	// Best-effort cleanup of any stale container with the same name.
 	_ = exec.CommandContext(ctx, "docker", "rm", "-f", spec.ContainerName).Run()
 
-	envFile, err := writeEnvFile(ec.rootEnv + "=" + spec.RootPassword)
+	envFile, err := writeEnvFile(append([]string{ec.rootEnv + "=" + spec.RootPassword}, ec.env...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -89,8 +109,8 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec) (*
 		"-v", spec.Volume + ":" + ec.dataPath,
 		"-p", strconv.Itoa(spec.Port) + ":" + strconv.Itoa(ec.internalPort),
 		"--label", "app=fleetdock",
-		image,
 	}
+	args = append(append(args, ec.runArgs...), image)
 	out, err := runDocker(ctx, args...)
 	if err != nil {
 		return nil, err
@@ -99,7 +119,35 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec) (*
 	if len(containerID) > 12 {
 		containerID = containerID[:12]
 	}
+	if len(ec.readyCmd) > 0 {
+		sink.Log("info", "waiting for the server to accept connections")
+		if err := waitReady(ctx, spec.ContainerName, ec.readyCmd); err != nil {
+			return nil, err
+		}
+		sink.Log("info", "server is ready")
+	}
 	return &Result{OK: true, ContainerID: containerID}, nil
+}
+
+// waitReady runs cmd in the container until it succeeds, the container
+// stops, or readyTimeout passes.
+func waitReady(ctx context.Context, container string, cmd []string) error {
+	ctx, cancel := context.WithTimeout(ctx, readyTimeout)
+	defer cancel()
+	for {
+		if _, err := runDocker(ctx, append([]string{"exec", container}, cmd...)...); err == nil {
+			return nil
+		}
+		if out, err := runDocker(ctx, "inspect", "-f", "{{.State.Running}}", container); err == nil && strings.TrimSpace(out) == "false" {
+			logs, _ := runDocker(ctx, "logs", "--tail", "5", container)
+			return fmt.Errorf("the container stopped while starting: %s", firstLine(logs))
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("the server did not become ready within %s", readyTimeout)
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 func removeContainer(ctx context.Context, spec *ProvisionSpec) (*Result, error) {
@@ -133,7 +181,7 @@ func runDocker(ctx context.Context, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-func writeEnvFile(line string) (string, error) {
+func writeEnvFile(lines ...string) (string, error) {
 	f, err := os.CreateTemp("", "dbm-env-*")
 	if err != nil {
 		return "", fmt.Errorf("create env file: %w", err)
@@ -143,7 +191,7 @@ func writeEnvFile(line string) (string, error) {
 		_ = os.Remove(f.Name())
 		return "", err
 	}
-	if _, err := f.WriteString(line + "\n"); err != nil {
+	if _, err := f.WriteString(strings.Join(lines, "\n") + "\n"); err != nil {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
 		return "", err

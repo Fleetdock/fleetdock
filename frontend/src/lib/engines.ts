@@ -42,8 +42,8 @@ export const ENGINES: Record<EngineId, EngineInfo> = {
     versions: ["25.8", "25.3", "24.8"],
     port: 8123,
     adminUser: "default",
-    lacks: ["rowEditing", "sqlImport", "backupCompare", "provisioning", "structureEditing", "preview", "insights"],
-    portHint: "The HTTP interface: 8123, or 8443 with TLS.",
+    lacks: ["rowEditing", "sqlImport", "backupCompare", "structureEditing", "preview", "insights"],
+    portHint: "The HTTP interface: 8123, or 8443 with TLS. A server Fleetdock creates serves HTTP on the port you pick.",
   },
 };
 
