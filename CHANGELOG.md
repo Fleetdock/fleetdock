@@ -57,6 +57,8 @@ Upgrading: see
 
 ### Changed
 
+- **Dependencies.** Next.js 16.4.5, pgx 5.12; the dashboard is built and
+  tested with Node 24 LTS, the same major as the image's runtime.
 - **Compatibility rules.** [RELEASING.md](RELEASING.md#compatibility)
   states what releases keep compatible (the `/v1` API, agents,
   configuration, upgrades) and how things are deprecated before they go. The OpenAPI document now describes every
