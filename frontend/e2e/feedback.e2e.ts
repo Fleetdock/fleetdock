@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 test("a destructive action asks first and works from the keyboard", async ({ page }) => {
   const name = `e2e-${Date.now()}`;
   await page.goto("/access/tokens");
-  await page.getByRole("button", { name: "New token" }).click();
+  // The page header's button: with no tokens yet, the empty list offers a
+  // second "New token" once it has loaded.
+  await page.getByRole("button", { name: "New token" }).first().click();
   const create = page.getByRole("dialog", { name: "New API token" });
   await create.getByLabel("Name").fill(name);
   await create.getByRole("button", { name: "Create token" }).click();
