@@ -1,146 +1,70 @@
 # Fleetdock — Roadmap
 
-What ships in each release and what we are building next. For release mechanics see
-[RELEASING.md](RELEASING.md).
-
-> **Unreleased (next release)** — production hardening and a full database
-> manager: least-privilege console roles, SSRF guard, TLS per instance, data and
-> structure editing, monitoring and health probe, multi-statement console with
-> history, backup download/verify, SQL import. See [CHANGELOG.md](CHANGELOG.md).
->
-> **v0.4.0 – v0.7.1** — one image / one domain / one command, macOS install,
-> system databases, PostgreSQL schema browsing.
->
-> **v0.3.0** (2026-07-12) — rebrand to Fleetdock, auth/SSRF hardening, release
-> automation polish. Audit log removed to simplify scope.
->
-> **v0.1.0** (2026-07-10) — initial open-source release: control plane, agent,
-> backups, RBAC, notifications, live DB admin, production docs, GHCR images.
-> Backend test coverage ~**9%** (strong in a few services, thin on worker/repos).
+What has shipped and what comes next. For what each release changed see
+[CHANGELOG.md](CHANGELOG.md); for how releases are made and what stays
+compatible see [RELEASING.md](RELEASING.md).
 
 ---
 
-## Shipped in v0.3.0
+## 0.10 — what is in it
 
-- **Rebrand to Fleetdock** — `FLEETDOCK_*` env prefix, GHCR image names, Go module path, API token prefixes
-- **Release automation** — [RELEASING.md](RELEASING.md), `docker-compose.ghcr.yml`, Dependabot, CI coverage artifact
-- **Auth hardening** — JWT token epoch invalidates browser sessions on password change/reset; proxy-aware login rate limiting (`FLEETDOCK_TRUST_PROXY_HEADERS`)
-- **SSRF-resistant webhooks** — notification webhook/Slack delivery blocks loopback, link-local, and cloud metadata targets
-- **MariaDB admin** — password escaping fix for special characters
-- **Audit log removed** — table, permissions, and UI dropped ([migration](backend/internal/infra/postgres/migrations/0009_drop_audit.sql)); an append-only `audit_events` table for connectivity and credential changes returned later (migration 0011), not yet exposed in the API or UI
-- Docs: [ROADMAP.md](ROADMAP.md) backlog, README GHCR quick-start, [docs/screenshots/README.md](docs/screenshots/README.md)
+**Fleet.** Servers with a sandboxed agent (one-command install, in-place
+updates, version checks), database servers that Fleetdock creates in Docker or
+that you connect anywhere (directly, through an SSH bastion, or through the
+optional gateway), automatic database discovery and health checks, MySQL,
+MariaDB and PostgreSQL in one dashboard.
 
----
+**Backups.** Schedules with retention to your own S3-compatible storage,
+automatic test restores, restore and copy/move between servers of the same
+engine, SQL import, opening a backup next to the live database to compare.
 
-## Shipped in v0.1.x
+**Working with data.** The data browser (filters, inline editing with undo,
+saved views, PostgreSQL schema choice, full screen), the SQL console with
+least-privilege roles, the ER diagram, schema history and drift with DDL to
+align, fleet queries across up to 500 databases, index and query insights.
 
-- Fleet control plane (servers, managed/external instances, databases)
-- Agent install (`install.sh`), Docker provisioning, move/restore sagas
-- Backups to S3/R2, schedules, retention, destinations
-- RBAC, scoped grants, scoped API tokens, encryption-key rotation
-- Notifications/alerts, overview + server metrics
-- Live admin: users, grants, tables, SQL console, schema viewer, CSV export
-- OpenAPI + `/docs`, Docker Compose, CI, smoke tests
-- Production guides: [DEPLOYMENT](docs/DEPLOYMENT.md), [OPERATIONS](docs/OPERATIONS.md), [SECURITY-CHECKLIST](docs/SECURITY-CHECKLIST.md)
-- Automated releases → GHCR + GitHub Releases ([RELEASING.md](RELEASING.md))
+**Access and audit.** Roles with server- and database-scoped grants, scoped
+API tokens with expiry, an audit log of every change and refused request,
+per-account sign-in lockout.
 
----
-
-## Now — launch polish
-
-| Task | Status | Notes |
-|------|--------|-------|
-| Real README screenshots | todo | Replace placeholder; see [docs/screenshots/README.md](docs/screenshots/README.md) |
-| GHCR package public | todo | Maintainer: GitHub Packages → `fleetdock` → change visibility |
-| One-command install in README | done | `curl -sSL https://fleetdock.dev/install.sh \| sh` |
-| Publish install.sh to fleetdock.dev | todo | `cd fleetdock-web && npm run sync:install`, then deploy |
-| End-to-end install.sh verification | todo | Fresh Linux VM with real DNS: certificate issuance, agent enrolment, re-run upgrade path |
-| `fleetdock reset-admin-password` | done | `api reset-password` subcommand |
+**Operations.** One image and one command to install, `fleetdock` CLI
+(update, backups, key rotation, diagnostics), checksummed migrations with
+upgrade checks, Prometheus metrics, signed releases, CI that upgrades the last
+release, dumps every engine with the image's tools and runs end-to-end tests.
 
 ---
 
-## Testing & CI
+## Next — 0.11
 
-| Task | Status | Notes |
-|------|--------|-------|
-| CI coverage artifact | done | Uploaded from `ci.yml` |
-| Dependabot (Go, npm, Actions) | done | `.github/dependabot.yml` |
-| Worker integration tests | todo | Scheduled backups, offline detection, outbox |
-| Backup/restore completion hooks | todo | Happy path + failure paths |
-| Postgres repo integration tests | partial | Engine integration tests + migration idempotency in CI; repository tests still todo |
-| Frontend unit tests | partial | vitest for SQL classification/format; component tests todo |
-| Playwright E2E smoke | todo | Login → list servers |
-| Coverage gate (e.g. 25%) | todo | After critical paths covered |
-| Compose boot smoke test | done | CI `docker` job: readiness, login, CSP |
+| Item | Notes |
+|------|-------|
+| Two-factor sign-in (TOTP) | Recovery codes; owners and admins can be required to use it |
+| SSO / OIDC | Sign in with your identity provider; map groups to roles |
+| Session list | See and end your signed-in browsers one by one |
 
----
+## Toward 1.0
 
-## Security & enterprise
+1.0 is tagged when the compatibility rules in [RELEASING.md](RELEASING.md#compatibility)
+have held over a few minor releases and can become a promise for the whole 1.x
+line.
 
-| Task | Status | Notes |
-|------|--------|-------|
-| JWT session invalidation on password change | done | Token epoch in v0.3.0 |
-| SSRF protection for outbound webhooks | done | `netsafe` client in v0.3.0 |
-| Proxy-aware login rate limiting | done | `FLEETDOCK_TRUST_PROXY_HEADERS` in v0.3.0 |
-| httpOnly cookie sessions (replace localStorage JWT) | done | `SameSite=Strict` cookie + CSRF header |
-| Per-server agent token revoke / rotate | done | Re-enroll the same server with a bound install command |
-| Sandboxed agent systemd unit | done | Agent still runs as root (Docker) |
-| Expose `audit_events` in API and dashboard | done | Activity → Audit log, `GET /v1/audit-events`, CSV export, retention |
-| SSO / OIDC | todo | Enterprise login |
-| 2FA / MFA | todo | Admin accounts |
-| Cloudflare Tunnel / TCP proxy for external DBs | todo | No open DB ports from internet |
-| SQL console write-gating review | done | Per-database least-privilege roles; confirmation before writes |
+## Later
 
----
+| Area | Item |
+|------|------|
+| Backups | Point-in-time recovery (binlog / WAL archiving) |
+| Backups | Ship metadata backups to backup storage from the dashboard |
+| Fleet | Instance statistics through the agent, so managed instances need no port open to the control plane |
+| Fleet | Replica / HA topology |
+| Fleet | Engine configuration (`my.cnf` / `postgresql.conf`) and in-place engine upgrades |
+| Fleet | `GET /v1/engines`: supported engines and versions from the server |
+| Access | Cloudflare Tunnel / TCP proxy for external databases without open ports |
+| Operations | Helm chart; Terraform module for a single VM |
+| Operations | OpenTelemetry traces |
+| Operations | Configurable worker intervals |
+| Notifications | More channels (PagerDuty, Discord, Microsoft Teams) |
+| Dashboard | Translations |
+| Community | Public read-only demo, comparison with phpMyAdmin and cloud consoles |
 
-## Operations & deployment
-
-| Task | Status | Notes |
-|------|--------|-------|
-| Helm chart / K8s manifests | todo | |
-| Prometheus `/metrics` for control plane | todo | Complement `/healthz` / `/readyz` |
-| Connection pooling to instances | todo | Each admin request opens its own connection today |
-| Managed-instance stats via the agent | todo | The probe reaches managed instances only when their port is reachable from the control plane |
-| Staging upgrade dry-run documented | todo | v0.3.0 → v0.3.1 rehearsal |
-| Multi-replica API guidance | done | Advisory-locked housekeeping and migrations; see OPERATIONS |
-| Terraform module (single VM) | todo | Optional |
-| Changelog automation | todo | release-please or CI guard; see discussion in CONTRIBUTING |
-
----
-
-## Product
-
-| Task | Status | Notes |
-|------|--------|-------|
-| Audit log export (CSV/JSON) | cancelled | Audit log removed in v0.3.0 |
-| Replica / HA topology modeling | todo | |
-| More notification channels | todo | PagerDuty, Discord, … |
-| Point-in-time recovery | todo | Binlog / WAL archiving |
-| Engine config tuning & version upgrades | todo | my.cnf / postgresql.conf, in-place upgrade |
-| Engine parity (MySQL/Postgres vs MariaDB admin) | done | Postgres live admin shipped |
-| Environment profile templates | todo | staging vs prod `.env` examples |
-
----
-
-## Community
-
-| Task | Status | Notes |
-|------|--------|-------|
-| RELEASING.md | done | |
-| Demo video / GIF | todo | README + release page |
-| “Good first issue” labels | todo | Maintainer |
-| Comparison doc (vs phpMyAdmin, cloud consoles) | todo | |
-| Public demo instance (read-only) | todo | |
-
----
-
-## Suggested priority order
-
-1. Real screenshots + public GHCR packages
-2. Worker + backup integration tests (raise coverage on money paths)
-3. Postgres integration tests in CI
-4. SSO / OIDC and 2FA
-5. Cloudflare Tunnel for external instances
-6. Helm chart + Prometheus metrics
-
-Contributions welcome — pick any **todo** row and open a PR. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions welcome: open an issue to discuss an item before a large PR. See
+[CONTRIBUTING.md](CONTRIBUTING.md).

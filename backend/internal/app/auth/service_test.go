@@ -79,6 +79,10 @@ func (r *fakeTokenRepo) ListByUser(_ context.Context, _ uuid.UUID) ([]*tokendom.
 	return nil, nil
 }
 func (r *fakeTokenRepo) Revoke(_ context.Context, _, _ uuid.UUID) error { return nil }
+func (r *fakeTokenRepo) ListActive(context.Context) ([]*tokendom.Token, error) { return nil, nil }
+func (r *fakeTokenRepo) RevokeAny(context.Context, uuid.UUID) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
 func (r *fakeTokenRepo) ResolveHash(_ context.Context, hash string) (tokendom.Lookup, error) {
 	l, ok := r.lookups[hash]
 	if !ok {

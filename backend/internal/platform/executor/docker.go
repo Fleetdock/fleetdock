@@ -48,9 +48,15 @@ type engineContainer struct {
 	internalPort int    // port the engine listens on inside the container
 }
 
-func engineContainerFor(eng string) engineContainer {
+func engineContainerFor(eng, version string) engineContainer {
 	switch eng {
 	case "postgres":
+		// From 18 the official image keeps its data under
+		// /var/lib/postgresql/<major>/docker and refuses to start with a
+		// volume on the old /var/lib/postgresql/data path.
+		if major, err := strconv.Atoi(strings.SplitN(version, ".", 2)[0]); err == nil && major >= 18 {
+			return engineContainer{rootEnv: "POSTGRES_PASSWORD", dataPath: "/var/lib/postgresql", internalPort: 5432}
+		}
 		return engineContainer{rootEnv: "POSTGRES_PASSWORD", dataPath: "/var/lib/postgresql/data", internalPort: 5432}
 	case "mysql":
 		return engineContainer{rootEnv: "MYSQL_ROOT_PASSWORD", dataPath: "/var/lib/mysql", internalPort: 3306}
@@ -70,7 +76,7 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec) (*
 	if spec.Version != "" {
 		image = image + ":" + spec.Version
 	}
-	ec := engineContainerFor(eng)
+	ec := engineContainerFor(eng, spec.Version)
 
 	// Best-effort cleanup of any stale container with the same name.
 	_ = exec.CommandContext(ctx, "docker", "rm", "-f", spec.ContainerName).Run()

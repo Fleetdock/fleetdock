@@ -317,8 +317,8 @@ func validatePassword(pw string) error {
 	if len(pw) < minPasswordLen {
 		return apperr.Invalid("password", "password must be at least 8 characters")
 	}
-	if len(pw) > 128 {
-		return apperr.Invalid("password", "password must be at most 128 characters")
+	if len(pw) > auth.MaxPasswordBytes {
+		return apperr.Invalid("password", auth.ErrPasswordTooLong.Error())
 	}
 	return nil
 }

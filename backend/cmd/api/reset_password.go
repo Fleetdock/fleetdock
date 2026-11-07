@@ -46,6 +46,9 @@ func resetPassword(args []string) error {
 	if len(password) < 8 {
 		return fmt.Errorf("the new password must be at least 8 characters")
 	}
+	if len(password) > auth.MaxPasswordBytes {
+		return fmt.Errorf("the new %w", auth.ErrPasswordTooLong)
+	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err

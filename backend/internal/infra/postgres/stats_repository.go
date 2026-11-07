@@ -11,6 +11,7 @@ import (
 
 	statsdom "github.com/Fleetdock/fleetdock/backend/internal/domain/stats"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
 // StatsRepository is the Postgres adapter for statsdom.Repository.
@@ -81,6 +82,23 @@ WITH latest_backup AS (
 	       COALESCE(s.last_heartbeat_at, s.updated_at) AS since, s.id AS server_id, NULL::uuid AS database_id
 	FROM servers s
 	WHERE s.deleted_at IS NULL AND s.status IN ('offline','error')
+
+	UNION ALL
+	-- Agents older than this control plane ($2, empty for a development build)
+	-- or older than the oldest it supports ($3). Only plain x.y.z versions
+	-- (optionally v-prefixed, with a suffix) are compared; offline servers are
+	-- reported above already.
+	SELECT CASE WHEN av.v < string_to_array($3, '.')::int[] THEN 'agent_unsupported' ELSE 'agent_outdated' END,
+	       CASE WHEN av.v < string_to_array($3, '.')::int[] THEN 'critical' ELSE 'warning' END,
+	       'server', s.id, s.name,
+	       'Its agent is version ' || s.agent_version || '; this Fleetdock is ' || $2 || '. Update the agent from the server''s page.',
+	       COALESCE(s.last_heartbeat_at, s.updated_at), s.id, NULL
+	FROM servers s
+	CROSS JOIN LATERAL (
+		SELECT string_to_array(substring(s.agent_version from '^v?([0-9]+\.[0-9]+\.[0-9]+)'), '.')::int[] AS v
+	) av
+	WHERE s.deleted_at IS NULL AND s.status NOT IN ('offline','error') AND $2 <> ''
+	  AND av.v IS NOT NULL AND av.v < string_to_array($2, '.')::int[]
 
 	UNION ALL
 	SELECT 'instance_unreachable', 'critical', 'instance', i.id,
@@ -155,7 +173,11 @@ LIMIT $1`
 
 // Attention returns up to limit open problems, critical first, newest first.
 func (r *StatsRepository) Attention(ctx context.Context, limit int) ([]statsdom.Attention, error) {
-	rows, err := r.pool.Query(ctx, attentionSQL, limit)
+	current, minAgent := "", version.MinAgentVersion
+	if parts, _, ok := version.Parse(version.Version); ok {
+		current = fmt.Sprintf("%d.%d.%d", parts[0], parts[1], parts[2])
+	}
+	rows, err := r.pool.Query(ctx, attentionSQL, limit, current, minAgent)
 	if err != nil {
 		return nil, apperr.Internal(fmt.Errorf("attention: %w", err))
 	}

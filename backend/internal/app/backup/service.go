@@ -192,6 +192,11 @@ func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, er
 	if !inst.HasCredentials() {
 		return nil, apperr.Invalid("target_instance_id", "the target instance has no admin credentials")
 	}
+	if from, to := instancedom.DumpFamily(b.Engine), inst.Engine.Family(); from != to {
+		return nil, apperr.Invalid("target_instance_id", fmt.Sprintf(
+			"this backup is a %s dump and can only be restored to a %s database server",
+			instancedom.FamilyLabel(from), instancedom.FamilyLabel(from)))
+	}
 
 	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
 	if err != nil {

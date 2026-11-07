@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Logo } from "@/components/logo";
 import { Tooltip } from "@/components/ui";
-import { useCan, useCanAny } from "@/lib/hooks";
+import { useCan, useCanAny, useVersion } from "@/lib/hooks";
 import { allowed, NAV, NAV_GROUPS, type NavSection } from "@/lib/nav";
 
 /** useVisibleSections returns the sections (and pages) the user may open. */
@@ -221,9 +221,23 @@ export function Sidebar({
               <span className="sidebar-label">Collapse</span>
             </button>
           </Tooltip>
+          <VersionLine />
         </div>
       </aside>
     </>
+  );
+}
+
+// VersionLine names the running build, for support requests and to tell at a
+// glance whether an upgrade took.
+function VersionLine() {
+  const { data } = useVersion();
+  if (!data) return null;
+  const label = data.version === "dev" ? "development build" : `v${data.version}`;
+  return (
+    <div className="sidebar-version" title={data.commit ? `Commit ${data.commit}` : undefined}>
+      Fleetdock {label}
+    </div>
   );
 }
 

@@ -34,3 +34,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # Base images in the Dockerfile (alpine, node, golang).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

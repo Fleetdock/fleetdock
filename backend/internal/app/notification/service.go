@@ -27,6 +27,7 @@ type Service struct {
 	repo    notifdom.Repository
 	sender  *notify.Sender
 	metrics MetricsSource
+	secrets SecretStore // nil keeps channel secrets in the config (tests)
 
 	mu        sync.Mutex
 	firing    map[string]bool      // ruleID/serverID -> currently firing
@@ -40,6 +41,13 @@ func NewService(repo notifdom.Repository, sender *notify.Sender, metrics Metrics
 		firing:    map[string]bool{},
 		breaching: map[string]time.Time{},
 	}
+}
+
+// WithSecrets keeps channel secrets (webhook URLs, the SMTP password)
+// encrypted in the secret store instead of the channel's config.
+func (s *Service) WithSecrets(store SecretStore) *Service {
+	s.secrets = store
+	return s
 }
 
 // ---- Channels ----
@@ -56,6 +64,9 @@ type ChannelInput struct {
 func (s *Service) CreateChannel(ctx context.Context, in ChannelInput) (*notifdom.Channel, error) {
 	c, err := notifdom.NewChannel(in.Name, notifdom.ChannelType(in.Type), in.Config, in.Enabled)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.seal(ctx, c); err != nil {
 		return nil, err
 	}
 	if err := s.repo.CreateChannel(ctx, c); err != nil {
@@ -79,6 +90,9 @@ func (s *Service) UpdateChannel(ctx context.Context, id string, in ChannelInput)
 	}
 	config := mergeSecretConfig(in.Config, c.Config)
 	if err := c.Apply(in.Name, notifdom.ChannelType(in.Type), config, in.Enabled); err != nil {
+		return nil, err
+	}
+	if err := s.seal(ctx, c); err != nil {
 		return nil, err
 	}
 	if err := s.repo.UpdateChannel(ctx, c); err != nil {
@@ -114,7 +128,11 @@ func (s *Service) DeleteChannel(ctx context.Context, id string) error {
 	if err != nil {
 		return apperr.Invalid("id", "id must be a valid UUID")
 	}
-	return s.repo.DeleteChannel(ctx, uid)
+	if err := s.repo.DeleteChannel(ctx, uid); err != nil {
+		return err
+	}
+	s.dropSecrets(ctx, uid)
+	return nil
 }
 
 // TestChannel delivers a test message to one channel.
@@ -123,7 +141,11 @@ func (s *Service) TestChannel(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	err = s.sender.Deliver(ctx, notify.Channel{Type: string(c.Type), Config: c.Config}, notify.Message{
+	config, err := s.open(ctx, c)
+	if err != nil {
+		return err
+	}
+	err = s.sender.Deliver(ctx, notify.Channel{Type: string(c.Type), Config: config}, notify.Message{
 		Title:    "Fleetdock test notification",
 		Body:     "This is a test message from Fleetdock. If you can read this, the channel works.",
 		Severity: "info",
@@ -268,7 +290,13 @@ func (s *Service) DispatchPending(ctx context.Context) (int, error) {
 		}
 		ok := true
 		for _, ch := range channels {
-			derr := s.sender.Deliver(ctx, notify.Channel{Type: string(ch.Type), Config: ch.Config}, notify.Message{
+			config, derr := s.open(ctx, ch)
+			if derr != nil {
+				slog.Error("notification: channel secrets", "channel", ch.Name, "error", derr.Error())
+				ok = false
+				continue
+			}
+			derr = s.sender.Deliver(ctx, notify.Channel{Type: string(ch.Type), Config: config}, notify.Message{
 				Title:    row.Event.Title,
 				Body:     row.Event.Message,
 				Severity: row.Event.Severity,

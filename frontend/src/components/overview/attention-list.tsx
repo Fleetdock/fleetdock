@@ -9,6 +9,8 @@ import type { AttentionItem } from "@/lib/types";
 
 const TITLE: Record<AttentionItem["kind"], string> = {
   server_offline: "Server offline",
+  agent_outdated: "Agent update available",
+  agent_unsupported: "Agent too old",
   instance_unreachable: "Database server unreachable",
   backup_failed: "Backup failed",
   backup_check_failed: "Backup check failed",

@@ -11,6 +11,7 @@ import (
 	serverapp "github.com/Fleetdock/fleetdock/backend/internal/app/server"
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
 // ServersService is the use-case surface the HTTP layer depends on
@@ -55,7 +56,7 @@ type serverResponse struct {
 	Address         *string           `json:"address,omitempty"`
 	Status          string            `json:"status"`
 	AgentVersion    *string           `json:"agent_version,omitempty"`
-	MariaDBVersion  *string           `json:"mariadb_version,omitempty"`
+	AgentStatus     string            `json:"agent_status,omitempty"`
 	OS              *string           `json:"os,omitempty"`
 	Labels          map[string]string `json:"labels"`
 	Tags            []string          `json:"tags"`
@@ -77,14 +78,18 @@ type listServersResponse struct {
 }
 
 func toServerResponse(s *serverdom.Server) serverResponse {
+	agentStatus := ""
+	if s.AgentVersion != nil {
+		agentStatus = version.AgentStatus(*s.AgentVersion)
+	}
 	return serverResponse{
+		AgentStatus:     agentStatus,
 		ID:              s.ID.String(),
 		Name:            s.Name,
 		Hostname:        s.Hostname,
 		Address:         s.Address,
 		Status:          string(s.Status),
 		AgentVersion:    s.AgentVersion,
-		MariaDBVersion:  s.MariaDBVersion,
 		OS:              s.OS,
 		Labels:          s.Labels,
 		Tags:            s.Tags,

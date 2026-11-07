@@ -36,3 +36,18 @@ func TestFirstLinePrefersTheError(t *testing.T) {
 		}
 	}
 }
+
+func TestEngineContainerDataPath(t *testing.T) {
+	for _, c := range []struct{ eng, version, want string }{
+		{"postgres", "16", "/var/lib/postgresql/data"},
+		{"postgres", "17.2", "/var/lib/postgresql/data"},
+		{"postgres", "18", "/var/lib/postgresql"}, // the 18 image refuses .../data
+		{"postgres", "", "/var/lib/postgresql/data"},
+		{"mysql", "8.4", "/var/lib/mysql"},
+		{"mariadb", "11.8", "/var/lib/mysql"},
+	} {
+		if got := engineContainerFor(c.eng, c.version).dataPath; got != c.want {
+			t.Errorf("%s %s: %s, want %s", c.eng, c.version, got, c.want)
+		}
+	}
+}

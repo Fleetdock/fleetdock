@@ -16,6 +16,7 @@ import type {
   User,
   RoleGrant,
   AddGrantInput,
+  OwnedApiToken,
 } from "../types";
 
 // ---- API tokens ----
@@ -39,6 +40,23 @@ export function useRevokeToken() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/v1/tokens/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tokens"] }),
+  });
+}
+
+/** Every user's live API tokens (administrators, user:write). */
+export function useAllTokens(enabled: boolean) {
+  return useQuery({
+    queryKey: ["tokens", "all"],
+    queryFn: () => api.get<{ items: OwnedApiToken[] }>("/v1/api-tokens"),
+    enabled,
+  });
+}
+
+export function useRevokeAnyToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/v1/api-tokens/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tokens"] }),
   });
 }

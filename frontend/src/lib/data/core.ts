@@ -7,10 +7,20 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type {
   Me,
+  VersionInfo,
 } from "../types";
 
 export function useMe() {
   return useQuery({ queryKey: ["me"], queryFn: () => api.get<Me>("/v1/auth/me") });
+}
+
+/** The running Fleetdock's version; it changes only on a restart. */
+export function useVersion() {
+  return useQuery({
+    queryKey: ["version"],
+    queryFn: () => api.get<VersionInfo>("/v1/version"),
+    staleTime: 60 * 60_000,
+  });
 }
 
 

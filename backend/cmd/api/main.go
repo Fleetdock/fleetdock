@@ -53,15 +53,33 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/interfaces/httpapi"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/auth"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/crypto"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/metrics"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/notify"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/uiproxy"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 	"github.com/Fleetdock/fleetdock/backend/internal/worker"
 )
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
+		v := version.Get()
+		fmt.Printf("fleetdock %s", v.Version)
+		if v.Commit != "" {
+			fmt.Printf(" (%s)", v.Commit)
+		}
+		fmt.Println()
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "rotate-keys" {
+		if err := rotateKeys(); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
 		if err := resetPassword(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -97,7 +115,8 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("starting", "env", cfg.Env)
+	v := version.Get()
+	slog.Info("starting", "env", cfg.Env, "version", v.Version, "commit", v.Commit)
 
 	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -110,6 +129,8 @@ func run() error {
 			return err
 		}
 		slog.Info("migrations applied")
+	} else if err := postgres.CheckSchema(ctx, pool); err != nil {
+		return err
 	}
 
 	// Repositories (infra adapters).
@@ -182,7 +203,12 @@ func run() error {
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
 		Password: cfg.SMTPPassword, From: cfg.SMTPFrom,
 	})
-	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc)
+	notifSvc := notificationapp.NewService(notifRepo, notifSender, agentSvc).WithSecrets(secretsSvc)
+	if n, err := notifSvc.SealExisting(ctx); err != nil {
+		return fmt.Errorf("encrypt notification channel secrets: %w", err)
+	} else if n > 0 {
+		slog.Info("encrypted the secrets of notification channels saved before 0.10", "channels", n)
+	}
 	schemaSvc := schemahistoryapp.NewService(postgres.NewSchemaHistoryRepository(pool), dbadminSvc, databaseRepo,
 		cfg.SchemaSnapshotInterval)
 	schemaSvc.SetNotifier(notifSvc)
@@ -224,7 +250,7 @@ func run() error {
 
 	// One-time admin bootstrap.
 	if created, err := authSvc.EnsureAdmin(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
-		return err
+		return fmt.Errorf("create the first admin from FLEETDOCK_ADMIN_EMAIL/FLEETDOCK_ADMIN_PASSWORD: %w", err)
 	} else if created {
 		slog.Info("bootstrapped admin account", "email", cfg.AdminEmail)
 	}
@@ -316,6 +342,9 @@ func run() error {
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
 		Audit:             auditSvc,
 		Ready:             pool.Ping,
+		WorkerEnabled:     cfg.WorkerEnabled,
+		MetricsToken:      cfg.MetricsToken,
+		MetricsGauges:     fleetGauges(statsRepo),
 		UI:                uiHandler,
 	})
 
@@ -354,4 +383,41 @@ func run() error {
 		}
 	}
 	return shutdownErr
+}
+
+// fleetGauges reads the fleet-wide counts the overview shows, for /metrics.
+func fleetGauges(stats *postgres.StatsRepository) func(context.Context) []metrics.Gauge {
+	return func(ctx context.Context) []metrics.Gauge {
+		s, err := stats.Summary(ctx)
+		if err != nil {
+			slog.Warn("metrics: fleet summary", "error", err.Error())
+			return []metrics.Gauge{{Name: "up", Help: "1 when the fleet summary could be read.", Value: 0}}
+		}
+		g := func(name, help string, v int, kv ...string) metrics.Gauge {
+			var labels map[string]string
+			if len(kv) == 2 {
+				labels = map[string]string{kv[0]: kv[1]}
+			}
+			return metrics.Gauge{Name: name, Help: help, Labels: labels, Value: float64(v)}
+		}
+		out := []metrics.Gauge{
+			{Name: "up", Help: "1 when the fleet summary could be read.", Value: 1},
+			g("servers", "Servers by agent status.", s.ServersOnline, "status", "online"),
+			g("servers", "Servers by agent status.", s.ServersOffline, "status", "offline"),
+			g("database_servers", "Database servers (instances) by kind.", s.InstancesManaged, "kind", "managed"),
+			g("database_servers", "Database servers (instances) by kind.", s.InstancesExternal, "kind", "external"),
+			g("databases", "Databases by status.", s.DatabasesActive, "status", "active"),
+			g("databases", "Databases by status.", s.DatabasesTotal-s.DatabasesActive, "status", "other"),
+			g("backups_24h", "Backups finished in the last 24 hours, by result.", s.BackupsCompleted24h, "status", "completed"),
+			g("backups_24h", "Backups finished in the last 24 hours, by result.", s.BackupsFailed24h, "status", "failed"),
+			g("operations_running", "Operations running now.", s.OperationsRunning),
+			g("operations_failed_24h", "Operations failed in the last 24 hours.", s.OperationsFailed24h),
+			g("backup_schedules_enabled", "Enabled backup schedules.", s.SchedulesEnabled),
+		}
+		if s.LastBackupAt != nil {
+			out = append(out, metrics.Gauge{Name: "last_backup_seconds", Help: "When the last backup finished, as a Unix time.",
+				Value: float64(s.LastBackupAt.Unix())})
+		}
+		return out
+	}
 }

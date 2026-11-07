@@ -89,7 +89,7 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 type heartbeatRequest struct {
 	AgentVersion      string   `json:"agent_version"`
 	Address           *string  `json:"address"`
-	MariaDBVersion    *string  `json:"mariadb_version"`
+	MariaDBVersion    *string  `json:"mariadb_version"` // agent protocol: the host's MariaDB, if any
 	OS                *string  `json:"os"`
 	CPUPct            *float64 `json:"cpu_pct"`
 	MemUsedBytes      *int64   `json:"mem_used_bytes"`

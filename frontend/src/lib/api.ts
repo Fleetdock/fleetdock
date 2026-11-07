@@ -28,13 +28,37 @@ export class ApiError extends Error {
 const credentials: RequestCredentials = "include";
 
 // toLogin sends the browser to the login page when the session is missing or
-// expired (except on the login page itself, where a 401 is a failed login).
+// expired (except on the login page itself, where a 401 is a failed login),
+// saying why and remembering where to come back to.
 function toLogin(): boolean {
   if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-    window.location.href = "/login";
+    window.location.href = loginURL(window.location.pathname + window.location.search);
     return true;
   }
   return false;
+}
+
+/** loginURL is the sign-in page that returns to `from` afterwards. */
+export function loginURL(from: string): string {
+  const next = safeNext(from);
+  return next && next !== "/dashboard" ? `/login?expired=1&next=${encodeURIComponent(next)}` : "/login?expired=1";
+}
+
+/**
+ * safeNext accepts only a path on this site ("/data?db=…"), never another
+ * origin ("//evil.example", "https://…", "/\\evil"), so the sign-in page
+ * cannot be used to send someone elsewhere.
+ */
+export function safeNext(raw: string | null | undefined): string | null {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\") || raw.includes("\\")) return null;
+  if (raw === "/login" || raw.startsWith("/login?") || raw.startsWith("/login/")) return null;
+  try {
+    const u = new URL(raw, "https://fleetdock.invalid");
+    if (u.origin !== "https://fleetdock.invalid") return null;
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return null;
+  }
 }
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {

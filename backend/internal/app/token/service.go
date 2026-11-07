@@ -108,3 +108,17 @@ func (s *Service) Revoke(ctx context.Context, userID uuid.UUID, id string) error
 	}
 	return s.repo.Revoke(ctx, userID, tid)
 }
+
+// ListActive returns every user's live tokens (the administrators' view).
+func (s *Service) ListActive(ctx context.Context) ([]*tokendom.Token, error) {
+	return s.repo.ListActive(ctx)
+}
+
+// RevokeAny revokes any user's token (administrators), returning its owner.
+func (s *Service) RevokeAny(ctx context.Context, id string) (uuid.UUID, error) {
+	tid, err := uuid.Parse(id)
+	if err != nil {
+		return uuid.Nil, apperr.Invalid("id", "id must be a valid UUID")
+	}
+	return s.repo.RevokeAny(ctx, tid)
+}

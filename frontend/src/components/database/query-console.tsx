@@ -2,7 +2,7 @@
 
 import { useErrorToast } from "@/components/toast";
 
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { ExplainView } from "@/components/database/explain-view";
 import { PreviewSampleView } from "@/components/database/preview-sample";
@@ -110,7 +110,18 @@ export function QueryConsole({
   const columns = useSchemaColumns(databaseId);
   const completion = useMemo(() => sqlCompletion(columns.data, engine === "postgres"), [columns.data, engine]);
   const editorRef = useRef<SqlEditorHandle>(null);
-  const [sql, setSql] = useState(initialSql);
+  // The editor's text is kept per database in this browser, so a reload or
+  // an expired session (which goes through the sign-in page) does not lose
+  // a script being written. A "New query on this table" text wins.
+  const draftKey = `console-draft:${databaseId}`;
+  const [sql, setSqlState] = useState(() => initialSql || load(draftKey) || "");
+  const setSql = useCallback(
+    (v: string) => {
+      setSqlState(v);
+      save(draftKey, v.trim() ? v.slice(0, 200_000) : null);
+    },
+    [draftKey],
+  );
   const [ranSql, setRanSql] = useState("");
   const [output, setOutput] = useState<QueryOutput | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -1,24 +1,30 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
-	"strings"
+	"strconv"
+	"time"
 
 	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authapp "github.com/Fleetdock/fleetdock/backend/internal/app/auth"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 // AuthHandler exposes login and identity endpoints.
 type AuthHandler struct {
 	svc    *authapp.Service
 	cookie SessionCookieConfig
+	guard  *accountGuard
 }
 
 // NewAuthHandler builds the auth handler. Login sets the dashboard's session
 // cookie as configured by cookie.
 func NewAuthHandler(svc *authapp.Service, cookie SessionCookieConfig) *AuthHandler {
-	return &AuthHandler{svc: svc, cookie: cookie}
+	// 10 failed sign-ins to one account within 15 minutes lock it for the
+	// rest of those 15 minutes, whatever addresses they came from.
+	return &AuthHandler{svc: svc, cookie: cookie, guard: newAccountGuard(10, 15*time.Minute)}
 }
 
 type loginRequest struct {
@@ -68,14 +74,30 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if locked, wait := h.guard.Locked(req.Email); locked {
+		auditapp.SetActor(r.Context(), nil, accountKey(req.Email))
+		auditapp.AddMeta(r.Context(), "reason", "account locked after repeated failures")
+		auditapp.Fail(r.Context())
+		minutes := int(wait.Minutes()) + 1
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeJSON(w, http.StatusTooManyRequests, errorBody{Error: errorDetail{
+			Code:    "rate_limited",
+			Message: fmt.Sprintf("Too many failed sign-ins for this account. Try again in %d minute%s.", minutes, plural(minutes)),
+		}})
+		return
+	}
 	res, err := h.svc.Authenticate(r.Context(), req.Email, req.Password)
 	if err != nil {
 		// Logged as a failed login with the email that was tried.
-		auditapp.SetActor(r.Context(), nil, strings.ToLower(strings.TrimSpace(req.Email)))
+		auditapp.SetActor(r.Context(), nil, accountKey(req.Email))
 		auditapp.Fail(r.Context())
+		if apperr.KindOf(err) == apperr.KindUnauthorized {
+			h.guard.Failed(req.Email)
+		}
 		writeError(w, err)
 		return
 	}
+	h.guard.Succeeded(req.Email)
 	auditapp.SetActor(r.Context(), &res.User.ID, res.User.Email)
 	h.cookie.set(w, r, res.Token)
 	writeJSON(w, http.StatusOK, loginResponse{
@@ -105,4 +127,11 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	h.cookie.clear(w, r)
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

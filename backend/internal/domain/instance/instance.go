@@ -31,6 +31,32 @@ func (e Engine) Valid() bool {
 	return false
 }
 
+// Family groups engines whose logical dumps load into each other: "postgres",
+// or "mysql" for MySQL and MariaDB.
+func (e Engine) Family() string {
+	if e == EnginePostgres {
+		return "postgres"
+	}
+	return "mysql"
+}
+
+// DumpFamily is the engine family a backup made with the given dump tool
+// (as recorded on the backup) can be restored to.
+func DumpFamily(tool string) string {
+	if tool == "pg_dump" || tool == "postgres" {
+		return "postgres"
+	}
+	return "mysql"
+}
+
+// FamilyLabel names an engine family for messages.
+func FamilyLabel(family string) string {
+	if family == "postgres" {
+		return "PostgreSQL"
+	}
+	return "MySQL or MariaDB"
+}
+
 // DefaultPort is the engine's conventional listening port.
 func (e Engine) DefaultPort() int {
 	if e == EnginePostgres {

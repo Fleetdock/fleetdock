@@ -36,10 +36,17 @@ fleetdock backup-db /mnt/offsite/meta.sql.gz
 ```
 
 `fleetdock update` takes the same backup automatically before upgrading and
-stops if it fails (override with `FLEETDOCK_SKIP_BACKUP=1`). Schedule
-`fleetdock backup-db` nightly (cron/systemd timer) and copy the files off the
-host. Restore into an empty database with
-`gunzip -c metadata-….sql.gz | fleetdock psql`.
+stops if it fails (override with `FLEETDOCK_SKIP_BACKUP=1`). Restore into an
+empty database with `gunzip -c metadata-….sql.gz | fleetdock psql`.
+
+Take one every night, keep two weeks, and copy them off the host (a backup on
+the same disk does not survive the disk). For example, in root's crontab:
+
+```cron
+17 3 * * * /usr/local/bin/fleetdock backup-db --keep 14 && aws s3 sync /opt/fleetdock/backups s3://my-bucket/fleetdock-metadata/
+```
+
+(`rclone sync` or `restic` work the same way.)
 
 Stored credentials in the dump are encrypted with `FLEETDOCK_ENCRYPTION_KEY`:
 keep `fleetdock backup-config` (the `.env`) alongside, or they are unreadable.
@@ -72,14 +79,14 @@ Stop the API during restore to avoid concurrent writes.
 
 ```bash
 fleetdock update              # latest
-fleetdock update --tag v0.2.0 # a specific release
+fleetdock update --tag v0.10.0 # a specific release
 ```
 
 ### Compose (build from source)
 
 ```bash
 git fetch origin
-git checkout v0.2.0   # or main for latest
+git checkout v0.10.0  # or main for latest
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
@@ -90,16 +97,84 @@ default). To apply migrations without serving traffic:
 docker compose run --rm fleetdock /api   # or: make backend-migrate locally
 ```
 
-Set `FLEETDOCK_RUN_MIGRATIONS=false` only if you run migrations as a separate job.
+Set `FLEETDOCK_RUN_MIGRATIONS=false` only if you run migrations as a separate
+job. A process started that way checks the schema and refuses to start while
+migrations are pending, so it never serves against a schema it does not match.
+
+The API also refuses to start in two cases, with a message saying what to do:
+
+- **The metadata database was migrated by a newer Fleetdock.** It would run
+  against tables it does not know. Run the newer version, or
+  roll back properly (below).
+- **A migration that was already applied has changed.** Fleetdock records each
+  migration's SHA-256; a different file means the schema may not match the
+  code.
+
+### Which version is running
+
+The dashboard shows it at the bottom of the sidebar. From the shell:
+
+```bash
+fleetdock version                           # install.sh installs
+docker compose exec fleetdock /api version  # compose
+```
+
+The API reports it at `GET /v1/version` (signed in), with the oldest agent
+version it supports.
 
 ### Upgrade checklist
 
 1. Read [CHANGELOG.md](../CHANGELOG.md) for breaking changes
-2. Back up metadata Postgres (above)
+2. Back up metadata Postgres (above); `fleetdock update` does this for you
 3. Deploy new images / rebuild
-4. Confirm `GET /readyz` returns `ready`
-5. Spot-check: login, server list, trigger a connection test on an instance
-6. Watch the **Operations** page for stuck jobs after upgrade
+4. Confirm `GET /readyz` returns `ready` and the sidebar shows the new version
+5. Spot-check: sign in, open the server list and a database
+6. Watch **Activity** for stuck tasks after the upgrade
+7. Update the agents (below)
+
+### Upgrading to 0.10
+
+0.10 upgrades in place from 0.9 (and from earlier versions through the same
+migrations). What changes on the way:
+
+1. **Back up first.** `fleetdock update` does; otherwise `fleetdock backup-db`
+   or `pg_dump` (above), and keep `.env`.
+2. **Update the control plane**: `fleetdock update --tag v0.10.0`, or pull the
+   image and restart. On its first start 0.10 records a checksum for every
+   migration already applied and encrypts the secrets of notification
+   channels saved before (webhook URLs, SMTP password). Check the sidebar shows
+   the new version.
+3. **Update the agents**: every server shows **Update** (agents before 0.10
+   reported themselves as 0.1.0). Run the update command on each (below).
+4. **API clients**: `POST /v1/instances/{id}/test-connection` and
+   `…/import-databases` are gone (use `POST /v1/instances/{id}/probe`), and
+   responses no longer carry `mariadb_version` (read `engine_version`).
+5. **Behind nginx**: set `proxy_set_header X-Forwarded-For $remote_addr;`
+   (see [DEPLOYMENT.md](DEPLOYMENT.md)) so sign-in limits and the audit log
+   see the client's address.
+6. **Compose installs managed by hand**: take the new `docker-compose.yml`; it
+   passes `FLEETDOCK_ENCRYPTION_KEY_ID`, `FLEETDOCK_ENCRYPTION_KEYS_OLD` and
+   `FLEETDOCK_METRICS_TOKEN` to the container (`fleetdock update` fetches it).
+
+### Updating agents
+
+Agents keep working across a control-plane upgrade, but each release may fix
+them too. A server whose agent is older than the control plane shows
+**Update** in the server list, an *Agent update available* notice on its page
+and an item on the overview; an agent older than the oldest supported version
+is marked *too old*.
+
+To update one, run this on the machine:
+
+```bash
+curl -sSL https://fleetdock.example.com/install.sh | sudo sh
+```
+
+Without a registration token, the installer updates the enrolled agent in
+place: it downloads the binary from your Fleetdock, checks it against the
+SHA-256 the control plane publishes (`/agent/v1/binary/{os}/{arch}/sha256`),
+replaces it and restarts the service. The server keeps its identity and
+token. The new version shows on the server's page after the next heartbeat.
 
 ### Rollback
 
@@ -107,77 +182,104 @@ Set `FLEETDOCK_RUN_MIGRATIONS=false` only if you run migrations as a separate jo
 2. Restore the metadata database backup taken before upgrade
 3. Redeploy the previous image tag
 
-Do not roll back only the API binary if migrations already advanced — restore
-the database to match the older schema or stay on the new version.
+Do not roll back only the API binary if migrations already advanced: from 0.10
+on, an older version refuses to start on the newer schema (earlier versions
+start and misbehave). Restore the database to match the older version, or stay
+on the new one.
 
 ## Encryption key rotation
 
-Instance passwords and S3 destination keys are **envelope-encrypted**. Rotating
-`FLEETDOCK_ENCRYPTION_KEY` re-wraps data keys only; ciphertext payloads are untouched.
+Stored credentials (database server passwords, SSH keys, backup storage keys,
+notification webhook URLs and SMTP passwords) are **envelope-encrypted**: each
+has its own data key, wrapped by `FLEETDOCK_ENCRYPTION_KEY`. Rotating the key
+re-wraps the data keys only; the encrypted payloads are untouched.
+
+### Installed with install.sh
+
+```bash
+fleetdock rotate-keys
+```
+
+It backs up the metadata database and `.env`, generates a new key under a new
+id, restarts with the old key still readable, re-wraps every secret, then drops
+the old key. If anything fails, the previous `.env` is put back. Afterwards
+keep a copy of the new `.env` (`fleetdock backup-config`): metadata backups
+taken before the rotation still need the old key, which is saved next to them
+as `backups/env-before-rotate-<time>`.
+
+### Compose, or the API binary
 
 **Never reuse a key id with a different secret.**
 
-### Steps
+1. Keep the current key readable and promote a new one under a new id:
 
-1. Generate a new secret (32+ random bytes, base64 or hex)
-2. Set environment before running the rotation job:
+   ```bash
+   FLEETDOCK_ENCRYPTION_KEYS_OLD="master-1=<current key>"   # comma-separate several
+   FLEETDOCK_ENCRYPTION_KEY="<new key, 32+ random bytes, base64>"
+   FLEETDOCK_ENCRYPTION_KEY_ID="master-2"
+   ```
 
-```bash
-export FLEETDOCK_ENCRYPTION_KEYS_OLD="master-1=<current-secret>"
-export FLEETDOCK_ENCRYPTION_KEY="<new-secret>"
-export FLEETDOCK_ENCRYPTION_KEY_ID="master-2"
-```
+   (`master-1` is the default id when `FLEETDOCK_ENCRYPTION_KEY_ID` was never set.)
 
-3. Run the offline re-wrap (API can stay up; rotation is read/write on secrets table):
+2. Restart the control plane with these settings, then re-wrap:
 
-```bash
-make rotate-keys
-# or inside the control-plane container:
-docker compose exec fleetdock /api  # not applicable — use migrate binary
-docker compose run --rm -e FLEETDOCK_DATABASE_URL -e FLEETDOCK_ENCRYPTION_KEY \
-  -e FLEETDOCK_ENCRYPTION_KEY_ID -e FLEETDOCK_ENCRYPTION_KEYS_OLD \
-  fleetdock sh -c 'go run ./cmd/rotate-keys'  # if Go toolchain in image
-```
+   ```bash
+   docker compose exec fleetdock /api rotate-keys   # or: make rotate-keys
+   ```
 
-The production image contains only the compiled API. Run rotation from a checkout
-or a one-off container with the repo:
+   It reports how many secrets it re-wrapped; run again, it reports them all
+   current.
 
-```bash
-cd backend && go run ./cmd/rotate-keys
-```
-
-4. When the tool reports **0 secrets remaining** under the old key, update
-   production env: remove `FLEETDOCK_ENCRYPTION_KEYS_OLD`, keep `master-2` as primary
-5. Restart the API
-
-Full details: [FEATURES.md — Security](FEATURES.md#security).
+3. Remove `FLEETDOCK_ENCRYPTION_KEYS_OLD` and restart.
 
 ## JWT secret rotation
 
-Rotating `FLEETDOCK_JWT_SECRET` **invalidates all active sessions and API tokens**
-derived from user login (not agent tokens). Plan a maintenance window:
+Rotating `FLEETDOCK_JWT_SECRET` signs everyone out of the dashboard. API tokens
+(`fleetd_…`) and agent tokens are not affected: they are random secrets looked
+up by hash, not signed with it. To revoke API tokens, revoke them under
+**Access → API tokens**.
 
-1. Announce logout to users
-2. Update `FLEETDOCK_JWT_SECRET` and restart API
-3. Users log in again; revoke and recreate long-lived API tokens
+1. Announce the sign-out to users
+2. Update `FLEETDOCK_JWT_SECRET` and restart the control plane
+3. Users sign in again
 
 ## Monitoring
 
-### Health endpoints
+### Health endpoints and metrics
 
 | Endpoint | Auth | Use |
 |----------|------|-----|
 | `GET /healthz` | None | Liveness — process is up |
-| `GET /readyz` | None | Readiness — metadata DB ping succeeds |
+| `GET /readyz` | None | Readiness — the metadata database answers and, where the worker runs, it has turned in the last 2 minutes |
+| `GET /metrics` | `FLEETDOCK_METRICS_TOKEN` as a bearer token | Prometheus metrics; 404 while the token is unset |
 
 Point your load balancer or uptime checker at `/healthz`. Use `/readyz` for
 dependency-aware routing.
+
+`/metrics` reports the build (`fleetdock_build_info`), HTTP requests and
+latency, operations finished by type and result
+(`fleetdock_operations_finished_total`), when the worker last ran
+(`fleetdock_worker_last_run_seconds`), and fleet gauges: servers online and
+offline, database servers, databases, backups and failed backups in the last
+24 hours, operations running, the time of the last backup. Set a long random
+`FLEETDOCK_METRICS_TOKEN` (`fleetdock config set FLEETDOCK_METRICS_TOKEN …`)
+and scrape with:
+
+```yaml
+scrape_configs:
+  - job_name: fleetdock
+    scheme: https
+    authorization: {credentials: "<FLEETDOCK_METRICS_TOKEN>"}
+    static_configs: [{targets: ["fleetdock.example.com"]}]
+```
 
 ### What to alert on
 
 - `/readyz` non-200 for > 2 minutes
 - Disk full on the host (agent heartbeats and metrics accumulate)
-- Backup operations failing (dashboard **Operations** or notification rules)
+- Backup operations failing (dashboard **Activity**, notification rules, or
+  `fleetdock_backups_24h{status="failed"}` in `/metrics`)
+- Agents outdated or too old (overview items; update them as below)
 - Servers stuck `offline` (heartbeat timeout default: 2 minutes)
 - Instances whose health is `unreachable` (the dashboard shows the probe result
   per instance; managed instances the control plane cannot reach directly show
@@ -227,11 +329,16 @@ start.
 | Data | Default retention | Config |
 |------|-------------------|--------|
 | Server metrics samples | 7 days | `FLEETDOCK_METRICS_RETENTION` |
+| Audit log | 365 days | `FLEETDOCK_AUDIT_RETENTION` (`0` keeps everything) |
+| Row changes (data browser undo) | 7 days | `FLEETDOCK_ROW_CHANGE_RETENTION` |
+| Fleet query runs and results | 30 days | `FLEETDOCK_FLEET_RUN_RETENTION` |
+| Opened backup copies | 2 hours | `FLEETDOCK_BACKUP_COPY_TTL` |
 | Soft-deleted databases | 7 days | Built-in recovery window |
 | Backup objects | Per schedule / manual | Destination + schedule retention |
+| Metadata backups (`fleetdock backup-db`) | Until removed | `--keep N` |
 
 ## Support and releases
 
 - Security issues: [SECURITY.md](../SECURITY.md)
-- Version support: latest `0.1.x` on `main`
+- Version support and compatibility: [RELEASING.md](../RELEASING.md#compatibility)
 - Release artifacts: GitHub Releases + GHCR images (see [DEPLOYMENT.md](DEPLOYMENT.md))

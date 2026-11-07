@@ -2,11 +2,16 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| Version | Supported                                                         |
+| ------- | ----------------------------------------------------------------- |
+| 0.10.x  | :white_check_mark: the latest minor release                      |
+| 0.9.x   | :white_check_mark: security fixes, for three months after 0.10    |
+| < 0.9   | :x: upgrade (every release upgrades in place from the previous minor) |
 
-Security fixes are applied to the latest release on the `main` branch.
+Security fixes ship in a patch release of the latest minor, and of the previous
+minor for three months after a new one comes out (see
+[RELEASING.md](RELEASING.md#compatibility)). Releases are signed; see
+[Verifying a release](RELEASING.md#verifying-a-release).
 
 ## Reporting a Vulnerability
 

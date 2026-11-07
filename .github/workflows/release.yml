@@ -10,30 +10,23 @@ permissions:
   packages: write
 
 jobs:
-  # Nothing is published from a tag that does not pass the test suite.
+  # Nothing is published from a tag that does not pass the whole CI suite:
+  # unit, integration and upgrade tests, the image scan, the boot smoke test
+  # and the end-to-end tests.
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "1.26"
-          cache-dependency-path: backend/go.sum
-      - name: backend tests
-        working-directory: backend
-        run: go vet ./... && go test -race ./...
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: frontend checks
-        working-directory: frontend
-        run: npm ci && npm run lint && npm run typecheck && npm test
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
 
   release:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      # Keyless signing: cosign proves the image and checksums came from this
+      # workflow on this repository, with GitHub's OIDC identity.
+      id-token: write
     env:
       REGISTRY: ghcr.io
     steps:
@@ -61,7 +54,9 @@ jobs:
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            # A pre-release tag (v0.10.0-rc.1) must not move `latest`, or every
+            # `fleetdock update` would pick up the release candidate.
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ github.ref_name }}
@@ -82,6 +77,7 @@ jobs:
       # whatever host serves it, so this image works unmodified for every
       # self-hoster rather than being pinned to fleetdock.dev.
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -94,6 +90,15 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the image
+        run: cosign sign --yes "${{ steps.images.outputs.image }}@${{ steps.build.outputs.digest }}"
 
       # Cheap guards for the two ways this image silently breaks: a node too old
       # for Next, and a dashboard bundle that did not get copied.
@@ -107,17 +112,25 @@ jobs:
           docker run --rm --entrypoint sh "$IMG" -c 'test -f /opt/fleetdock/ui/server.js'
           docker run --rm --entrypoint sh "$IMG" -c 'test -d /opt/fleetdock/ui/.next/static'
           docker run --rm --entrypoint sh "$IMG" -c 'test -x /opt/fleetdock/agents/fleetdock-agent-linux-amd64'
+          docker run --rm --entrypoint sh "$IMG" -c 'cd /opt/fleetdock/agents && sha256sum -c SHA256SUMS'
+          # The binaries must report the tag, or agents and the dashboard show "dev".
+          want="${GITHUB_REF_NAME#v}"
+          got="$(docker run --rm --entrypoint /api "$IMG" version)"
+          echo "$got"
+          case "$got" in "fleetdock $want"*) ;; *) echo "::error::image reports '$got', expected $want"; exit 1 ;; esac
 
       - name: Build release archives
         working-directory: backend
         run: |
           mkdir -p ../dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/fleetdock-agent-linux-amd64 ./cmd/agent
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/fleetdock-agent-linux-arm64 ./cmd/agent
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../dist/fleetdock-api-linux-amd64 ./cmd/api
+          pkg=github.com/Fleetdock/fleetdock/backend/internal/version
+          ldflags="-s -w -X $pkg.Version=${GITHUB_REF_NAME} -X $pkg.Commit=${GITHUB_SHA} -X $pkg.Date=${{ github.event.head_commit.timestamp }}"
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="$ldflags" \
+              -o ../dist/fleetdock-agent-linux-$arch ./cmd/agent
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="$ldflags" \
+              -o ../dist/fleetdock-api-linux-$arch ./cmd/api
+          done
           cd ../dist && sha256sum fleetdock-* > SHA256SUMS
 
       - name: Package release tarballs
@@ -125,7 +138,7 @@ jobs:
           tar -czf fleetdock-agents-${{ github.ref_name }}.tar.gz -C dist \
             fleetdock-agent-linux-amd64 fleetdock-agent-linux-arm64 SHA256SUMS
           tar -czf fleetdock-api-${{ github.ref_name }}.tar.gz -C dist \
-            fleetdock-api-linux-amd64 SHA256SUMS
+            fleetdock-api-linux-amd64 fleetdock-api-linux-arm64 SHA256SUMS
 
       - name: Generate release notes
         run: |
@@ -147,16 +160,25 @@ jobs:
       - name: Checksum installer artefacts
         run: sha256sum scripts/install.sh scripts/fleetdock docker-compose.yml > INSTALLER-SHA256SUMS
 
+      - name: Sign the checksums
+        run: |
+          cosign sign-blob --yes --bundle dist/SHA256SUMS.sigstore.json dist/SHA256SUMS
+          cosign sign-blob --yes --bundle INSTALLER-SHA256SUMS.sigstore.json INSTALLER-SHA256SUMS
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          # v0.10.0-rc.1 and the like are published as pre-releases.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body_path: release-notes.md
           files: |
             fleetdock-agents-${{ github.ref_name }}.tar.gz
             fleetdock-api-${{ github.ref_name }}.tar.gz
             dist/SHA256SUMS
+            dist/SHA256SUMS.sigstore.json
             scripts/install.sh
             scripts/fleetdock
             docker-compose.yml
             INSTALLER-SHA256SUMS
+            INSTALLER-SHA256SUMS.sigstore.json

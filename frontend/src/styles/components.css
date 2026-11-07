@@ -1935,6 +1935,18 @@
  * Login
  * ====================================================================== */
 @layer components {
+  /* A page outside the dashboard shell: 404, the global error page. */
+  .standalone-page {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+    text-align: center;
+    background: var(--bg);
+    color: var(--fg);
+  }
   .auth-shell {
     min-height: 100vh;
     min-height: 100dvh;

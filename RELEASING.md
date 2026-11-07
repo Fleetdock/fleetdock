@@ -10,17 +10,59 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** — new features, backward compatible
 - **PATCH** — bug fixes, docs, CI only
 
-Tags use a `v` prefix: `v0.1.0`, `v0.1.1`, `v0.2.0`.
+Tags use a `v` prefix: `v0.10.0`, `v0.10.1`, `v0.11.0`. Release candidates are
+`v0.11.0-rc.1`: they are published as GitHub pre-releases and do not move the
+`latest` image tag.
+
+## Compatibility
+
+Fleetdock is still before 1.0, so under SemVer a minor release (0.11, 0.12, …)
+may change or remove things. From 0.10 the project follows the rules below
+anyway; 1.0 turns them into a promise for the whole 1.x line.
+
+**HTTP API (`/v1`).** No endpoint, field, query parameter or error code
+documented in [openapi.yaml](backend/internal/openapi/openapi.yaml) is removed
+or renamed in a patch release, and no field changes type or meaning. A minor
+release may remove or change one, only after deprecating it (below) where at
+all possible, and lists it under *Removed* or *Changed* in the changelog. New
+endpoints, optional request fields, response fields and enum values may be
+added at any time, so clients must ignore fields they do not know. Errors keep
+the `{error: {code, message, field}}` envelope; match on `code` and the HTTP
+status, never on `message`. Undocumented routes (the dashboard's own, like
+`/healthz` details) are not covered.
+
+**Deprecation.** Something that will go is marked `deprecated: true` in the
+spec, answers with a `Deprecation` header (and `Sunset` once a date is set),
+and is announced under *Deprecated* in the changelog at least one minor
+release before the release that removes it.
+
+**Agents (`/agent/v1`).** A control plane accepts agents from its own minor
+version and the one before (`min_agent_version` in `GET /v1/version`), so the
+fleet can be updated after the control plane. Older agents are flagged in the
+dashboard and should be updated; see [OPERATIONS.md](docs/OPERATIONS.md#updating-agents).
+
+**Configuration and CLI.** A `FLEETDOCK_*` variable or `fleetdock` command
+that is replaced keeps working, with a warning, for at least one minor release.
+
+**Upgrades and migrations.** Every release upgrades in place from the previous
+minor release and its patches. Migrations only move forward; to go back,
+restore the metadata backup taken before the upgrade (`fleetdock update` takes
+one). CI upgrades the latest release to every commit
+(`scripts/ci/upgrade-test.sh`).
+
+**Supported versions.** The latest minor release gets fixes; security fixes
+also go to the previous minor for three months after a new one ships.
 
 ## Release checklist
 
 1. Merge all changes for the release into `main`
-2. Update **[CHANGELOG.md](CHANGELOG.md)** — move `[Unreleased]` entries under a new version heading with today's date
+2. Update **[CHANGELOG.md](CHANGELOG.md)** — move `[Unreleased]` entries under a new version heading with today's date, and add its compare link at the bottom
 3. Open a PR if the changelog commit is not on `main` yet
-4. Create and push the tag (see below)
-5. Wait for the **[Release workflow](.github/workflows/release.yml)** to finish on GitHub Actions
-6. Verify the [GitHub Release](https://github.com/Fleetdock/fleetdock/releases) and GHCR images
-7. Optionally announce (release notes, blog, social)
+4. For a minor or major release, tag a release candidate first (`v0.11.0-rc.1`): it is published as a pre-release and leaves `latest` alone. Install it on a fresh VM with `install.sh --tag v0.11.0-rc.1`, upgrade a copy of a real install to it, enrol and update an agent, then go on
+5. Create and push the tag (see below)
+6. Wait for the **[Release workflow](.github/workflows/release.yml)** to finish on GitHub Actions: it runs the whole CI suite first
+7. Verify the [GitHub Release](https://github.com/Fleetdock/fleetdock/releases) and GHCR images: `/api version` in the image prints the tag, and the signatures verify (below)
+8. Optionally announce (release notes, blog, social)
 
 ## Tag and push
 
@@ -30,19 +72,19 @@ git pull origin main
 
 # After CHANGELOG.md is updated:
 git add CHANGELOG.md
-git commit -m "chore: prepare CHANGELOG for v0.1.1"
+git commit -m "chore: prepare CHANGELOG for v0.10.1"
 git push origin main
 
-git tag -a v0.1.1 -m "v0.1.1"
-git push origin v0.1.1
+git tag -a v0.10.1 -m "v0.10.1"
+git push origin v0.10.1
 ```
 
 To re-run a failed release, delete the remote tag and push again:
 
 ```bash
-git push origin :refs/tags/v0.1.1
-git tag -fa v0.1.1 -m "v0.1.1"
-git push origin v0.1.1
+git push origin :refs/tags/v0.10.1
+git tag -fa v0.10.1 -m "v0.10.1"
+git push origin v0.10.1
 ```
 
 ## What the release workflow does
@@ -54,7 +96,8 @@ On every `v*` tag push:
    `v<tag>`, `<tag>`, `<major>.<minor>` and `latest`.
 2. Verifies the image boots: node version, dashboard bundle present, agent
    binaries executable.
-3. Cross-compiles Linux agent binaries (`amd64`, `arm64`) and the API binary (`amd64`)
+3. Signs the image with cosign (keyless), and cross-compiles the Linux agent
+   and API binaries (`amd64`, `arm64`), stamped with the version
 4. Creates a GitHub Release with tarballs, `SHA256SUMS`, and the installer
    artefacts (`install.sh`, `fleetdock`, `docker-compose.yml`) so a release can
    be installed from a pinned tag
@@ -63,6 +106,24 @@ On every `v*` tag push:
 Nothing deployment-specific is baked into the image. There is no
 `NEXT_PUBLIC_API_URL` build argument any more: the dashboard calls the API on
 whatever origin serves it, so one image works for every self-hoster.
+
+## Verifying a release
+
+Images and checksum files are signed with [cosign](https://docs.sigstore.dev/)
+keyless signing: the signature proves they were built by this repository's
+release workflow from a `v*` tag. Image and SBOM/provenance attestations are
+attached to the image too.
+
+```bash
+cosign verify ghcr.io/fleetdock/fleetdock:v0.10.0 \
+  --certificate-identity-regexp '^https://github.com/Fleetdock/fleetdock/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/Fleetdock/fleetdock/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum -c SHA256SUMS --ignore-missing
+```
 
 ## GHCR visibility
 
@@ -83,7 +144,7 @@ cd ../fleetdock-web && npm run sync:install
 ## Smoke-test a release
 
 ```bash
-export TAG=v0.1.1
+export TAG=v0.10.1
 docker pull ghcr.io/fleetdock/fleetdock:${TAG}
 
 cd /tmp && mkdir -p fd && cd fd
@@ -105,6 +166,6 @@ real host, prefer the actual install path:
 1. Branch from the release tag (or `main` if it still matches production)
 2. Fix, test, merge to `main`
 3. Bump **PATCH** version in CHANGELOG
-4. Tag `v0.1.2` (etc.) and push
+4. Tag `v0.10.2` (etc.) and push
 
 Do not move an existing tag to a different commit once users may have pulled it.

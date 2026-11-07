@@ -47,6 +47,10 @@ services:
       FLEETDOCK_ENV: ${FLEETDOCK_ENV:-production}
       FLEETDOCK_JWT_SECRET: ${FLEETDOCK_JWT_SECRET:?set FLEETDOCK_JWT_SECRET in .env}
       FLEETDOCK_ENCRYPTION_KEY: ${FLEETDOCK_ENCRYPTION_KEY:?set FLEETDOCK_ENCRYPTION_KEY in .env}
+      # Key rotation (`fleetdock rotate-keys`): the new key's id, and the old
+      # keys that stay readable while secrets are re-wrapped.
+      FLEETDOCK_ENCRYPTION_KEY_ID: ${FLEETDOCK_ENCRYPTION_KEY_ID:-master-1}
+      FLEETDOCK_ENCRYPTION_KEYS_OLD: ${FLEETDOCK_ENCRYPTION_KEYS_OLD:-}
       FLEETDOCK_ADMIN_EMAIL: ${FLEETDOCK_ADMIN_EMAIL:-admin@example.com}
       FLEETDOCK_ADMIN_PASSWORD: ${FLEETDOCK_ADMIN_PASSWORD:?set FLEETDOCK_ADMIN_PASSWORD in .env}
       # Derived from FLEETDOCK_DOMAIN by install.sh and written to .env
@@ -58,6 +62,8 @@ services:
       # every login attempt on the internet shares one rate-limit bucket.
       FLEETDOCK_TRUST_PROXY_HEADERS: "true"
       FLEETDOCK_WORKER_ENABLED: ${FLEETDOCK_WORKER_ENABLED:-true}
+      # Enables GET /metrics for a Prometheus scraper holding this token.
+      FLEETDOCK_METRICS_TOKEN: ${FLEETDOCK_METRICS_TOKEN:-}
       FLEETDOCK_HEARTBEAT_TIMEOUT: ${FLEETDOCK_HEARTBEAT_TIMEOUT:-2m}
       FLEETDOCK_METRICS_RETENTION: ${FLEETDOCK_METRICS_RETENTION:-168h}
       # External database access is opt-in: the gateway lives behind the

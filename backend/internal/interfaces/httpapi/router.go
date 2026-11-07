@@ -2,12 +2,17 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
+	"strings"
 	"time"
 
 	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	authz "github.com/Fleetdock/fleetdock/backend/internal/domain/authz"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/metrics"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
 // RouterDeps are the handlers and middleware the router wires together.
@@ -50,6 +55,13 @@ type RouterDeps struct {
 	Audit *auditapp.Service
 	// Ready reports whether dependencies (the metadata database) are healthy.
 	Ready func(ctx context.Context) error
+	// WorkerEnabled makes /readyz also require the background worker to be
+	// turning (it is not on API-only replicas).
+	WorkerEnabled bool
+	// MetricsToken enables GET /metrics for scrapers that send it as a
+	// bearer token; MetricsGauges adds fleet gauges read at scrape time.
+	MetricsToken  string
+	MetricsGauges func(ctx context.Context) []metrics.Gauge
 	// UI, when non-nil, serves every path the API does not own: the bundled
 	// dashboard, reverse-proxied to a co-resident Node process. Nil keeps the
 	// API-only behaviour, where unknown paths 404.
@@ -75,8 +87,43 @@ func NewRouter(d RouterDeps) http.Handler {
 				return
 			}
 		}
+		if d.WorkerEnabled && metrics.WorkerStalled(2*time.Minute) {
+			// Backups, schedules and alerts all run on the worker: a process
+			// whose worker stopped turning is not doing its job.
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable", "reason": "worker stalled"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
+
+	// Prometheus metrics, for a scraper holding FLEETDOCK_METRICS_TOKEN.
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		if d.MetricsToken == "" {
+			http.NotFound(w, r)
+			return
+		}
+		got, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !bearer || subtle.ConstantTimeCompare([]byte(got), []byte(d.MetricsToken)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
+			writeError(w, apperr.Unauthorized("a valid metrics token is required"))
+			return
+		}
+		var gauges []metrics.Gauge
+		if d.MetricsGauges != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			gauges = d.MetricsGauges(ctx)
+			cancel()
+		}
+		v := version.Get()
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		_ = metrics.Write(w, v.Version, v.Commit, gauges)
+	})
+
+	// The running build, for the dashboard's footer and support requests.
+	// Signed-in users only: the exact version helps an attacker pick exploits.
+	mux.HandleFunc("GET /v1/version", requirePerm("", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, version.Get())
+	}))
 
 	// Public: API documentation (spec + Redoc page).
 	mux.HandleFunc("GET /openapi.yaml", d.Docs.Spec)
@@ -85,9 +132,13 @@ func NewRouter(d RouterDeps) http.Handler {
 	// Public: agent install script + binaries.
 	mux.HandleFunc("GET /install.sh", d.Install.Script)
 	mux.HandleFunc("GET /agent/v1/binary/{os}/{arch}", d.Install.Binary)
+	mux.HandleFunc("GET /agent/v1/binary/{os}/{arch}/sha256", d.Install.BinarySum)
 
 	// Agent protocol (agent bearer token, not user JWT).
-	mux.HandleFunc("POST /agent/v1/register", d.Agents.Register)
+	// Enrolment takes a registration token: limit guessing like logins.
+	regLimiter := newLoginLimiter(10, time.Minute, d.TrustProxyHeaders)
+	regLimiter.message = "too many enrolment attempts; try again in a minute"
+	mux.HandleFunc("POST /agent/v1/register", regLimiter.Middleware(d.Agents.Register))
 	mux.HandleFunc("POST /agent/v1/heartbeat", d.Agents.Auth(d.Agents.Heartbeat))
 	mux.HandleFunc("POST /agent/v1/jobs/claim", d.Agents.Auth(d.Agents.Claim))
 	mux.HandleFunc("POST /agent/v1/jobs/{id}/status", d.Agents.Auth(d.Agents.UpdateJob))
@@ -149,8 +200,6 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/instances/{id}/stop", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("stop")))
 	mux.HandleFunc("POST /v1/instances/{id}/restart", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("restart")))
 	mux.HandleFunc("POST /v1/instances/{id}/probe", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.Probe))
-	mux.HandleFunc("POST /v1/instances/{id}/test-connection", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.TestConnection))
-	mux.HandleFunc("POST /v1/instances/{id}/import-databases", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.ImportDatabases))
 
 	// Databases. Create authorizes the target instance inside the handler.
 	mux.HandleFunc("POST /v1/databases", requireAnyPerm("database:write", d.Databases.Create))
@@ -311,6 +360,9 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/tokens", requirePerm("token:write", d.Tokens.Create))
 	mux.HandleFunc("GET /v1/tokens", requirePerm("token:read", d.Tokens.List))
 	mux.HandleFunc("DELETE /v1/tokens/{id}", requirePerm("token:write", d.Tokens.Revoke))
+	// Everyone's API tokens, for the administrators who manage users.
+	mux.HandleFunc("GET /v1/api-tokens", requirePerm("user:write", d.Tokens.ListActive))
+	mux.HandleFunc("DELETE /v1/api-tokens/{id}", requirePerm("user:write", d.Tokens.RevokeAny))
 
 	// Audit log
 	auditHandler := &AuditHandler{svc: d.Audit}
