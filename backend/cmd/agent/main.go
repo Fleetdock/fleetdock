@@ -30,9 +30,12 @@ import (
 	"time"
 
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
-const version = "0.1.0"
+// agentVersion is reported on enrolment and every heartbeat; release builds
+// stamp it with -ldflags (see internal/version).
+var agentVersion = version.Get().Version
 
 type state struct {
 	ServerID   string `json:"server_id"`
@@ -47,6 +50,10 @@ type agent struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
+		fmt.Println(agentVersion)
+		return
+	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 	if err := run(); err != nil {
 		slog.Error("fatal", "error", err.Error())
@@ -118,7 +125,7 @@ func (a *agent) register(ctx context.Context) error {
 		"token":         token,
 		"hostname":      hostname,
 		"os":            osName,
-		"agent_version": version,
+		"agent_version": agentVersion,
 	}
 	if addr := primaryAddress(a.baseURL); addr != "" {
 		body["address"] = addr
@@ -165,7 +172,7 @@ func (a *agent) saveState() error {
 
 func (a *agent) sendHeartbeat(ctx context.Context) {
 	info := map[string]any{
-		"agent_version": version,
+		"agent_version": agentVersion,
 		"os":            detectOS(),
 		"docker_ok":     dockerOK(),
 	}

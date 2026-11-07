@@ -7,10 +7,10 @@ import { CreateTokenModal } from "@/components/access/token-modal";
 import { useConfirm } from "@/components/confirm";
 import { DataTable } from "@/components/data-table";
 import { useErrorToast } from "@/components/toast";
-import { Badge, Button, IconButton, PageHeader, SecretReveal, Time } from "@/components/ui";
+import { Badge, Button, IconButton, PageHeader, SecretReveal, SectionHeader, Time } from "@/components/ui";
 import { friendlyError } from "@/lib/errors";
-import { useCan, useRevokeToken, useTokens } from "@/lib/hooks";
-import type { ApiToken } from "@/lib/types";
+import { useAllTokens, useCan, useMe, useRevokeAnyToken, useRevokeToken, useTokens } from "@/lib/hooks";
+import type { ApiToken, OwnedApiToken } from "@/lib/types";
 import { useDataTable } from "@/lib/use-data-table";
 
 export default function TokensPage() {
@@ -125,6 +125,8 @@ export default function TokensPage() {
         pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
       />
 
+      {can("user:write") ? <EveryonesTokens /> : null}
+
       <CreateTokenModal open={open} onClose={() => setOpen(false)} onCreated={setSecret} />
 
       <SecretReveal
@@ -135,5 +137,92 @@ export default function TokensPage() {
         items={[{ label: "Token", value: secret ?? "" }]}
       />
     </div>
+  );
+}
+
+/**
+ * EveryonesTokens lists every user's live tokens for administrators, to find
+ * and revoke the ones of people who left or of accounts that may be
+ * compromised.
+ */
+function EveryonesTokens() {
+  const { data, isLoading, error, refetch } = useAllTokens(true);
+  const { data: me } = useMe();
+  const revoke = useRevokeAnyToken();
+  const toastError = useErrorToast();
+  const confirm = useConfirm();
+  const others = (data?.items ?? []).filter((t) => t.user_id !== me?.id);
+  const table = useDataTable({ items: others });
+
+  return (
+    <section className="mt-8">
+      <SectionHeader
+        title="Everyone else's tokens"
+        description="Tokens of other users that still work. Revoke the ones of people who left, or of an account that may be compromised."
+      />
+      <DataTable<OwnedApiToken>
+        columns={[
+          { id: "owner", header: "Owner", render: (t) => t.user_email || <span className="muted">deleted user</span> },
+          { id: "name", header: "Name", className: "font-medium", render: (t) => t.name },
+          { id: "prefix", header: "Prefix", className: "muted", hideOnMobile: true, render: (t) => <code className="mono">{t.prefix}…</code> },
+          {
+            id: "scopes",
+            header: "Scopes",
+            className: "muted text-sm",
+            hideOnMobile: true,
+            render: (t) => (t.scopes.length === 0 ? "all (account)" : `${t.scopes.length} permission${t.scopes.length === 1 ? "" : "s"}`),
+          },
+          {
+            id: "expires",
+            header: "Expires",
+            className: "muted",
+            render: (t) =>
+              t.expires_at ? (
+                new Date(t.expires_at).toLocaleDateString()
+              ) : (
+                <Badge tone="warning">never</Badge>
+              ),
+          },
+          {
+            id: "last_used",
+            header: "Last used",
+            className: "muted",
+            hideOnMobile: true,
+            render: (t) => (t.last_used_at ? <Time value={t.last_used_at} /> : "never"),
+          },
+          {
+            id: "actions",
+            header: "",
+            align: "right",
+            render: (t) => (
+              <IconButton
+                label={`Revoke ${t.user_email}'s token ${t.name}`}
+                variant="danger"
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: `Revoke ${t.user_email}'s token "${t.name}"?`,
+                    message: "Anything using this token stops working immediately. Its owner is not told.",
+                    confirmLabel: "Revoke token",
+                    danger: true,
+                  });
+                  if (ok) revoke.mutate(t.id, { onError: toastError("Failed to revoke the token") });
+                }}
+              >
+                <Trash2 size={15} aria-hidden />
+              </IconButton>
+            ),
+          },
+        ]}
+        rows={table.rows}
+        rowKey={(t) => t.id}
+        isLoading={isLoading}
+        error={error ? friendlyError(error) : undefined}
+        errorTitle="Could not load tokens"
+        onRetry={() => void refetch()}
+        emptyTitle="No other tokens"
+        emptyHint="Nobody else has a working API token."
+        pagination={{ page: table.page, pageCount: table.pageCount, onPage: table.setPage }}
+      />
+    </section>
   );
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Fleetdock/fleetdock/backend/internal/openapi"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
 // DocsHandler serves the OpenAPI spec and a self-contained Redoc docs page.
@@ -17,7 +18,7 @@ func NewDocsHandler() *DocsHandler { return &DocsHandler{} }
 func (h *DocsHandler) Spec(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(openapi.Spec)
+	_, _ = w.Write(openapi.SpecFor(version.Get().Version))
 }
 
 const redocPage = `<!doctype html>
@@ -30,7 +31,9 @@ const redocPage = `<!doctype html>
   </head>
   <body>
     <redoc spec-url="/openapi.yaml"></redoc>
-    <script src="https://cdn.redocly.com/redoc/latest/bundles/redoc.standalone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/redoc@2.5.1/bundles/redoc.standalone.js"
+      integrity="sha384-up2uPEo+8XzxuLXKGY4DOk79DbbRclvlcx22QZ60aPWQf8LW69XJ8BWzLFewC05H"
+      crossorigin="anonymous"></script>
   </body>
 </html>`
 
@@ -38,8 +41,9 @@ const redocPage = `<!doctype html>
 func (h *DocsHandler) Page(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Redoc is the only page the API serves that renders HTML; allow exactly
-	// its CDN bundle, its inline styles and its blob web workers.
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src https://cdn.redocly.com; "+
+	// its CDN bundle (pinned, and checked by its integrity hash), its inline
+	// styles and its blob web workers.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src https://cdn.jsdelivr.net; "+
 		"style-src 'unsafe-inline'; img-src data: https:; font-src data: https:; connect-src 'self'; "+
 		"worker-src blob:; frame-ancestors 'none'; base-uri 'none'")
 	w.WriteHeader(http.StatusOK)

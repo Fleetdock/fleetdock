@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/confirm";
 import { DataTable } from "@/components/data-table";
 import { InstallCommand } from "@/components/install-command";
 import { useToast } from "@/components/toast";
-import { Button, ButtonLink, ErrorText, Field, Modal, PageHeader, SectionHeader, StatusBadge, Time } from "@/components/ui";
+import { Badge, Button, ButtonLink, ErrorText, Field, Modal, PageHeader, SectionHeader, StatusBadge, Time } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import {
@@ -63,7 +63,22 @@ export default function ServersPage() {
           },
           { id: "hostname", header: "Hostname", className: "muted", render: (s) => s.hostname },
           { id: "status", header: "Status", render: (s) => <StatusBadge status={s.status} /> },
-          { id: "agent", header: "Agent", className: "muted", hideOnMobile: true, render: (s) => s.agent_version ?? "—" },
+          {
+            id: "agent",
+            header: "Agent",
+            className: "muted",
+            hideOnMobile: true,
+            render: (s) => (
+              <span className="inline-flex items-center gap-1.5">
+                {s.agent_version ?? "—"}
+                {s.agent_status === "outdated" || s.agent_status === "unsupported" ? (
+                  <Badge tone={s.agent_status === "unsupported" ? "danger" : "warning"}>
+                    {s.agent_status === "unsupported" ? "Too old" : "Update"}
+                  </Badge>
+                ) : null}
+              </span>
+            ),
+          },
           {
             id: "heartbeat",
             header: "Last heartbeat",

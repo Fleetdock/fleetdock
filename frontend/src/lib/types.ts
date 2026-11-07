@@ -3,6 +3,16 @@ export interface Paginated<T> {
   pagination: { total: number; limit: number; offset: number };
 }
 
+export type AgentStatus = "current" | "outdated" | "unsupported" | "unknown";
+
+/** GET /v1/version: the running control plane. */
+export interface VersionInfo {
+  version: string;
+  commit?: string;
+  date?: string;
+  min_agent_version: string;
+}
+
 export interface Server {
   id: string;
   name: string;
@@ -10,7 +20,8 @@ export interface Server {
   address?: string | null;
   status: string;
   agent_version?: string | null;
-  mariadb_version?: string | null;
+  /** How the agent's version compares with this Fleetdock; absent before it reports. */
+  agent_status?: AgentStatus;
   os?: string | null;
   labels: Record<string, string>;
   tags: string[];
@@ -34,7 +45,6 @@ export interface Instance {
   provisioned: boolean;
   container_id?: string | null;
   engine_version: string;
-  mariadb_version: string; // back-compat alias of engine_version
   port: number;
   status: string;
   labels: Record<string, string>;
@@ -260,6 +270,12 @@ export interface ApiToken {
   created_at: string;
 }
 
+/** GET /v1/api-tokens: someone's live token, for administrators. */
+export interface OwnedApiToken extends ApiToken {
+  user_id: string;
+  user_email: string;
+}
+
 export type ScopeType = "global" | "server" | "database";
 
 export interface Grant {
@@ -309,7 +325,6 @@ export interface CreateInstanceInput {
   name: string;
   engine?: string;
   engine_version?: string;
-  mariadb_version?: string; // back-compat
   port: number;
   username?: string;
   password?: string;
@@ -594,6 +609,8 @@ export interface Overview {
 export interface AttentionItem {
   kind:
     | "server_offline"
+    | "agent_outdated"
+    | "agent_unsupported"
     | "instance_unreachable"
     | "backup_failed"
     | "backup_check_failed"

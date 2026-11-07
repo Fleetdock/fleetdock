@@ -1,6 +1,11 @@
 # Proposal — Simplifying database management UX
 
-Status: **draft, for review**
+Status: **implemented** (0.5 – 0.10). The grouped Databases page, the
+sidebar, the probe that replaced *Import DBs* and *Test connection* (whose API
+routes were removed in 0.10), confirmation dialogs and toasts shipped. Still
+open, tracked in [ROADMAP.md](../../ROADMAP.md): the agent-side probe for
+managed instances (§3.1), `GET /v1/engines` (§5.10), configurable worker
+tickers (§5.16). Kept as the record of why the UI is shaped this way.
 Scope: frontend information architecture, instance sync/health mechanics, and a
 prioritized list of refactors found while reading the code.
 

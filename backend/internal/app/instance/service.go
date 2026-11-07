@@ -627,53 +627,6 @@ func (s *Service) List(ctx context.Context, p ListParams) (ListResult, error) {
 	return ListResult{Items: page.Items, Total: page.Total, Limit: limit, Offset: offset}, nil
 }
 
-// TestConnectionResult reports connectivity for an instance.
-type TestConnectionResult struct {
-	Mode        string // sync | async
-	OK          bool
-	Version     string
-	Error       string
-	OperationID string
-}
-
-// TestConnection checks connectivity: synchronously for external instances,
-// via an agent operation for managed ones.
-func (s *Service) TestConnection(ctx context.Context, id string, createdBy *uuid.UUID) (*TestConnectionResult, error) {
-	inst, err := s.Get(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if !inst.HasCredentials() {
-		return nil, apperr.Invalid("id", "instance has no admin credentials configured")
-	}
-
-	if inst.Kind == instancedom.KindExternal {
-		conn, err := s.connParams(ctx, inst)
-		if err != nil {
-			return nil, err
-		}
-		eng, err := engine.For(string(inst.Engine))
-		if err != nil {
-			return nil, apperr.Invalid("engine", err.Error())
-		}
-		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		version, perr := eng.Ping(cctx, conn)
-		res := &TestConnectionResult{Mode: "sync", OK: perr == nil, Version: version}
-		if perr != nil {
-			res.Error = apperr.EngineMessage(perr)
-		}
-		return res, nil
-	}
-
-	job, err := s.ops.Create(ctx, jobdom.TypeTestConnection, "instance", &inst.ID, inst.ServerID,
-		operationapp.Params{InstanceID: inst.ID.String()}, createdBy)
-	if err != nil {
-		return nil, err
-	}
-	return &TestConnectionResult{Mode: "async", OperationID: job.ID.String()}, nil
-}
-
 // ImportResult reports the outcome of a database import.
 type ImportResult struct {
 	Mode        string // sync | async

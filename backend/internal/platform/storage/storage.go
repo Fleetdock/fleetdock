@@ -7,12 +7,16 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 )
 
 // Config identifies one bucket + credential pair.
@@ -43,15 +47,43 @@ func New(cfg Config) (*Client, error) {
 	if region == "" {
 		region = "auto"
 	}
+	if err := checkEndpoint(endpoint, secure); err != nil {
+		return nil, err
+	}
 	mc, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: secure,
 		Region: region,
+		// The endpoint is user input: refuse metadata and link-local
+		// addresses (and loopback in production), like database hosts.
+		Transport: netsafe.ServiceTransport(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("storage: new client: %w", err)
 	}
 	return &Client{mc: mc, bucket: cfg.Bucket}, nil
+}
+
+// checkEndpoint refuses an endpoint the dial policy forbids before any
+// request is made. The transport refuses it again at connect time (DNS
+// rebinding), but minio-go retries every request error about ten times with
+// backoff, so without this a refused endpoint fails only after seconds, as a
+// timeout instead of a clear refusal.
+func checkEndpoint(endpoint string, secure bool) error {
+	host, portStr, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		host, portStr = endpoint, "443"
+		if !secure {
+			portStr = "80"
+		}
+	}
+	port, _ := strconv.Atoi(portStr)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := netsafe.CheckDBHost(ctx, strings.Trim(host, "[]"), port); err != nil {
+		return fmt.Errorf("storage: endpoint %s: %w", endpoint, err)
+	}
+	return nil
 }
 
 // TestAccess verifies the bucket is reachable with the credentials.

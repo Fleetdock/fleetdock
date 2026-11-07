@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The release workflow runs this whole suite before it publishes anything.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   backend:
@@ -32,8 +41,17 @@ jobs:
       - name: test
         run: go test -race -coverprofile=coverage.out ./...
 
-      - name: Coverage summary
-        run: go tool cover -func=coverage.out | tail -1
+      - name: Coverage floor
+        # The total may only go up: raise .coverage-floor when it does.
+        run: |
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%","",$3); print $3}')"
+          floor="$(cat .coverage-floor)"
+          echo "coverage ${total}% (floor ${floor}%)"
+          awk -v t="$total" -v f="$floor" 'BEGIN { exit (t + 0 < f + 0) }' || {
+            echo "::error::backend coverage ${total}% is below the floor of ${floor}%"; exit 1; }
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
       - name: Upload coverage
         uses: actions/upload-artifact@v7
@@ -97,6 +115,32 @@ jobs:
           go run ./cmd/migrate
           go run ./cmd/migrate
 
+  upgrade:
+    # An install of the previous release, upgraded in place to this commit:
+    # its users, API tokens, notification channels and backup storage must
+    # survive, and the new version must start on the database the old one
+    # created.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_PASSWORD: rootpw}
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the release tags
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache-dependency-path: backend/go.sum
+      - name: upgrade from the latest release
+        env:
+          DATABASE_URL: postgres://postgres:rootpw@127.0.0.1:54329/postgres?sslmode=disable
+        run: scripts/ci/upgrade-test.sh
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -113,6 +157,9 @@ jobs:
 
       - name: install
         run: npm ci
+
+      - name: audit (runtime dependencies)
+        run: npm audit --omit=dev --audit-level=high
 
       - name: lint
         run: npm run lint
@@ -139,7 +186,8 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck -s sh scripts/install.sh scripts/fleetdock \
             backend/docker-entrypoint.sh \
-            backend/internal/interfaces/httpapi/install_script.sh
+            backend/internal/interfaces/httpapi/install_script.sh \
+            scripts/ci/upgrade-test.sh scripts/ci/dump-tools-test.sh
 
   docker:
     runs-on: ubuntu-latest
@@ -156,6 +204,11 @@ jobs:
           docker run --rm --entrypoint node fleetdock:ci --version
           docker run --rm --entrypoint sh fleetdock:ci -c 'test -f /opt/fleetdock/ui/server.js'
           docker run --rm --entrypoint sh fleetdock:ci -c 'test -d /opt/fleetdock/ui/.next/static'
+
+      - name: dump tools against every engine
+        # Backups run the image's mariadb-dump and pg_dump: prove they dump
+        # and restore MySQL 8.4, MariaDB 11.4 and PostgreSQL 16 and 18.
+        run: scripts/ci/dump-tools-test.sh
 
       - name: boot smoke test
         # The real thing: compose up, migrations, readiness, a login, and the
@@ -184,6 +237,42 @@ jobs:
           curl -sfI http://127.0.0.1:18080/v1/auth/me | grep -qi "content-security-policy"
           for _ in $(seq 1 30); do curl -sfI http://127.0.0.1:18080/login | grep -qi "content-security-policy" && break; sleep 2; done
           curl -sfI http://127.0.0.1:18080/login | grep -qi "content-security-policy"
+
+      - name: scan the image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: fleetdock:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: end-to-end tests
+        # The Playwright suite against the stack the smoke test booted: sign
+        # in, every section, old addresses, the phone layout, the command
+        # palette, confirmations.
+        working-directory: frontend
+        env:
+          FLEETDOCK_E2E_URL: http://127.0.0.1:18080
+          FLEETDOCK_E2E_EMAIL: admin@example.com
+          FLEETDOCK_E2E_PASSWORD: Ci-Smoke-Passw0rd
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run e2e
+
+      - name: end-to-end traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results
+          path: frontend/test-results
+          retention-days: 7
 
       - name: smoke logs on failure
         if: failure()

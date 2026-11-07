@@ -34,6 +34,7 @@ import {
   useRestoreBackup,
 } from "@/lib/hooks";
 import type { Backup } from "@/lib/types";
+import { engineFamily } from "@/lib/engines";
 
 /**
  * BackupList is the backup history table with its row actions (restore,
@@ -279,7 +280,7 @@ function RestoreModal({ backup, onClose }: { backup: Backup | null; onClose: () 
             <Select value={targetInstance} onChange={(e) => setTargetInstance(e.target.value)}>
               <option value="">{backup.instance_name ? `${backup.instance_name} (original)` : "Original server"}</option>
               {instances?.items
-                .filter((i) => i.has_credentials)
+                .filter((i) => i.has_credentials && engineFamily(i.engine) === engineFamily(backup.engine))
                 .map((i) => (
                   <option key={i.id} value={i.id}>
                     {i.name} ({i.kind === "external" ? `${i.host}:${i.port}` : `port ${i.port}`})

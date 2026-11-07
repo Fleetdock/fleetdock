@@ -28,6 +28,7 @@ import (
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
 	rowchangedom "github.com/Fleetdock/fleetdock/backend/internal/domain/rowchange"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/executor"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/metrics"
 )
 
 // toJobLogs maps buffered executor log lines to domain log records for a job.
@@ -97,6 +98,7 @@ func (w *Worker) Run(ctx context.Context) {
 	defer fast.Stop()
 
 	slog.Info("operations worker started")
+	metrics.WorkerTick()
 	if (w.deps.Catalog != nil && w.deps.Catalog.Enabled()) || (w.deps.SchemaHistory != nil && w.deps.SchemaHistory.Enabled()) {
 		go w.catalogLoop(ctx)
 	}
@@ -105,6 +107,7 @@ func (w *Worker) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-claim.C:
+			metrics.WorkerTick()
 			// Drain all currently pending control-plane jobs.
 			for w.runOne(ctx) {
 			}

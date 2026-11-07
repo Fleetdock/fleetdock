@@ -7,6 +7,152 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Upgrading: see
+[OPERATIONS.md — Upgrading to 0.10](docs/OPERATIONS.md#upgrading-to-010).
+
+### Added
+
+- **Fleetdock knows its version.** Release builds stamp the version and
+  commit into the control plane and the agent. The dashboard shows it at
+  the bottom of the sidebar, `fleetdock version` and `/api version` print
+  it, `GET /v1/version` reports it with the oldest supported agent, the
+  served OpenAPI document carries it, and agents report their real version
+  instead of `0.1.0`.
+- **Agent updates.** A server whose agent is older than the control plane
+  shows **Update** in the server list, an *Agent update available* notice
+  with the command on its page, and an item on the overview (*Agent too
+  old* when it is below the supported minimum). Running the installer
+  without a registration token updates an enrolled agent in place, keeping
+  its identity. API: servers report `agent_status` (`current`, `outdated`,
+  `unsupported`, `unknown`).
+- **Upgrade checks.** CI upgrades an install of the latest release to the
+  new code and checks its data survives.
+- **PostgreSQL 18 and MariaDB 11.8** can be created as new database servers
+  (PostgreSQL 17 is now the default). MySQL 8.0, past its end of life, is no
+  longer offered for new servers; existing ones keep working.
+- **Prometheus metrics.** `GET /metrics` reports the build, HTTP requests
+  and latency, finished operations by type and result, the worker's last
+  run, and fleet gauges (servers, database servers, databases, backups and
+  failures in the last 24 hours, running operations, the last backup).
+  Enabled by `FLEETDOCK_METRICS_TOKEN`, which the scraper sends as a bearer
+  token. `/readyz` now also fails when the background worker has stopped.
+- **Administrators see everyone's API tokens.** *Access → API tokens* lists
+  other users' working tokens (owner, scopes, expiry, last use) for anyone
+  who manages users, and revokes them. API: `GET /v1/api-tokens`,
+  `DELETE /v1/api-tokens/{id}`.
+- **Metadata backups you can schedule.** `fleetdock backup-db --keep N`
+  keeps the newest N; the docs give a nightly cron line that also copies
+  them off the host.
+- **Signed releases.** Images and the checksum files are signed with
+  cosign (keyless, from the release workflow); RELEASING.md shows how to
+  verify them.
+- **Back where you were after signing in again.** When a session ends, the
+  sign-in page says so and returns to the page you were on; the SQL
+  console keeps the script you were writing (per database, in this
+  browser). Unknown addresses outside the dashboard get a proper "Page not
+  found", and a failure of the whole page an error page instead of a blank
+  one.
+
+### Changed
+
+- **Compatibility rules.** [RELEASING.md](RELEASING.md#compatibility)
+  states what releases keep compatible (the `/v1` API, agents,
+  configuration, upgrades) and how things are deprecated before they go. The OpenAPI document now describes every
+  operation's error response (`{error: {code, message, field}}`), the
+  cookie session next to bearer tokens, and the response bodies of servers,
+  database servers, databases, backups, operations, users, roles, tokens,
+  backup storage, schedules, notification channels and alert rules; a test
+  keeps those in step with what the handlers return.
+- **Key rotation in one command.** `fleetdock rotate-keys` replaces
+  `FLEETDOCK_ENCRYPTION_KEY` and re-encrypts every stored credential, with
+  backups first and the old key put back if anything fails. The image now
+  includes it as `/api rotate-keys` (the separate `cmd/rotate-keys` program
+  is gone), and the compose file passes `FLEETDOCK_ENCRYPTION_KEY_ID` and
+  `FLEETDOCK_ENCRYPTION_KEYS_OLD` to the container.
+- **Safer upgrades.** Fleetdock records the SHA-256 of every migration and
+  refuses to start on a metadata database migrated by a newer version, or
+  whose applied migrations have changed, instead of running against a
+  schema it does not match. With `FLEETDOCK_RUN_MIGRATIONS=false` it also
+  refuses to start while migrations are pending.
+- **The image ships the PostgreSQL 18 client** (on Alpine 3.23, with
+  Node.js 24), so backups of PostgreSQL 18 servers work: a newer `pg_dump`
+  reads older servers, never the reverse. CI now dumps and restores MySQL
+  8.4, MariaDB 11.4 and PostgreSQL 16 and 18 with the image's own tools.
+- **CI before every release**: the release workflow runs the whole CI suite
+  (integration, upgrade, end-to-end and image-scan jobs included) before it
+  publishes. CI gained the Playwright end-to-end tests against a booted
+  stack, `govulncheck`, `npm audit` for runtime dependencies, a Trivy scan
+  of the image, Dependabot for base images, and a floor under backend test
+  coverage.
+- Release candidates (`v0.10.0-rc.1`) no longer move the `latest` image tag
+  and are published as pre-releases. Releases also ship an arm64 API
+  binary.
+
+### Removed
+
+- **Deprecated API routes.** `POST /v1/instances/{id}/test-connection` and
+  `POST /v1/instances/{id}/import-databases` are gone; use
+  `POST /v1/instances/{id}/probe`, which checks the connection and refreshes
+  the database list (databases are also discovered every minute).
+- **`mariadb_version` in API responses.** Servers and database servers
+  report `engine_version` only; registering a database server takes
+  `engine_version` (the `mariadb_version` alias is no longer read). Agents
+  may still send it.
+
+### Security
+
+- **Password guessing against one account is stopped.** After 10 failed
+  sign-ins to an account within 15 minutes, it refuses sign-in for the rest
+  of those minutes, from any address (the per-address limit still applies
+  too). Refusals are in the audit log.
+- **New API tokens expire after 90 days by default** (7 days to 1 year, or
+  never, with a warning).
+- **Notification secrets are encrypted.** Webhook and Slack URLs and the
+  SMTP password of notification channels are kept in the encrypted secret
+  store like other credentials, instead of in plain text in the channel's
+  settings. Channels saved by earlier versions are encrypted on the first
+  start.
+- **Backup storage endpoints follow the database host rules**: an S3
+  endpoint on a link-local or cloud-metadata address, the metadata database,
+  or loopback in production is refused, at once and with the reason.
+- **Client addresses behind a proxy can no longer be chosen by the client.**
+  With `FLEETDOCK_TRUST_PROXY_HEADERS`, Fleetdock takes the last
+  `X-Forwarded-For` entry (the one the proxy adds) instead of the first.
+  Behind nginx with `$proxy_add_x_forwarded_for`, the first could be set by
+  the client to dodge the login limit and appear as anyone in the audit
+  log. The nginx example now sets `$remote_addr`.
+- Agent enrolment (`POST /agent/v1/register`) is rate limited like sign-in.
+- The API docs page loads a pinned Redoc version checked by its integrity
+  hash, instead of whatever `latest` served.
+- **The agent installer checks what it downloads**: the binary must match
+  the SHA-256 the control plane publishes
+  (`GET /agent/v1/binary/{os}/{arch}/sha256`). It is written beside the
+  old one and renamed into place, so an update no longer fails on a
+  running binary.
+
+### Fixed
+
+- **Passwords longer than 72 bytes failed with a server error.** bcrypt
+  refuses them; they are now rejected with a clear message (72 plain
+  letters, fewer with accents or non-Latin letters).
+- **Backups and restores of MySQL 8 servers failed from the image**: the
+  MariaDB client could not log in with `caching_sha2_password`, MySQL 8's
+  default, because Alpine ships its authentication plugins in a separate
+  package. The image (and the agent installer on Alpine) now installs
+  `mariadb-connector-c`. Found by the new dump test in CI.
+- **Creating a PostgreSQL 18 server failed**: the official image keeps its
+  data under `/var/lib/postgresql` from 18 on and refuses the old volume
+  path.
+- **Email alerts could gain headers**: a title carrying a name with a line
+  break (PostgreSQL allows one in a database name) could add headers such
+  as `Bcc:`. Header values are now kept on one line.
+- **A backup could be restored to a database server of another engine**,
+  failing only when the restore ran. Restoring, copying or moving now
+  requires the same engine family (PostgreSQL, or MySQL/MariaDB), and the
+  dialogs only offer such servers.
+
+## [0.9.3] - 2026-11-02
+
 ### Added
 
 - **Choose PostgreSQL schemas.** In databases with several schemas, the
@@ -28,35 +174,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in that view (`/data?db=…&table=…&saved=<id>`). API:
   `/v1/databases/{id}/table-views`; changes are audited as `table_view.*`.
 
+## [0.9.2] - 2026-11-01
+
 ### Added
 
-- **ER diagram.** A database's **Diagram** page draws its tables and
-  views with their columns, primary keys and row estimates, and every
-  foreign key between them, laid out automatically. Click a table to
-  highlight its relations, double-click it (or its name) to open it in the
-  data browser, find a table by name, show only a table and its neighbours
-  (1–3 steps), narrow a PostgreSQL database to one schema, and download the
-  diagram as PNG or SVG. Positions you drag are kept in the browser.
-  Databases with more than 150 tables open on their most connected table.
-  The diagram has its own page (`/databases/{id}/diagram`) that uses the
-  whole window, opened from the database page's **Diagram** button or the
-  data browser's table list.
-  API: `GET /v1/databases/{id}/diagram`; the column catalog
-  (`GET /v1/databases/{id}/columns`) now also reports `nullable` and
-  `primary_key`.
-- **Audit log.** *Activity → Audit log* shows who did what: sign-ins and
-  failed sign-ins, users, roles, grants and API tokens, servers, database
-  servers and databases, backups, backup storage and schedules,
-  notification settings, console scripts that write (with the script),
-  data-browser edits and undo, structure changes, exports and dumps. Every
-  event carries the user — or the API token, or the CLI — with IP address
-  and client, the resource and the outcome; requests refused for lack of
-  permission are kept as *denied*. Filter by period, kind of action, user
-  and result, open an event for its details, export CSV, or open a
-  database's own events from its menu. Owners and admins can read it
-  (`audit:read`). Events are kept for `FLEETDOCK_AUDIT_RETENTION` (365
-  days; `0` keeps them). `fleetdock reset-admin-password` is recorded too.
-  API: `GET /v1/audit-events`.
 - **Data browser full screen.** A button at the end of the tab bar, or
   Alt+Shift+F, hides Fleetdock's sidebar and top bar; remembered per
   browser. In full screen the bar also offers the browser's own full
@@ -80,6 +201,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The ER diagram has its own page** (`/databases/{id}/diagram`) that
+  uses the whole window, opened from the database page's **Diagram** button
+  or the data browser's table list.
 - **The database page is organised in tabs**: Overview (details, how to
   connect, last backup and schedule, index health), Connection (private and
   public access, app credentials), Backups, Access and Schema. Tabs that
@@ -95,12 +219,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Deleting a user who appears in the audit trail failed** with "table
-  audit_events is append-only": unlinking their events on delete counted
-  as changing them. Their events now stay, with their email.
 - A right-click that scrolled a half-visible column or cell into view
   closed the menu it had just opened.
 - Numbers in foreign-key columns no longer hide under the follow button.
+
+## [0.9.1] - 2026-11-01
+
+### Added
+
+- **ER diagram.** A database's **Diagram** tab draws its tables and
+  views with their columns, primary keys and row estimates, and every
+  foreign key between them, laid out automatically. Click a table to
+  highlight its relations, double-click it (or its name) to open it in the
+  data browser, find a table by name, show only a table and its neighbours
+  (1–3 steps), narrow a PostgreSQL database to one schema, and download the
+  diagram as PNG or SVG. Positions you drag are kept in the browser.
+  Databases with more than 150 tables open on their most connected table.
+  API: `GET /v1/databases/{id}/diagram`; the column catalog
+  (`GET /v1/databases/{id}/columns`) now also reports `nullable` and
+  `primary_key`.
+- **Audit log.** *Activity → Audit log* shows who did what: sign-ins and
+  failed sign-ins, users, roles, grants and API tokens, servers, database
+  servers and databases, backups, backup storage and schedules,
+  notification settings, console scripts that write (with the script),
+  data-browser edits and undo, structure changes, exports and dumps. Every
+  event carries the user — or the API token, or the CLI — with IP address
+  and client, the resource and the outcome; requests refused for lack of
+  permission are kept as *denied*. Filter by period, kind of action, user
+  and result, open an event for its details, export CSV, or open a
+  database's own events from its menu. Owners and admins can read it
+  (`audit:read`). Events are kept for `FLEETDOCK_AUDIT_RETENTION` (365
+  days; `0` keeps them). `fleetdock reset-admin-password` is recorded too.
+  API: `GET /v1/audit-events`.
+
+### Fixed
+
+- **Deleting a user who appears in the audit trail failed** with "table
+  audit_events is append-only": unlinking their events on delete counted
+  as changing them. Their events now stay, with their email.
 
 ## [0.9.0] - 2026-11-01
 
@@ -689,6 +845,11 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/Fleetdock/fleetdock/compare/v0.9.2...v0.9.3
+[0.9.2]: https://github.com/Fleetdock/fleetdock/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/Fleetdock/fleetdock/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/Fleetdock/fleetdock/compare/v0.8.5...v0.9.0
+[0.8.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.8.0
 [0.3.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.3.0
 [0.1.0]: https://github.com/Fleetdock/fleetdock/releases/tag/v0.1.0

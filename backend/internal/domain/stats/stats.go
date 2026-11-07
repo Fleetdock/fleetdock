@@ -38,6 +38,8 @@ type Summary struct {
 // Attention kinds: problems the overview surfaces, most urgent first.
 const (
 	KindServerOffline       = "server_offline"
+	KindAgentUnsupported    = "agent_unsupported"
+	KindAgentOutdated       = "agent_outdated"
 	KindInstanceUnreachable = "instance_unreachable"
 	KindBackupFailed        = "backup_failed"
 	KindBackupCheckFailed   = "backup_check_failed"
@@ -69,7 +71,7 @@ type Attention struct {
 // AttentionPerm is the read permission needed to see an attention item.
 func AttentionPerm(kind string) string {
 	switch kind {
-	case KindServerOffline:
+	case KindServerOffline, KindAgentOutdated, KindAgentUnsupported:
 		return "server:read"
 	case KindInstanceUnreachable:
 		return "instance:read"

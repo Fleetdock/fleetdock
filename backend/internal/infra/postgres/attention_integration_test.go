@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	statsdom "github.com/Fleetdock/fleetdock/backend/internal/domain/stats"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
 func TestIntegrationAttention(t *testing.T) {
@@ -121,5 +122,73 @@ func TestIntegrationAttention(t *testing.T) {
 	}
 	if s.ServersTotal != 1 || s.InstancesTotal != 1 || s.SchedulesEnabled != 1 || s.DestinationsTotal != 0 {
 		t.Errorf("summary = %+v", s)
+	}
+}
+
+func TestIntegrationAttentionAgentVersions(t *testing.T) {
+	ctx := context.Background()
+	pool, err := NewPool(ctx, scratchDB(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	old := version.Version
+	t.Cleanup(func() { version.Version = old })
+
+	server := func(name, status, agent string) uuid.UUID {
+		id := uuid.New()
+		if _, err := pool.Exec(ctx, `INSERT INTO servers (id, name, hostname, status, agent_version, last_heartbeat_at)
+		      VALUES ($1, $2, $2, $3, NULLIF($4, ''), now())`, id, name, status, agent); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	outdated := server("old", "online", "0.9.0")
+	vprefixed := server("old-v", "online", "v1.1.9-rc.1")
+	unsupported := server("ancient", "online", "0.0.1")
+	server("current", "online", "1.2.0")
+	server("newer", "online", "1.3.0")
+	server("dev", "online", "dev")
+	server("none", "online", "")
+	server("down", "offline", "0.9.0") // reported as offline instead
+
+	attention := func() map[uuid.UUID]statsdom.Attention {
+		items, err := NewStatsRepository(pool).Attention(ctx, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[uuid.UUID]statsdom.Attention{}
+		for _, a := range items {
+			if a.Kind == statsdom.KindAgentOutdated || a.Kind == statsdom.KindAgentUnsupported {
+				out[a.ResourceID] = a
+			}
+		}
+		return out
+	}
+
+	version.Version = "dev"
+	if got := attention(); len(got) != 0 {
+		t.Fatalf("a development build must not judge agents: %+v", got)
+	}
+
+	version.Version = "v1.2.0"
+	got := attention()
+	if len(got) != 3 {
+		t.Fatalf("got %d agent items, want 3: %+v", len(got), got)
+	}
+	for id, kind := range map[uuid.UUID]string{
+		outdated:    statsdom.KindAgentOutdated,
+		vprefixed:   statsdom.KindAgentOutdated,
+		unsupported: statsdom.KindAgentUnsupported,
+	} {
+		if got[id].Kind != kind {
+			t.Errorf("server %s: %+v, want %s", id, got[id], kind)
+		}
+	}
+	if got[unsupported].Severity != statsdom.SeverityCritical || got[outdated].Severity != statsdom.SeverityWarning {
+		t.Errorf("severities: %+v", got)
 	}
 }

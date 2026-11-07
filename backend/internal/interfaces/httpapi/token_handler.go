@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	auditapp "github.com/Fleetdock/fleetdock/backend/internal/app/audit"
 	tokenapp "github.com/Fleetdock/fleetdock/backend/internal/app/token"
 	tokendom "github.com/Fleetdock/fleetdock/backend/internal/domain/token"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
@@ -32,6 +33,13 @@ type tokenResponse struct {
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
+}
+
+// ownedTokenResponse is a token in the administrators' list of everyone's.
+type ownedTokenResponse struct {
+	tokenResponse
+	UserID    string `json:"user_id"`
+	UserEmail string `json:"user_email"`
 }
 
 type createTokenResponse struct {
@@ -109,4 +117,31 @@ func (h *TokenHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListActive handles GET /v1/api-tokens: every user's live tokens, for the
+// administrators who manage users.
+func (h *TokenHandler) ListActive(w http.ResponseWriter, r *http.Request) {
+	tokens, err := h.svc.ListActive(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	items := make([]ownedTokenResponse, 0, len(tokens))
+	for _, t := range tokens {
+		items = append(items, ownedTokenResponse{tokenResponse: toTokenResponse(t), UserID: t.UserID.String(), UserEmail: t.OwnerEmail})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// RevokeAny handles DELETE /v1/api-tokens/{id}: an administrator revokes
+// someone's token.
+func (h *TokenHandler) RevokeAny(w http.ResponseWriter, r *http.Request) {
+	owner, err := h.svc.RevokeAny(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	auditapp.AddMeta(r.Context(), "owner_id", owner.String())
+	writeJSON(w, http.StatusNoContent, nil)
 }
