@@ -9,7 +9,7 @@
 # Pinned to BUILDPLATFORM: the standalone output is JavaScript, so one native
 # build serves every target arch and multi-arch stays cheap. Emulating a Next
 # build under QEMU costs 15+ minutes.
-FROM --platform=$BUILDPLATFORM node:25-alpine AS ui
+FROM --platform=$BUILDPLATFORM node:24-alpine AS ui
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY frontend/package.json frontend/package-lock.json ./

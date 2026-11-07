@@ -40,3 +40,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Node majors are moved by hand to the next LTS (even) release; the
+      # build stage stays on the same major as the runtime's nodejs.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
