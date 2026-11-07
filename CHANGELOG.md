@@ -114,7 +114,7 @@ Upgrading from 0.x: see
   start.
 - **Backup storage endpoints follow the database host rules**: an S3
   endpoint on a link-local or cloud-metadata address, the metadata database,
-  or loopback in production is refused.
+  or loopback in production is refused, at once and with the reason.
 - **Client addresses behind a proxy can no longer be chosen by the client.**
   With `FLEETDOCK_TRUST_PROXY_HEADERS`, Fleetdock takes the last
   `X-Forwarded-For` entry (the one the proxy adds) instead of the first.
@@ -135,6 +135,11 @@ Upgrading from 0.x: see
 - **Passwords longer than 72 bytes failed with a server error.** bcrypt
   refuses them; they are now rejected with a clear message (72 plain
   letters, fewer with accents or non-Latin letters).
+- **Backups and restores of MySQL 8 servers failed from the image**: the
+  MariaDB client could not log in with `caching_sha2_password`, MySQL 8's
+  default, because Alpine ships its authentication plugins in a separate
+  package. The image (and the agent installer on Alpine) now installs
+  `mariadb-connector-c`. Found by the new dump test in CI.
 - **Creating a PostgreSQL 18 server failed**: the official image keeps its
   data under `/var/lib/postgresql` from 18 on and refuses the old volume
   path.

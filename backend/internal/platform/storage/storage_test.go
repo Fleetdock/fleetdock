@@ -1,54 +1,63 @@
 package storage
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/netsafe"
 )
 
+// Backup storage endpoints are user input and follow the database host
+// rules. New refuses a forbidden endpoint before any request (minio-go would
+// otherwise retry the refused dial until its context ends), and the
+// transport refuses it again at connect time.
 func TestEndpointsFollowTheDialPolicy(t *testing.T) {
-	// The policy applies to the address dialed; with a proxy configured that
-	// is the proxy's (as for webhooks). Test the direct path.
+	// Proxies would make the transport dial the proxy, not the endpoint.
 	for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"} {
 		t.Setenv(k, "")
 	}
-	// A MinIO-like endpoint on loopback that would answer.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
-
-	netsafe.ConfigureDB(&netsafe.DBPolicy{AllowLoopback: false})
 	t.Cleanup(func() { netsafe.ConfigureDB(nil) })
 
-	for _, endpoint := range []string{"http://169.254.169.254", srv.URL} {
-		c, err := New(Config{Endpoint: endpoint, Bucket: "backups", AccessKey: "k", SecretKey: "s"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err = c.TestAccess(ctx)
-		cancel()
-		if err == nil || (!errors.Is(err, netsafe.ErrDisallowedDBHost) && !strings.Contains(err.Error(), "not allowed")) {
-			t.Errorf("%s: err = %v, want the host refused", endpoint, err)
-		}
+	cfg := func(endpoint string) Config {
+		return Config{Endpoint: endpoint, Bucket: "backups", AccessKey: "k", SecretKey: "s"}
 	}
 
-	// Development (loopback allowed) reaches the local endpoint.
-	netsafe.ConfigureDB(&netsafe.DBPolicy{AllowLoopback: true})
-	c, err := New(Config{Endpoint: srv.URL, Bucket: "backups", AccessKey: "k", SecretKey: "s"})
-	if err != nil {
-		t.Fatal(err)
+	netsafe.ConfigureDB(&netsafe.DBPolicy{AllowLoopback: false})
+	for _, endpoint := range []string{"http://169.254.169.254", "https://169.254.169.254:9000", srv.URL} {
+		if _, err := New(cfg(endpoint)); !errors.Is(err, netsafe.ErrDisallowedDBHost) {
+			t.Errorf("New(%s): err = %v, want the host refused", endpoint, err)
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := c.TestAccess(ctx); err != nil && strings.Contains(err.Error(), "not allowed") {
-		t.Errorf("loopback allowed, but refused: %v", err)
+	// The connect-time guard, which also covers a name that resolves
+	// differently later.
+	client := &http.Client{Transport: netsafe.ServiceTransport()}
+	if resp, err := client.Get(srv.URL); err == nil || !errors.Is(err, netsafe.ErrDisallowedDBHost) {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		t.Errorf("transport reached loopback in production: %v", err)
+	}
+
+	// Development allows loopback (MinIO on this machine).
+	netsafe.ConfigureDB(&netsafe.DBPolicy{AllowLoopback: true})
+	if _, err := New(cfg(srv.URL)); err != nil {
+		t.Errorf("loopback allowed, New refused: %v", err)
+	}
+	resp, err := client.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("loopback allowed, transport refused: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	// Without a policy (the agent) nothing is refused.
+	netsafe.ConfigureDB(nil)
+	if _, err := New(cfg("http://169.254.169.254")); err != nil {
+		t.Errorf("no policy: %v", err)
 	}
 }

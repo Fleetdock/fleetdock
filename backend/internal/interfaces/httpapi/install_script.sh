@@ -80,7 +80,8 @@ elif command -v dnf >/dev/null 2>&1; then
 elif command -v yum >/dev/null 2>&1; then
   yum install -y -q mariadb postgresql >/dev/null 2>&1 || true
 elif command -v apk >/dev/null 2>&1; then
-  apk add --no-cache mariadb-client postgresql-client >/dev/null 2>&1 || true
+  # mariadb-connector-c: the auth plugins MySQL 8 needs (caching_sha2_password).
+  apk add --no-cache mariadb-client mariadb-connector-c postgresql-client >/dev/null 2>&1 || true
 fi
 
 echo "==> Ensuring Docker is installed (for provisioning database instances)"
