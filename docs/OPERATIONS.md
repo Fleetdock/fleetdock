@@ -79,14 +79,14 @@ Stop the API during restore to avoid concurrent writes.
 
 ```bash
 fleetdock update              # latest
-fleetdock update --tag v1.0.0 # a specific release
+fleetdock update --tag v0.10.0 # a specific release
 ```
 
 ### Compose (build from source)
 
 ```bash
 git fetch origin
-git checkout v1.0.0   # or main for latest
+git checkout v0.10.0  # or main for latest
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
@@ -132,19 +132,19 @@ version it supports.
 6. Watch **Activity** for stuck tasks after the upgrade
 7. Update the agents (below)
 
-### Upgrading from 0.x to 1.0
+### Upgrading to 0.10
 
-1.0 upgrades in place from 0.9 (and from earlier 0.x through the same
+0.10 upgrades in place from 0.9 (and from earlier versions through the same
 migrations). What changes on the way:
 
 1. **Back up first.** `fleetdock update` does; otherwise `fleetdock backup-db`
    or `pg_dump` (above), and keep `.env`.
-2. **Update the control plane**: `fleetdock update --tag v1.0.0`, or pull the
-   image and restart. On its first start 1.0 records a checksum for every
+2. **Update the control plane**: `fleetdock update --tag v0.10.0`, or pull the
+   image and restart. On its first start 0.10 records a checksum for every
    migration already applied and encrypts the secrets of notification
    channels saved before (webhook URLs, SMTP password). Check the sidebar shows
    the new version.
-3. **Update the agents**: every server shows **Update** (agents before 1.0
+3. **Update the agents**: every server shows **Update** (agents before 0.10
    reported themselves as 0.1.0). Run the update command on each (below).
 4. **API clients**: `POST /v1/instances/{id}/test-connection` and
    `…/import-databases` are gone (use `POST /v1/instances/{id}/probe`), and
@@ -182,7 +182,7 @@ token. The new version shows on the server's page after the next heartbeat.
 2. Restore the metadata database backup taken before upgrade
 3. Redeploy the previous image tag
 
-Do not roll back only the API binary if migrations already advanced: from 1.0
+Do not roll back only the API binary if migrations already advanced: from 0.10
 on, an older version refuses to start on the newer schema (earlier versions
 start and misbehave). Restore the database to match the older version, or stay
 on the new one.
@@ -340,5 +340,5 @@ start.
 ## Support and releases
 
 - Security issues: [SECURITY.md](../SECURITY.md)
-- Version support and compatibility: [RELEASING.md](../RELEASING.md#compatibility-promise-from-10)
+- Version support and compatibility: [RELEASING.md](../RELEASING.md#compatibility)
 - Release artifacts: GitHub Releases + GHCR images (see [DEPLOYMENT.md](DEPLOYMENT.md))

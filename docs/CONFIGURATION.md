@@ -26,7 +26,7 @@ These describe the install itself. `install.sh` derives them from your answers
 | `FLEETDOCK_HTTP_BIND` | `127.0.0.1:80` | where port 80 is published. Unset = every interface. A local install sets `127.0.0.1:<port>` so only this computer can reach the dashboard |
 | `FLEETDOCK_HTTPS_BIND` | `127.0.0.1:` | the same for 443. A local install binds it to a random loopback port, since nothing uses it |
 | `FLEETDOCK_POSTGRES_PASSWORD` | generated | password of the bundled metadata Postgres. `fleetdock start`/`update` keep the database's password in step with this value |
-| `FLEETDOCK_RELEASE_TAG` | `latest` / `v1.0.0` | image tag to run; `fleetdock update --tag` changes it |
+| `FLEETDOCK_RELEASE_TAG` | `latest` / `v0.10.0` | image tag to run; `fleetdock update --tag` changes it |
 | `FLEETDOCK_GATEWAY_ENABLED` | `false` | external database access; use `fleetdock gateway enable` |
 
 Gateway tuning is described in [external-access.md](external-access.md):

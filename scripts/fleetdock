@@ -491,7 +491,7 @@ EOF
     setenv FLEETDOCK_ENCRYPTION_KEY_ID "$new_id"
     echo "==> Restarting with the new key (the old one stays readable)"
     dc up -d
-    # A docker-compose.yml from before 1.0 does not pass the old keys on.
+    # A docker-compose.yml from before 0.10 does not pass the old keys on.
     # shellcheck disable=SC2016
     if ! dc exec -T fleetdock sh -c 'test -n "$FLEETDOCK_ENCRYPTION_KEYS_OLD"' 2>/dev/null; then
       restore_env

@@ -26,7 +26,7 @@ func TestIntegrationMigrateHistoryChecks(t *testing.T) {
 		t.Fatalf("empty database: %v", err)
 	}
 
-	// A database migrated before 1.0: the bookkeeping table without the
+	// A database migrated before 0.10: the bookkeeping table without the
 	// checksum column, and all but the last migration applied.
 	files, err := embeddedMigrations()
 	if err != nil {
@@ -38,7 +38,7 @@ func TestIntegrationMigrateHistoryChecks(t *testing.T) {
 		exec(`INSERT INTO schema_migrations (version) VALUES ($1)`, m.name)
 	}
 	if err := CheckSchema(ctx, pool); err == nil {
-		t.Fatal("CheckSchema accepted a pre-1.0 table")
+		t.Fatal("CheckSchema accepted a pre-0.10 table")
 	}
 
 	if err := Migrate(ctx, pool); err != nil {

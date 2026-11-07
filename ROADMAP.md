@@ -1,12 +1,12 @@
 # Fleetdock — Roadmap
 
 What has shipped and what comes next. For what each release changed see
-[CHANGELOG.md](CHANGELOG.md); for how releases are made and what 1.x keeps
-stable see [RELEASING.md](RELEASING.md).
+[CHANGELOG.md](CHANGELOG.md); for how releases are made and what stays
+compatible see [RELEASING.md](RELEASING.md).
 
 ---
 
-## 1.0 — what is in it
+## 0.10 — what is in it
 
 **Fleet.** Servers with a sandboxed agent (one-command install, in-place
 updates, version checks), database servers that Fleetdock creates in Docker or
@@ -34,13 +34,19 @@ release, dumps every engine with the image's tools and runs end-to-end tests.
 
 ---
 
-## Next — 1.1
+## Next — 0.11
 
 | Item | Notes |
 |------|-------|
 | Two-factor sign-in (TOTP) | Recovery codes; owners and admins can be required to use it |
 | SSO / OIDC | Sign in with your identity provider; map groups to roles |
 | Session list | See and end your signed-in browsers one by one |
+
+## Toward 1.0
+
+1.0 is tagged when the compatibility rules in [RELEASING.md](RELEASING.md#compatibility)
+have held over a few minor releases and can become a promise for the whole 1.x
+line.
 
 ## Later
 

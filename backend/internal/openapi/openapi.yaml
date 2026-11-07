@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Fleetdock API
-  version: 1.0.0
+  version: 0.10.0
   description: |
     Self-hosted database control plane API. User routes require a Bearer JWT or
     API token (`fleetd_` prefix). Agent routes under `/agent/v1` use agent bearer
@@ -2089,7 +2089,7 @@ paths:
                 type: object
                 required: [version, min_agent_version]
                 properties:
-                  version: {type: string, example: "1.0.0", description: '"dev" for a build without a version'}
+                  version: {type: string, example: "0.10.0", description: '"dev" for a build without a version'}
                   commit: {type: string, example: "e7d37df1a2b3"}
                   date: {type: string}
                   min_agent_version: {type: string, example: "0.1.0"}

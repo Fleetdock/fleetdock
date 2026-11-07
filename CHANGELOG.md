@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Upgrading from 0.x: see
-[OPERATIONS.md — Upgrading from 0.x to 1.0](docs/OPERATIONS.md#upgrading-from-0x-to-10).
+Upgrading: see
+[OPERATIONS.md — Upgrading to 0.10](docs/OPERATIONS.md#upgrading-to-010).
 
 ### Added
 
@@ -55,9 +55,9 @@ Upgrading from 0.x: see
 
 ### Changed
 
-- **The API's 1.0 contract.** [RELEASING.md](RELEASING.md) states what 1.x
-  keeps stable (the `/v1` API, agents, configuration, upgrades) and how
-  things are deprecated. The OpenAPI document now describes every
+- **Compatibility rules.** [RELEASING.md](RELEASING.md#compatibility)
+  states what releases keep compatible (the `/v1` API, agents,
+  configuration, upgrades) and how things are deprecated before they go. The OpenAPI document now describes every
   operation's error response (`{error: {code, message, field}}`), the
   cookie session next to bearer tokens, and the response bodies of servers,
   database servers, databases, backups, operations, users, roles, tokens,
@@ -84,7 +84,7 @@ Upgrading from 0.x: see
   stack, `govulncheck`, `npm audit` for runtime dependencies, a Trivy scan
   of the image, Dependabot for base images, and a floor under backend test
   coverage.
-- Release candidates (`v1.0.0-rc.1`) no longer move the `latest` image tag
+- Release candidates (`v0.10.0-rc.1`) no longer move the `latest` image tag
   and are published as pre-releases. Releases also ship an arm64 API
   binary.
 

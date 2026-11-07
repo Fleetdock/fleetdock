@@ -77,7 +77,7 @@ func normalizeRoute(method, path string) string {
 	return method + " " + path
 }
 
-// TestOpenAPI_OperationsAreComplete holds every operation to the 1.0 API
+// TestOpenAPI_OperationsAreComplete holds every operation to the API
 // contract: a summary, at least one success response, the shared error
 // response, and an authentication scheme on every /v1 route except the
 // public ones.

@@ -45,7 +45,7 @@ func embeddedMigrations() ([]migration, error) {
 }
 
 // ensureMigrationTable creates the bookkeeping table, and adds the checksum
-// column to one created before 1.0.
+// column to one created before 0.10.
 func ensureMigrationTable(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -194,7 +194,7 @@ func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	applied, err := loadApplied(ctx, pool)
 	if err != nil {
-		// A pre-1.0 table without the checksum column.
+		// A pre-0.10 table without the checksum column.
 		return fmt.Errorf("%w (run this version's migrations first)", err)
 	}
 	if err := checkHistory(files, applied); err != nil {

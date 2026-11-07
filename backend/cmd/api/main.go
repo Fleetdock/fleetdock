@@ -207,7 +207,7 @@ func run() error {
 	if n, err := notifSvc.SealExisting(ctx); err != nil {
 		return fmt.Errorf("encrypt notification channel secrets: %w", err)
 	} else if n > 0 {
-		slog.Info("encrypted the secrets of notification channels saved before 1.0", "channels", n)
+		slog.Info("encrypted the secrets of notification channels saved before 0.10", "channels", n)
 	}
 	schemaSvc := schemahistoryapp.NewService(postgres.NewSchemaHistoryRepository(pool), dbadminSvc, databaseRepo,
 		cfg.SchemaSnapshotInterval)

@@ -64,7 +64,7 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 - [ ] **RBAC** — use `viewer` / `operator` roles instead of giving everyone `owner`
 - [ ] **Suspend** compromised accounts immediately (sessions stop working)
 - [ ] **Reset the password** to contain a stolen session — every JWT carries a token epoch that a password change increments, so all of that user's existing sessions stop working at once, without rotating `FLEETDOCK_JWT_SECRET` and logging out everyone else
-- [ ] **SSO/OIDC and 2FA** — not yet available (2FA is planned for 1.1); track [ROADMAP.md](../ROADMAP.md)
+- [ ] **SSO/OIDC and 2FA** — not yet available (2FA is planned for an upcoming release); track [ROADMAP.md](../ROADMAP.md)
 
 ## Secrets at rest
 
@@ -98,7 +98,7 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 
 ## Supply chain
 
-- [ ] Pin image tags in production (`v1.0.0`, not `latest`)
+- [ ] Pin image tags in production (`v0.10.0`, not `latest`)
 - [ ] Verify images and checksums with cosign ([RELEASING.md](../RELEASING.md#verifying-a-release)), or build yourself from tagged source
 - [ ] Keep agents up to date: an outdated agent shows **Update** in the server list
 - [ ] Enable GitHub Dependabot / renovate for the fork

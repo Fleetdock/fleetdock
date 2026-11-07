@@ -3,7 +3,7 @@
 //
 // Release builds set Version, Commit and Date with the linker:
 //
-//	go build -ldflags "-X github.com/Fleetdock/fleetdock/backend/internal/version.Version=1.0.0 ..."
+//	go build -ldflags "-X github.com/Fleetdock/fleetdock/backend/internal/version.Version=0.10.0 ..."
 //
 // A plain `go build` reports "dev" and the VCS revision Go recorded, if any.
 package version

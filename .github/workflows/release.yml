@@ -54,7 +54,7 @@ jobs:
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            # A pre-release tag (v1.0.0-rc.1) must not move `latest`, or every
+            # A pre-release tag (v0.10.0-rc.1) must not move `latest`, or every
             # `fleetdock update` would pick up the release candidate.
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
           labels: |
@@ -168,7 +168,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          # v1.0.0-rc.1 and the like are published as pre-releases.
+          # v0.10.0-rc.1 and the like are published as pre-releases.
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body_path: release-notes.md
