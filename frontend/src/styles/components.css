@@ -1598,6 +1598,33 @@
     color: var(--fg);
     border-color: var(--border-strong);
   }
+  /* Account menu trigger: matches the search button, so the hover outline wraps the avatar. */
+  .topbar-account {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    height: 1.875rem;
+    padding: 0 0.55rem 0 0.2rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease);
+  }
+  .topbar-account:hover,
+  .topbar-account[aria-expanded="true"] {
+    background: var(--panel-2);
+    border-color: var(--border-strong);
+  }
+  .topbar-account:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
   .topbar-avatar {
     width: 1.75rem;
     height: 1.75rem;

@@ -135,6 +135,7 @@ export function Topbar({
         <ThemeToggle />
         <Menu
           label="Account"
+          triggerClassName="topbar-account"
           trigger={
             <>
               <span className="topbar-avatar" aria-hidden>
