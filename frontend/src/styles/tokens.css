@@ -26,8 +26,9 @@
   --muted: #62626b; /* 5.6:1 on --panel, 5.3:1 on --bg */
   --fg-subtle: #8b8b94; /* decorative / placeholder only */
 
-  /* lines */
-  --border: #e3e4e7;
+  /* lines (--border is what components use; borderless mode blanks it) */
+  --border-line: #e3e4e7;
+  --border: var(--border-line);
   --border-strong: #cfd1d5;
 
   /* brand */
@@ -123,7 +124,7 @@
   --muted: #a1a1aa; /* 7.4:1 on --panel */
   --fg-subtle: #71717a;
 
-  --border: #26262b;
+  --border-line: #26262b;
   --border-strong: #3a3a41;
 
   --primary: #2dd4bf; /* dark text 10:1 */
@@ -165,6 +166,15 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 6px 16px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.03);
   --shadow-lg: 0 18px 48px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+
+/* Borderless UI: structural lines disappear and surfaces are told apart by fill.
+   Inputs (--border-strong) and the data browser tab strip keep their lines. */
+:root[data-borders="none"] {
+  --border: transparent;
+}
+:root[data-borders="none"] .dbx-tabbar {
+  --border: var(--border-line);
 }
 
 @theme inline {
