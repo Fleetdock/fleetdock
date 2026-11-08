@@ -44,6 +44,7 @@ import {
   Lock,
   History,
   PanelRight,
+  ListOrdered,
   Rows2,
   Rows3,
   Plus,
@@ -382,6 +383,12 @@ export function TableTab({
       save("density", next === "compact" ? null : next);
       return next;
     });
+  const [rowNumbers, setRowNumbers] = useState(() => load("row-numbers") !== "0");
+  const toggleRowNumbers = () =>
+    setRowNumbers((v) => {
+      save("row-numbers", v ? "0" : null);
+      return !v;
+    });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
 
@@ -554,6 +561,12 @@ export function TableTab({
               hidden: view.mode !== "data",
               onSelect: toggleDensity,
             },
+            {
+              label: rowNumbers ? "Hide row numbers" : "Show row numbers",
+              icon: <ListOrdered size={15} />,
+              hidden: view.mode !== "data",
+              onSelect: toggleRowNumbers,
+            },
           ]}
         />
       </div>
@@ -687,6 +700,7 @@ export function TableTab({
                   openFilters(undefined, filterFor(name, c ? cellKind(c.type) === "text" : false));
                 }}
                 density={density}
+                rowNumbers={rowNumbers}
                 emptyText={
                   filtered
                     ? "No rows match the search or filters."

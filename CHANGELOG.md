@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Data browser: hide row numbers** from the table menu. A slim handle
+  stays for selecting rows.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and

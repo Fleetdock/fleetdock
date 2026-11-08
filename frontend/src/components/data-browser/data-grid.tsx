@@ -80,6 +80,8 @@ export function toRecord(row: GridRow, columns: BrowseColumn[]): RowRecord {
 }
 
 const ROWNUM_WIDTH = 52;
+/** With row numbers hidden the gutter stays as a slim row-selection handle. */
+const ROWNUM_SLIM_WIDTH = 12;
 const isTrue = (v: string) => /^(t|true|1|y|yes|on)$/i.test(v);
 
 export type GridProps = {
@@ -125,6 +127,8 @@ export type GridProps = {
   /** Header menu: start a filter on this column in the filter editor. */
   onFilterColumn?: (column: string) => void;
   density?: "compact" | "comfortable";
+  /** Show row numbers in the left gutter (default true). */
+  rowNumbers?: boolean;
 };
 
 export function DataGrid(props: GridProps) {
@@ -174,13 +178,14 @@ export function DataGrid(props: GridProps) {
     }
     setEstimates({ key: colKey, widths: estimated });
   }
+  const gutter = props.rowNumbers === false ? ROWNUM_SLIM_WIDTH : ROWNUM_WIDTH;
   const widthOf = (name: string) => live[name] ?? props.widths[name] ?? estimated[name] ?? 140;
-  const total = ROWNUM_WIDTH + vis.reduce((s, i) => s + widthOf(columns[i].name), 0);
+  const total = gutter + vis.reduce((s, i) => s + widthOf(columns[i].name), 0);
   const frozen = Math.min(props.frozen ?? 0, Math.max(0, vis.length - 1));
   const lefts = frozenOffsets(
     vis.slice(0, frozen).map((i) => widthOf(columns[i].name)),
     frozen,
-    ROWNUM_WIDTH,
+    gutter,
   );
   const leftsKey = lefts.join(",");
   // Stable for the memoized rows unless the offsets really change.
@@ -574,7 +579,7 @@ export function DataGrid(props: GridProps) {
 
   return (
     <div
-      className={`dbx-grid${props.density === "comfortable" ? " is-comfortable" : ""}`}
+      className={`dbx-grid${props.density === "comfortable" ? " is-comfortable" : ""}${props.rowNumbers === false ? " no-rownums" : ""}`}
       ref={scroller}
       tabIndex={0}
       role="grid"
@@ -585,7 +590,7 @@ export function DataGrid(props: GridProps) {
     >
       <table className="dbx-table" style={{ width: total }}>
         <colgroup>
-          <col style={{ width: ROWNUM_WIDTH }} />
+          <col style={{ width: gutter }} />
           {vis.map((i) => (
             <col key={columns[i].name} style={{ width: widthOf(columns[i].name) }} />
           ))}
