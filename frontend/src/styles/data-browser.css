@@ -532,6 +532,13 @@
     max-width: 34rem;
     color: var(--fg);
   }
+  /* Table structure view: a padded page that scrolls as a whole. */
+  .dbx-structure-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 1rem;
+  }
   .dbx-structure,
   .dbx-query {
     flex: 1;

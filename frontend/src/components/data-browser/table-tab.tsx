@@ -600,7 +600,7 @@ export function TableTab({
       ) : null}
 
       {view.mode === "structure" ? (
-        <div className="dbx-structure">
+        <div className="dbx-structure-scroll">
           <SchemaView
             databaseId={databaseId}
             table={tab.name}
