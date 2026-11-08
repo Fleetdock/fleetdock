@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Data browser: hide row numbers** from the table menu. A slim handle
   stays for selecting rows.
+- **Data browser: command panel.** Run SQL under a table's grid. A query's
+  rows show in place of the table; a change is confirmed first with how many
+  rows it affects, then the table reloads.
 
 ### Changed
 

@@ -594,6 +594,7 @@ function TabContent({
       canWrite={canWrite}
       canBackup={canBackup}
       dialect={dialect}
+      engine={db.instance?.engine}
       dispatch={dispatch}
       onDirty={onDirty}
       onOpen={onOpen}

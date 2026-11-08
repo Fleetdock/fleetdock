@@ -36,7 +36,7 @@ import { fkByColumn, followFilters, referencingFilters, type RowRecord } from "@
 import { describeValue, filterFor, fromDraft, opLabel, toDraft } from "@/lib/data-browser/filters";
 import { applySavedState } from "@/lib/data-browser/view-state";
 import { exportTableCSV, useTableViews, useApplyRowChanges, useBrowseRows, useForeignKeys, useReferencedBy } from "@/lib/hooks";
-import type { ForeignKey, RowFilter, SavedTableView, SortKey } from "@/lib/types";
+import type { ForeignKey, QueryResult, RowFilter, SavedTableView, SortKey } from "@/lib/types";
 import {
   ClipboardCopy,
   Download,
@@ -57,6 +57,8 @@ import {
 } from "lucide-react";
 
 import { cellState, DataGrid, type Cell, type GridRow } from "./data-grid";
+import { CommandPanel } from "./command-panel";
+import { ResultGrid } from "./result-grid";
 import { BackupCompare } from "./backup-compare";
 import { RowHistory, useRowUndo } from "./row-history";
 import { ColumnsMenu } from "./columns-menu";
@@ -76,6 +78,7 @@ export function TableTab({
   canWrite,
   canBackup,
   dialect,
+  engine,
   dispatch,
   onDirty,
   onOpen,
@@ -89,6 +92,8 @@ export function TableTab({
   canWrite: boolean;
   canBackup: boolean;
   dialect: Dialect;
+  /** Engine of the database, for the command panel's editor. */
+  engine?: string;
   dispatch: Dispatch<Action>;
   onDirty: (id: string, changes: number) => void;
   onOpen: (req: OpenRequest) => void;
@@ -391,6 +396,16 @@ export function TableTab({
     });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  // The SQL command panel under the grid; its open state is remembered.
+  const [commandOpen, setCommandOpen] = useState(() => load("command-panel") === "1");
+  // A command panel read's rows, shown in place of the table until dismissed.
+  const [commandResult, setCommandResult] = useState<{ sql: string; result: QueryResult } | null>(null);
+  const toggleCommand = () =>
+    setCommandOpen((v) => {
+      if (v) setCommandResult(null);
+      save("command-panel", v ? null : "1");
+      return !v;
+    });
 
   const readOnlyReason = isView
     ? "Views are read-only."
@@ -520,6 +535,16 @@ export function TableTab({
             >
               <Rows3 size={15} aria-hidden />
             </IconButton>
+            <IconButton
+              noTooltip
+              label="Toggle command panel"
+              active={commandOpen}
+              onClick={toggleCommand}
+              title="Command panel: run SQL under the grid"
+              aria-pressed={commandOpen}
+            >
+              <SquareTerminal size={15} aria-hidden />
+            </IconButton>
             {editable ? (
               <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={addRow}>
                 Row
@@ -633,7 +658,27 @@ export function TableTab({
       ) : (
         <div className="dbx-body">
           <div className="dbx-grid-wrap">
-            {isLoading ? (
+            {commandResult ? (
+              <>
+                <div className="dbx-cmd-result-bar" role="status">
+                  <SquareTerminal size={14} aria-hidden />
+                  <span className="font-medium text-sm">Query result</span>
+                  <span className="text-sm muted">
+                    {commandResult.result.row_count.toLocaleString()} row{commandResult.result.row_count === 1 ? "" : "s"} ·{" "}
+                    {commandResult.result.duration_ms} ms
+                    {commandResult.result.truncated ? " · stopped at the row limit; add a LIMIT" : ""}
+                  </span>
+                  <code className="dbx-cmd-result-sql text-sm muted hide-sm" title={commandResult.sql}>
+                    {commandResult.sql.replace(/\s+/g, " ")}
+                  </code>
+                  <div className="flex-1" />
+                  <Button size="sm" onClick={() => setCommandResult(null)}>
+                    Back to table
+                  </Button>
+                </div>
+                <ResultGrid key={commandResult.sql + commandResult.result.duration_ms} result={commandResult.result} dialect={dialect} />
+              </>
+            ) : isLoading ? (
               <GridSkeleton />
             ) : error ? (
               <div className="dbx-center">
@@ -713,7 +758,7 @@ export function TableTab({
               />
             )}
           </div>
-          {panel ? (
+          {panel && !commandResult ? (
             <ValuePanel
               row={cursor ? rows[cursor.row] : undefined}
               col={cursor ? columns[cursor.col] : undefined}
@@ -727,7 +772,7 @@ export function TableTab({
               onClose={togglePanel}
             />
           ) : null}
-          {side === "row" ? (
+          {side === "row" && !commandResult ? (
             <RowPanel
               row={cursor ? rows[cursor.row] : undefined}
               label={(() => {
@@ -795,11 +840,33 @@ export function TableTab({
         </div>
       ) : null}
 
+      {view.mode === "data" && commandOpen ? (
+        <CommandPanel
+          databaseId={databaseId}
+          table={tab.name}
+          quotedTable={quoted}
+          engine={engine}
+          canWrite={canWrite}
+          onResult={(sql, result) => setCommandResult({ sql, result })}
+          onWrote={() => {
+            setCommandResult(null);
+            void refetch();
+          }}
+          onClose={toggleCommand}
+        />
+      ) : null}
+
       {view.mode === "data" ? (
         <div className="dbx-footer">
           <span className="text-sm muted">
-            {data && data.rows.length > 0 ? <RowRange data={data} offset={offset} /> : data ? "No rows" : ""}
-            {selected.size > 1 ? ` · ${selected.size} selected` : ""}
+            {commandResult ? (
+              `Query result: ${commandResult.result.row_count.toLocaleString()} row${commandResult.result.row_count === 1 ? "" : "s"}`
+            ) : (
+              <>
+                {data && data.rows.length > 0 ? <RowRange data={data} offset={offset} /> : data ? "No rows" : ""}
+                {selected.size > 1 ? ` · ${selected.size} selected` : ""}
+              </>
+            )}
           </span>
           <div className="flex-1" />
           <label className="flex items-center gap-1 text-sm muted">
@@ -807,7 +874,10 @@ export function TableTab({
             <Select
               className="dbx-pagesize"
               value={view.pageSize}
-              onChange={(e) => setView({ pageSize: Number(e.target.value), page: 1 })}
+              onChange={(e) => {
+                setCommandResult(null);
+                setView({ pageSize: Number(e.target.value), page: 1 });
+              }}
               aria-label="Rows per page"
             >
               {PAGE_SIZES.map((n) => (
@@ -821,7 +891,10 @@ export function TableTab({
             page={view.page}
             pageCount={pageCount}
             hasMore={hasFullPage}
-            onPage={(page) => setView({ page })}
+            onPage={(page) => {
+              setCommandResult(null);
+              setView({ page });
+            }}
           />
         </div>
       ) : null}
