@@ -33,6 +33,24 @@ export function prettyValue(v: string, kind: CellKind): string {
   }
 }
 
+/**
+ * parseJsonDoc returns the parsed value when a cell holds a JSON object or array,
+ * in any column type; otherwise (scalars, cut-short values) undefined.
+ */
+export function parseJsonDoc(v: string | null): object | undefined {
+  if (v === null || isTruncated(v)) return undefined;
+  const t = v.trim();
+  const open = t[0];
+  const close = t[t.length - 1];
+  if (!((open === "{" && close === "}") || (open === "[" && close === "]"))) return undefined;
+  try {
+    const doc: unknown = JSON.parse(t);
+    return typeof doc === "object" && doc !== null ? doc : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** compactCount formats a row estimate for the sidebar: 950, 12.4k, 3.1M. */
 export function compactCount(n: number): string {
   if (n < 1000) return String(Math.max(0, Math.round(n)));
