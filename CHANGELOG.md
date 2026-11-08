@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Data browser: Shift/Ctrl/Cmd-click a table to keep its tab open**, like
+  a double click.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
