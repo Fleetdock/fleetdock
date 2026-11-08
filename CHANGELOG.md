@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
   home-screen icons use the new Fleetdock logo, in a light and a dark
   version. The full logo kit is in `brand/`.
+- **Data browser: loading shows the layout.** Skeletons of the sidebar, tabs
+  and grid replace the spinners, in the size you left the sidebar.
 
 ### Fixed
 
