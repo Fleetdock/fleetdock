@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Page transitions.** Pages fade in with a slight rise when you move
+  between them (not with reduced motion).
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
