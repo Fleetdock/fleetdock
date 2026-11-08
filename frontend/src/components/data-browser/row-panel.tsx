@@ -5,10 +5,11 @@ import { useState } from "react";
 
 import { useToast } from "@/components/toast";
 import { Button, IconButton, Textarea } from "@/components/ui";
-import { cellKind, isTruncated, prettyValue } from "@/lib/data-browser/cells";
+import { cellKind, isTruncated, parseJsonDoc, prettyValue } from "@/lib/data-browser/cells";
 import type { BrowseColumn } from "@/lib/types";
 
 import { cellState, type GridRow } from "./data-grid";
+import { JsonViewer } from "./json-viewer";
 
 /**
  * RowPanel shows the cursor's whole row as a form: every column with its
@@ -71,6 +72,7 @@ export function RowPanel({
             const locked = isTruncated(st.original) && !st.changed;
             const canEdit = editable && !c.generated && !locked;
             const ed = editing?.ci === ci ? editing : null;
+            const jsonDoc = parseJsonDoc(st.value);
             return (
               <div key={c.name} className={`dbx-rowpanel-field${st.changed ? " is-changed" : ""}`}>
                 <dt>
@@ -113,7 +115,7 @@ export function RowPanel({
                         <Button size="sm" onClick={() => setEditing(null)}>
                           Cancel
                         </Button>
-                        {kind === "json" ? (
+                        {kind === "json" || parseJsonDoc(ed.text) ? (
                           <Button size="sm" variant="ghost" onClick={() => setEditing({ ci, text: prettyValue(ed.text, "json") })}>
                             Format JSON
                           </Button>
@@ -128,6 +130,8 @@ export function RowPanel({
                         <span className="dbx-pill">NULL</span>
                       ) : st.value === "" ? (
                         <span className="dbx-empty">empty</span>
+                      ) : jsonDoc ? (
+                        <JsonViewer key={`${rowKey}:${c.name}`} doc={jsonDoc} compact />
                       ) : (
                         <pre className="dbx-rowpanel-pre">{prettyValue(st.value, kind)}</pre>
                       )}

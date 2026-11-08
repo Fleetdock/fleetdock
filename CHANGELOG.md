@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Data browser: JSON as a tree.** A cell holding a JSON object or array,
+  in any column type, shows as a collapsible tree in the value and row
+  panels, with a raw view.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
 
 import { useConfirm } from "@/components/confirm";
+import { JsonViewer } from "./json-viewer";
 import { FilterEditor, ImportCSV, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
 import { useToast } from "@/components/toast";
@@ -21,7 +22,7 @@ import {
   Spinner,
   Textarea,
 } from "@/components/ui";
-import { cellKind, isTruncated, mutationSQL, prettyValue, quoteTable, type Dialect } from "@/lib/data-browser/cells";
+import { cellKind, isTruncated, mutationSQL, parseJsonDoc, prettyValue, quoteTable, type Dialect } from "@/lib/data-browser/cells";
 import {
   changeCount,
   emptyPending,
@@ -889,6 +890,7 @@ function ValuePanel({
   const { push } = useToast();
   const kind = col ? cellKind(col.type) : "text";
   const locked = st ? isTruncated(st.original) && !st.changed : false;
+  const jsonDoc = st ? parseJsonDoc(st.value) : undefined;
 
   return (
     <aside className="dbx-valuepanel" aria-label="Value panel">
@@ -936,7 +938,7 @@ function ValuePanel({
             <Button size="sm" onClick={() => setDraft(null)}>
               Cancel
             </Button>
-            {kind === "json" ? (
+            {kind === "json" || parseJsonDoc(draft) ? (
               <Button variant="ghost" size="sm" onClick={() => setDraft(prettyValue(draft, "json"))}>
                 Format JSON
               </Button>
@@ -952,6 +954,8 @@ function ValuePanel({
             <span className="dbx-pill">DEFAULT</span>
           ) : st.value === null ? (
             <span className="dbx-pill">NULL</span>
+          ) : jsonDoc ? (
+            <JsonViewer key={cellKey} doc={jsonDoc} />
           ) : (
             <pre className="dbx-valuepanel-pre">{prettyValue(st.value, kind)}</pre>
           )}
