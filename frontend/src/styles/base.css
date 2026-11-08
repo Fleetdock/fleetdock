@@ -28,6 +28,13 @@
     font-feature-settings: "cv11", "ss01";
     text-rendering: optimizeLegibility;
   }
+  /* Neutral style: compact density; every rem-based size scales from this. */
+  html[data-style="neutral"] {
+    font-size: 15px;
+  }
+  html[data-style="neutral"] body {
+    line-height: 1.45;
+  }
   a {
     color: inherit;
     text-decoration: none;

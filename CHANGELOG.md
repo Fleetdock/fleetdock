@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Appearance settings.** Settings → Appearance chooses the theme (Light,
+  Dark or System), the style (Classic, or a compact gray Neutral style) and
+  a Borderless option. Saved in the browser and applied before the page
+  shows.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
