@@ -10,6 +10,12 @@
   }
   html {
     -webkit-text-size-adjust: 100%;
+    /* Reserve the scrollbar's space so modals (overflow: hidden) don't shift the layout. */
+    scrollbar-gutter: stable;
+  }
+  /* Full-height workspaces never scroll the page: no gutter. */
+  html:has(.app-main-wide, .app-main-focus, .erd-page) {
+    scrollbar-gutter: auto;
   }
   body {
     background: var(--bg);
