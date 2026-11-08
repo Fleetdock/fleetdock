@@ -915,6 +915,107 @@
     resize: vertical;
   }
 
+  /* JSON viewer (value and row panels) */
+  .dbx-json {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
+  }
+  .dbx-json-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .dbx-json-tree,
+  .dbx-json-raw {
+    margin: 0;
+    font-family: var(--font-mono-stack);
+    font-size: 0.76rem;
+    line-height: 1.55;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.45rem 0.6rem;
+    overflow: auto;
+    min-height: 0;
+  }
+  .dbx-json-raw {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .dbx-json.is-compact .dbx-json-tree,
+  .dbx-json.is-compact .dbx-json-raw {
+    max-height: 16rem;
+  }
+  .dbx-json-row {
+    white-space: pre-wrap;
+    word-break: break-word;
+    position: relative;
+  }
+  .dbx-json-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    margin-right: 0.15em;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    vertical-align: -0.1em;
+    border-radius: var(--radius-sm);
+  }
+  span.dbx-json-toggle {
+    cursor: default;
+  }
+  button.dbx-json-toggle:hover {
+    color: var(--fg);
+  }
+  .dbx-json-toggle svg {
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  .dbx-json-toggle svg.is-open {
+    transform: rotate(90deg);
+  }
+  .dbx-json-summary {
+    padding: 0 0.3em;
+    margin: 0 0.15em;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    color: var(--muted);
+    font: inherit;
+    font-style: italic;
+    cursor: pointer;
+  }
+  .dbx-json-summary:hover {
+    color: var(--fg);
+  }
+  .dbx-json-key {
+    color: var(--syntax-function);
+  }
+  .dbx-json-index {
+    color: var(--fg-subtle);
+  }
+  .dbx-json-string {
+    color: var(--syntax-string);
+  }
+  .dbx-json-number {
+    color: var(--syntax-number);
+  }
+  .dbx-json-bool,
+  .dbx-json-null {
+    color: var(--syntax-keyword);
+  }
+  .dbx-json-punct {
+    color: var(--syntax-operator);
+  }
+
   /* context menu */
   .dbx-ctx {
     z-index: 70;
