@@ -295,10 +295,12 @@
     min-width: 0;
     overflow-x: auto;
     overflow-y: hidden;
-    scrollbar-width: thin;
   }
   .dbx-tabs::-webkit-scrollbar {
     height: 3px;
+  }
+  .dbx-tabs::-webkit-scrollbar-thumb {
+    border-width: 0;
   }
   .dbx-tab {
     position: relative;

@@ -476,6 +476,19 @@
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
+  /* Tables scroll sideways a lot: give them a wider bar. */
+  .table-wrap::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  .table-wrap::-webkit-scrollbar-thumb {
+    border-width: 3px;
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    .table-wrap {
+      scrollbar-width: auto;
+    }
+  }
   .table {
     width: 100%;
     border-collapse: collapse;
