@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Adding or editing a column offers every column type.** Only
+  `varchar(255)` was listed, because the type box only suggested types
+  matching what it already held. It now lists the database engine's types
+  (MySQL/MariaDB or PostgreSQL), grouped by kind, with Custom… for any
+  other.
+
 ## [0.10.0] - 2026-11-07
 
 Upgrading: see
