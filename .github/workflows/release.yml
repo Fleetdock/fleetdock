@@ -141,16 +141,10 @@ jobs:
             fleetdock-api-linux-amd64 fleetdock-api-linux-arm64 SHA256SUMS
 
       - name: Generate release notes
+        # This version's section of CHANGELOG.md, with links made absolute
+        # (relative ones would resolve against /releases/tag/ and break).
         run: |
-          ver="${GITHUB_REF_NAME#v}"
-          if [ -f CHANGELOG.md ]; then
-            # Print this version's section only: start at its heading, stop
-            # at the next "## [" heading.
-            awk -v ver="$ver" '
-              /^## \[/ { if (p) exit; if (index($0, "## [" ver "]") == 1) { p = 1; next } }
-              p
-            ' CHANGELOG.md > release-notes.md || true
-          fi
+          scripts/changelog.sh notes "${{ github.ref_name }}" > release-notes.md || true
           if [ ! -s release-notes.md ]; then
             echo "Release ${{ github.ref_name }}" > release-notes.md
           fi
@@ -170,7 +164,8 @@ jobs:
         with:
           # v0.10.0-rc.1 and the like are published as pre-releases.
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          # The notes come from CHANGELOG.md only, not GitHub's list of PRs.
+          generate_release_notes: false
           body_path: release-notes.md
           files: |
             fleetdock-agents-${{ github.ref_name }}.tar.gz

@@ -126,6 +126,11 @@ test: backend-vet backend-test frontend-typecheck ## Vet, test backend, typechec
 .PHONY: fmt
 fmt: backend-fmt ## Format the codebase
 
+.PHONY: release-prep
+release-prep: ## Move [Unreleased] in CHANGELOG.md under VERSION (make release-prep VERSION=0.11.0)
+	@test -n "$(VERSION)" || { echo "usage: make release-prep VERSION=x.y.z"; exit 1; }
+	scripts/changelog.sh prepare $(VERSION)
+
 .PHONY: help
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
