@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The page no longer jumps sideways when a dialog opens.** The space for
+  the page scrollbar is always reserved.
 - **Data browser: the Structure view scrolls as one page.**
 - **Adding or editing a column offers every column type.** Only
   `varchar(255)` was listed, because the type box only suggested types
