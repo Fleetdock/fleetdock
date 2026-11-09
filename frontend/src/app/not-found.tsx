@@ -1,6 +1,6 @@
 import { Compass } from "lucide-react";
 
-import { Logo } from "@/components/logo";
+import { Wordmark } from "@/components/logo";
 import { ButtonLink, EmptyState } from "@/components/ui";
 
 // Any address no route matches (outside the dashboard's own not-found, which
@@ -8,9 +8,8 @@ import { ButtonLink, EmptyState } from "@/components/ui";
 export default function NotFound() {
   return (
     <main className="standalone-page">
-      <div className="flex items-center gap-2 mb-6">
-        <Logo size={28} />
-        <span className="font-semibold">Fleetdock</span>
+      <div className="flex items-center mb-6">
+        <Wordmark height={30} />
       </div>
       <EmptyState
         icon={<Compass size={22} />}
