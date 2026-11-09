@@ -52,6 +52,9 @@ yourself).
 | `FLEETDOCK_PUBLIC_URL`                                | `http://localhost:8080` | URL agents/installers use to reach the API                                                                        |
 | `FLEETDOCK_AGENT_BIN_DIR`                             | `/opt/fleetdock/agents` | where cross-compiled agent binaries live                                                                          |
 | `FLEETDOCK_WORKER_ENABLED`                            | `true`                  | in-process worker (external-instance ops, offline detection, scheduled backups, retention, alerts, notifications) |
+| `FLEETDOCK_JOB_POLL_INTERVAL`                         | `3s`                    | how often queued operations are claimed; minimum `1s`                                                         |
+| `FLEETDOCK_ALERT_INTERVAL`                            | `15s`                   | how often alert rules are evaluated and pending notifications delivered; minimum `5s`                         |
+| `FLEETDOCK_HEALTH_CHECK_INTERVAL`                     | `1m`                    | how often instance health, database size and connection probes run; minimum `15s`                              |
 | `FLEETDOCK_METRICS_TOKEN`                             | —                       | enables `GET /metrics` (Prometheus) for scrapers sending it as a bearer token; unset, the endpoint answers 404     |
 | `FLEETDOCK_HEARTBEAT_TIMEOUT`                         | `2m`                    | no heartbeat for this long ⇒ server `offline`                                                                     |
 | `FLEETDOCK_METRICS_RETENTION`                         | `168h`                  | how long per-heartbeat server metrics history is kept                                                             |
@@ -82,8 +85,9 @@ yourself).
 | `FLEETDOCK_UI_NODE_BIN`                               | `node`                  | the Node.js binary that runs the bundled dashboard |
 | `FLEETDOCK_UI_STARTUP_TIMEOUT`                        | `45s`                   | how long to wait for the dashboard to start before giving up |
 
-Duration values use Go's syntax (`90s`, `15m`, `2h`). A value that does not
-parse falls back to the default.
+Duration values use Go's syntax (`90s`, `15m`, `2h`). Invalid worker interval
+values prevent the control plane from starting; other invalid durations fall
+back to their defaults.
 
 ## One-off commands
 

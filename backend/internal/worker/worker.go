@@ -42,18 +42,21 @@ func toJobLogs(jobID uuid.UUID, lines []executor.LogLine) []jobdom.JobLog {
 
 // Deps are the collaborators the worker drives.
 type Deps struct {
-	Ops              *operationapp.Service
-	Agents           *agentapp.Service
-	Schedules        *scheduleapp.Service
-	Notifications    *notificationapp.Service
-	Endpoints        *endpointapp.Service
-	Credentials      *dbcredentialapp.Service
-	Probe            *probeapp.Service
-	HeartbeatTimeout time.Duration
-	MetricsRetention time.Duration
+	Ops                 *operationapp.Service
+	Agents              *agentapp.Service
+	Schedules           *scheduleapp.Service
+	Notifications       *notificationapp.Service
+	Endpoints           *endpointapp.Service
+	Credentials         *dbcredentialapp.Service
+	Probe               *probeapp.Service
+	JobPollInterval     time.Duration
+	AlertInterval       time.Duration
+	HealthCheckInterval time.Duration
+	HeartbeatTimeout    time.Duration
+	MetricsRetention    time.Duration
 	// HousekeepingLock, when set, is taken (without waiting) before each
-	// housekeeping pass so only one replica runs schedules, retention and
-	// alerts. ok=false means another replica holds it this round.
+	// housekeeping, alert or health pass so only one replica performs it.
+	// ok=false means another replica holds it this round.
 	HousekeepingLock func(ctx context.Context) (release func(), ok bool, err error)
 	// RowChanges is the data-browser change journal, pruned after
 	// RowChangeRetention.
@@ -76,8 +79,11 @@ type Deps struct {
 // jobTimeout bounds one control-plane operation; stuckAfter is how long a
 // job may sit in "running" before it is presumed orphaned by a dead process.
 const (
-	jobTimeout = 2 * time.Hour
-	stuckAfter = jobTimeout + 15*time.Minute
+	jobTimeout                 = 2 * time.Hour
+	stuckAfter                 = jobTimeout + 15*time.Minute
+	defaultJobPollInterval     = 3 * time.Second
+	defaultAlertInterval       = 15 * time.Second
+	defaultHealthCheckInterval = time.Minute
 )
 
 // Worker runs the control plane's background loops.
@@ -86,16 +92,29 @@ type Worker struct {
 }
 
 // New builds a worker.
-func New(deps Deps) *Worker { return &Worker{deps: deps} }
+func New(deps Deps) *Worker {
+	if deps.JobPollInterval <= 0 {
+		deps.JobPollInterval = defaultJobPollInterval
+	}
+	if deps.AlertInterval <= 0 {
+		deps.AlertInterval = defaultAlertInterval
+	}
+	if deps.HealthCheckInterval <= 0 {
+		deps.HealthCheckInterval = defaultHealthCheckInterval
+	}
+	return &Worker{deps: deps}
+}
 
 // Run blocks until ctx is canceled.
 func (w *Worker) Run(ctx context.Context) {
-	claim := time.NewTicker(3 * time.Second)
+	claim := time.NewTicker(w.deps.JobPollInterval)
 	defer claim.Stop()
 	minute := time.NewTicker(time.Minute)
 	defer minute.Stop()
-	fast := time.NewTicker(15 * time.Second)
-	defer fast.Stop()
+	alerts := time.NewTicker(w.deps.AlertInterval)
+	defer alerts.Stop()
+	health := time.NewTicker(w.deps.HealthCheckInterval)
+	defer health.Stop()
 
 	slog.Info("operations worker started")
 	metrics.WorkerTick()
@@ -111,8 +130,10 @@ func (w *Worker) Run(ctx context.Context) {
 			// Drain all currently pending control-plane jobs.
 			for w.runOne(ctx) {
 			}
-		case <-fast.C:
+		case <-alerts.C:
 			w.locked(ctx, w.evaluateAndDispatch)
+		case <-health.C:
+			w.locked(ctx, w.probeHealth)
 		case <-minute.C:
 			w.locked(ctx, w.housekeeping)
 		}
@@ -183,6 +204,16 @@ func (w *Worker) evaluateAndDispatch(ctx context.Context) {
 	}
 }
 
+// probeHealth collects instance health, size and connection metrics.
+func (w *Worker) probeHealth(ctx context.Context) {
+	if w.deps.Probe == nil {
+		return
+	}
+	if _, err := w.deps.Probe.ProbeAll(ctx); err != nil {
+		slog.Error("probe instances", "error", err.Error())
+	}
+}
+
 // housekeeping runs the once-a-minute maintenance loops.
 func (w *Worker) housekeeping(ctx context.Context) {
 	// Offline detection + notification.
@@ -203,13 +234,6 @@ func (w *Worker) housekeeping(ctx context.Context) {
 		slog.Error("fail stuck operations", "error", err.Error())
 	} else if n > 0 {
 		slog.Warn("failed orphaned operations", "count", n)
-	}
-
-	// Instance health + database size/connection probe.
-	if w.deps.Probe != nil {
-		if _, err := w.deps.Probe.ProbeAll(ctx); err != nil {
-			slog.Error("probe instances", "error", err.Error())
-		}
 	}
 
 	// Scheduled backups.

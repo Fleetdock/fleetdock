@@ -4,7 +4,30 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
+
+func TestNewWorkerIntervals(t *testing.T) {
+	defaults := New(Deps{})
+	if defaults.deps.JobPollInterval != 3*time.Second ||
+		defaults.deps.AlertInterval != 15*time.Second ||
+		defaults.deps.HealthCheckInterval != time.Minute {
+		t.Fatalf("default intervals = %s, %s, %s", defaults.deps.JobPollInterval,
+			defaults.deps.AlertInterval, defaults.deps.HealthCheckInterval)
+	}
+
+	custom := New(Deps{
+		JobPollInterval:     2 * time.Second,
+		AlertInterval:       10 * time.Second,
+		HealthCheckInterval: 30 * time.Second,
+	})
+	if custom.deps.JobPollInterval != 2*time.Second ||
+		custom.deps.AlertInterval != 10*time.Second ||
+		custom.deps.HealthCheckInterval != 30*time.Second {
+		t.Fatalf("custom intervals = %s, %s, %s", custom.deps.JobPollInterval,
+			custom.deps.AlertInterval, custom.deps.HealthCheckInterval)
+	}
+}
 
 // Housekeeping runs once across replicas: only the one holding the lock
 // does the work, it always releases the lock, and a panic in a pass is

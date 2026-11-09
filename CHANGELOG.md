@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Worker intervals are configurable.** Job polling, alert processing and
+  instance health probes can be tuned independently with environment variables.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
