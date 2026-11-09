@@ -23,6 +23,7 @@ import {
   TableSkeleton,
 } from "@/components/ui";
 import { ApiError } from "@/lib/api";
+import type { Dialect } from "@/lib/data-browser/cells";
 import { useForeignKeys, useIndexInsights, useStructureMutations, useTableSchema } from "@/lib/hooks";
 import type { AlterOp, ColumnInfo, ColumnSpec, ForeignKey, IndexDef, TableSchema } from "@/lib/types";
 import { Eraser, Pencil, Plus, TextCursorInput, Trash2 } from "lucide-react";
@@ -39,10 +40,13 @@ export function SchemaView({
   table,
   canWrite = false,
   onTableGone,
+  dialect = "mysql",
 }: {
   databaseId: string;
   table: string;
   canWrite?: boolean;
+  /** Engine of the database; picks the column types offered when editing. */
+  dialect?: Dialect;
   /** Called after the table was dropped (null) or renamed (new name). */
   onTableGone?: (renamedTo: string | null) => void;
 }) {
@@ -64,7 +68,7 @@ export function SchemaView({
   if (error) return <QueryError error={error} what="table structure" onRetry={() => void refetch()} />;
   if (!data) return <EmptyState title="No structure" />;
 
-  const props = { databaseId, table, schema: data, onClose: close };
+  const props = { databaseId, table, schema: data, dialect, onClose: close };
 
   return (
     <div className="flex flex-col gap-4">
@@ -309,7 +313,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
   );
 }
 
-type ModalProps = { databaseId: string; table: string; schema: TableSchema; onClose: () => void };
+type ModalProps = { databaseId: string; table: string; schema: TableSchema; dialect: Dialect; onClose: () => void };
 
 /** The table name without its PostgreSQL schema prefix. */
 const bareName = (t: string) => (t.includes(".") ? t.slice(t.indexOf(".") + 1) : t);
@@ -326,7 +330,7 @@ function toSpec(c: ColumnInfo): ColumnSpec {
   };
 }
 
-function ColumnModal({ databaseId, table, onClose, column }: ModalProps & { column: ColumnInfo | null }) {
+function ColumnModal({ databaseId, table, dialect, onClose, column }: ModalProps & { column: ColumnInfo | null }) {
   const { alter } = useStructureMutations(databaseId, table);
   const [spec, setSpec] = useState<ColumnSpec>(() => (column ? toSpec(column) : emptyColumn()));
   const [error, setError] = useState<string | null>(null);
@@ -349,7 +353,7 @@ function ColumnModal({ databaseId, table, onClose, column }: ModalProps & { colu
   return (
     <Modal open onClose={onClose} title={editing ? `Edit column ${column.name}` : `Add column to ${table}`}>
       <form onSubmit={onSubmit}>
-        <ColumnFields value={spec} onChange={setSpec} hideDefault={editing && spec.keep_default} />
+        <ColumnFields value={spec} onChange={setSpec} dialect={dialect} hideDefault={editing && spec.keep_default} />
         {editing ? (
           <Checkbox
             checked={Boolean(spec.keep_default)}
