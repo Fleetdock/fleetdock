@@ -533,6 +533,7 @@ function Workspace({
         <CreateTableModal
           databaseId={db.id}
           schema={pg ? "public" : null}
+          dialect={dialect}
           onClose={() => setCreating(false)}
           onCreated={(name) => {
             setCreating(false);
