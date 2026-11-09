@@ -51,6 +51,73 @@ export function parseJsonDoc(v: string | null): object | undefined {
   }
 }
 
+/**
+ * formatJson indents valid JSON text by two spaces. It only moves whitespace,
+ * so numbers and strings stay exactly as written (JSON.parse would round
+ * integers past 2^53).
+ */
+export function formatJson(text: string): string {
+  let out = "";
+  let depth = 0;
+  let inString = false;
+  const nl = () => "\n" + "  ".repeat(depth);
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      out += ch;
+      if (ch === "\\") out += text[++i] ?? "";
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === " " || ch === "\n" || ch === "\r" || ch === "\t") continue;
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+    } else if (ch === "{" || ch === "[") {
+      // An empty object or array stays on one line.
+      let j = i + 1;
+      while (j < text.length && /\s/.test(text[j])) j++;
+      if (text[j] === (ch === "{" ? "}" : "]")) {
+        out += ch + text[j];
+        i = j;
+      } else {
+        depth++;
+        out += ch + nl();
+      }
+    } else if (ch === "}" || ch === "]") {
+      depth--;
+      out += nl() + ch;
+    } else if (ch === ",") {
+      out += "," + nl();
+    } else if (ch === ":") {
+      out += ": ";
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+/** compactJson removes the whitespace between JSON tokens; strings and numbers stay as written. */
+export function compactJson(text: string): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      out += ch;
+      if (ch === "\\") out += text[++i] ?? "";
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+      out += ch;
+    } else if (ch !== " " && ch !== "\n" && ch !== "\r" && ch !== "\t") {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 /** compactCount formats a row estimate for the sidebar: 950, 12.4k, 3.1M. */
 export function compactCount(n: number): string {
   if (n < 1000) return String(Math.max(0, Math.round(n)));

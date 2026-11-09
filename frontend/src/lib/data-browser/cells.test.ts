@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BrowseColumn } from "../types";
-import { cellKind, compactCount, isTruncated, parseJsonDoc, mutationSQL, quoteTable, sqlLiteral, toInsertSQL, toJSON, toTSV } from "./cells";
+import { cellKind, compactCount, compactJson, formatJson, isTruncated, parseJsonDoc, mutationSQL, quoteTable, sqlLiteral, toInsertSQL, toJSON, toTSV } from "./cells";
 
 const col = (name: string, type: string): BrowseColumn => ({ name, type, nullable: true, has_default: false });
 
@@ -99,5 +99,45 @@ describe("parseJsonDoc", () => {
     expect(parseJsonDoc("{not json}")).toBeUndefined();
     expect(parseJsonDoc("[1, 2")).toBeUndefined();
     expect(parseJsonDoc(`{"a":"${"x".repeat(5000)}…`)).toBeUndefined();
+  });
+});
+
+describe("formatJson / compactJson", () => {
+  const raw = '{"id":12345678901234567890,"name":"a b, c: {d}","esc":"say \\"hi\\"\\n","list":[1,2.50,{"x":null}],"empty":{},"none":[]}';
+
+  it("indents without changing numbers or strings", () => {
+    const pretty = formatJson(raw);
+    expect(pretty).toBe(
+      [
+        "{",
+        '  "id": 12345678901234567890,',
+        '  "name": "a b, c: {d}",',
+        '  "esc": "say \\"hi\\"\\n",',
+        '  "list": [',
+        "    1,",
+        "    2.50,",
+        "    {",
+        '      "x": null',
+        "    }",
+        "  ],",
+        '  "empty": {},',
+        '  "none": []',
+        "}",
+      ].join("\n"),
+    );
+    expect(JSON.parse(pretty)).toEqual(JSON.parse(raw));
+  });
+
+  it("compacts back to the same text", () => {
+    expect(compactJson(formatJson(raw))).toBe(raw);
+  });
+
+  it("keeps whitespace inside strings", () => {
+    expect(compactJson('{ "a" : "x  y\\t z" ,\n "b" : [ 1 , 2 ] }')).toBe('{"a":"x  y\\t z","b":[1,2]}');
+  });
+
+  it("formats an empty object or array on one line", () => {
+    expect(formatJson("[ ]")).toBe("[]");
+    expect(formatJson("{ }")).toBe("{}");
   });
 });

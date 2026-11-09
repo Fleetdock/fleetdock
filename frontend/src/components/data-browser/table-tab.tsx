@@ -23,7 +23,17 @@ import {
   Spinner,
   Textarea,
 } from "@/components/ui";
-import { cellKind, isTruncated, mutationSQL, parseJsonDoc, prettyValue, quoteTable, type Dialect } from "@/lib/data-browser/cells";
+import {
+  cellKind,
+  compactJson,
+  formatJson,
+  isTruncated,
+  mutationSQL,
+  parseJsonDoc,
+  prettyValue,
+  quoteTable,
+  type Dialect,
+} from "@/lib/data-browser/cells";
 import {
   changeCount,
   emptyPending,
@@ -876,6 +886,16 @@ function GridSkeleton() {
   );
 }
 
+/** isJson reports whether text parses as JSON. */
+function isJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** ValuePanel shows the selected cell in full and edits long or multi-line values. */
 function ValuePanel({
   row,
@@ -911,10 +931,11 @@ function ValuePanel({
   // A JSON column, or a cell holding a JSON object or array, is edited as JSON.
   const jsonCell = kind === "json" || jsonDoc !== undefined;
   // Editing starts from the value, with a JSON object or array pretty-printed.
-  const draftStart = st ? (jsonDoc !== undefined ? prettyValue(st.value ?? "", "json") : (st.value ?? "")) : "";
+  const draftStart = st ? (jsonDoc !== undefined ? formatJson(st.value ?? "") : (st.value ?? "")) : "";
   const applyJson = (text: string) => {
     // Unchanged since it was formatted: keep the stored text as it is.
-    if (text !== draftStart) onApply(text);
+    // Otherwise valid JSON is saved on one line again, like it was stored.
+    if (text !== draftStart) onApply(isJson(text) ? compactJson(text) : text);
     setDraft(null);
   };
   const cancelJson = () => setDraft(null);
@@ -980,7 +1001,7 @@ function ValuePanel({
               Cancel
             </Button>
             {kind === "json" || parseJsonDoc(draft) ? (
-              <Button variant="ghost" size="sm" onClick={() => setDraft(prettyValue(draft, "json"))}>
+              <Button variant="ghost" size="sm" onClick={() => setDraft(isJson(draft) ? formatJson(draft) : draft)}>
                 Format JSON
               </Button>
             ) : null}
