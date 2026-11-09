@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dis
 import { useConfirm } from "@/components/confirm";
 import { FilterEditor, ImportCSV, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
-import { useToast } from "@/components/toast";
+import { useCopy, useToast } from "@/components/toast";
 import {
   Badge,
   Button,
@@ -99,6 +99,7 @@ export function TableTab({
   const view = tab.view;
   const isView = tab.kind === "view";
   const { push } = useToast();
+  const copy = useCopy();
   const confirm = useConfirm();
   const setView = useCallback(
     (patch: Partial<TableView>, pin = true) => dispatch({ type: "update", id: tab.id, view: patch, pin }),
@@ -546,7 +547,7 @@ export function TableTab({
             {
               label: "Copy name",
               icon: <ClipboardCopy size={15} />,
-              onSelect: () => void navigator.clipboard?.writeText(tab.name),
+              onSelect: () => copy(tab.name, `Copied ${tab.name}`),
             },
             {
               label: density === "compact" ? "Taller rows" : "Compact rows",
@@ -887,6 +888,7 @@ function ValuePanel({
     setDraft(null);
   }
   const { push } = useToast();
+  const copy = useCopy();
   const kind = col ? cellKind(col.type) : "text";
   const locked = st ? isTruncated(st.original) && !st.changed : false;
 
@@ -960,7 +962,7 @@ function ValuePanel({
               <Button
                 size="sm"
                 icon={<ClipboardCopy size={13} aria-hidden />}
-                onClick={() => void navigator.clipboard?.writeText(st.value ?? "").then(() => push("success", "Copied value"))}
+                onClick={() => copy(st.value ?? "", "Copied value")}
               >
                 Copy
               </Button>

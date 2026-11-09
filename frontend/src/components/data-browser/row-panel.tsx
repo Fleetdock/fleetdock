@@ -3,7 +3,7 @@
 import { ChevronDown, ChevronUp, ClipboardCopy, KeyRound, X } from "lucide-react";
 import { useState } from "react";
 
-import { useToast } from "@/components/toast";
+import { useCopy, useToast } from "@/components/toast";
 import { Button, IconButton, Textarea } from "@/components/ui";
 import { cellKind, isTruncated, prettyValue } from "@/lib/data-browser/cells";
 import type { BrowseColumn } from "@/lib/types";
@@ -45,6 +45,7 @@ export function RowPanel({
     setEditing(null);
   }
   const { push } = useToast();
+  const copy = useCopy();
 
   return (
     <aside className="dbx-valuepanel dbx-rowpanel" aria-label="Row panel">
@@ -135,9 +136,7 @@ export function RowPanel({
                         {st.value ? (
                           <IconButton
                             label={`Copy ${c.name}`}
-                            onClick={() =>
-                              void navigator.clipboard?.writeText(st.value ?? "").then(() => push("success", "Copied value"))
-                            }
+                            onClick={() => copy(st.value ?? "", "Copied value")}
                           >
                             <ClipboardCopy size={13} aria-hidden />
                           </IconButton>

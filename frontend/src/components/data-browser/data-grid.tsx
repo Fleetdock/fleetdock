@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { useToast } from "@/components/toast";
+import { useCopy, useToast } from "@/components/toast";
 import {
   cellKind,
   estimateWidth,
@@ -148,6 +148,7 @@ export function DataGrid(props: GridProps) {
   const anchor = useRef<number | null>(null);
   const ctx = useContextMenu();
   const { push } = useToast();
+  const copyAndToast = useCopy();
   const kinds = useMemo(() => columns.map((c) => cellKind(c.type)), [columns]);
   // Indexes of the columns drawn, in order; cells keep their index into
   // columns so row values and edits are unaffected by hiding.
@@ -281,10 +282,7 @@ export function DataGrid(props: GridProps) {
   }
 
   function copy(text: string, what: string) {
-    void navigator.clipboard
-      ?.writeText(text)
-      .then(() => push("success", `Copied ${what}`))
-      .catch(() => push("error", "The browser did not allow copying"));
+    copyAndToast(text, `Copied ${what}`);
   }
 
   const selectedRows = () => (selected.size ? [...selected].sort((a, b) => a - b) : cursor ? [cursor.row] : []);

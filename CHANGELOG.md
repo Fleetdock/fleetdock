@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Data browser: copy actions work over plain HTTP on a LAN address.** Copy
+  name, value, definition and saved-view link did nothing there, because the
+  browser only offers `navigator.clipboard` on HTTPS or localhost. A copy the
+  browser refuses now shows an error.
 - **The page no longer jumps sideways when a dialog opens.** The space for
   the page scrollbar is always reserved.
 - **Data browser: the Structure view scrolls as one page.**
