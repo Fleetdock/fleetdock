@@ -914,6 +914,28 @@
     font-size: 0.76rem;
     resize: vertical;
   }
+  /* JSON editor in the value panel: fills the space the text box would. */
+  .dbx-json-edit {
+    position: relative;
+    flex: 1;
+    min-height: 12rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .dbx-json-edit > .cm-theme {
+    position: absolute;
+    inset: 0;
+  }
+  .dbx-json-edit .cm-editor {
+    font-size: 0.76rem;
+  }
+  .dbx-json-edit .cm-editor.cm-focused {
+    outline: none;
+  }
+  .dbx-json-edit:focus-within {
+    border-color: var(--accent);
+  }
 
   /* JSON viewer (value and row panels) */
   .dbx-json {

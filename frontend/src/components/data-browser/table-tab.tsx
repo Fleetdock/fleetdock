@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
 
 import { useConfirm } from "@/components/confirm";
+import { JsonEditor } from "./json-editor";
 import { JsonViewer } from "./json-viewer";
 import { FilterEditor, ImportCSV, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
@@ -369,7 +370,17 @@ export function TableTab({
       save("value-panel", v === "none" ? null : v === "value" ? "1" : "row");
       return v;
     });
-  const togglePanel = () => showSide("value");
+  // Editing a JSON cell opens the value panel in edit mode. Each request has
+  // its own id; the panel starts editing once per id.
+  const [panelEdit, setPanelEdit] = useState<number | null>(null);
+  const editJsonInPanel = () => {
+    setPanelEdit((n) => (n ?? 0) + 1);
+    if (side !== "value") showSide("value");
+  };
+  const togglePanel = () => {
+    setPanelEdit(null);
+    showSide("value");
+  };
   const toggleRowPanel = () => showSide("row");
   const openRowPanel = () => {
     if (side !== "row") showSide("row");
@@ -683,6 +694,7 @@ export function TableTab({
                 onHideColumn={(name) => setView({ hidden: [...(view.hidden ?? []), name] }, false)}
                 onFreeze={(frozen) => setView({ frozen }, false)}
                 onRowDetail={openRowPanel}
+                onEditJson={editJsonInPanel}
                 onFilterColumn={(name) => {
                   const c = columns.find((x) => x.name === name);
                   openFilters(undefined, filterFor(name, c ? cellKind(c.type) === "text" : false));
@@ -711,6 +723,7 @@ export function TableTab({
                   : false
               }
               onApply={(v) => cursor && onEdit(cursor.row, cursor.col, v)}
+              editRequest={panelEdit}
               onClose={togglePanel}
             />
           ) : null}
@@ -870,6 +883,7 @@ function ValuePanel({
   ci,
   editable,
   onApply,
+  editRequest,
   onClose,
 }: {
   row?: GridRow;
@@ -877,13 +891,16 @@ function ValuePanel({
   ci: number;
   editable: boolean;
   onApply: (v: string | null) => void;
+  /** A new id here starts editing the selected cell (a JSON cell edited from the grid). */
+  editRequest: number | null;
   onClose: () => void;
 }) {
   const st = row && col ? cellState(row, col, ci) : null;
   const [draft, setDraft] = useState<string | null>(null);
   const cellKey = row && col ? `${row.kind === "new" ? row.id : row.index}:${col.name}` : "";
   const [prevKey, setPrevKey] = useState(cellKey);
-  if (prevKey !== cellKey) {
+  const cellChanged = prevKey !== cellKey;
+  if (cellChanged) {
     setPrevKey(cellKey);
     setDraft(null);
   }
@@ -891,6 +908,22 @@ function ValuePanel({
   const kind = col ? cellKind(col.type) : "text";
   const locked = st ? isTruncated(st.original) && !st.changed : false;
   const jsonDoc = st ? parseJsonDoc(st.value) : undefined;
+  // A JSON column, or a cell holding a JSON object or array, is edited as JSON.
+  const jsonCell = kind === "json" || jsonDoc !== undefined;
+  const applyJson = useCallback(
+    (text: string) => {
+      onApply(text);
+      setDraft(null);
+    },
+    [onApply],
+  );
+  const cancelJson = useCallback(() => setDraft(null), []);
+  const [seenEditRequest, setSeenEditRequest] = useState<number | null>(null);
+  if (editRequest !== seenEditRequest) {
+    setSeenEditRequest(editRequest);
+    // Keep a draft already being edited for this cell.
+    if (editRequest !== null && st && editable && !locked && (draft === null || cellChanged)) setDraft(st.value ?? "");
+  }
 
   return (
     <aside className="dbx-valuepanel" aria-label="Value panel">
@@ -908,22 +941,26 @@ function ValuePanel({
         </p>
       ) : draft !== null ? (
         <div className="dbx-valuepanel-body">
-          <Textarea
-            className="dbx-valuepanel-edit"
-            value={draft}
-            autoFocus
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-                onApply(draft);
-                setDraft(null);
-              } else if (e.key === "Escape") {
-                e.stopPropagation();
-                setDraft(null);
-              }
-            }}
-            spellCheck={false}
-          />
+          {jsonCell ? (
+            <JsonEditor value={draft} onChange={setDraft} onApply={applyJson} onCancel={cancelJson} />
+          ) : (
+            <Textarea
+              className="dbx-valuepanel-edit"
+              value={draft}
+              autoFocus
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                  onApply(draft);
+                  setDraft(null);
+                } else if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setDraft(null);
+                }
+              }}
+              spellCheck={false}
+            />
+          )}
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"

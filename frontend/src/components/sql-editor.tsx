@@ -9,7 +9,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 
 import type { SqlCompletion } from "@/lib/sql-schema";
 
-function useIsDark() {
+export function useIsDark() {
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ function useIsDark() {
   return dark;
 }
 
-function fleetdockEditorTheme(dark: boolean): Extension {
+export function fleetdockEditorTheme(dark: boolean): Extension {
   return EditorView.theme(
     {
       "&": {
