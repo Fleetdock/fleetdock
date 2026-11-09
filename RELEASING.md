@@ -56,8 +56,8 @@ also go to the previous minor for three months after a new one ships.
 ## Release checklist
 
 1. Merge all changes for the release into `main`
-2. Update **[CHANGELOG.md](CHANGELOG.md)** — move `[Unreleased]` entries under a new version heading with today's date, and add its compare link at the bottom
-3. Open a PR if the changelog commit is not on `main` yet
+2. Run `make release-prep VERSION=0.11.0`: it moves the `[Unreleased]` entries under `## [0.11.0] - <today>` and updates the compare links at the bottom of **[CHANGELOG.md](CHANGELOG.md)**. Read the section through, then open a PR with it and merge it
+3. Tag the merge commit of that PR (below). Do not create the release in GitHub's *Draft a new release* page: the workflow creates it from the tag, with this version's CHANGELOG section as its notes
 4. For a minor or major release, tag a release candidate first (`v0.11.0-rc.1`): it is published as a pre-release and leaves `latest` alone. Install it on a fresh VM with `install.sh --tag v0.11.0-rc.1`, upgrade a copy of a real install to it, enrol and update an agent, then go on
 5. Create and push the tag (see below)
 6. Wait for the **[Release workflow](.github/workflows/release.yml)** to finish on GitHub Actions: it runs the whole CI suite first
@@ -70,12 +70,16 @@ also go to the previous minor for three months after a new one ships.
 git checkout main
 git pull origin main
 
-# After CHANGELOG.md is updated:
-git add CHANGELOG.md
-git commit -m "chore: prepare CHANGELOG for v0.10.1"
-git push origin main
+# On a branch: prepare the changelog, then open a PR with it and merge it.
+git checkout -b release-0.10.1
+make release-prep VERSION=0.10.1
+git commit -am "Prepare CHANGELOG for v0.10.1"
+git push origin release-0.10.1
 
-git tag -a v0.10.1 -m "v0.10.1"
+# After the PR is merged, tag the merge commit:
+git checkout main
+git pull origin main
+git tag -a v0.10.1 -m "Fleetdock 0.10.1"
 git push origin v0.10.1
 ```
 
@@ -101,7 +105,7 @@ On every `v*` tag push:
 4. Creates a GitHub Release with tarballs, `SHA256SUMS`, and the installer
    artefacts (`install.sh`, `fleetdock`, `docker-compose.yml`) so a release can
    be installed from a pinned tag
-5. Attaches the changelog section for that version as release notes (when present in CHANGELOG.md)
+5. Uses that version's CHANGELOG.md section as the release notes (`scripts/changelog.sh notes`), with relative links made absolute
 
 Nothing deployment-specific is baked into the image. There is no
 `NEXT_PUBLIC_API_URL` build argument any more: the dashboard calls the API on

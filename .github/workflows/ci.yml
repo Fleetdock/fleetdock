@@ -187,7 +187,8 @@ jobs:
           shellcheck -s sh scripts/install.sh scripts/fleetdock \
             backend/docker-entrypoint.sh \
             backend/internal/interfaces/httpapi/install_script.sh \
-            scripts/ci/upgrade-test.sh scripts/ci/dump-tools-test.sh
+            scripts/ci/upgrade-test.sh scripts/ci/dump-tools-test.sh \
+            scripts/changelog.sh
 
   docker:
     runs-on: ubuntu-latest
