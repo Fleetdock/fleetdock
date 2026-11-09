@@ -910,19 +910,19 @@ function ValuePanel({
   const jsonDoc = st ? parseJsonDoc(st.value) : undefined;
   // A JSON column, or a cell holding a JSON object or array, is edited as JSON.
   const jsonCell = kind === "json" || jsonDoc !== undefined;
-  const applyJson = useCallback(
-    (text: string) => {
-      onApply(text);
-      setDraft(null);
-    },
-    [onApply],
-  );
-  const cancelJson = useCallback(() => setDraft(null), []);
+  // Editing starts from the value, with a JSON object or array pretty-printed.
+  const draftStart = st ? (jsonDoc !== undefined ? prettyValue(st.value ?? "", "json") : (st.value ?? "")) : "";
+  const applyJson = (text: string) => {
+    // Unchanged since it was formatted: keep the stored text as it is.
+    if (text !== draftStart) onApply(text);
+    setDraft(null);
+  };
+  const cancelJson = () => setDraft(null);
   const [seenEditRequest, setSeenEditRequest] = useState<number | null>(null);
   if (editRequest !== seenEditRequest) {
     setSeenEditRequest(editRequest);
     // Keep a draft already being edited for this cell.
-    if (editRequest !== null && st && editable && !locked && (draft === null || cellChanged)) setDraft(st.value ?? "");
+    if (editRequest !== null && st && editable && !locked && (draft === null || cellChanged)) setDraft(draftStart);
   }
 
   return (
@@ -966,6 +966,10 @@ function ValuePanel({
               size="sm"
               variant="primary"
               onClick={() => {
+                if (jsonCell) {
+                  applyJson(draft);
+                  return;
+                }
                 onApply(draft);
                 setDraft(null);
               }}
@@ -1007,7 +1011,7 @@ function ValuePanel({
               </Button>
             ) : null}
             {editable && !locked ? (
-              <Button size="sm" onClick={() => setDraft(st.value ?? "")}>
+              <Button size="sm" onClick={() => setDraft(draftStart)}>
                 Edit
               </Button>
             ) : null}

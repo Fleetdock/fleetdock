@@ -21,7 +21,7 @@ const jsonColors = HighlightStyle.define([
 ]);
 
 /**
- * JsonEditor edits a JSON value with syntax colours, folding and a mark on
+ * JsonEditor edits a JSON value with syntax colours, folding (no line numbers) and a mark on
  * invalid JSON. Ctrl/Cmd+Enter applies, Escape cancels.
  */
 export function JsonEditor({
@@ -32,7 +32,7 @@ export function JsonEditor({
 }: {
   value: string;
   onChange: (value: string) => void;
-  /** Called with the editor's text. Keep it stable (useCallback): a new one rebuilds the editor's setup. */
+  /** Called with the editor's text. */
   onApply: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -81,7 +81,7 @@ export function JsonEditor({
         extensions={extensions}
         theme={theme}
         basicSetup={{
-          lineNumbers: true,
+          lineNumbers: false,
           foldGutter: true,
           highlightActiveLine: true,
           highlightActiveLineGutter: true,
