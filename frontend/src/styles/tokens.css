@@ -274,9 +274,9 @@
   --muted: #a6a6a6; /* 6.6:1 on --panel */
   --fg-subtle: #767676; /* decorative / placeholder only */
 
-  /* lines (--border is what components use; borderless mode blanks it) */
+  /* lines. --border itself is set once, in :root: setting it here would beat
+     borderless mode, whose selector is less specific than this one. */
   --border-line: #333333;
-  --border: var(--border-line);
   --border-strong: #454545;
 
   /* brand: neutral gray, no hue */
