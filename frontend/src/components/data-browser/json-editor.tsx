@@ -21,7 +21,7 @@ const jsonColors = HighlightStyle.define([
 ]);
 
 /**
- * JsonEditor edits a JSON value with syntax colours, folding (no line numbers) and a mark on
+ * JsonEditor edits a JSON value as plain text with syntax colours and a mark on
  * invalid JSON. Ctrl/Cmd+Enter applies, Escape cancels.
  */
 export function JsonEditor({
@@ -82,7 +82,7 @@ export function JsonEditor({
         theme={theme}
         basicSetup={{
           lineNumbers: false,
-          foldGutter: true,
+          foldGutter: false,
           highlightActiveLine: true,
           highlightActiveLineGutter: true,
           dropCursor: false,
