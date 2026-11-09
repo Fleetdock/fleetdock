@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { Logo } from "@/components/logo";
+import { LogoMark, Wordmark } from "@/components/logo";
 import { Tooltip } from "@/components/ui";
 import { useCan, useCanAny, useVersion } from "@/lib/hooks";
 import { allowed, NAV, NAV_GROUPS, type NavSection } from "@/lib/nav";
@@ -115,8 +115,12 @@ export function Sidebar({
           className="sidebar-brand"
           aria-label="Fleetdock overview"
         >
-          <Logo size={26} />
-          <span className="sidebar-brand-text">Fleetdock</span>
+          <span className="sidebar-brand-text">
+            <Wordmark height={27} />
+          </span>
+          <span className="sidebar-brand-mark">
+            <LogoMark size={28} />
+          </span>
         </Link>
         <nav className="sidebar-nav" aria-label="Main">
           {NAV_GROUPS.map((group) => {

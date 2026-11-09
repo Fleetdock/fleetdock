@@ -19,6 +19,22 @@ brand instead of the generic palette. Pages may add a
 4. **Keyboard first.** Every control can be reached with Tab, has a visible
    focus ring and an accessible name. Tabs and menus use arrow keys.
 
+## Brand
+
+The logo kit lives in [`/brand`](../../brand) (SVG, PNG, favicons; see its
+README). Copies used by the dashboard are in `frontend/public/` (`logo.svg` is
+the app icon, `logo-light.svg` / `logo-dark.svg` the full logo) and
+`frontend/src/app/` (`icon.svg`, `favicon.ico`, `apple-icon.png`).
+
+- Use `Wordmark` from `@/components/logo` where there is room (at least 140 px
+  wide): it shows the light or dark version by theme, or a fixed one with
+  `on="light" | "dark"` on a surface that never changes. Use `LogoMark` (the app
+  icon) where there is not, such as the collapsed sidebar.
+- Brand colours: turquoise `#2DD4BF`, charcoal `#101820`, off-white `#F5F7FA`.
+  They are for the logo only; the interface accent stays `--accent`, because
+  turquoise text on white does not reach WCAG AA contrast.
+- Never redraw, recolour, stretch or add effects to the logo.
+
 ## Tokens (`src/styles/tokens.css`)
 
 | Role | CSS variable | Tailwind utility |

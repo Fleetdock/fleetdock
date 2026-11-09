@@ -1,4 +1,9 @@
-# Fleetdock
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/svg/fleetdock-logo-dark.svg">
+    <img alt="Fleetdock" src="brand/svg/fleetdock-logo-light.svg" width="320">
+  </picture>
+</h1>
 
 [![CI](https://github.com/Fleetdock/fleetdock/actions/workflows/ci.yml/badge.svg)](https://github.com/Fleetdock/fleetdock/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)

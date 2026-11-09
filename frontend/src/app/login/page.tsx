@@ -7,7 +7,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, api, safeNext } from "@/lib/api";
 import { clearLegacyToken } from "@/lib/auth";
 import { Button, Callout, Field, Input } from "@/components/ui";
-import { Logo } from "@/components/logo";
+import { Wordmark } from "@/components/logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -45,9 +45,8 @@ export default function LoginPage() {
   return (
     <div className="auth-shell">
       <aside className="auth-brand" aria-label="About Fleetdock">
-        <div className="flex items-center gap-2">
-          <Logo size={28} />
-          <span className="font-semibold">Fleetdock</span>
+        <div className="flex items-center">
+          <Wordmark height={30} on="dark" />
         </div>
         <div>
           <p className="auth-brand-title">Every database you run, in one place.</p>
