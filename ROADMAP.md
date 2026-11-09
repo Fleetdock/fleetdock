@@ -36,11 +36,11 @@ release, dumps every engine with the image's tools and runs end-to-end tests.
 
 ## Next — 0.11
 
-| Item | Notes |
-|------|-------|
-| Two-factor sign-in (TOTP) | Recovery codes; owners and admins can be required to use it |
-| SSO / OIDC | Sign in with your identity provider; map groups to roles |
-| Session list | See and end your signed-in browsers one by one |
+| Item | Notes | Issue |
+|------|-------|-------|
+| Two-factor sign-in (TOTP) | Recovery codes; owners and admins can be required to use it | #91 |
+| SSO / OIDC | Sign in with your identity provider; map groups to roles | #92 |
+| Session list | See and end your signed-in browsers one by one | #93 |
 
 ## Toward 1.0
 
@@ -50,21 +50,25 @@ line.
 
 ## Later
 
-| Area | Item |
-|------|------|
-| Backups | Point-in-time recovery (binlog / WAL archiving) |
-| Backups | Ship metadata backups to backup storage from the dashboard |
-| Fleet | Instance statistics through the agent, so managed instances need no port open to the control plane |
-| Fleet | Replica / HA topology |
-| Fleet | Engine configuration (`my.cnf` / `postgresql.conf`) and in-place engine upgrades |
-| Fleet | `GET /v1/engines`: supported engines and versions from the server |
-| Access | Cloudflare Tunnel / TCP proxy for external databases without open ports |
-| Operations | Helm chart; Terraform module for a single VM |
-| Operations | OpenTelemetry traces |
-| Operations | Configurable worker intervals |
-| Notifications | More channels (PagerDuty, Discord, Microsoft Teams) |
-| Dashboard | Translations |
-| Community | Public read-only demo, comparison with phpMyAdmin and cloud consoles |
+| Area | Item | Issue |
+|------|------|-------|
+| Backups | Point-in-time recovery (binlog / WAL archiving) | #94 |
+| Backups | Ship metadata backups to backup storage from the dashboard | #95 |
+| Fleet | Instance statistics through the agent, so managed instances need no port open to the control plane | #96 |
+| Fleet | Replica / HA topology | #97 |
+| Fleet | Engine configuration (`my.cnf` / `postgresql.conf`) and in-place engine upgrades | #98 |
+| Fleet | `GET /v1/engines`: supported engines and versions from the server | #99 |
+| Access | Cloudflare Tunnel / TCP proxy for external databases without open ports | #100 |
+| Operations | Helm chart; Terraform module for a single VM | #101 |
+| Operations | OpenTelemetry traces | #102 |
+| Operations | Configurable worker intervals | #103 |
+| Notifications | More channels: Discord, Microsoft Teams, PagerDuty | #104, #105, #106 |
+| Dashboard | Translations | #107 |
+| Community | Public read-only demo; comparison with phpMyAdmin and cloud consoles | #108, #109 |
 
-Contributions welcome: open an issue to discuss an item before a large PR. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Every item has an issue: comment there before starting, so we can agree on the
+approach and nobody does the same work twice. All of them are listed under the
+[`roadmap` label](https://github.com/Fleetdock/fleetdock/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap);
+[`help wanted`](https://github.com/Fleetdock/fleetdock/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+and [`good first issue`](https://github.com/Fleetdock/fleetdock/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+mark the ones that are ready for contributors. See [CONTRIBUTING.md](CONTRIBUTING.md).
