@@ -1589,11 +1589,17 @@
     min-width: 0;
     overflow: hidden;
   }
-  .dbx-cmd-error {
+  /* Only the error gives way when the bar is short of room: it is cut with an
+     ellipsis (the full text is its tooltip), the title and hint keep their size. */
+  .dbx-cmd-head > * {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .dbx-cmd-head > .dbx-cmd-error {
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
   /* A command's rows, shown in place of the table. */
   .dbx-cmd-result-bar {
