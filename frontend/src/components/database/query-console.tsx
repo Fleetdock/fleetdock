@@ -11,6 +11,7 @@ import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
 import { ResultGrid } from "@/components/data-browser/result-grid";
 import { dialectOf, type Dialect } from "@/lib/data-browser/cells";
 import { load, save } from "@/lib/data-browser/storage";
+import { randomUUID } from "@/lib/uuid";
 import {
   Button,
   Callout,
@@ -186,7 +187,7 @@ export function QueryConsole({
   async function execute(text: string, preview = false) {
     setError(null);
     setConfirm(null);
-    const id = crypto.randomUUID();
+    const id = randomUUID();
     setQueryId(id);
     try {
       const res = await run.mutateAsync({

@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, download } from "../api";
+import { randomUUID } from "../uuid";
 import type {
   ColumnCatalog,
   Diagram,
@@ -495,7 +496,7 @@ export function useApplyRowChanges(databaseId: string, table: string) {
   return useCallback(
     async (mutations: Mutation[]): Promise<AppliedChanges> => {
       const path = rowsPath(databaseId, table);
-      const batchId = crypto.randomUUID();
+      const batchId = randomUUID();
       const results: MutationResult[] = [];
       for (const m of mutations) {
         try {

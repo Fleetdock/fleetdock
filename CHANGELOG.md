@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Data browser: the Structure view scrolls as one page.**
+- **Adding or editing a column offers every column type.** Only
+  `varchar(255)` was listed, because the type box only suggested types
+  matching what it already held. It now lists the database engine's types
+  (MySQL/MariaDB or PostgreSQL), grouped by kind, with Custom… for any
+  other.
+- **The dashboard works over plain HTTP on a LAN address.** Running a query
+  or saving row edits failed there, because the browser only offers
+  `crypto.randomUUID()` on HTTPS or localhost.
 
 ## [0.10.0] - 2026-11-07
 

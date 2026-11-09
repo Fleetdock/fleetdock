@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { ColumnFields, emptyColumn } from "@/components/database/column-editor";
 import { Button, ErrorText, Field, IconButton, Input, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
+import type { Dialect } from "@/lib/data-browser/cells";
 import { useStructureMutations } from "@/lib/hooks";
 import type { ColumnSpec } from "@/lib/types";
 import { Plus, X } from "lucide-react";
@@ -15,8 +16,11 @@ export function CreateTableModal({
   schema,
   onClose,
   onCreated,
+  dialect = schema ? "postgres" : "mysql",
 }: {
   databaseId: string;
+  /** Engine of the database; picks the column types offered. */
+  dialect?: Dialect;
   /** PostgreSQL schema to create the table in; null on MySQL/MariaDB. */
   schema: string | null;
   onClose: () => void;
@@ -63,6 +67,7 @@ export function CreateTableModal({
               <div className="flex-1">
                 <ColumnFields
                   compact
+                  dialect={dialect}
                   value={c}
                   onChange={(next) => {
                     setColumns((prev) => prev.map((x, j) => (j === i ? next : x)));

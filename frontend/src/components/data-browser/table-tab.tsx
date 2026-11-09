@@ -604,6 +604,7 @@ export function TableTab({
           <SchemaView
             databaseId={databaseId}
             table={tab.name}
+            dialect={dialect}
             canWrite={canWrite && !isView}
             onTableGone={(renamed) => {
               if (renamed) {
