@@ -768,7 +768,7 @@ components:
         enabled: {type: boolean}
         id: {type: string}
         name: {type: string}
-        type: {type: string}
+        type: {type: string, enum: [email, slack, webhook, pagerduty]}
 
     Destination:
       type: object

@@ -37,7 +37,7 @@ func sealedValue(channelID uuid.UUID, key string) string {
 }
 
 // seal moves the channel's secret config values (webhook URLs, the SMTP
-// password) into the secret store, leaving a reference in the config.
+// password and PagerDuty routing keys) into the secret store, leaving a reference in the config.
 // Values already sealed for this channel are left as they are.
 func (s *Service) seal(ctx context.Context, c *notifdom.Channel) error {
 	if s.secrets == nil {

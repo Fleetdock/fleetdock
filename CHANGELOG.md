@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **PagerDuty notification channels.** Send alert triggers and recoveries through
+  Events API v2 with stable incident deduplication and mapped severities.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and

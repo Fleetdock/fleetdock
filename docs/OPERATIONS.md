@@ -142,7 +142,7 @@ migrations). What changes on the way:
 2. **Update the control plane**: `fleetdock update --tag v0.10.0`, or pull the
    image and restart. On its first start 0.10 records a checksum for every
    migration already applied and encrypts the secrets of notification
-   channels saved before (webhook URLs, SMTP password). Check the sidebar shows
+   channels saved before (webhook URLs, SMTP password, PagerDuty routing keys). Check the sidebar shows
    the new version.
 3. **Update the agents**: every server shows **Update** (agents before 0.10
    reported themselves as 0.1.0). Run the update command on each (below).
@@ -190,7 +190,7 @@ on the new one.
 ## Encryption key rotation
 
 Stored credentials (database server passwords, SSH keys, backup storage keys,
-notification webhook URLs and SMTP passwords) are **envelope-encrypted**: each
+notification webhook URLs, SMTP passwords and PagerDuty routing keys) are **envelope-encrypted**: each
 has its own data key, wrapped by `FLEETDOCK_ENCRYPTION_KEY`. Rotating the key
 re-wraps the data keys only; the encrypted payloads are untouched.
 
