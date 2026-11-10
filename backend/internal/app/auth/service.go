@@ -24,6 +24,8 @@ const apiTokenPrefix = "fleetd_"
 type Principal struct {
 	UserID uuid.UUID
 	Email  string
+	// Name is the user's display name (may be empty).
+	Name string
 	// TokenID is the API token the request authenticated with; nil for a
 	// dashboard session.
 	TokenID *uuid.UUID
@@ -280,7 +282,7 @@ func (s *Service) principalFor(ctx context.Context, userID uuid.UUID, tokenScope
 		grants = restrictToScopes(grants, tokenScopes)
 		scopes = tokenScopes
 	}
-	return &Principal{UserID: u.ID, Email: u.Email, grants: grants, scopes: scopes}, nil
+	return &Principal{UserID: u.ID, Email: u.Email, Name: u.Name, grants: grants, scopes: scopes}, nil
 }
 
 // EnsureAdmin creates a bootstrap owner account if there are no users yet.

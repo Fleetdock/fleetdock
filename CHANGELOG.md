@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in any column type, shows as a collapsible tree in the value and row
   panels, with a raw view. Editing such a cell opens the value panel with
   the JSON formatted and in the same colours, and a mark on invalid JSON.
+- **Your name in the top bar.** The account menu shows your display name and
+  its initials (your email on hover), falling back to the email. API: `GET
+  /v1/me` returns `name`.
 
 ### Changed
 
@@ -33,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The dashboard works over plain HTTP on a LAN address.** Running a query
   or saving row edits failed there, because the browser only offers
   `crypto.randomUUID()` on HTTPS or localhost.
+- **The account menu button no longer clips its avatar** when hovered.
+- **No horizontal scrollbar in the collapsed sidebar.**
 
 ## [0.10.0] - 2026-11-07
 
