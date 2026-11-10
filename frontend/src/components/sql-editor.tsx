@@ -2,14 +2,14 @@
 
 import { indentWithTab } from "@codemirror/commands";
 import { MariaSQL, MySQL, PostgreSQL, sql } from "@codemirror/lang-sql";
-import { type Extension } from "@codemirror/state";
+import { Prec, type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import type { SqlCompletion } from "@/lib/sql-schema";
 
-function useIsDark() {
+export function useIsDark() {
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ function useIsDark() {
   return dark;
 }
 
-function fleetdockEditorTheme(dark: boolean): Extension {
+export function fleetdockEditorTheme(dark: boolean): Extension {
   return EditorView.theme(
     {
       "&": {
@@ -185,16 +185,19 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
       lineNumbers(),
       EditorView.lineWrapping,
       placeholder(placeholderText),
-      keymap.of([
-        indentWithTab,
-        {
-          key: "Mod-Enter",
-          run() {
-            onRun?.();
-            return true;
+      keymap.of([indentWithTab]),
+      // Highest precedence: basicSetup binds Mod-Enter to insertBlankLine and would win.
+      Prec.highest(
+        keymap.of([
+          {
+            key: "Mod-Enter",
+            run() {
+              onRun?.();
+              return true;
+            },
           },
-        },
-      ]),
+        ]),
+      ),
     ];
   }, [placeholderText, onRun, engine, completion]);
 

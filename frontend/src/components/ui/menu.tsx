@@ -20,11 +20,14 @@ export function Menu({
   items,
   label = "More actions",
   trigger,
+  triggerClassName = "btn btn-ghost btn-sm",
   align = "right",
 }: {
   items: MenuItem[];
   label?: string;
   trigger?: ReactNode;
+  /** Classes for the trigger button (defaults to a small ghost button). */
+  triggerClassName?: string;
   align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
@@ -68,7 +71,7 @@ export function Menu({
       <button
         ref={button}
         type="button"
-        className="btn btn-ghost btn-sm"
+        className={triggerClassName}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={id}
