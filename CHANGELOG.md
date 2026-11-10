@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Your name in the top bar.** The account menu shows your display name and
+  its initials (your email on hover), falling back to the email. API: `GET
+  /v1/me` returns `name`.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
