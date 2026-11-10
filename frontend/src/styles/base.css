@@ -153,6 +153,26 @@
   }
 }
 
+/* Animations setting (Settings → Appearance, lib/appearance.ts). Reduced: pages only fade. */
+:root[data-motion="reduced"]::view-transition-new(.page-enter) {
+  animation: 180ms var(--ease) both page-reveal;
+}
+/* Off: the same as the system's reduce-motion setting below. */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+:root[data-motion="off"]::view-transition-group(*),
+:root[data-motion="off"]::view-transition-old(*),
+:root[data-motion="off"]::view-transition-new(*) {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

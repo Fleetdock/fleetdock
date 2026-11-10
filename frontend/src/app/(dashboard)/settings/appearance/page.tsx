@@ -3,7 +3,7 @@
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
 
 import { Card, CardBody, CardHeader, PageHeader, SegmentedControl, Switch, type SegmentOption } from "@/components/ui";
-import { useAppearance, type StylePref, type ThemePref } from "@/lib/appearance";
+import { useAppearance, type MotionPref, type StylePref, type ThemePref } from "@/lib/appearance";
 
 const THEMES: SegmentOption<ThemePref>[] = [
   { value: "light", label: <><Sun size={14} aria-hidden /> Light</> },
@@ -16,12 +16,18 @@ const STYLES: SegmentOption<StylePref>[] = [
   { value: "neutral", label: "Neutral" },
 ];
 
+const MOTIONS: SegmentOption<MotionPref>[] = [
+  { value: "full", label: "Full" },
+  { value: "reduced", label: "Reduced" },
+  { value: "off", label: "Off" },
+];
+
 export default function AppearancePage() {
-  const { theme, style, borderless, setTheme, setStyle, setBorderless } = useAppearance();
+  const { theme, style, borderless, motion, setTheme, setStyle, setBorderless, setMotion } = useAppearance();
 
   return (
     <div className="max-w-xl">
-      <PageHeader title="Appearance" description="Style, theme and borders. Saved in this browser." />
+      <PageHeader title="Appearance" description="Style, theme, animations and borders. Saved in this browser." />
       <Card>
         <CardHeader icon={<Palette size={15} aria-hidden className="text-muted" />} title="Display" />
         <CardBody className="stack">
@@ -36,6 +42,14 @@ export default function AppearancePage() {
             <span className="font-medium">Theme</span>
             <SegmentedControl label="Theme" options={THEMES} value={theme} onChange={setTheme} />
             <span className="text-muted text-sm">System follows your operating system setting.</span>
+          </div>
+          <div className="stack-sm">
+            <span className="font-medium">Animations</span>
+            <SegmentedControl label="Animations" options={MOTIONS} value={motion} onChange={setMotion} />
+            <span className="text-muted text-sm">
+              Full fades pages in with a slight rise. Reduced only fades them. Off turns off page and interface
+              animations. Your system&apos;s reduce-motion setting always turns them off.
+            </span>
           </div>
           <div className="stack-sm">
             <Switch label="Borderless UI" checked={borderless} onCheckedChange={setBorderless} />

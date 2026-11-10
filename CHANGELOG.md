@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Page transitions.** Pages fade in with a slight rise when you move
-  between them (not with reduced motion).
+  between them. Settings → Appearance → Animations chooses Full, Reduced (a
+  plain fade) or Off (no page or interface animations); the system's
+  reduce-motion setting always turns them off.
 - **Appearance settings.** Settings → Appearance chooses the theme (Light,
   Dark or System), the style (Classic, or a compact gray Neutral style) and
   a Borderless option. Saved in the browser and applied before the page
