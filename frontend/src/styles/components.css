@@ -1598,9 +1598,33 @@
     color: var(--fg);
     border-color: var(--border-strong);
   }
+  /* Account menu trigger: a 3px ring of space around the avatar, which makes
+     it as tall as the search button, so the hover background wraps the avatar. */
+  .topbar-account {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 3px 0.55rem 3px 3px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+  .topbar-account:hover,
+  .topbar-account[aria-expanded="true"] {
+    background: var(--panel-2);
+  }
+  .topbar-account:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
   .topbar-avatar {
-    width: 1.75rem;
-    height: 1.75rem;
+    width: 1.625rem;
+    height: 1.625rem;
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
@@ -1663,6 +1687,8 @@
   .sidebar-nav {
     flex: 1;
     overflow-y: auto;
+    /* Rail mode keeps hidden labels in the flow: clip them, no horizontal scrollbar. */
+    overflow-x: hidden;
     padding: 0.75rem 0.6rem;
     display: flex;
     flex-direction: column;
