@@ -28,10 +28,6 @@
     position: relative;
     touch-action: none;
   }
-  .dbx-resizer:hover,
-  .dbx-resizer:active {
-    background: color-mix(in srgb, var(--accent) 35%, transparent);
-  }
   .dbx-main {
     flex: 1;
     min-width: 0;
@@ -757,9 +753,6 @@
     z-index: 3;
     touch-action: none;
   }
-  .dbx-col-resize:hover {
-    background: color-mix(in srgb, var(--accent) 45%, transparent);
-  }
   .dbx-rownum {
     position: sticky;
     left: 0;
@@ -774,6 +767,13 @@
     cursor: pointer;
     user-select: none;
     white-space: nowrap;
+  }
+  .dbx-grid.no-rownums .dbx-rownum {
+    padding: 0;
+    font-size: 0;
+  }
+  .dbx-grid.no-rownums .dbx-rownum > :not(.sr-only) {
+    display: none;
   }
   thead .dbx-rownum {
     top: 0;
@@ -1554,7 +1554,7 @@
     border-bottom: 1px solid var(--border);
     background: var(--panel-2);
   }
-  .dbx-console-split:hover,
+  /* Resize handles only change the cursor on hover; keyboard focus still highlights. */
   .dbx-console-split:focus-visible {
     background: color-mix(in srgb, var(--accent) 35%, var(--panel-2));
     outline: none;

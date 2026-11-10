@@ -18,12 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   /v1/me` returns `name`.
 - **Data browser: Shift/Ctrl/Cmd-click a table to keep its tab open**, like
   a double click.
+- **Data browser: hide row numbers** from the table menu. A slim handle
+  stays for selecting rows.
 
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
   home-screen icons use the new Fleetdock logo, in a light and a dark
   version. The full logo kit is in `brand/`.
+- **Data browser: resize handles only change the cursor on hover.** The
+  panel and column handles no longer flash a highlight line as the pointer
+  crosses them; keyboard focus still highlights them.
 - **Thinner scrollbars that appear on hover**, in Chromium, Safari and
   Firefox. In the data browser the grid's scrollbars float over the table,
   so they take no space; they show on hover or while scrolling and can be
