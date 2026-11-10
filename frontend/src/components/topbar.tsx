@@ -73,13 +73,14 @@ function TopbarCrumbs() {
   );
 }
 
-function initials(email?: string): string {
-  if (!email) return "?";
-  const name = email.split("@")[0];
-  const parts = name.split(/[._-]+/).filter(Boolean);
+// initials uses the display name, else the email's local part ("Ada Lovelace" → "AL").
+function initials(name?: string, email?: string): string {
+  const source = name?.trim() || email?.split("@")[0] || "";
+  if (!source) return "?";
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
   return (
     ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() ||
-    name.slice(0, 2).toUpperCase()
+    source.slice(0, 2).toUpperCase()
   );
 }
 
@@ -138,10 +139,10 @@ export function Topbar({
           trigger={
             <>
               <span className="topbar-avatar" aria-hidden>
-                {initials(me?.email)}
+                {initials(me?.name, me?.email)}
               </span>
-              <span className="max-w-56 truncate hide-sm">
-                {me?.email ?? "Account"}
+              <span className="max-w-56 truncate hide-sm" title={me?.email}>
+                {me?.name?.trim() || me?.email || "Account"}
               </span>
             </>
           }
