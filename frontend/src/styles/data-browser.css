@@ -295,10 +295,12 @@
     min-width: 0;
     overflow-x: auto;
     overflow-y: hidden;
-    scrollbar-width: thin;
   }
   .dbx-tabs::-webkit-scrollbar {
     height: 3px;
+  }
+  .dbx-tabs::-webkit-scrollbar-thumb {
+    border-width: 0;
   }
   .dbx-tab {
     position: relative;
@@ -549,12 +551,134 @@
   }
 
   /* grid */
+  /* Grid scrollbars are drawn over the table by OverlayScrollbars, so they take no space. */
+  .dbx-grid-frame {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .dbx-grid {
     flex: 1;
+    min-height: 0;
     overflow: auto;
     outline: none;
     font-size: 0.8rem;
     scroll-padding: 2.55rem 0 0 52px;
+    scrollbar-width: none;
+    /* Room to scroll the last column and row out from under the rails. */
+    padding: 0 var(--bar) var(--bar) 0;
+  }
+  .dbx-grid::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  /* Solid rails flush with the grid's edge, so no cells show behind the thumb. */
+  .dbx-grid-frame {
+    --bar: 12px;
+  }
+  .dbx-scrollbar,
+  .dbx-grid-frame.has-both-bars::after {
+    position: absolute;
+    z-index: 5;
+    background: var(--panel);
+    opacity: 0;
+    transition:
+      opacity 0.15s ease-out,
+      background-color 0.15s ease-out;
+  }
+  .dbx-scrollbar {
+    display: flex;
+  }
+  .dbx-scrollbar[hidden] {
+    display: none;
+  }
+  .dbx-scrollbar.is-y {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: var(--bar);
+    justify-content: center;
+    border-left: 1px solid var(--border);
+  }
+  .dbx-scrollbar.is-x {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--bar);
+    align-items: center;
+    border-top: 1px solid var(--border);
+  }
+  /* Where the two rails meet, a corner block fills the gap between them. */
+  .has-both-bars > .dbx-scrollbar.is-y {
+    bottom: var(--bar);
+  }
+  .has-both-bars > .dbx-scrollbar.is-x {
+    right: var(--bar);
+  }
+  .dbx-grid-frame.has-both-bars::after {
+    content: "";
+    right: 0;
+    bottom: 0;
+    width: var(--bar);
+    height: var(--bar);
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+    pointer-events: none;
+  }
+  .dbx-scrollbar-thumb {
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--border-strong);
+    transition:
+      width 0.12s ease-out,
+      height 0.12s ease-out,
+      background-color 0.12s ease-out;
+  }
+  .is-y > .dbx-scrollbar-thumb {
+    width: 6px;
+    align-self: flex-start;
+  }
+  .is-x > .dbx-scrollbar-thumb {
+    height: 6px;
+    margin-right: auto;
+  }
+  /* Thumbs show while the pointer is over the table or it is scrolling... */
+  .dbx-grid-frame:hover > .dbx-scrollbar,
+  .dbx-grid-frame.is-scrolling > .dbx-scrollbar,
+  .dbx-scrollbar.is-dragging,
+  .dbx-grid-frame.has-both-bars:hover::after,
+  .dbx-grid-frame.has-both-bars.is-scrolling::after,
+  .dbx-grid-frame.has-both-bars:has(> .is-dragging)::after {
+    opacity: 1;
+  }
+  /* ...and over the bar itself the rail darkens and the thumb thickens. */
+  .dbx-scrollbar:hover,
+  .dbx-scrollbar.is-dragging {
+    background: var(--panel-2);
+  }
+  .is-y:hover > .dbx-scrollbar-thumb,
+  .is-y.is-dragging > .dbx-scrollbar-thumb {
+    width: 8px;
+  }
+  .is-x:hover > .dbx-scrollbar-thumb,
+  .is-x.is-dragging > .dbx-scrollbar-thumb {
+    height: 8px;
+  }
+  .dbx-scrollbar:hover > .dbx-scrollbar-thumb {
+    background: var(--fg-subtle);
+  }
+  .dbx-scrollbar.is-dragging > .dbx-scrollbar-thumb {
+    background: var(--muted);
+  }
+  @media (pointer: coarse) {
+    /* Touch scrolls the table directly; the bars are only an indicator. */
+    .dbx-scrollbar {
+      pointer-events: none;
+    }
   }
   .dbx-table {
     border-collapse: separate;

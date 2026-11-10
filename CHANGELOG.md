@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
   home-screen icons use the new Fleetdock logo, in a light and a dark
   version. The full logo kit is in `brand/`.
+- **Thinner scrollbars that appear on hover**, in Chromium, Safari and
+  Firefox. In the data browser the grid's scrollbars float over the table,
+  so they take no space; they show on hover or while scrolling and can be
+  dragged.
 
 ### Fixed
 
@@ -36,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The dashboard works over plain HTTP on a LAN address.** Running a query
   or saving row edits failed there, because the browser only offers
   `crypto.randomUUID()` on HTTPS or localhost.
+- **Ctrl/Cmd+Enter runs the query** in the SQL editor again; it was adding a
+  new line instead.
 - **The account menu button no longer clips its avatar** when hovered.
 - **No horizontal scrollbar in the collapsed sidebar.**
 
