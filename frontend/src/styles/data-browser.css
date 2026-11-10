@@ -768,6 +768,13 @@
     user-select: none;
     white-space: nowrap;
   }
+  .dbx-grid.no-rownums .dbx-rownum {
+    padding: 0;
+    font-size: 0;
+  }
+  .dbx-grid.no-rownums .dbx-rownum > :not(.sr-only) {
+    display: none;
+  }
   thead .dbx-rownum {
     top: 0;
     z-index: 4;

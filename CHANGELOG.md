@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Your name in the top bar.** The account menu shows your display name and
   its initials (your email on hover), falling back to the email. API: `GET
   /v1/me` returns `name`.
+- **Data browser: hide row numbers** from the table menu. A slim handle
+  stays for selecting rows.
 
 ### Changed
 
