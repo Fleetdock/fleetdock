@@ -7,6 +7,7 @@ import {
   cellKind,
   estimateWidth,
   isTruncated,
+  parseJsonDoc,
   toInsertSQL,
   toJSON,
   toTSV,
@@ -123,6 +124,8 @@ export type GridProps = {
   onFreeze?: (count: number) => void;
   /** Shift+Enter: show the cursor's row in full. */
   onRowDetail?: () => void;
+  /** Editing a cell that holds JSON opens this (the value panel) instead of the inline editor. */
+  onEditJson?: () => void;
   /** Header menu: start a filter on this column in the filter editor. */
   onFilterColumn?: (column: string) => void;
   density?: "compact" | "comfortable";
@@ -256,6 +259,12 @@ export function DataGrid(props: GridProps) {
     const st = cellState(rows[r], columns[c], c);
     if (isTruncated(st.original) && !st.changed) {
       push("info", "This value is too long to edit here. Use the SQL console to change it.");
+      return;
+    }
+    // JSON is edited in the value panel, which has room for it and Format JSON.
+    if (props.onEditJson && (cellKind(columns[c].type) === "json" || parseJsonDoc(st.value))) {
+      setCursor({ row: r, col: c });
+      props.onEditJson();
       return;
     }
     const initial = st.value ?? "";

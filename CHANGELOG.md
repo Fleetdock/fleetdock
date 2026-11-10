@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Data browser: JSON as a tree.** A cell holding a JSON object or array,
+  in any column type, shows as a collapsible tree in the value and row
+  panels, with a raw view. Editing such a cell opens the value panel with
+  the JSON formatted and in the same colours, and a mark on invalid JSON.
 - **Your name in the top bar.** The account menu shows your display name and
   its initials (your email on hover), falling back to the email. API: `GET
   /v1/me` returns `name`.
