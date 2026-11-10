@@ -1663,6 +1663,8 @@
   .sidebar-nav {
     flex: 1;
     overflow-y: auto;
+    /* Rail mode keeps hidden labels in the flow: clip them, no horizontal scrollbar. */
+    overflow-x: hidden;
     padding: 0.75rem 0.6rem;
     display: flex;
     flex-direction: column;
