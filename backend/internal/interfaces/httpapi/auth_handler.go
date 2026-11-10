@@ -51,6 +51,7 @@ type grantDTO struct {
 type meResponse struct {
 	ID          string     `json:"id"`
 	Email       string     `json:"email"`
+	Name        string     `json:"name"`
 	Permissions []string   `json:"permissions"`
 	Grants      []grantDTO `json:"grants"`
 }
@@ -112,6 +113,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, meResponse{
 		ID:          p.UserID.String(),
 		Email:       p.Email,
+		Name:        p.Name,
 		Permissions: p.Permissions(),
 		Grants:      toGrantDTOs(p.Grants()),
 	})
