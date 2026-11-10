@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Your name in the top bar.** The account menu shows your display name and
+  its initials (your email on hover), falling back to the email. API: `GET
+  /v1/me` returns `name`.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
@@ -30,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The dashboard works over plain HTTP on a LAN address.** Running a query
   or saving row edits failed there, because the browser only offers
   `crypto.randomUUID()` on HTTPS or localhost.
+- **Ctrl/Cmd+Enter runs the query** in the SQL editor again; it was adding a
+  new line instead.
+- **The account menu button no longer clips its avatar** when hovered.
+- **No horizontal scrollbar in the collapsed sidebar.**
 
 ## [0.10.0] - 2026-11-07
 
