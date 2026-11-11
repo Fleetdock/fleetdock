@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Your name in the top bar.** The account menu shows your display name and
   its initials (your email on hover), falling back to the email. API: `GET
   /v1/me` returns `name`.
+- **Page transitions.** Pages fade in with a slight rise when you move
+  between them. Settings → Appearance → Animations chooses Full, Reduced (a
+  plain fade) or Off (no page or interface animations); the system's
+  reduce-motion setting always turns them off.
+- **Appearance settings.** Settings → Appearance chooses the theme (Light,
+  Dark or System), the style (Classic, or a compact gray Neutral style) and
+  a Borderless option. Saved in the browser and applied before the page
+  shows.
 - **Data browser: Shift/Ctrl/Cmd-click a table to keep its tab open**, like
   a double click.
 - **Data browser: hide row numbers** from the table menu. A slim handle

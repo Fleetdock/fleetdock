@@ -385,7 +385,7 @@
     opacity: 1;
   }
   .dbx-tab-close:hover {
-    background: var(--border);
+    background: var(--panel-3);
     color: var(--fg);
   }
   .dbx-tab-dirty {
@@ -501,7 +501,7 @@
   }
   .dbx-chip button:hover {
     color: var(--fg);
-    background: var(--border);
+    background: var(--panel-3);
   }
   .dbx-body {
     flex: 1;
@@ -706,7 +706,7 @@
     cursor: pointer;
   }
   .dbx-th-button:hover {
-    background: color-mix(in srgb, var(--border) 45%, transparent);
+    background: color-mix(in srgb, var(--panel-3) 45%, transparent);
   }
   .dbx-th-button:focus-visible {
     outline: 2px solid var(--accent);
