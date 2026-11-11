@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-11
+
+Upgrading: no database migrations since 0.10.0, so `fleetdock update` (or
+pulling the new image) is all it takes.
+
 ### Added
 
 - **Data browser: JSON as a tree.** A cell holding a JSON object or array,
@@ -31,8 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows.
 - **Data browser: Shift/Ctrl/Cmd-click a table to keep its tab open**, like
   a double click.
-- **Data browser: hide row numbers** from the table menu. A slim handle
-  stays for selecting rows.
 
 ### Changed
 
@@ -918,7 +921,8 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Fleetdock/fleetdock/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Fleetdock/fleetdock/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/Fleetdock/fleetdock/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/Fleetdock/fleetdock/compare/v0.9.1...v0.9.2
