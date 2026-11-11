@@ -42,6 +42,21 @@ release, dumps every engine with the image's tools and runs end-to-end tests.
 | SSO / OIDC | Sign in with your identity provider; map groups to roles | #92 |
 | Session list | See and end your signed-in browsers one by one | #93 |
 
+## AI First
+
+AI agents (any MCP client) and later a built-in assistant work with your fleet,
+and can never read a credential or delete data: a fixed set of read-only tools,
+SQL under the read-only role, row values only when allowed and masked, changes
+only as proposals a person approves. Design:
+[docs/proposals/ai-first.md](docs/proposals/ai-first.md); epic #113.
+
+| Phase | Item | Issue |
+|-------|------|-------|
+| 1 | MCP server: read-only, metadata only | #114 |
+| 2 | Read-only SQL with row data and column masking | #115 |
+| 3 | Changes as proposals a person approves | #116 |
+| 4 | Built-in assistant with your own model | #117 |
+
 ## Toward 1.0
 
 1.0 is tagged when the compatibility rules in [RELEASING.md](RELEASING.md#compatibility)

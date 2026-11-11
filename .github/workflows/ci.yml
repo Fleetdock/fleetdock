@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
       - name: go vet
@@ -102,7 +102,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - name: engine integration tests
         run: go test -tags integration -count=1 -v ./internal/platform/engine/ -run Integration
@@ -134,7 +134,7 @@ jobs:
           fetch-depth: 0 # the release tags
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - name: upgrade from the latest release
         env:

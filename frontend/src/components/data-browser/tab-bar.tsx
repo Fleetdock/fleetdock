@@ -39,7 +39,7 @@ export function TabBar({
   onNewQuery: () => void;
   /** Controls shown before the tabs (sidebar toggle). */
   leading?: ReactNode;
-  /** Controls at the end of the bar (full screen, theme). */
+  /** Controls at the end of the bar (full screen). */
   trailing?: ReactNode;
 }) {
   const strip = useRef<HTMLDivElement>(null);
