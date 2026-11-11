@@ -786,9 +786,10 @@ components:
 
     Me:
       type: object
-      required: [id, email, permissions, grants]
+      required: [id, email, name, permissions, grants]
       properties:
         email: {type: string}
+        name: {type: string}
         grants: {type: array, items: {type: object, properties: {permission: {type: string}, scope_id: {type: string}, scope_type: {type: string}}, required: [permission, scope_type]}}
         id: {type: string}
         permissions: {type: array, items: {type: string}}
