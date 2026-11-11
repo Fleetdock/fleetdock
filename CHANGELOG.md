@@ -21,12 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Data browser: command panel.** Run SQL under a table's grid. A query's
   rows show in place of the table; a change is confirmed first with how many
   rows it affects, then the table reloads.
+- **Page transitions.** Pages fade in with a slight rise when you move
+  between them. Settings → Appearance → Animations chooses Full, Reduced (a
+  plain fade) or Off (no page or interface animations); the system's
+  reduce-motion setting always turns them off.
+- **Appearance settings.** Settings → Appearance chooses the theme (Light,
+  Dark or System), the style (Classic, or a compact gray Neutral style) and
+  a Borderless option. Saved in the browser and applied before the page
+  shows.
+- **Data browser: Shift/Ctrl/Cmd-click a table to keep its tab open**, like
+  a double click.
+- **Data browser: hide row numbers** from the table menu. A slim handle
+  stays for selecting rows.
 
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
   home-screen icons use the new Fleetdock logo, in a light and a dark
   version. The full logo kit is in `brand/`.
+- **Data browser: resize handles only change the cursor on hover.** The
+  panel and column handles no longer flash a highlight line as the pointer
+  crosses them; keyboard focus still highlights them.
 - **Thinner scrollbars that appear on hover**, in Chromium, Safari and
   Firefox. In the data browser the grid's scrollbars float over the table,
   so they take no space; they show on hover or while scrolling and can be
@@ -34,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Data browser: copy actions work over plain HTTP on a LAN address.** Copy
+  name, value, definition and saved-view link did nothing there, because the
+  browser only offers `navigator.clipboard` on HTTPS or localhost. A copy the
+  browser refuses now shows an error.
 - **The page no longer jumps sideways when a dialog opens.** The space for
   the page scrollbar is always reserved.
 - **Data browser: the Structure view scrolls as one page.**
@@ -49,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new line instead.
 - **The account menu button no longer clips its avatar** when hovered.
 - **No horizontal scrollbar in the collapsed sidebar.**
+
+### Security
+
+- **Built with Go 1.26.11**, which fixes GO-2026-6859: a race in `net/http`'s
+  `MaxBytesReader` that could crash an HTTP/1 server.
 
 ## [0.10.0] - 2026-11-07
 

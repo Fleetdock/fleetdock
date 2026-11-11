@@ -28,10 +28,6 @@
     position: relative;
     touch-action: none;
   }
-  .dbx-resizer:hover,
-  .dbx-resizer:active {
-    background: color-mix(in srgb, var(--accent) 35%, transparent);
-  }
   .dbx-main {
     flex: 1;
     min-width: 0;
@@ -389,7 +385,7 @@
     opacity: 1;
   }
   .dbx-tab-close:hover {
-    background: var(--border);
+    background: var(--panel-3);
     color: var(--fg);
   }
   .dbx-tab-dirty {
@@ -505,7 +501,7 @@
   }
   .dbx-chip button:hover {
     color: var(--fg);
-    background: var(--border);
+    background: var(--panel-3);
   }
   .dbx-body {
     flex: 1;
@@ -710,7 +706,7 @@
     cursor: pointer;
   }
   .dbx-th-button:hover {
-    background: color-mix(in srgb, var(--border) 45%, transparent);
+    background: color-mix(in srgb, var(--panel-3) 45%, transparent);
   }
   .dbx-th-button:focus-visible {
     outline: 2px solid var(--accent);
@@ -756,9 +752,6 @@
     cursor: col-resize;
     z-index: 3;
     touch-action: none;
-  }
-  .dbx-col-resize:hover {
-    background: color-mix(in srgb, var(--accent) 45%, transparent);
   }
   .dbx-rownum {
     position: sticky;
@@ -1561,7 +1554,7 @@
     border-bottom: 1px solid var(--border);
     background: var(--panel-2);
   }
-  .dbx-console-split:hover,
+  /* Resize handles only change the cursor on hover; keyboard focus still highlights. */
   .dbx-console-split:focus-visible {
     background: color-mix(in srgb, var(--accent) 35%, var(--panel-2));
     outline: none;
