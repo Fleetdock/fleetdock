@@ -7,11 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Data browser: JSON as a tree.** A cell holding a JSON object or array,
+  in any column type, shows as a collapsible tree in the value and row
+  panels, with a raw view. Editing such a cell opens the value panel with
+  the JSON formatted and in the same colours, and a mark on invalid JSON.
+- **Your name in the top bar.** The account menu shows your display name and
+  its initials (your email on hover), falling back to the email. API: `GET
+  /v1/me` returns `name`.
+- **Data browser: Shift/Ctrl/Cmd-click a table to keep its tab open**, like
+  a double click.
+- **Data browser: hide row numbers** from the table menu. A slim handle
+  stays for selecting rows.
+
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
   home-screen icons use the new Fleetdock logo, in a light and a dark
   version. The full logo kit is in `brand/`.
+- **Data browser: resize handles only change the cursor on hover.** The
+  panel and column handles no longer flash a highlight line as the pointer
+  crosses them; keyboard focus still highlights them.
+- **Thinner scrollbars that appear on hover**, in Chromium, Safari and
+  Firefox. In the data browser the grid's scrollbars float over the table,
+  so they take no space; they show on hover or while scrolling and can be
+  dragged.
 
 ### Fixed
 
@@ -26,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The dashboard works over plain HTTP on a LAN address.** Running a query
   or saving row edits failed there, because the browser only offers
   `crypto.randomUUID()` on HTTPS or localhost.
+- **Ctrl/Cmd+Enter runs the query** in the SQL editor again; it was adding a
+  new line instead.
+- **The account menu button no longer clips its avatar** when hovered.
+- **No horizontal scrollbar in the collapsed sidebar.**
 
 ## [0.10.0] - 2026-11-07
 

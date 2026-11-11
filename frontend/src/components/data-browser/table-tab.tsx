@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
 
 import { useConfirm } from "@/components/confirm";
+import { JsonEditor } from "./json-editor";
+import { JsonViewer } from "./json-viewer";
 import { FilterEditor, ImportCSV, RowRange } from "./row-tools";
 import { SchemaView } from "@/components/database/table-structure";
 import { useToast } from "@/components/toast";
@@ -21,7 +23,17 @@ import {
   Spinner,
   Textarea,
 } from "@/components/ui";
-import { cellKind, isTruncated, mutationSQL, prettyValue, quoteTable, type Dialect } from "@/lib/data-browser/cells";
+import {
+  cellKind,
+  compactJson,
+  formatJson,
+  isTruncated,
+  mutationSQL,
+  parseJsonDoc,
+  prettyValue,
+  quoteTable,
+  type Dialect,
+} from "@/lib/data-browser/cells";
 import {
   changeCount,
   emptyPending,
@@ -44,6 +56,7 @@ import {
   Lock,
   History,
   PanelRight,
+  ListOrdered,
   Rows2,
   Rows3,
   Plus,
@@ -368,7 +381,17 @@ export function TableTab({
       save("value-panel", v === "none" ? null : v === "value" ? "1" : "row");
       return v;
     });
-  const togglePanel = () => showSide("value");
+  // Editing a JSON cell opens the value panel in edit mode. Each request has
+  // its own id; the panel starts editing once per id.
+  const [panelEdit, setPanelEdit] = useState<number | null>(null);
+  const editJsonInPanel = () => {
+    setPanelEdit((n) => (n ?? 0) + 1);
+    if (side !== "value") showSide("value");
+  };
+  const togglePanel = () => {
+    setPanelEdit(null);
+    showSide("value");
+  };
   const toggleRowPanel = () => showSide("row");
   const openRowPanel = () => {
     if (side !== "row") showSide("row");
@@ -381,6 +404,12 @@ export function TableTab({
       const next = d === "compact" ? "comfortable" : "compact";
       save("density", next === "compact" ? null : next);
       return next;
+    });
+  const [rowNumbers, setRowNumbers] = useState(() => load("row-numbers") !== "0");
+  const toggleRowNumbers = () =>
+    setRowNumbers((v) => {
+      save("row-numbers", v ? "0" : null);
+      return !v;
     });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -554,6 +583,12 @@ export function TableTab({
               hidden: view.mode !== "data",
               onSelect: toggleDensity,
             },
+            {
+              label: rowNumbers ? "Hide row numbers" : "Show row numbers",
+              icon: <ListOrdered size={15} />,
+              hidden: view.mode !== "data",
+              onSelect: toggleRowNumbers,
+            },
           ]}
         />
       </div>
@@ -682,11 +717,13 @@ export function TableTab({
                 onHideColumn={(name) => setView({ hidden: [...(view.hidden ?? []), name] }, false)}
                 onFreeze={(frozen) => setView({ frozen }, false)}
                 onRowDetail={openRowPanel}
+                onEditJson={editJsonInPanel}
                 onFilterColumn={(name) => {
                   const c = columns.find((x) => x.name === name);
                   openFilters(undefined, filterFor(name, c ? cellKind(c.type) === "text" : false));
                 }}
                 density={density}
+                rowNumbers={rowNumbers}
                 emptyText={
                   filtered
                     ? "No rows match the search or filters."
@@ -710,6 +747,7 @@ export function TableTab({
                   : false
               }
               onApply={(v) => cursor && onEdit(cursor.row, cursor.col, v)}
+              editRequest={panelEdit}
               onClose={togglePanel}
             />
           ) : null}
@@ -862,6 +900,16 @@ function GridSkeleton() {
   );
 }
 
+/** isJson reports whether text parses as JSON. */
+function isJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** ValuePanel shows the selected cell in full and edits long or multi-line values. */
 function ValuePanel({
   row,
@@ -869,6 +917,7 @@ function ValuePanel({
   ci,
   editable,
   onApply,
+  editRequest,
   onClose,
 }: {
   row?: GridRow;
@@ -876,19 +925,40 @@ function ValuePanel({
   ci: number;
   editable: boolean;
   onApply: (v: string | null) => void;
+  /** A new id here starts editing the selected cell (a JSON cell edited from the grid). */
+  editRequest: number | null;
   onClose: () => void;
 }) {
   const st = row && col ? cellState(row, col, ci) : null;
   const [draft, setDraft] = useState<string | null>(null);
   const cellKey = row && col ? `${row.kind === "new" ? row.id : row.index}:${col.name}` : "";
   const [prevKey, setPrevKey] = useState(cellKey);
-  if (prevKey !== cellKey) {
+  const cellChanged = prevKey !== cellKey;
+  if (cellChanged) {
     setPrevKey(cellKey);
     setDraft(null);
   }
   const { push } = useToast();
   const kind = col ? cellKind(col.type) : "text";
   const locked = st ? isTruncated(st.original) && !st.changed : false;
+  const jsonDoc = st ? parseJsonDoc(st.value) : undefined;
+  // A JSON column, or a cell holding a JSON object or array, is edited as JSON.
+  const jsonCell = kind === "json" || jsonDoc !== undefined;
+  // Editing starts from the value, with a JSON object or array pretty-printed.
+  const draftStart = st ? (jsonDoc !== undefined ? formatJson(st.value ?? "") : (st.value ?? "")) : "";
+  const applyJson = (text: string) => {
+    // Unchanged since it was formatted: keep the stored text as it is.
+    // Otherwise valid JSON is saved on one line again, like it was stored.
+    if (text !== draftStart) onApply(isJson(text) ? compactJson(text) : text);
+    setDraft(null);
+  };
+  const cancelJson = () => setDraft(null);
+  const [seenEditRequest, setSeenEditRequest] = useState<number | null>(null);
+  if (editRequest !== seenEditRequest) {
+    setSeenEditRequest(editRequest);
+    // Keep a draft already being edited for this cell.
+    if (editRequest !== null && st && editable && !locked && (draft === null || cellChanged)) setDraft(draftStart);
+  }
 
   return (
     <aside className="dbx-valuepanel" aria-label="Value panel">
@@ -906,27 +976,35 @@ function ValuePanel({
         </p>
       ) : draft !== null ? (
         <div className="dbx-valuepanel-body">
-          <Textarea
-            className="dbx-valuepanel-edit"
-            value={draft}
-            autoFocus
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-                onApply(draft);
-                setDraft(null);
-              } else if (e.key === "Escape") {
-                e.stopPropagation();
-                setDraft(null);
-              }
-            }}
-            spellCheck={false}
-          />
+          {jsonCell ? (
+            <JsonEditor value={draft} onChange={setDraft} onApply={applyJson} onCancel={cancelJson} />
+          ) : (
+            <Textarea
+              className="dbx-valuepanel-edit"
+              value={draft}
+              autoFocus
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                  onApply(draft);
+                  setDraft(null);
+                } else if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setDraft(null);
+                }
+              }}
+              spellCheck={false}
+            />
+          )}
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
               variant="primary"
               onClick={() => {
+                if (jsonCell) {
+                  applyJson(draft);
+                  return;
+                }
                 onApply(draft);
                 setDraft(null);
               }}
@@ -936,8 +1014,8 @@ function ValuePanel({
             <Button size="sm" onClick={() => setDraft(null)}>
               Cancel
             </Button>
-            {kind === "json" ? (
-              <Button variant="ghost" size="sm" onClick={() => setDraft(prettyValue(draft, "json"))}>
+            {kind === "json" || parseJsonDoc(draft) ? (
+              <Button variant="ghost" size="sm" onClick={() => setDraft(isJson(draft) ? formatJson(draft) : draft)}>
                 Format JSON
               </Button>
             ) : null}
@@ -952,6 +1030,8 @@ function ValuePanel({
             <span className="dbx-pill">DEFAULT</span>
           ) : st.value === null ? (
             <span className="dbx-pill">NULL</span>
+          ) : jsonDoc ? (
+            <JsonViewer key={cellKey} doc={jsonDoc} />
           ) : (
             <pre className="dbx-valuepanel-pre">{prettyValue(st.value, kind)}</pre>
           )}
@@ -966,7 +1046,7 @@ function ValuePanel({
               </Button>
             ) : null}
             {editable && !locked ? (
-              <Button size="sm" onClick={() => setDraft(st.value ?? "")}>
+              <Button size="sm" onClick={() => setDraft(draftStart)}>
                 Edit
               </Button>
             ) : null}
