@@ -632,7 +632,7 @@ function Welcome({
       </h2>
       <p className="muted text-sm m-0 max-w-lg">
         {items
-          ? "Pick a table in the sidebar. A single click previews it; a double click keeps it open in its own tab."
+          ? "Pick a table in the sidebar. A single click previews it; a double click (or Shift/Ctrl-click) keeps it open in its own tab."
           : "Tables you create appear in the sidebar."}
       </p>
       <div className="flex gap-2 mt-4">

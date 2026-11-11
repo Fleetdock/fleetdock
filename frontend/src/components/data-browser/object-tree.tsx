@@ -330,7 +330,8 @@ export const ObjectTree = forwardRef<
         data-index={i}
         className={`dbx-tree-item${active ? " active" : ""}${i === cursor ? " cursor" : ""}${grouped || item.kind === "object" ? " nested" : ""}`}
         title={title}
-        onClick={() => open(item, true)}
+        // Shift/Ctrl/⌘-click keeps the tab open, like a double click.
+        onClick={(e) => open(item, !(e.shiftKey || e.ctrlKey || e.metaKey))}
         onDoubleClick={() => open(item, false)}
         onContextMenu={(e) => ctx.open(e, menuFor(item))}
       >
