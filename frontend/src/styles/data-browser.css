@@ -28,10 +28,6 @@
     position: relative;
     touch-action: none;
   }
-  .dbx-resizer:hover,
-  .dbx-resizer:active {
-    background: color-mix(in srgb, var(--accent) 35%, transparent);
-  }
   .dbx-main {
     flex: 1;
     min-width: 0;
@@ -389,7 +385,7 @@
     opacity: 1;
   }
   .dbx-tab-close:hover {
-    background: var(--border);
+    background: var(--panel-3);
     color: var(--fg);
   }
   .dbx-tab-dirty {
@@ -505,7 +501,7 @@
   }
   .dbx-chip button:hover {
     color: var(--fg);
-    background: var(--border);
+    background: var(--panel-3);
   }
   .dbx-body {
     flex: 1;
@@ -710,7 +706,7 @@
     cursor: pointer;
   }
   .dbx-th-button:hover {
-    background: color-mix(in srgb, var(--border) 45%, transparent);
+    background: color-mix(in srgb, var(--panel-3) 45%, transparent);
   }
   .dbx-th-button:focus-visible {
     outline: 2px solid var(--accent);
@@ -757,9 +753,6 @@
     z-index: 3;
     touch-action: none;
   }
-  .dbx-col-resize:hover {
-    background: color-mix(in srgb, var(--accent) 45%, transparent);
-  }
   .dbx-rownum {
     position: sticky;
     left: 0;
@@ -774,6 +767,13 @@
     cursor: pointer;
     user-select: none;
     white-space: nowrap;
+  }
+  .dbx-grid.no-rownums .dbx-rownum {
+    padding: 0;
+    font-size: 0;
+  }
+  .dbx-grid.no-rownums .dbx-rownum > :not(.sr-only) {
+    display: none;
   }
   thead .dbx-rownum {
     top: 0;
@@ -1554,7 +1554,7 @@
     border-bottom: 1px solid var(--border);
     background: var(--panel-2);
   }
-  .dbx-console-split:hover,
+  /* Resize handles only change the cursor on hover; keyboard focus still highlights. */
   .dbx-console-split:focus-visible {
     background: color-mix(in srgb, var(--accent) 35%, var(--panel-2));
     outline: none;
@@ -1800,5 +1800,89 @@
     .dbx-view-actions {
       opacity: 1;
     }
+  }
+}
+
+@layer components {
+  /* Command panel: a closable SQL drawer under a table's grid. */
+  .dbx-cmd {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 75vh;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .dbx-cmd-resize {
+    flex: none;
+    height: 5px;
+    margin-top: -3px;
+    cursor: row-resize;
+    touch-action: none;
+  }
+  .dbx-cmd-resize:focus-visible {
+    background: color-mix(in srgb, var(--accent) 35%, var(--panel-2));
+    outline: none;
+  }
+  .dbx-cmd-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0.5rem 0.35rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .dbx-cmd-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .dbx-cmd-editor {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+  /* Only the error gives way when the bar is short of room: it is cut with an
+     ellipsis (the full text is its tooltip), the title and hint keep their size. */
+  .dbx-cmd-head > * {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .dbx-cmd-head > .dbx-cmd-error {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* A command's rows, shown in place of the table. */
+  .dbx-cmd-result-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem 0.35rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  }
+  .dbx-cmd-result-sql {
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dbx-cmd-editor .sql-editor,
+  .dbx-cmd-editor .cm-theme,
+  .dbx-cmd-editor .cm-theme-light,
+  .dbx-cmd-editor .cm-editor {
+    height: 100%;
+  }
+  /* Borderless: the editor blends into the panel, with no outline or focus ring. */
+  .dbx-cmd-editor .sql-editor,
+  .dbx-cmd-editor .sql-editor:focus-within {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 }
