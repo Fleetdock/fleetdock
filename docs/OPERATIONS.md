@@ -79,14 +79,14 @@ Stop the API during restore to avoid concurrent writes.
 
 ```bash
 fleetdock update              # latest
-fleetdock update --tag v0.10.0 # a specific release
+fleetdock update --tag v0.11.0 # a specific release
 ```
 
 ### Compose (build from source)
 
 ```bash
 git fetch origin
-git checkout v0.10.0  # or main for latest
+git checkout v0.11.0  # or main for latest
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 

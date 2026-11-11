@@ -98,7 +98,7 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 
 ## Supply chain
 
-- [ ] Pin image tags in production (`v0.10.0`, not `latest`)
+- [ ] Pin image tags in production (`v0.11.0`, not `latest`)
 - [ ] Verify images and checksums with cosign ([RELEASING.md](../RELEASING.md#verifying-a-release)), or build yourself from tagged source
 - [ ] Keep agents up to date: an outdated agent shows **Update** in the server list
 - [ ] Enable GitHub Dependabot / renovate for the fork
