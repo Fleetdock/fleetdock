@@ -9,7 +9,7 @@ import { useConfirm } from "@/components/confirm";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CreateTableModal } from "@/components/database/create-table-modal";
 import { QueryConsole } from "@/components/database/query-console";
-import { Button, ButtonLink, EmptyState, IconButton, QueryError, Spinner } from "@/components/ui";
+import { Button, ButtonLink, EmptyState, IconButton, QueryError } from "@/components/ui";
 import { dialectOf, type Dialect } from "@/lib/data-browser/cells";
 import {
   lastDatabase,
@@ -40,6 +40,7 @@ import { DatabaseChooser, DatabasePicker } from "./database-picker";
 import { buildItems, ObjectTree, type ObjectTreeHandle } from "./object-tree";
 import { TabBar, type CloseKind } from "./tab-bar";
 import { ObjectTab } from "./object-tab";
+import { DataBrowserSkeleton } from "./skeleton";
 import { TableTab } from "./table-tab";
 
 const MIN_SIDE = 200;
@@ -209,16 +210,12 @@ export function DataBrowser({
     </>
   );
 
-  if (!databaseId) {
+  // Without ?db=, the last database is about to reopen: show the skeleton, not the chooser.
+  if (!databaseId && !lastDatabase()) {
     return shell(null, <DatabaseChooser onPick={(id) => void pick(id)} />);
   }
-  if (isLoading) {
-    return shell(
-      null,
-      <div className="dbx-center">
-        <Spinner /> Loading…
-      </div>,
-    );
+  if (!databaseId || isLoading) {
+    return <DataBrowserSkeleton />;
   }
   if (!db) {
     return shell(

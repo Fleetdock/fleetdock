@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useCopy, useToast } from "@/components/toast";
-import { Button, IconButton, Input, Spinner } from "@/components/ui";
+import { Button, IconButton, Input } from "@/components/ui";
 import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells";
 import {
   isSelected,
@@ -43,6 +43,7 @@ import {
 
 import { useContextMenu } from "./context-menu";
 import { SchemaPicker } from "./schema-picker";
+import { TreeRowsSkeleton } from "./skeleton";
 
 export type TreeItem = {
   kind: "table" | "view" | "object";
@@ -359,11 +360,7 @@ export const ObjectTree = forwardRef<
 
   let body: ReactNode;
   if (isLoading) {
-    body = (
-      <div className="dbx-tree-note">
-        <Spinner /> Connecting…
-      </div>
-    );
+    body = <TreeRowsSkeleton />;
   } else if (error) {
     body = (
       <div className="dbx-tree-note text-danger">

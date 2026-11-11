@@ -1604,6 +1604,20 @@
   }
 
   /* First load of a table: the grid's outline. */
+  /* Skeleton rows reuse the real row classes for their size. */
+  .dbx-skeleton-row {
+    pointer-events: none;
+    cursor: default;
+  }
+  .dbx-skeleton-head {
+    min-height: 2.35rem;
+  }
+  .dbx-skeleton-main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .dbx-grid-skeleton {
     flex: 1;
     overflow: hidden;

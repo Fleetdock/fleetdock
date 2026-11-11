@@ -19,7 +19,6 @@ import {
   Pagination,
   SegmentedControl,
   Select,
-  Skeleton,
   Spinner,
   Textarea,
 } from "@/components/ui";
@@ -76,6 +75,7 @@ import { RowHistory, useRowUndo } from "./row-history";
 import { ColumnsMenu } from "./columns-menu";
 import { ViewsMenu } from "./views-menu";
 import { RowPanel } from "./row-panel";
+import { GridSkeleton } from "./skeleton";
 
 
 /**
@@ -950,26 +950,6 @@ export function TableTab({
         </Modal>
       ) : null}
       {importOpen ? <ImportCSV databaseId={databaseId} table={tab.name} onClose={() => setImportOpen(false)} /> : null}
-    </div>
-  );
-}
-
-/** GridSkeleton stands in for the grid while the first page of rows loads. */
-function GridSkeleton() {
-  return (
-    <div className="dbx-grid-skeleton" role="status" aria-label="Loading rows">
-      <div className="dbx-grid-skeleton-head" aria-hidden>
-        {[7, 10, 6, 9, 8].map((w, i) => (
-          <Skeleton key={i} width={`${w}rem`} height=".8rem" />
-        ))}
-      </div>
-      {Array.from({ length: 12 }, (_, r) => (
-        <div key={r} className="dbx-grid-skeleton-row" aria-hidden>
-          {[5, 9, 4, 7, 6].map((w, i) => (
-            <Skeleton key={i} width={`${w + ((r * 3 + i) % 4)}rem`} height=".7rem" />
-          ))}
-        </div>
-      ))}
     </div>
   );
 }
