@@ -7,6 +7,7 @@ import {
   cellKind,
   estimateWidth,
   isTruncated,
+  parseJsonDoc,
   toInsertSQL,
   toJSON,
   toTSV,
@@ -36,6 +37,7 @@ import {
 } from "lucide-react";
 
 import { useContextMenu, type ContextItem } from "./context-menu";
+import { OverlayScrollbars } from "./overlay-scrollbars";
 
 /** GridRow is one line of the grid: a pending new row or a fetched row. */
 export type GridRow =
@@ -80,6 +82,8 @@ export function toRecord(row: GridRow, columns: BrowseColumn[]): RowRecord {
 }
 
 const ROWNUM_WIDTH = 52;
+/** With row numbers hidden the gutter stays as a slim row-selection handle. */
+const ROWNUM_SLIM_WIDTH = 12;
 const isTrue = (v: string) => /^(t|true|1|y|yes|on)$/i.test(v);
 
 export type GridProps = {
@@ -122,9 +126,13 @@ export type GridProps = {
   onFreeze?: (count: number) => void;
   /** Shift+Enter: show the cursor's row in full. */
   onRowDetail?: () => void;
+  /** Editing a cell that holds JSON opens this (the value panel) instead of the inline editor. */
+  onEditJson?: () => void;
   /** Header menu: start a filter on this column in the filter editor. */
   onFilterColumn?: (column: string) => void;
   density?: "compact" | "comfortable";
+  /** Show row numbers in the left gutter (default true). */
+  rowNumbers?: boolean;
 };
 
 export function DataGrid(props: GridProps) {
@@ -174,13 +182,14 @@ export function DataGrid(props: GridProps) {
     }
     setEstimates({ key: colKey, widths: estimated });
   }
+  const gutter = props.rowNumbers === false ? ROWNUM_SLIM_WIDTH : ROWNUM_WIDTH;
   const widthOf = (name: string) => live[name] ?? props.widths[name] ?? estimated[name] ?? 140;
-  const total = ROWNUM_WIDTH + vis.reduce((s, i) => s + widthOf(columns[i].name), 0);
+  const total = gutter + vis.reduce((s, i) => s + widthOf(columns[i].name), 0);
   const frozen = Math.min(props.frozen ?? 0, Math.max(0, vis.length - 1));
   const lefts = frozenOffsets(
     vis.slice(0, frozen).map((i) => widthOf(columns[i].name)),
     frozen,
-    ROWNUM_WIDTH,
+    gutter,
   );
   const leftsKey = lefts.join(",");
   // Stable for the memoized rows unless the offsets really change.
@@ -255,6 +264,12 @@ export function DataGrid(props: GridProps) {
     const st = cellState(rows[r], columns[c], c);
     if (isTruncated(st.original) && !st.changed) {
       push("info", "This value is too long to edit here. Use the SQL console to change it.");
+      return;
+    }
+    // JSON is edited in the value panel, which has room for it and Format JSON.
+    if (props.onEditJson && (cellKind(columns[c].type) === "json" || parseJsonDoc(st.value))) {
+      setCursor({ row: r, col: c });
+      props.onEditJson();
       return;
     }
     const initial = st.value ?? "";
@@ -573,118 +588,121 @@ export function DataGrid(props: GridProps) {
   const sortIndex = (name: string) => props.sort.findIndex((s) => s.column === name);
 
   return (
-    <div
-      className={`dbx-grid${props.density === "comfortable" ? " is-comfortable" : ""}`}
-      ref={scroller}
-      tabIndex={0}
-      role="grid"
-      aria-rowcount={rows.length}
-      aria-colcount={vis.length}
-      onKeyDown={onKeyDown}
-      onScroll={onScroll}
-    >
-      <table className="dbx-table" style={{ width: total }}>
-        <colgroup>
-          <col style={{ width: ROWNUM_WIDTH }} />
-          {vis.map((i) => (
-            <col key={columns[i].name} style={{ width: widthOf(columns[i].name) }} />
-          ))}
-        </colgroup>
-        <thead>
-          <tr>
-            <th className="dbx-rownum dbx-corner" scope="col">
-              <span className="sr-only">Row</span>
-            </th>
-            {vis.map((ci, pos) => {
-              const c = columns[ci];
-              const si = sortIndex(c.name);
-              const s = si >= 0 ? props.sort[si] : null;
-              const isKey = keyCols.includes(c.name);
-              const fk = props.fks[c.name];
-              return (
-                <th
-                  key={c.name}
-                  scope="col"
-                  className={`dbx-th${kinds[ci] === "number" ? " num" : ""}${pos < frozen ? " is-frozen" : ""}${pos === frozen - 1 ? " is-frozen-edge" : ""}`}
-                  style={pos < frozen ? { left: lefts[pos] } : undefined}
-                  aria-sort={s ? (s.desc ? "descending" : "ascending") : undefined}
-                  onContextMenu={(e) => headerMenu(e, c)}
-                >
-                  <button
-                    type="button"
-                    className="dbx-th-button"
-                    onClick={(e) => props.onSort(c.name, "toggle", e.shiftKey)}
-                    title={`${c.name} · ${c.type}${c.nullable ? "" : " · NOT NULL"}${isKey ? " · key" : ""}${fk ? ` · → ${fk.ref_table}` : ""}\nClick to sort, Shift+click to add a sort column`}
+    <div className="dbx-grid-frame">
+      <div
+        className={`dbx-grid${props.density === "comfortable" ? " is-comfortable" : ""}${props.rowNumbers === false ? " no-rownums" : ""}`}
+        ref={scroller}
+        tabIndex={0}
+        role="grid"
+        aria-rowcount={rows.length}
+        aria-colcount={vis.length}
+        onKeyDown={onKeyDown}
+        onScroll={onScroll}
+      >
+        <table className="dbx-table" style={{ width: total }}>
+          <colgroup>
+            <col style={{ width: gutter }} />
+            {vis.map((i) => (
+              <col key={columns[i].name} style={{ width: widthOf(columns[i].name) }} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="dbx-rownum dbx-corner" scope="col">
+                <span className="sr-only">Row</span>
+              </th>
+              {vis.map((ci, pos) => {
+                const c = columns[ci];
+                const si = sortIndex(c.name);
+                const s = si >= 0 ? props.sort[si] : null;
+                const isKey = keyCols.includes(c.name);
+                const fk = props.fks[c.name];
+                return (
+                  <th
+                    key={c.name}
+                    scope="col"
+                    className={`dbx-th${kinds[ci] === "number" ? " num" : ""}${pos < frozen ? " is-frozen" : ""}${pos === frozen - 1 ? " is-frozen-edge" : ""}`}
+                    style={pos < frozen ? { left: lefts[pos] } : undefined}
+                    aria-sort={s ? (s.desc ? "descending" : "ascending") : undefined}
+                    onContextMenu={(e) => headerMenu(e, c)}
                   >
-                    <span className="dbx-th-name">
-                      {isKey ? <KeyRound size={11} className="dbx-key" /> : null}
-                      {fk ? <Link2 size={11} className="dbx-fkmark" /> : null}
-                      <span className="truncate">{c.name}</span>
-                      {s ? (
-                        <span className="dbx-sort">
-                          {s.desc ? <ArrowDown size={11} /> : <ArrowUp size={11} />}
-                          {props.sort.length > 1 ? si + 1 : null}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="dbx-th-type truncate">{c.type}</span>
-                  </button>
-                  <span
-                    className="dbx-col-resize"
-                    onPointerDown={(e) => startResize(e, c)}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      autoFit(c);
-                    }}
-                    aria-hidden
-                  />
-                </th>
+                    <button
+                      type="button"
+                      className="dbx-th-button"
+                      onClick={(e) => props.onSort(c.name, "toggle", e.shiftKey)}
+                      title={`${c.name} · ${c.type}${c.nullable ? "" : " · NOT NULL"}${isKey ? " · key" : ""}${fk ? ` · → ${fk.ref_table}` : ""}\nClick to sort, Shift+click to add a sort column`}
+                    >
+                      <span className="dbx-th-name">
+                        {isKey ? <KeyRound size={11} className="dbx-key" /> : null}
+                        {fk ? <Link2 size={11} className="dbx-fkmark" /> : null}
+                        <span className="truncate">{c.name}</span>
+                        {s ? (
+                          <span className="dbx-sort">
+                            {s.desc ? <ArrowDown size={11} /> : <ArrowUp size={11} />}
+                            {props.sort.length > 1 ? si + 1 : null}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="dbx-th-type truncate">{c.type}</span>
+                    </button>
+                    <span
+                      className="dbx-col-resize"
+                      onPointerDown={(e) => startResize(e, c)}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        autoFit(c);
+                      }}
+                      aria-hidden
+                    />
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {win.start > 0 ? (
+              <tr className="dbx-spacer" aria-hidden>
+                <td colSpan={vis.length + 1} style={{ height: win.start * metrics.row }} />
+              </tr>
+            ) : null}
+            {rows.slice(win.start, win.end).map((row, k) => {
+              const r = win.start + k;
+              return (
+                <GridRowView
+                  key={row.kind === "new" ? row.id : `d${row.index}`}
+                  row={row}
+                  r={r}
+                  num={row.kind === "new" ? null : props.offset + row.index + 1}
+                  columns={columns}
+                  vis={vis}
+                  lefts={stableLefts}
+                  kinds={kinds}
+                  fks={props.fks}
+                  cursorCol={cursor?.row === r ? cursor.col : -1}
+                  selected={selected.has(r)}
+                  editing={editing?.row === r ? editing : null}
+                  onEditText={onEditText}
+                  onCommit={commitEdit}
+                  onCancel={cancelEdit}
+                  onCellDown={onCellDown}
+                  onCellDouble={onCellDouble}
+                  onCellMenu={onCellMenu}
+                  onRowNumber={onNum}
+                  onFollow={onFollow}
+                />
               );
             })}
-          </tr>
-        </thead>
-        <tbody>
-          {win.start > 0 ? (
-            <tr className="dbx-spacer" aria-hidden>
-              <td colSpan={vis.length + 1} style={{ height: win.start * metrics.row }} />
-            </tr>
-          ) : null}
-          {rows.slice(win.start, win.end).map((row, k) => {
-            const r = win.start + k;
-            return (
-              <GridRowView
-                key={row.kind === "new" ? row.id : `d${row.index}`}
-                row={row}
-                r={r}
-                num={row.kind === "new" ? null : props.offset + row.index + 1}
-                columns={columns}
-                vis={vis}
-                lefts={stableLefts}
-                kinds={kinds}
-                fks={props.fks}
-                cursorCol={cursor?.row === r ? cursor.col : -1}
-                selected={selected.has(r)}
-                editing={editing?.row === r ? editing : null}
-                onEditText={onEditText}
-                onCommit={commitEdit}
-                onCancel={cancelEdit}
-                onCellDown={onCellDown}
-                onCellDouble={onCellDouble}
-                onCellMenu={onCellMenu}
-                onRowNumber={onNum}
-                onFollow={onFollow}
-              />
-            );
-          })}
-          {win.end < rows.length ? (
-            <tr className="dbx-spacer" aria-hidden>
-              <td colSpan={vis.length + 1} style={{ height: (rows.length - win.end) * metrics.row }} />
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
-      {rows.length === 0 ? <div className="dbx-grid-empty">{props.emptyText}</div> : null}
-      {ctx.element}
+            {win.end < rows.length ? (
+              <tr className="dbx-spacer" aria-hidden>
+                <td colSpan={vis.length + 1} style={{ height: (rows.length - win.end) * metrics.row }} />
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+        {rows.length === 0 ? <div className="dbx-grid-empty">{props.emptyText}</div> : null}
+        {ctx.element}
+      </div>
+      <OverlayScrollbars target={scroller} />
     </div>
   );
 }

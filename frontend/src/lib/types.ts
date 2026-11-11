@@ -287,6 +287,7 @@ export interface Grant {
 export interface Me {
   id: string;
   email: string;
+  name: string;
   permissions: string[];
   grants: Grant[];
 }
