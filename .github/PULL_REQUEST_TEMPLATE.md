@@ -17,6 +17,6 @@
 
 ## Checklist
 
-- [ ] Updated [CHANGELOG.md](CHANGELOG.md) if user-facing
+- [ ] Updated [CHANGELOG.md](CHANGELOG.md) if user-facing, ending the entry with `(#PR, thanks @your-login)`
 - [ ] Updated [`backend/internal/openapi/openapi.yaml`](backend/internal/openapi/openapi.yaml) if API routes changed
 - [ ] No secrets or credentials committed

@@ -142,11 +142,25 @@ jobs:
 
       - name: Generate release notes
         # This version's section of CHANGELOG.md, with links made absolute
-        # (relative ones would resolve against /releases/tag/ and break).
+        # (relative ones would resolve against /releases/tag/ and break),
+        # followed by the release's contributors.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           scripts/changelog.sh notes "${{ github.ref_name }}" > release-notes.md || true
           if [ ! -s release-notes.md ]; then
             echo "Release ${{ github.ref_name }}" > release-notes.md
+          fi
+          # Thank everyone whose commits are in this release (bots left out).
+          # Best effort: without the API the notes go out without the list.
+          prev="$(scripts/changelog.sh previous "${{ github.ref_name }}" || true)"
+          if [ -n "$prev" ]; then
+            logins="$(gh api "repos/${{ github.repository }}/compare/v${prev}...${{ github.ref_name }}" \
+              --jq '[.commits[].author.login | select(. != null) | select(endswith("[bot]") | not)] | unique | map("@" + .) | join(", ")' \
+              2>/dev/null || true)"
+            if [ -n "$logins" ]; then
+              printf '\n### Contributors\n\n%s\n' "$logins" >> release-notes.md
+            fi
           fi
 
       # install.sh and docker-compose.yml are attached so a release can be
