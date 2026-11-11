@@ -12,72 +12,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Upgrading: no database migrations since 0.10.0, so `fleetdock update` (or
 pulling the new image) is all it takes.
 
+Thanks to @Whitedragon115, who contributed most of this release.
+
 ### Added
 
 - **Data browser: JSON as a tree.** A cell holding a JSON object or array,
   in any column type, shows as a collapsible tree in the value and row
   panels, with a raw view. Editing such a cell opens the value panel with
-  the JSON formatted and in the same colours, and a mark on invalid JSON.
+  the JSON formatted and in the same colours, and a mark on invalid JSON. (#130, thanks @Whitedragon115)
 - **Your name in the top bar.** The account menu shows your display name and
   its initials (your email on hover), falling back to the email. API: `GET
-  /v1/me` returns `name`.
+  /v1/me` returns `name`. (#128, thanks @Whitedragon115)
 - **Data browser: hide row numbers** from the table menu. A slim handle
-  stays for selecting rows.
+  stays for selecting rows. (#124, thanks @Whitedragon115)
 - **Data browser: command panel.** Run SQL under a table's grid. A query's
   rows show in place of the table; a change is confirmed first with how many
-  rows it affects, then the table reloads.
+  rows it affects, then the table reloads. (#131, thanks @Whitedragon115)
 - **Page transitions.** Pages fade in with a slight rise when you move
   between them. Settings → Appearance → Animations chooses Full, Reduced (a
   plain fade) or Off (no page or interface animations); the system's
-  reduce-motion setting always turns them off.
+  reduce-motion setting always turns them off. (#132, thanks @Whitedragon115)
 - **Appearance settings.** Settings → Appearance chooses the theme (Light,
   Dark or System), the style (Classic, or a compact gray Neutral style) and
   a Borderless option. Saved in the browser and applied before the page
-  shows.
+  shows. (#127, #132, thanks @Whitedragon115)
 - **Data browser: Shift/Ctrl/Cmd-click a table to keep its tab open**, like
-  a double click.
+  a double click. (#129, thanks @Whitedragon115)
 
 ### Changed
 
 - **New logo.** The dashboard's sidebar, sign-in page, browser tab and
   home-screen icons use the new Fleetdock logo, in a light and a dark
-  version. The full logo kit is in `brand/`.
+  version. The full logo kit is in `brand/`. (#110)
 - **Data browser: resize handles only change the cursor on hover.** The
   panel and column handles no longer flash a highlight line as the pointer
-  crosses them; keyboard focus still highlights them.
+  crosses them; keyboard focus still highlights them. (#123, thanks @Whitedragon115)
 - **Thinner scrollbars that appear on hover**, in Chromium, Safari and
   Firefox. In the data browser the grid's scrollbars float over the table,
   so they take no space; they show on hover or while scrolling and can be
-  dragged.
+  dragged. (#126, thanks @Whitedragon115)
 - **Data browser: loading shows the layout.** Skeletons of the sidebar, tabs
-  and grid replace the spinners, in the size you left the sidebar.
+  and grid replace the spinners, in the size you left the sidebar. (#125, thanks @Whitedragon115)
 
 ### Fixed
 
 - **Data browser: copy actions work over plain HTTP on a LAN address.** Copy
   name, value, definition and saved-view link did nothing there, because the
   browser only offers `navigator.clipboard` on HTTPS or localhost. A copy the
-  browser refuses now shows an error.
+  browser refuses now shows an error. (#119, thanks @Whitedragon115)
 - **The page no longer jumps sideways when a dialog opens.** The space for
-  the page scrollbar is always reserved.
-- **Data browser: the Structure view scrolls as one page.**
+  the page scrollbar is always reserved. (#88, thanks @Whitedragon115)
+- **Data browser: the Structure view scrolls as one page.** (#87, thanks @Whitedragon115)
 - **Adding or editing a column offers every column type.** Only
   `varchar(255)` was listed, because the type box only suggested types
   matching what it already held. It now lists the database engine's types
   (MySQL/MariaDB or PostgreSQL), grouped by kind, with Custom… for any
-  other.
+  other. (#86, thanks @Whitedragon115)
 - **The dashboard works over plain HTTP on a LAN address.** Running a query
   or saving row edits failed there, because the browser only offers
-  `crypto.randomUUID()` on HTTPS or localhost.
+  `crypto.randomUUID()` on HTTPS or localhost. (#85, thanks @Whitedragon115)
 - **Ctrl/Cmd+Enter runs the query** in the SQL editor again; it was adding a
-  new line instead.
-- **The account menu button no longer clips its avatar** when hovered.
-- **No horizontal scrollbar in the collapsed sidebar.**
+  new line instead. (#120, thanks @Whitedragon115)
+- **The account menu button no longer clips its avatar** when hovered. (#122, thanks @Whitedragon115)
+- **No horizontal scrollbar in the collapsed sidebar.** (#121, thanks @Whitedragon115)
 
 ### Security
 
 - **Built with Go 1.26.11**, which fixes GO-2026-6859: a race in `net/http`'s
-  `MaxBytesReader` that could crash an HTTP/1 server.
+  `MaxBytesReader` that could crash an HTTP/1 server. (#118)
 
 ## [0.10.0] - 2026-11-07
 
