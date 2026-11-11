@@ -165,6 +165,19 @@ Sign in at `http://localhost` with the bootstrap credentials from `.env`. On a
 real host, prefer the actual install path:
 `curl -sSL https://fleetdock.dev/install.sh | sh -s -- --tag ${TAG}`.
 
+## Patch releases of Go
+
+The Go version is set in one place: the `toolchain` line in `backend/go.mod`.
+CI and the release workflow install exactly that version (`setup-go` with
+`go-version-file`). The image builds with `golang:1.26-alpine`, which always
+has the latest 1.26 patch.
+
+Dependabot does not update the `toolchain` line: it only bumps modules in
+`require`. When `govulncheck` in CI reports a vulnerability in the standard
+library (`Found in: net/http@go1.26.x`, `Fixed in: …`), raise `toolchain` to
+the fixed release, note it under *Security* in the changelog, and consider a
+patch release.
+
 ## Hotfix workflow
 
 1. Branch from the release tag (or `main` if it still matches production)

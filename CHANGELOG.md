@@ -60,6 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The account menu button no longer clips its avatar** when hovered.
 - **No horizontal scrollbar in the collapsed sidebar.**
 
+### Security
+
+- **Built with Go 1.26.11**, which fixes GO-2026-6859: a race in `net/http`'s
+  `MaxBytesReader` that could crash an HTTP/1 server.
+
 ## [0.10.0] - 2026-11-07
 
 Upgrading: see
