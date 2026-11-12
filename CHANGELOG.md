@@ -25,9 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   defaults and sequences in the copy point at the copy; function bodies are
   copied unchanged. Runs as an operation (`copy_schema`); managed servers
   need an updated agent. API: `POST …/schemas/{schema}/copy`. (#139)
+- **PostgreSQL schema privileges, default privileges and search_path.** The
+  database's Access tab shows, per schema, which roles have USAGE and
+  CREATE and what new objects are granted, and changes both (this also
+  needs write access to the server). The search_path of the database and of
+  roles can be set there, and the SQL console has a schema picker for its
+  session. (#140)
 
 ### Fixed
 
+- **Access tab on PostgreSQL 16 and older.** The database's grants list
+  failed with "information_schema.schema_privileges does not exist"; it now
+  reads the schema privileges directly. (#140)
 - **PostgreSQL schemas without tables are shown.** The data browser listed
   only schemas holding a table or view; empty ones now show in the schema
   picker and the tree, with **Create table here**. Create table opens in the
