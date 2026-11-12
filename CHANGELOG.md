@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needs write access to the server). The search_path of the database and of
   roles can be set there, and the SQL console has a schema picker for its
   session. (#140)
+- **PostgreSQL housekeeping in the data browser.** Sequences show their next
+  value and can be set; materialized views can be refreshed (also
+  concurrently); tables can be vacuumed, analyzed and reindexed; a schema's
+  **Table statistics…** lists sizes, dead rows and the last vacuum and
+  analyze. Partitioned tables now appear, with their partitions under them.
+  (#141)
 
 ### Fixed
 
