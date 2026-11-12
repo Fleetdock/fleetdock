@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   functions and procedures have **Move to schema…** in the data browser's
   tree; a table takes its indexes, constraints and serial sequences along.
   API: `POST /v1/databases/{id}/objects/move`. (#138)
+- **Copy a PostgreSQL schema.** **Copy to new schema…** in a schema's menu
+  copies it, with its rows or only its structure, to a new schema in the
+  same database or another one on the same server. Views, foreign keys,
+  defaults and sequences in the copy point at the copy; function bodies are
+  copied unchanged. Runs as an operation (`copy_schema`); managed servers
+  need an updated agent. API: `POST …/schemas/{schema}/copy`. (#139)
 
 ### Fixed
 
