@@ -76,8 +76,10 @@ type Service struct {
 	mover     Mover
 	copies    BackupCopyHook
 	onDropped func(ctx context.Context, databaseID, instanceID uuid.UUID)
-	roleCreds func(ctx context.Context, databaseID uuid.UUID) (user, password string, err error)
-	gateway   GatewayReconciler
+	// onSchemaCopied runs after a schema was copied into a database.
+	onSchemaCopied func(ctx context.Context, databaseID uuid.UUID)
+	roleCreds      func(ctx context.Context, databaseID uuid.UUID) (user, password string, err error)
+	gateway        GatewayReconciler
 }
 
 // NewService wires the operations engine.
@@ -93,6 +95,12 @@ func (s *Service) SetNotifier(n EventEmitter) { s.notifier = n }
 // on its instance (optional) — used to remove its console roles.
 func (s *Service) SetDatabaseDropHook(f func(ctx context.Context, databaseID, instanceID uuid.UUID)) {
 	s.onDropped = f
+}
+
+// SetSchemaCopyHook registers a callback run after a schema was copied into
+// a database (optional) — used to extend its data roles' grants to it.
+func (s *Service) SetSchemaCopyHook(f func(ctx context.Context, databaseID uuid.UUID)) {
+	s.onSchemaCopied = f
 }
 
 // SetAccessRoleResolver lets operations run as a database's read-write
@@ -147,6 +155,13 @@ type Params struct {
 	// DeleteKeyAfter removes the uploaded artifact (an import) once the
 	// restore has finished, successfully or not.
 	DeleteKeyAfter bool `json:"delete_key_after,omitempty"`
+	// Copy schema: Schema of Database is copied to TargetSchema of
+	// TargetDatabase (on the same instance; TargetDatabaseID is its record).
+	Schema           string `json:"schema,omitempty"`
+	TargetSchema     string `json:"target_schema,omitempty"`
+	TargetDatabase   string `json:"target_database,omitempty"`
+	TargetDatabaseID string `json:"target_database_id,omitempty"`
+	StructureOnly    bool   `json:"structure_only,omitempty"`
 }
 
 // isProvisionType reports whether a job type is a container lifecycle op.
@@ -356,6 +371,11 @@ func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Pa
 		Charset:   p.Charset,
 		Collation: p.Collation,
 		BackupID:  p.BackupID,
+		// Copy schema.
+		Schema:         p.Schema,
+		TargetSchema:   p.TargetSchema,
+		TargetDatabase: p.TargetDatabase,
+		StructureOnly:  p.StructureOnly,
 	}
 
 	switch j.Type {
@@ -595,6 +615,12 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 			instID, e2 := uuid.Parse(p.InstanceID)
 			if e1 == nil && e2 == nil {
 				s.onDropped(ctx, dbID, instID)
+			}
+		}
+	case jobdom.TypeCopySchema:
+		if ok && s.onSchemaCopied != nil {
+			if dbID, e := uuid.Parse(p.TargetDatabaseID); e == nil {
+				s.onSchemaCopied(ctx, dbID)
 			}
 		}
 	case jobdom.TypeReconcileGateway:

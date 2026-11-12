@@ -250,3 +250,59 @@ func (h *BackupHandler) ImportSQL(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"operation_id": job.ID.String()})
 }
+
+type copySchemaRequest struct {
+	TargetSchema     string `json:"target_schema"`
+	TargetDatabaseID string `json:"target_database_id"`
+	StructureOnly    bool   `json:"structure_only"`
+}
+
+// CopySchema handles POST /v1/databases/{id}/schemas/{schema}/copy. The
+// route checks database:write on the source; the target needs it too, and
+// both follow the instance's data access rules, like any other change made
+// through the data browser.
+func (h *BackupHandler) CopySchema(w http.ResponseWriter, r *http.Request) {
+	var req copySchemaRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	ids := []string{r.PathValue("id")}
+	if req.TargetDatabaseID != "" && req.TargetDatabaseID != ids[0] {
+		ids = append(ids, req.TargetDatabaseID)
+	}
+	for i, id := range ids {
+		did, err := uuid.Parse(id)
+		if err != nil {
+			field := "id"
+			if i > 0 {
+				field = "target_database_id"
+			}
+			writeError(w, apperr.Invalid(field, "must be a valid UUID"))
+			return
+		}
+		if err := authorizeResource(r.Context(), h.resolver, "database:write", authz.ResourceDatabase, did); err != nil {
+			writeError(w, err)
+			return
+		}
+		if h.access != nil {
+			if err := authorizeDataAccess(r.Context(), h.resolver, h.access, did); err != nil {
+				writeError(w, err)
+				return
+			}
+		}
+	}
+	job, err := h.svc.CopySchema(r.Context(), backupapp.CopySchemaInput{
+		DatabaseID:       ids[0],
+		Schema:           r.PathValue("schema"),
+		TargetSchema:     req.TargetSchema,
+		TargetDatabaseID: req.TargetDatabaseID,
+		StructureOnly:    req.StructureOnly,
+		CreatedBy:        callerID(r),
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"operation_id": job.ID.String()})
+}

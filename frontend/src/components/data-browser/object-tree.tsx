@@ -25,6 +25,7 @@ import {
   CalendarClock,
   ChevronRight,
   Copy,
+  CopyPlus,
   Download,
   Eye,
   Folder,
@@ -334,6 +335,17 @@ export const ObjectTree = forwardRef<
       { label: "Rename…", icon: <Pencil size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("rename", schema) },
       { label: "Change owner…", icon: <UserRound size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("owner", schema) },
       { label: "Comment…", icon: <MessageSquareText size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("comment", schema) },
+      {
+        label: "Copy to new schema…",
+        icon: <CopyPlus size={14} />,
+        hidden: !canWrite || !pg,
+        onSelect: () =>
+          setSchemaDialog({
+            kind: "copy",
+            schema: schemaInfo(schema) ?? { name: schema, tables: 0, views: 0 },
+            schemas: summary.map((s) => s.name),
+          }),
+      },
       "separator" as const,
       { label: "Drop schema…", icon: <Trash2 size={14} />, danger: true, hidden: !canWrite || !pg, onSelect: () => editSchema("drop", schema) },
     ];

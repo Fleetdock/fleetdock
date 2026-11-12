@@ -1305,6 +1305,38 @@ paths:
             application/json:
               schema: {type: object, properties: {status: {type: string}}}
         default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/schemas/{schema}/copy:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Copy a schema to a new schema
+      description: >-
+        PostgreSQL only. Starts an operation that copies a schema, with its rows unless structure_only is set, to a new
+        schema in the same database or another database on the same instance. References inside the copy (views, foreign
+        keys, defaults, sequences) point at the copy; references to other schemas stay as they are and must resolve in the
+        target. Text that names the old schema, such as function bodies, is copied unchanged. Needs database:write on both
+        databases.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_schema]
+              properties:
+                target_schema: {type: string, description: The new schema's name; it must not exist yet.}
+                target_database_id: {type: string, format: uuid, description: Defaults to the source database.}
+                structure_only: {type: boolean}
+      responses:
+        "202":
+          description: Copy operation started
+          content:
+            application/json:
+              schema: {type: object, properties: {operation_id: {type: string, format: uuid}}}
+        default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/objects/move:
     post:
       tags: [Structure]

@@ -21,6 +21,7 @@ import (
 	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 )
 
 // Service implements backup use cases.
@@ -405,6 +406,87 @@ func (s *Service) ImportSQL(ctx context.Context, in ImportInput) (*jobdom.Job, e
 		AccessRole:     "rw",
 		DeleteKeyAfter: true,
 	}, in.CreatedBy)
+}
+
+// CopySchemaInput copies a PostgreSQL schema to a new schema.
+type CopySchemaInput struct {
+	DatabaseID string
+	Schema     string
+	// TargetSchema is the new schema's name; it must not exist yet.
+	TargetSchema string
+	// TargetDatabaseID is a database on the same instance; empty copies
+	// within the source database.
+	TargetDatabaseID string
+	// StructureOnly copies the objects without their rows.
+	StructureOnly bool
+	CreatedBy     *uuid.UUID
+}
+
+// CopySchema queues a copy of a schema, with its rows unless StructureOnly,
+// to a new schema in the same database or another one on the instance.
+func (s *Service) CopySchema(ctx context.Context, in CopySchemaInput) (*jobdom.Job, error) {
+	if err := engine.CheckSchemaName(in.Schema); err != nil {
+		return nil, apperr.Invalid("schema", err.Error())
+	}
+	if err := engine.CheckNewSchemaName(in.TargetSchema); err != nil {
+		return nil, apperr.Invalid("target_schema", err.Error())
+	}
+	src, inst, err := s.copyEnd(ctx, in.DatabaseID, "id")
+	if err != nil {
+		return nil, err
+	}
+	if inst.Engine != instancedom.EnginePostgres {
+		return nil, apperr.Invalid("engine", "only PostgreSQL has schemas to copy: on MySQL and MariaDB a schema is a database")
+	}
+	dst := src
+	if in.TargetDatabaseID != "" && in.TargetDatabaseID != src.ID.String() {
+		if dst, _, err = s.copyEnd(ctx, in.TargetDatabaseID, "target_database_id"); err != nil {
+			return nil, err
+		}
+		if dst.InstanceID != src.InstanceID {
+			return nil, apperr.Invalid("target_database_id", "the target database must be on the same instance")
+		}
+	}
+	if dst.ID == src.ID && in.TargetSchema == in.Schema {
+		return nil, apperr.Invalid("target_schema", "the copy needs a name of its own")
+	}
+	return s.ops.Create(ctx, jobdom.TypeCopySchema, "database", &src.ID, executorFor(inst), operationapp.Params{
+		InstanceID:       inst.ID.String(),
+		DatabaseID:       src.ID.String(),
+		Database:         src.Name,
+		Schema:           in.Schema,
+		TargetSchema:     in.TargetSchema,
+		TargetDatabase:   dst.Name,
+		TargetDatabaseID: dst.ID.String(),
+		StructureOnly:    in.StructureOnly,
+	}, in.CreatedBy)
+}
+
+// copyEnd loads one end of a schema copy: an active user database on an
+// instance Fleetdock can log in to.
+func (s *Service) copyEnd(ctx context.Context, id, field string) (*databasedom.Database, *instancedom.Instance, error) {
+	did, err := uuid.Parse(id)
+	if err != nil {
+		return nil, nil, apperr.Invalid(field, field+" must be a valid UUID")
+	}
+	db, err := s.databases.GetByID(ctx, did)
+	if err != nil {
+		return nil, nil, err
+	}
+	if db.System {
+		return nil, nil, apperr.Invalid(field, "schemas of a system database cannot be copied")
+	}
+	if db.Status != databasedom.StatusActive {
+		return nil, nil, apperr.Conflict(fmt.Sprintf("database %s is %s; a schema copy needs it active", db.Name, db.Status))
+	}
+	inst, err := s.instances.GetByID(ctx, db.InstanceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !inst.HasCredentials() {
+		return nil, nil, apperr.Invalid(field, "the instance has no admin credentials")
+	}
+	return db, inst, nil
 }
 
 // downloadExpiry is how long a backup download link stays valid.

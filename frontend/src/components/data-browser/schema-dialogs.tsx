@@ -3,10 +3,10 @@
 import { useState, type FormEvent } from "react";
 
 import { useToast } from "@/components/toast";
-import { Button, Checkbox, ErrorText, Field, Input, Modal, Select, Spinner, Textarea } from "@/components/ui";
+import { Button, ButtonLink, Callout, Checkbox, ErrorText, Field, Input, Modal, Select, Spinner, Textarea } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import type { SchemaSummary } from "@/lib/data-browser/schemas";
-import { useSchemaDependents, useSchemaMutations } from "@/lib/hooks";
+import { useDatabase, useDatabases, useSchemaDependents, useSchemaMutations } from "@/lib/hooks";
 
 // Dialogs that create, change and drop PostgreSQL schemas, opened from the
 // data browser's tree.
@@ -24,6 +24,7 @@ export type SchemaDialog =
   | { kind: "create" }
   | { kind: "rename" | "owner" | "comment"; schema: SchemaSummary }
   | { kind: "drop"; schema: SchemaSummary }
+  | { kind: "copy"; schema: SchemaSummary; schemas: string[] }
   | { kind: "move"; object: MovableObject; schemas: string[] };
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
@@ -71,6 +72,9 @@ export function SchemaDialogs({
         onMoved={(target) => onMoved?.(dialog.object, target)}
       />
     );
+  }
+  if (dialog.kind === "copy") {
+    return <CopySchema databaseId={databaseId} schema={dialog.schema} schemas={dialog.schemas} onClose={onClose} />;
   }
   if (dialog.kind === "create") {
     return <CreateSchema databaseId={databaseId} owners={owners} onClose={onClose} onCreated={onCreated} />;
@@ -395,6 +399,106 @@ function MoveObject({
           </Button>
           <Button type="submit" variant="primary" loading={move.isPending} disabled={!target}>
             Move
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CopySchema({
+  databaseId,
+  schema,
+  schemas,
+  onClose,
+}: {
+  databaseId: string;
+  schema: SchemaSummary;
+  /** The schemas of this database, which a copy into it must not reuse. */
+  schemas: string[];
+  onClose: () => void;
+}) {
+  const { copy } = useSchemaMutations(databaseId);
+  const { data: source } = useDatabase(databaseId);
+  const { data: siblings } = useDatabases({ instance_id: source?.instance_id, enabled: Boolean(source?.instance_id) });
+  const [name, setName] = useState(`${schema.name}_copy`);
+  const [target, setTarget] = useState(databaseId);
+  const [structureOnly, setStructureOnly] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [operationId, setOperationId] = useState<string | null>(null);
+
+  const targets = (siblings?.items ?? []).filter((d) => !d.system && d.status === "active");
+  const trimmed = name.trim();
+  const problem =
+    nameProblem(trimmed) ??
+    (target === databaseId && schemas.includes(trimmed) ? `This database already has a schema called ${trimmed}.` : null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (problem) return setError(problem);
+    setError(null);
+    try {
+      const res = await copy.mutateAsync({
+        schema: schema.name,
+        target_schema: trimmed,
+        target_database_id: target === databaseId ? undefined : target,
+        structure_only: structureOnly,
+      });
+      setOperationId(res.operation_id);
+    } catch (err) {
+      setError(errorText(err, "Could not start the copy."));
+    }
+  }
+
+  if (operationId) {
+    return (
+      <Modal open onClose={onClose} title={`Copy ${schema.name}`}>
+        <p className="text-sm mt-0">
+          The copy runs in the background. {trimmed} appears in the tree once it has finished; refresh the tree if it
+          does not.
+        </p>
+        <div className="modal-actions">
+          <ButtonLink href={`/activity/${operationId}`}>View operation</ButtonLink>
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Copy ${schema.name}`}>
+      <form onSubmit={submit}>
+        <Field label="New schema">
+          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus autoComplete="off" />
+        </Field>
+        <Field label="Into database" hint="Databases on the same server.">
+          <Select value={target} onChange={(e) => setTarget(e.target.value)}>
+            {targets.length === 0 && source ? <option value={databaseId}>{source.name}</option> : null}
+            {targets.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.id === databaseId ? `${d.name} (this database)` : d.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Checkbox
+          label="Structure only, without rows"
+          checked={structureOnly}
+          onChange={(e) => setStructureOnly(e.target.checked)}
+        />
+        <Callout tone="info">
+          Views, foreign keys, defaults and sequences inside the copy point at the copy. Function bodies and other SQL text
+          that name {schema.name} are copied unchanged. References to other schemas must resolve in the target database.
+        </Callout>
+        <ErrorText message={error ?? undefined} />
+        <div className="modal-actions">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" loading={copy.isPending} disabled={Boolean(problem)}>
+            Copy schema
           </Button>
         </div>
       </form>

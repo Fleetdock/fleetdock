@@ -39,6 +39,11 @@ type Payload struct {
 	StorageURL string            `json:"storage_url,omitempty"`
 	Checksum   string            `json:"checksum,omitempty"` // expected sha256, verified on restore
 	Provision  *ProvisionSpec    `json:"provision,omitempty"`
+	// Copy schema: Database is the source database.
+	Schema         string `json:"schema,omitempty"`
+	TargetSchema   string `json:"target_schema,omitempty"`
+	TargetDatabase string `json:"target_database,omitempty"`
+	StructureOnly  bool   `json:"structure_only,omitempty"`
 }
 
 // ProvisionSpec describes a Docker container lifecycle action on a managed
@@ -131,6 +136,13 @@ func Execute(ctx context.Context, jobType string, p *Payload, sink LogSink) (jso
 
 	case "restore":
 		out, err := runRestore(ctx, eng, p, sink)
+		if err != nil {
+			return nil, err
+		}
+		res = *out
+
+	case "copy_schema":
+		out, err := runCopySchema(ctx, p, sink)
 		if err != nil {
 			return nil, err
 		}

@@ -265,6 +265,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("PATCH /v1/databases/{id}/schemas/{schema}", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.AlterSchema))
 	mux.HandleFunc("GET /v1/databases/{id}/schemas/{schema}/dependents", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaDependents))
 	mux.HandleFunc("POST /v1/databases/{id}/schemas/{schema}/drop", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.DropSchema))
+	mux.HandleFunc("POST /v1/databases/{id}/schemas/{schema}/copy", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Backups.CopySchema))
 	mux.HandleFunc("POST /v1/databases/{id}/objects/move", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.MoveObject))
 	// Saved table views (data browser).
 	mux.HandleFunc("GET /v1/databases/{id}/table-views", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.TableViews.List))

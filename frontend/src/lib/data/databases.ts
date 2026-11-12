@@ -684,7 +684,16 @@ export function useSchemaMutations(databaseId: string) {
       api.post(`/v1/databases/${databaseId}/objects/move`, v),
     onSuccess: invalidate,
   });
-  return { create, alter, drop, move };
+  // A copy runs as an operation: the new schema shows up once it finishes.
+  const copy = useMutation({
+    mutationFn: (v: { schema: string; target_schema: string; target_database_id?: string; structure_only: boolean }) =>
+      api.post<{ operation_id: string }>(`${base}/${encodeURIComponent(v.schema)}/copy`, {
+        target_schema: v.target_schema,
+        target_database_id: v.target_database_id,
+        structure_only: v.structure_only,
+      }),
+  });
+  return { create, alter, drop, move, copy };
 }
 
 // useSchemaDependents loads what dropping a schema would remove.
