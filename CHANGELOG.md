@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Manage PostgreSQL schemas.** From a schema's menu in the data browser:
+  New schema, Rename, Change owner, Comment and Drop schema. Dropping shows
+  what the schema holds and what depends on it, and needs CASCADE and the
+  schema's name typed when it is not empty. API: `POST
+  /v1/databases/{id}/schemas`, `PATCH …/schemas/{schema}`, `GET
+  …/schemas/{schema}/dependents`, `POST …/schemas/{schema}/drop`. (#137)
+
 ### Fixed
 
 - **PostgreSQL schemas without tables are shown.** The data browser listed
