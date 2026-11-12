@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schema's name typed when it is not empty. API: `POST
   /v1/databases/{id}/schemas`, `PATCH …/schemas/{schema}`, `GET
   …/schemas/{schema}/dependents`, `POST …/schemas/{schema}/drop`. (#137)
+- **Move PostgreSQL objects between schemas.** Tables, views, sequences,
+  functions and procedures have **Move to schema…** in the data browser's
+  tree; a table takes its indexes, constraints and serial sequences along.
+  API: `POST /v1/databases/{id}/objects/move`. (#138)
 
 ### Fixed
 
