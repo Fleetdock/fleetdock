@@ -8,6 +8,7 @@ import { api, download } from "../api";
 import { randomUUID } from "../uuid";
 import type {
   ColumnCatalog,
+  ExtensionInfo,
   MaintenanceOp,
   PartitionInfo,
   SequenceInfo,
@@ -876,4 +877,42 @@ export function useMaintenanceMutations(databaseId: string) {
     },
   });
   return { setval, refresh, maintain };
+}
+
+// useExtensions loads a PostgreSQL database's available and installed
+// extensions.
+export function useExtensions(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["extensions", databaseId],
+    queryFn: () => api.get<{ items: ExtensionInfo[] }>(`/v1/databases/${databaseId}/extensions`),
+    enabled: Boolean(databaseId) && enabled,
+    retry: false,
+  });
+}
+
+// useExtensionMutations installs, updates and drops extensions. They bring
+// types and functions, so the schema views are refreshed too.
+export function useExtensionMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const base = `/v1/databases/${databaseId}/extensions`;
+  const invalidate = () => {
+    for (const key of ["extensions", "schemas", "db-objects", "schema-columns", "tables"]) {
+      qc.invalidateQueries({ queryKey: [key, databaseId] });
+    }
+  };
+  const install = useMutation({
+    mutationFn: (v: { name: string; schema?: string; version?: string }) => api.post(base, v),
+    onSuccess: invalidate,
+  });
+  const update = useMutation({
+    mutationFn: (v: { name: string; version?: string }) =>
+      api.post(`${base}/${encodeURIComponent(v.name)}/update`, { version: v.version }),
+    onSuccess: invalidate,
+  });
+  const drop = useMutation({
+    mutationFn: (v: { name: string; cascade: boolean }) =>
+      api.post(`${base}/${encodeURIComponent(v.name)}/drop`, { cascade: v.cascade }),
+    onSuccess: invalidate,
+  });
+  return { install, update, drop };
 }
