@@ -243,12 +243,6 @@ func pipeDump(ctx context.Context, pg *engine.Postgres, conn engine.ConnParams, 
 	if err != nil {
 		return err
 	}
-	restoreBins, restoreArgs, restoreEnv := pg.RestoreArgs(conn, to)
-	restoreBin, err := lookPath(restoreBins)
-	if err != nil {
-		return err
-	}
-
 	tmp, err := os.CreateTemp("", "fleetdock-schema-*.sql")
 	if err != nil {
 		return err
@@ -272,12 +266,28 @@ func pipeDump(ctx context.Context, pg *engine.Postgres, conn engine.ConnParams, 
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
+	return loadSQL(ctx, pg, conn, to, tmp, edit, sink)
+}
 
+// loadSQL applies a complete plain-SQL dump to a database with psql, in one
+// transaction that stops at the first error. edit, when set, may rewrite the
+// lines that add foreign keys.
+func loadSQL(ctx context.Context, pg *engine.Postgres, conn engine.ConnParams, to string, sql io.Reader,
+	edit func(table, name, line string) string, sink LogSink) error {
+	restoreBins, restoreArgs, restoreEnv := pg.RestoreArgs(conn, to)
+	restoreBin, err := lookPath(restoreBins)
+	if err != nil {
+		return err
+	}
 	restore := exec.CommandContext(ctx, restoreBin, restoreArgs...)
 	restore.Env = append(os.Environ(), restoreEnv...)
-	edited := editForeignKeys(newPGDumpCompat(tmp), edit)
-	defer edited.Close()
-	restore.Stdin = edited
+	in := newPGDumpCompat(sql)
+	if edit != nil {
+		edited := editForeignKeys(in, edit)
+		defer edited.Close()
+		in = edited
+	}
+	restore.Stdin = in
 	// psql's output (SET, CREATE TABLE, COPY n) is noise here.
 	restore.Stdout = io.Discard
 	var restoreErr strings.Builder

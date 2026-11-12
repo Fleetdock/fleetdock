@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Copy,
   CopyPlus,
+  DatabaseBackup,
   Download,
   Eye,
   Folder,
@@ -160,11 +161,14 @@ export const ObjectTree = forwardRef<
     schemaList?: SchemaSummary[];
     /** An object moved to another schema: tabs naming it follow it. */
     onObjectMoved?: (from: string, to: string, label: string) => void;
+    /** Backs up or exports one PostgreSQL schema; absent without backup:write. */
+    onBackupSchema?: (schema: string) => void;
     onRefresh: () => void;
     refreshing: boolean;
   }
 >(function ObjectTree(
   {
+    onBackupSchema,
     databaseId,
     items,
     isLoading,
@@ -383,6 +387,12 @@ export const ObjectTree = forwardRef<
           }),
       },
       "separator" as const,
+      {
+        label: "Back up or export…",
+        icon: <DatabaseBackup size={14} />,
+        hidden: !pg || !onBackupSchema,
+        onSelect: () => onBackupSchema?.(schema),
+      },
       {
         label: "Table statistics…",
         icon: <Gauge size={14} />,

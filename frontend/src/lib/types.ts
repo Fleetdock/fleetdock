@@ -231,6 +231,8 @@ export interface Backup {
   verify_status?: "running" | "passed" | "failed" | null;
   verified_at?: string | null;
   verify_error?: string | null;
+  /** Set on a backup of one PostgreSQL schema. */
+  schema_name?: string | null;
 }
 
 export interface Destination {
@@ -398,6 +400,8 @@ export interface UpdateDestinationInput {
 export interface TriggerBackupInput {
   database_id: string;
   destination_id: string;
+  /** PostgreSQL: back up only this schema. */
+  schema?: string;
 }
 
 export interface RestoreBackupInput {

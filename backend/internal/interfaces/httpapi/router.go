@@ -340,6 +340,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/backups", requireAnyPerm("backup:read", d.Backups.List))
 	mux.HandleFunc("GET /v1/backups/{id}", requireResourcePerm(rv, "backup:read", authz.ResourceBackup, "id", d.Backups.Get))
 	mux.HandleFunc("POST /v1/backups/{id}/restore", requireResourcePerm(rv, "backup:write", authz.ResourceBackup, "id", d.Backups.Restore))
+	mux.HandleFunc("POST /v1/backups/{id}/restore-schema", requireResourcePerm(rv, "backup:write", authz.ResourceBackup, "id", d.Backups.RestoreSchema))
 	mux.HandleFunc("GET /v1/backups/{id}/download", requireResourcePerm(rv, "backup:read", authz.ResourceBackup, "id", d.Backups.Download))
 	mux.HandleFunc("DELETE /v1/backups/{id}", requireResourcePerm(rv, "backup:write", authz.ResourceBackup, "id", d.Backups.Delete))
 	mux.HandleFunc("POST /v1/backups/{id}/verify", requireResourcePerm(rv, "backup:write", authz.ResourceBackup, "id", d.Backups.Verify))
