@@ -15,6 +15,7 @@ import {
 } from "@/components/connectivity";
 import { DatabaseBackups } from "@/components/backup/database-backups";
 import { GrantsSection } from "@/components/database/grants-section";
+import { SchemaPrivilegesSection } from "@/components/database/schema-privileges-section";
 import { SchemaHistorySection } from "@/components/database/schema-history";
 import { DatabaseOverview } from "@/components/database/overview";
 import { ImportSQLModal } from "@/components/database/import-sql-modal";
@@ -281,7 +282,16 @@ function DatabaseDetail() {
           ) : tab === "schema" ? (
             <SchemaHistorySection database={db} canWrite={canWrite} />
           ) : (
-            <GrantsSection databaseId={id} canWrite={canWrite} />
+            <>
+              <GrantsSection databaseId={id} canWrite={canWrite} />
+              {instance?.engine === "postgres" && hasCreds ? (
+                <SchemaPrivilegesSection
+                  databaseId={id}
+                  canWrite={canWrite}
+                  canManage={canWrite && canOn("instance:write", scope)}
+                />
+              ) : null}
+            </>
           )}
         </div>
       </section>

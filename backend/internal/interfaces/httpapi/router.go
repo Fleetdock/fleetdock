@@ -265,6 +265,11 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("PATCH /v1/databases/{id}/schemas/{schema}", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.AlterSchema))
 	mux.HandleFunc("GET /v1/databases/{id}/schemas/{schema}/dependents", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaDependents))
 	mux.HandleFunc("POST /v1/databases/{id}/schemas/{schema}/drop", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.DropSchema))
+	mux.HandleFunc("GET /v1/databases/{id}/schemas/{schema}/privileges", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaAccess))
+	mux.HandleFunc("PUT /v1/databases/{id}/schemas/{schema}/privileges", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.SetSchemaGrant))
+	mux.HandleFunc("POST /v1/databases/{id}/schemas/{schema}/default-privileges", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.AlterDefaultPrivileges))
+	mux.HandleFunc("GET /v1/databases/{id}/search-path", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SearchPaths))
+	mux.HandleFunc("PUT /v1/databases/{id}/search-path", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.SetSearchPath))
 	mux.HandleFunc("POST /v1/databases/{id}/schemas/{schema}/copy", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.Backups.CopySchema))
 	mux.HandleFunc("POST /v1/databases/{id}/objects/move", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.MoveObject))
 	// Saved table views (data browser).

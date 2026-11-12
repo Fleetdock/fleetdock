@@ -295,6 +295,8 @@ type queryRequest struct {
 	QueryID string `json:"query_id"`
 	// Preview dry-runs the script and rolls it back.
 	Preview bool `json:"preview"`
+	// SearchPath (PostgreSQL) is the session's search_path.
+	SearchPath []string `json:"search_path"`
 }
 
 // Query handles POST /v1/databases/{id}/query. Whether write statements are
@@ -322,6 +324,7 @@ func (h *DBAdminHandler) Query(w http.ResponseWriter, r *http.Request) {
 	in := dbadminapp.QueryInput{
 		DatabaseID: r.PathValue("id"), SQL: req.SQL, Limit: req.Limit,
 		AllowWrite: allowWrite, QueryID: req.QueryID, Preview: req.Preview,
+		SearchPath: req.SearchPath,
 	}
 	if id := callerID(r); id != nil {
 		in.UserID = *id
@@ -1257,4 +1260,116 @@ func (h *DBAdminHandler) SetDBUserPassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed"})
+}
+
+// requireInstanceWrite asks for instance:write on the database's instance:
+// granting privileges, even on one schema, decides who may read and change
+// data, like the instance's own grants.
+func (h *DBAdminHandler) requireInstanceWrite(r *http.Request) error {
+	info, err := h.svc.DataAccess(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if err := authorizeResource(r.Context(), h.resolver, "instance:write", authz.ResourceInstance, info.InstanceID); err != nil {
+		return apperr.Forbidden("changing privileges needs instance:write on the server")
+	}
+	return nil
+}
+
+// SchemaAccess handles GET /v1/databases/{id}/schemas/{schema}/privileges.
+func (h *DBAdminHandler) SchemaAccess(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.SchemaAccess(r.Context(), r.PathValue("id"), r.PathValue("schema"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type schemaGrantRequest struct {
+	Role   string `json:"role"`
+	Usage  bool   `json:"usage"`
+	Create bool   `json:"create"`
+}
+
+// SetSchemaGrant handles PUT /v1/databases/{id}/schemas/{schema}/privileges.
+func (h *DBAdminHandler) SetSchemaGrant(w http.ResponseWriter, r *http.Request) {
+	if err := h.requireInstanceWrite(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	var req schemaGrantRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if req.Role == "" {
+		writeError(w, apperr.Invalid("role", "role is required"))
+		return
+	}
+	if err := h.svc.SetSchemaGrant(r.Context(), r.PathValue("id"), r.PathValue("schema"), req.Role, req.Usage, req.Create); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// AlterDefaultPrivileges handles POST
+// /v1/databases/{id}/schemas/{schema}/default-privileges.
+func (h *DBAdminHandler) AlterDefaultPrivileges(w http.ResponseWriter, r *http.Request) {
+	if err := h.requireInstanceWrite(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	var req engine.DefaultPrivilegeChange
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if req.Grantee == "" {
+		writeError(w, apperr.Invalid("grantee", "grantee is required"))
+		return
+	}
+	if err := h.svc.AlterDefaultPrivileges(r.Context(), r.PathValue("id"), r.PathValue("schema"), req); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// SearchPaths handles GET /v1/databases/{id}/search-path.
+func (h *DBAdminHandler) SearchPaths(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.SearchPaths(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type searchPathRequest struct {
+	// Role is empty for the database's own setting.
+	Role    string   `json:"role"`
+	Schemas []string `json:"schemas"`
+}
+
+// SetSearchPath handles PUT /v1/databases/{id}/search-path. A role's setting
+// steers that role's sessions, so it needs instance:write like a grant.
+func (h *DBAdminHandler) SetSearchPath(w http.ResponseWriter, r *http.Request) {
+	var req searchPathRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if req.Role != "" {
+		if err := h.requireInstanceWrite(r); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	if err := h.svc.SetSearchPath(r.Context(), r.PathValue("id"), req.Role, req.Schemas); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }

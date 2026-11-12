@@ -62,6 +62,13 @@ func (pg *Postgres) connect(ctx context.Context, p ConnParams, database string) 
 		cfg.RuntimeParams["statement_timeout"] = ms
 		cfg.RuntimeParams["idle_in_transaction_session_timeout"] = ms
 	}
+	if len(p.SearchPath) > 0 {
+		list, err := searchPathList(p.SearchPath)
+		if err != nil {
+			return nil, err
+		}
+		cfg.RuntimeParams["search_path"] = list
+	}
 	conn, err := pgx.ConnectConfig(cctx, cfg)
 	if err != nil || !p.AssumeOwner {
 		return conn, err

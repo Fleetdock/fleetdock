@@ -578,6 +578,8 @@ export interface RunQueryInput {
   query_id?: string;
   /** Dry run: one transaction, rolled back. */
   preview?: boolean;
+  /** PostgreSQL: the session's search_path. */
+  search_path?: string[];
 }
 
 export interface CreateDBUserInput {
@@ -1237,4 +1239,34 @@ export interface SavedTableView {
   author_email?: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Who may use a PostgreSQL schema (GET …/schemas/{schema}/privileges). */
+export interface SchemaAccess {
+  schema: string;
+  owner: string;
+  /** Roles other than the owner with USAGE or CREATE; "PUBLIC" is every role. */
+  grants: { role: string; usage: boolean; create: boolean }[];
+  default_privileges: DefaultPrivilege[];
+  /** Roles that could be granted something. */
+  roles: string[];
+}
+
+export type DefaultPrivilegeObject = "tables" | "sequences" | "functions" | "types";
+
+export interface DefaultPrivilege {
+  /** The role whose new objects get the grant. */
+  creator: string;
+  object_type: DefaultPrivilegeObject;
+  grantee: string;
+  privileges: string[];
+}
+
+/** search_path settings of a PostgreSQL database (GET …/search-path). */
+export interface SearchPaths {
+  /** The database's own setting; empty when it has none. */
+  database: string;
+  /** PostgreSQL's built-in default. */
+  server: string;
+  roles: { role: string; path: string }[];
 }

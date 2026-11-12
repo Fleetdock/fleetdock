@@ -325,11 +325,13 @@ func (pg *Postgres) SchemaGrants(ctx context.Context, p ConnParams, database str
 			WHERE r.rolcanlogin AND r.rolname NOT LIKE 'pg\_%'
 			  AND has_database_privilege(r.oid, current_database(), p.priv)
 			UNION ALL
-			SELECT grantee, privilege_type
-			FROM information_schema.schema_privileges
-			WHERE schema_name NOT IN ('pg_catalog', 'information_schema')
-			  AND schema_name NOT LIKE 'pg\_toast%'
-			  AND schema_name NOT LIKE 'pg\_temp%'
+			-- Schema privileges from the ACL itself: information_schema
+			-- only has a schema_privileges view from PostgreSQL 17 on.
+			SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END, a.privilege_type
+			FROM pg_namespace n, aclexplode(n.nspacl) a
+			WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+			  AND n.nspname NOT LIKE 'pg\_toast%'
+			  AND n.nspname NOT LIKE 'pg\_temp%'
 			UNION ALL
 			SELECT grantee, privilege_type
 			FROM information_schema.table_privileges

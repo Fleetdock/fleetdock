@@ -460,6 +460,9 @@ type QueryInput struct {
 	Preview bool
 	// Timeout bounds the run (0 = the console's default).
 	Timeout time.Duration
+	// SearchPath, when set, is the PostgreSQL search_path the statements
+	// run with, set when the session starts.
+	SearchPath []string
 }
 
 // BatchFailure says which statement of a run failed (1-based) and why.
@@ -506,6 +509,12 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 		}
 	}
 
+	if len(in.SearchPath) > 0 {
+		if _, err := engine.SearchPathSQL(in.SearchPath); err != nil {
+			return nil, apperr.Invalid("search_path", err.Error())
+		}
+	}
+
 	ctx, done := s.track(ctx, in)
 	defer done()
 
@@ -519,6 +528,12 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 	err := s.scoped(ctx, in.DatabaseID, mode, timeout,
 		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
 			onSession := func(pid int64) { s.setSessionID(in.QueryID, pid) }
+			if len(in.SearchPath) > 0 {
+				if _, ok := admin.(engine.SchemaPrivileges); !ok {
+					return apperr.Invalid("search_path", "a search_path is a PostgreSQL setting")
+				}
+				conn.SearchPath = in.SearchPath
+			}
 			var res []engine.QueryResult
 			var err error
 			if in.Preview {

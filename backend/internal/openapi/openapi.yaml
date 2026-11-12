@@ -426,6 +426,29 @@ components:
         name: {type: string, minLength: 1, maxLength: 100}
         state: {type: object}
         shared: {type: boolean}
+    SchemaAccess:
+      type: object
+      properties:
+        schema: {type: string}
+        owner: {type: string}
+        grants:
+          type: array
+          items:
+            type: object
+            properties:
+              role: {type: string}
+              usage: {type: boolean}
+              create: {type: boolean}
+        default_privileges:
+          type: array
+          items:
+            type: object
+            properties:
+              creator: {type: string}
+              object_type: {type: string}
+              grantee: {type: string}
+              privileges: {type: array, items: {type: string}}
+        roles: {type: array, items: {type: string}}
     SchemaSummary:
       type: object
       properties:
@@ -1305,6 +1328,89 @@ paths:
             application/json:
               schema: {type: object, properties: {status: {type: string}}}
         default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/schemas/{schema}/privileges:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Who may use a schema
+      description: >-
+        PostgreSQL only. The schema's owner, the roles other than the owner with USAGE or CREATE on it (PUBLIC is every
+        role), its default privileges (ALTER DEFAULT PRIVILEGES … IN SCHEMA), and the roles that could be granted something.
+      responses:
+        "200":
+          description: The schema's privileges
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SchemaAccess"}
+        default: {$ref: "#/components/responses/Error"}
+    put:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Set a role's privileges on a schema
+      description: >-
+        PostgreSQL only. Grants or revokes USAGE and CREATE so that the role (or PUBLIC) ends up with exactly the ones
+        given. The owner's privileges cannot be changed. Needs database:write and instance:write on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: {type: string}
+                usage: {type: boolean}
+                create: {type: boolean}
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/schemas/{schema}/default-privileges:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Change a schema's default privileges
+      description: >-
+        PostgreSQL only. Runs ALTER DEFAULT PRIVILEGES [FOR ROLE creator] IN SCHEMA … GRANT or REVOKE, which decides what
+        objects that role creates in the schema from now on are granted. Existing objects keep their privileges. Needs
+        database:write and instance:write on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [object_type, grantee, privileges]
+              properties:
+                creator: {type: string, description: The role whose new objects it covers; defaults to the server's admin login.}
+                object_type: {type: string, enum: [tables, sequences, functions, types]}
+                grantee: {type: string, description: A role, or PUBLIC.}
+                privileges:
+                  type: array
+                  items: {type: string}
+                  description: >-
+                    tables - SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER; sequences - USAGE, SELECT,
+                    UPDATE; functions - EXECUTE; types - USAGE; or ALL.
+                revoke: {type: boolean}
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/schemas/{schema}/copy:
     post:
       tags: [Structure]
@@ -1336,6 +1442,61 @@ paths:
           content:
             application/json:
               schema: {type: object, properties: {operation_id: {type: string, format: uuid}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/search-path:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: search_path settings of a database
+      description: >-
+        PostgreSQL only. The search_path set on the database (empty when none), set for roles in this database, and
+        PostgreSQL's built-in default.
+      responses:
+        "200":
+          description: The settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  database: {type: string}
+                  server: {type: string}
+                  roles:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        role: {type: string}
+                        path: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+    put:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Set the search_path of a database or a role
+      description: >-
+        PostgreSQL only. ALTER DATABASE … SET search_path, or ALTER ROLE … IN DATABASE … SET search_path when a role is
+        given (which also needs instance:write on the server). No schemas resets it. New sessions pick it up.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: {type: string}
+                schemas:
+                  type: array
+                  items: {type: string}
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
         default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/objects/move:
     post:
@@ -3717,6 +3878,10 @@ paths:
                 limit: {type: integer, maximum: 5000, default: 100, description: Rows returned per statement (larger values are capped at 5000)}
                 query_id: {type: string, format: uuid}
                 preview: {type: boolean, default: false, description: Dry run in a transaction that is rolled back.}
+                search_path:
+                  type: array
+                  items: {type: string}
+                  description: PostgreSQL only. The session's search_path, set when the session starts; names are taken literally.
       responses:
         "200":
           description: Results of the statements that ran

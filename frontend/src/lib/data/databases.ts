@@ -8,6 +8,9 @@ import { api, download } from "../api";
 import { randomUUID } from "../uuid";
 import type {
   ColumnCatalog,
+  DefaultPrivilegeObject,
+  SchemaAccess,
+  SearchPaths,
   Diagram,
   RowFilter,
   SortKey,
@@ -261,7 +264,6 @@ export function useRunQuery(databaseId: string) {
       if (writeStatements(input.sql).length > 0) {
         qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
         qc.invalidateQueries({ queryKey: ["diagram", databaseId] });
-    qc.invalidateQueries({ queryKey: ["schemas", databaseId] });
         qc.invalidateQueries({ queryKey: ["schemas", databaseId] });
       }
     },
@@ -750,4 +752,66 @@ export function useStructureMutations(databaseId: string, table = "") {
     onSuccess: invalidate,
   });
   return { createTable, alter, drop, truncate, rename, createIndex, dropIndex };
+}
+
+// useSchemaAccess loads who may use a PostgreSQL schema and its default
+// privileges.
+export function useSchemaAccess(databaseId: string, schema: string | null) {
+  return useQuery({
+    queryKey: ["schema-access", databaseId, schema],
+    queryFn: () =>
+      api.get<SchemaAccess>(`/v1/databases/${databaseId}/schemas/${encodeURIComponent(schema ?? "")}/privileges`),
+    enabled: Boolean(databaseId && schema),
+    retry: false,
+  });
+}
+
+// useSchemaPrivilegeMutations sets a role's USAGE/CREATE on a schema and
+// changes its default privileges.
+export function useSchemaPrivilegeMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const path = (schema: string) => `/v1/databases/${databaseId}/schemas/${encodeURIComponent(schema)}`;
+  const invalidate = (_d: unknown, v: { schema: string }) => {
+    qc.invalidateQueries({ queryKey: ["schema-access", databaseId, v.schema] });
+    qc.invalidateQueries({ queryKey: ["schema-grants", databaseId] });
+  };
+  const setGrant = useMutation({
+    mutationFn: (v: { schema: string; role: string; usage: boolean; create: boolean }) =>
+      api.put(`${path(v.schema)}/privileges`, { role: v.role, usage: v.usage, create: v.create }),
+    onSuccess: invalidate,
+  });
+  const alterDefaults = useMutation({
+    mutationFn: (v: {
+      schema: string;
+      creator?: string;
+      object_type: DefaultPrivilegeObject;
+      grantee: string;
+      privileges: string[];
+      revoke: boolean;
+    }) => {
+      const { schema, ...body } = v;
+      return api.post(`${path(schema)}/default-privileges`, body);
+    },
+    onSuccess: invalidate,
+  });
+  return { setGrant, alterDefaults };
+}
+
+// useSearchPaths loads the search_path of a PostgreSQL database and its roles.
+export function useSearchPaths(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["search-path", databaseId],
+    queryFn: () => api.get<SearchPaths>(`/v1/databases/${databaseId}/search-path`),
+    enabled: Boolean(databaseId) && enabled,
+    retry: false,
+  });
+}
+
+// useSetSearchPath sets or (with no schemas) resets a search_path.
+export function useSetSearchPath(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { role?: string; schemas: string[] }) => api.put(`/v1/databases/${databaseId}/search-path`, v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["search-path", databaseId] }),
+  });
 }
