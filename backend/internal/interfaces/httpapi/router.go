@@ -261,6 +261,10 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
 	mux.HandleFunc("GET /v1/databases/{id}/diagram", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Diagram))
 	mux.HandleFunc("GET /v1/databases/{id}/schemas", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Schemas))
+	mux.HandleFunc("POST /v1/databases/{id}/schemas", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.CreateSchema))
+	mux.HandleFunc("PATCH /v1/databases/{id}/schemas/{schema}", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.AlterSchema))
+	mux.HandleFunc("GET /v1/databases/{id}/schemas/{schema}/dependents", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.SchemaDependents))
+	mux.HandleFunc("POST /v1/databases/{id}/schemas/{schema}/drop", requireResourcePerm(rv, "database:write", authz.ResourceDatabase, "id", d.DBAdmin.DropSchema))
 	// Saved table views (data browser).
 	mux.HandleFunc("GET /v1/databases/{id}/table-views", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.TableViews.List))
 	mux.HandleFunc("POST /v1/databases/{id}/table-views", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.TableViews.Create))

@@ -933,6 +933,74 @@ func (h *DBAdminHandler) Schemas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+type createSchemaRequest struct {
+	Name  string `json:"name"`
+	Owner string `json:"owner"`
+}
+
+// CreateSchema handles POST /v1/databases/{id}/schemas.
+func (h *DBAdminHandler) CreateSchema(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req createSchemaRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.CreateSchema(r.Context(), r.PathValue("id"), req.Name, req.Owner); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
+		return nil
+	})(w, r)
+}
+
+// AlterSchema handles PATCH /v1/databases/{id}/schemas/{schema}.
+func (h *DBAdminHandler) AlterSchema(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req engine.SchemaChange
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.AlterSchema(r.Context(), r.PathValue("id"), r.PathValue("schema"), req); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "altered"})
+		return nil
+	})(w, r)
+}
+
+// SchemaDependents handles GET /v1/databases/{id}/schemas/{schema}/dependents.
+func (h *DBAdminHandler) SchemaDependents(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.interactive(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	d, err := h.svc.SchemaDependents(r.Context(), r.PathValue("id"), r.PathValue("schema"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}
+
+type dropSchemaRequest struct {
+	Cascade bool `json:"cascade"`
+}
+
+// DropSchema handles POST /v1/databases/{id}/schemas/{schema}/drop.
+func (h *DBAdminHandler) DropSchema(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req dropSchemaRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.DropSchema(r.Context(), r.PathValue("id"), r.PathValue("schema"), req.Cascade); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "dropped"})
+		return nil
+	})(w, r)
+}
+
 // Diagram handles GET /v1/databases/{id}/diagram.
 func (h *DBAdminHandler) Diagram(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.interactive(r); err != nil {

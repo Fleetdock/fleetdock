@@ -44,6 +44,8 @@ import type {
   TableSchema,
   RunQueryInput,
   SchemaInfo,
+  SchemaDependents,
+  SchemaPatch,
 } from "../types";
 import type { Mutation, MutationResult } from "../data-browser/pending";
 import { writeStatements } from "../sql";
@@ -650,6 +652,45 @@ export function useSchemas(databaseId: string, enabled = true) {
     enabled: Boolean(databaseId) && enabled,
     staleTime: 30_000,
     retry: false,
+  });
+}
+
+// useSchemaMutations creates, alters and drops PostgreSQL schemas. A schema
+// change can move or remove tables, so everything listing them is refreshed.
+export function useSchemaMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const base = `/v1/databases/${databaseId}/schemas`;
+  const invalidate = () => {
+    for (const key of ["schemas", "tables", "db-objects", "schema-columns", "diagram", "table-schema", "foreign-keys"]) {
+      qc.invalidateQueries({ queryKey: [key, databaseId] });
+    }
+  };
+  const create = useMutation({
+    mutationFn: (v: { name: string; owner?: string }) => api.post(base, v),
+    onSuccess: invalidate,
+  });
+  const alter = useMutation({
+    mutationFn: (v: { schema: string; change: SchemaPatch }) =>
+      api.patch(`${base}/${encodeURIComponent(v.schema)}`, v.change),
+    onSuccess: invalidate,
+  });
+  const drop = useMutation({
+    mutationFn: (v: { schema: string; cascade: boolean }) =>
+      api.post(`${base}/${encodeURIComponent(v.schema)}/drop`, { cascade: v.cascade }),
+    onSuccess: invalidate,
+  });
+  return { create, alter, drop };
+}
+
+// useSchemaDependents loads what dropping a schema would remove.
+export function useSchemaDependents(databaseId: string, schema: string | null) {
+  return useQuery({
+    queryKey: ["schema-dependents", databaseId, schema],
+    queryFn: () =>
+      api.get<SchemaDependents>(`/v1/databases/${databaseId}/schemas/${encodeURIComponent(schema ?? "")}/dependents`),
+    enabled: Boolean(databaseId && schema),
+    retry: false,
+    staleTime: 0,
   });
 }
 

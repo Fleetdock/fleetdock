@@ -95,6 +95,13 @@ components:
       schema:
         type: string
         format: uuid
+    SchemaName:
+      name: schema
+      in: path
+      required: true
+      description: PostgreSQL schema name.
+      schema:
+        type: string
     TableName:
       name: table
       in: path
@@ -1192,6 +1199,111 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/SchemaSummary"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Create a PostgreSQL schema
+      description: >-
+        Creates a schema, owned by the given role or, without one, by the database's owner. Runs as the instance's admin
+        login. Names starting with pg_ are reserved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, description: "Letters, digits and _, at most 63 characters, not starting with a digit."}
+                owner: {type: string, description: An existing role; the database's owner when empty.}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/schemas/{schema}:
+    patch:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Rename a schema or change its owner or comment
+      description: >-
+        Applies the given changes in one transaction; fields left out stay as they are. An empty comment removes it.
+        System schemas (pg_*, information_schema) cannot be changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, description: New name.}
+                owner: {type: string, description: An existing role.}
+                comment: {type: string}
+      responses:
+        "200":
+          description: Altered
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/schemas/{schema}/dependents:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: What dropping a schema would remove
+      description: >-
+        Counts the tables, views, sequences, functions and types in the schema (leaving out objects that belong to an
+        extension) and lists the views and foreign keys of other schemas that depend on it.
+      responses:
+        "200":
+          description: Dependents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tables: {type: integer}
+                  views: {type: integer}
+                  sequences: {type: integer}
+                  functions: {type: integer}
+                  types: {type: integer}
+                  external: {type: array, items: {type: string}, description: Objects of other schemas that depend on this one (at most 50).}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/schemas/{schema}/drop:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Drop a schema
+      description: >-
+        Without cascade the schema must be empty (DROP SCHEMA … RESTRICT). With cascade everything in it, and everything
+        in other schemas that depends on it, is dropped too.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cascade: {type: boolean}
+      responses:
+        "200":
+          description: Dropped
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
         default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/diagram:
     get:

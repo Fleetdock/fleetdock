@@ -29,6 +29,11 @@ import {
   Eye,
   Folder,
   FolderOpen,
+  FolderPlus,
+  MessageSquareText,
+  Pencil,
+  Trash2,
+  UserRound,
   FunctionSquare,
   Layers,
   ListOrdered,
@@ -44,6 +49,7 @@ import {
 } from "lucide-react";
 
 import { useContextMenu } from "./context-menu";
+import { SchemaDialogs, type SchemaDialog } from "./schema-dialogs";
 import { SchemaPicker } from "./schema-picker";
 import { TreeRowsSkeleton } from "./skeleton";
 
@@ -283,6 +289,29 @@ export const ObjectTree = forwardRef<
     }
   }
 
+  // Dialogs that create, change and drop schemas (PostgreSQL).
+  const [schemaDialog, setSchemaDialog] = useState<SchemaDialog | null>(null);
+  const owners = useMemo(
+    () => [...new Set(summary.map((s) => s.owner).filter((o): o is string => Boolean(o)))].sort(),
+    [summary],
+  );
+  const editSchema = (kind: "rename" | "owner" | "comment" | "drop", name: string) =>
+    setSchemaDialog({ kind, schema: schemaInfo(name) ?? { name, tables: 0, views: 0 } });
+  // Keep the chosen schemas in step with renames, drops and new schemas.
+  const onSchemaRenamed = (from: string, to: string) => {
+    if (!selection.all && selection.schemas.includes(from)) {
+      changeSelection({ all: false, schemas: selection.schemas.map((n) => (n === from ? to : n)) });
+    }
+  };
+  const onSchemaDropped = (name: string) => {
+    if (!selection.all && selection.schemas.includes(name) && selection.schemas.length > 1) {
+      changeSelection({ all: false, schemas: selection.schemas.filter((n) => n !== name) });
+    }
+  };
+  const onSchemaCreated = (name: string) => {
+    if (!selection.all) changeSelection({ all: false, schemas: [...selection.schemas, name] });
+  };
+
   function schemaMenu(schema: string) {
     return [
       {
@@ -296,6 +325,13 @@ export const ObjectTree = forwardRef<
         icon: <Copy size={14} />,
         onSelect: () => copy(schema, `Copied ${schema}`),
       },
+      "separator" as const,
+      { label: "New schema…", icon: <FolderPlus size={14} />, hidden: !canWrite || !pg, onSelect: () => setSchemaDialog({ kind: "create" }) },
+      { label: "Rename…", icon: <Pencil size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("rename", schema) },
+      { label: "Change owner…", icon: <UserRound size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("owner", schema) },
+      { label: "Comment…", icon: <MessageSquareText size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("comment", schema) },
+      "separator" as const,
+      { label: "Drop schema…", icon: <Trash2 size={14} />, danger: true, hidden: !canWrite || !pg, onSelect: () => editSchema("drop", schema) },
     ];
   }
 
@@ -564,6 +600,11 @@ export const ObjectTree = forwardRef<
           <IconButton label="New SQL query" onClick={() => onNewQuery()}>
             <SquareTerminal size={14} aria-hidden />
           </IconButton>
+          {canWrite && pg ? (
+            <IconButton label="New schema" onClick={() => setSchemaDialog({ kind: "create" })}>
+              <FolderPlus size={14} aria-hidden />
+            </IconButton>
+          ) : null}
           {canWrite ? (
             <IconButton
               label={createSchema ? `Create table in ${createSchema}` : "Create table"}
@@ -623,6 +664,15 @@ export const ObjectTree = forwardRef<
         {objectsBody}
       </div>
       {ctx.element}
+      <SchemaDialogs
+        databaseId={databaseId}
+        dialog={schemaDialog}
+        owners={owners}
+        onClose={() => setSchemaDialog(null)}
+        onRenamed={onSchemaRenamed}
+        onDropped={onSchemaDropped}
+        onCreated={onSchemaCreated}
+      />
     </div>
   );
 });

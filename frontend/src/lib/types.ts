@@ -881,6 +881,25 @@ export interface SchemaInfo {
   bytes?: number;
 }
 
+/** SchemaDependents is what dropping a PostgreSQL schema would take with it. */
+export interface SchemaDependents {
+  tables: number;
+  views: number;
+  sequences: number;
+  functions: number;
+  types: number;
+  /** Objects of other schemas that depend on this one (at most 50). */
+  external: string[];
+}
+
+/** SchemaPatch renames a schema or changes its owner or comment; absent fields stay. */
+export interface SchemaPatch {
+  name?: string;
+  owner?: string;
+  /** An empty comment removes it. */
+  comment?: string;
+}
+
 /** Diagram is what the database page's Diagram tab draws. */
 export interface Diagram {
   /** Every PostgreSQL schema with its counts, whatever the filter; absent on MySQL/MariaDB. */
