@@ -335,7 +335,8 @@ function SummaryStrip({
 }) {
   const tables = useTables(hasCreds ? databaseId : "");
   const objects = useDBObjects(hasCreds ? databaseId : "");
-  const nTables = tables.data?.items.length;
+  // Partitions count with their partitioned table, not on their own.
+  const nTables = tables.data?.items.filter((t) => !t.partition_of).length;
   const nViews = objects.data?.filter((o) => o.kind === "view" || o.kind === "materialized_view").length;
   const nOther = objects.data ? objects.data.length - (nViews ?? 0) : undefined;
   const count = (n: number | undefined, loading: boolean) =>

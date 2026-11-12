@@ -540,17 +540,29 @@ func (pg *Postgres) ListTables(ctx context.Context, p ConnParams, database strin
 	rows, err := conn.Query(ctx, `
 		SELECT n.nspname,
 		       c.relname,
-		       COALESCE(s.n_live_tup, 0),
-		       COALESCE(pg_relation_size(c.oid), 0),
-		       COALESCE(pg_indexes_size(c.oid), 0),
-		       COALESCE(obj_description(c.oid, 'pg_class'), '')
+		       CASE WHEN c.relkind = 'p' THEN
+		         COALESCE((SELECT sum(st.n_live_tup) FROM pg_partition_tree(c.oid) t
+		                     JOIN pg_stat_user_tables st ON st.relid = t.relid), 0)::bigint
+		       ELSE COALESCE(s.n_live_tup, 0) END,
+		       CASE WHEN c.relkind = 'p' THEN
+		         COALESCE((SELECT sum(pg_relation_size(t.relid)) FROM pg_partition_tree(c.oid) t), 0)::bigint
+		       ELSE COALESCE(pg_relation_size(c.oid), 0) END,
+		       CASE WHEN c.relkind = 'p' THEN
+		         COALESCE((SELECT sum(pg_indexes_size(t.relid)) FROM pg_partition_tree(c.oid) t), 0)::bigint
+		       ELSE COALESCE(pg_indexes_size(c.oid), 0) END,
+		       COALESCE(obj_description(c.oid, 'pg_class'), ''),
+		       c.relkind = 'p',
+		       COALESCE((SELECT format('%s.%s', pn.nspname, pc.relname) FROM pg_inherits i
+		                   JOIN pg_class pc ON pc.oid = i.inhparent
+		                   JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+		                  WHERE c.relispartition AND i.inhrelid = c.oid), '')
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
 		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
 		  AND n.nspname NOT LIKE 'pg\_toast%'
 		  AND n.nspname NOT LIKE 'pg\_temp%'
-		  AND c.relkind = 'r'
+		  AND c.relkind IN ('r', 'p')
 		ORDER BY CASE WHEN n.nspname = 'public' THEN 0 ELSE 1 END, n.nspname, c.relname`)
 	if err != nil {
 		return nil, err
@@ -560,7 +572,7 @@ func (pg *Postgres) ListTables(ctx context.Context, p ConnParams, database strin
 	var out []TableInfo
 	for rows.Next() {
 		var t TableInfo
-		if err := rows.Scan(&t.Schema, &t.Name, &t.RowCount, &t.DataBytes, &t.IndexBytes, &t.Comment); err != nil {
+		if err := rows.Scan(&t.Schema, &t.Name, &t.RowCount, &t.DataBytes, &t.IndexBytes, &t.Comment, &t.Partitioned, &t.PartitionOf); err != nil {
 			return nil, err
 		}
 		t.Engine = "postgres"

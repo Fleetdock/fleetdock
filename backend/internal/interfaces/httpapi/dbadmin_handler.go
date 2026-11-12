@@ -1373,3 +1373,101 @@ func (h *DBAdminHandler) SetSearchPath(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
+
+// ---- PostgreSQL maintenance ----
+
+// Sequence handles GET /v1/databases/{id}/sequences/{schema}/{sequence}.
+func (h *DBAdminHandler) Sequence(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.Sequence(r.Context(), r.PathValue("id"), r.PathValue("schema"), r.PathValue("sequence"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type setSequenceRequest struct {
+	Value *int64 `json:"value"`
+	// Called false makes the next nextval return value itself.
+	Called bool `json:"called"`
+}
+
+// SetSequence handles POST /v1/databases/{id}/sequences/{schema}/{sequence}/setval.
+func (h *DBAdminHandler) SetSequence(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req setSequenceRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if req.Value == nil {
+			return apperr.Invalid("value", "value is required")
+		}
+		if err := h.svc.SetSequence(r.Context(), r.PathValue("id"), r.PathValue("schema"), r.PathValue("sequence"), *req.Value, req.Called); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "set"})
+		return nil
+	})(w, r)
+}
+
+type refreshRequest struct {
+	Concurrently bool `json:"concurrently"`
+}
+
+// RefreshMaterializedView handles POST /v1/databases/{id}/matviews/{schema}/{view}/refresh.
+func (h *DBAdminHandler) RefreshMaterializedView(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req refreshRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.RefreshMaterializedView(r.Context(), r.PathValue("id"), r.PathValue("schema"), r.PathValue("view"), req.Concurrently); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
+		return nil
+	})(w, r)
+}
+
+type maintainRequest struct {
+	Op     engine.MaintenanceOp `json:"op"`
+	Schema string               `json:"schema"`
+	// Table, when empty, covers every table of the schema.
+	Table string `json:"table"`
+}
+
+// Maintain handles POST /v1/databases/{id}/maintenance.
+func (h *DBAdminHandler) Maintain(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req maintainRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		ran, err := h.svc.Maintain(r.Context(), r.PathValue("id"), req.Op, req.Schema, req.Table)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ran": ran})
+		return nil
+	})(w, r)
+}
+
+// TableStats handles GET /v1/databases/{id}/table-stats.
+func (h *DBAdminHandler) TableStats(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.TableStats(r.Context(), r.PathValue("id"), r.URL.Query().Get("schema"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// Partitions handles GET /v1/databases/{id}/partitions/{schema}/{table}.
+func (h *DBAdminHandler) Partitions(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.Partitions(r.Context(), r.PathValue("id"), r.PathValue("schema"), r.PathValue("table"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}

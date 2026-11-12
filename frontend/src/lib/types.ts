@@ -493,6 +493,10 @@ export interface TableInfo {
   data_bytes: number;
   index_bytes: number;
   comment: string;
+  /** PostgreSQL: a partitioned table; rows and sizes cover all its partitions. */
+  partitioned?: boolean;
+  /** PostgreSQL: the partitioned table ("schema.table") this is a partition of. */
+  partition_of?: string;
 }
 
 export interface ColumnInfo {
@@ -1269,4 +1273,47 @@ export interface SearchPaths {
   /** PostgreSQL's built-in default. */
   server: string;
   roles: { role: string; path: string }[];
+}
+
+/** A PostgreSQL sequence (GET …/sequences/{schema}/{sequence}). */
+export interface SequenceInfo {
+  schema: string;
+  name: string;
+  data_type: string;
+  start: number;
+  increment: number;
+  min: number;
+  max: number;
+  cycle: boolean;
+  /** The last value handed out; null before the first nextval. */
+  last_value: number | null;
+  /** What the next nextval returns; null when the sequence is used up. */
+  next_value: number | null;
+  /** "schema.table.column" of a serial or identity column. */
+  owned_by?: string;
+}
+
+export type MaintenanceOp = "vacuum" | "vacuum_analyze" | "analyze" | "reindex";
+
+/** A table's size and housekeeping state (GET …/table-stats). */
+export interface TableStat {
+  schema: string;
+  name: string;
+  total_bytes: number;
+  live_rows: number;
+  dead_rows: number;
+  last_vacuum: string | null;
+  last_autovacuum: string | null;
+  last_analyze: string | null;
+  last_autoanalyze: string | null;
+}
+
+/** One partition of a partitioned table. */
+export interface PartitionInfo {
+  schema: string;
+  name: string;
+  bound: string;
+  total_bytes: number;
+  rows: number;
+  partitioned: boolean;
 }
