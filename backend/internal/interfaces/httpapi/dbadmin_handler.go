@@ -469,8 +469,9 @@ func (h *DBAdminHandler) CheckDump(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-// Dump handles GET /v1/databases/{id}/dump: a gzip-compressed SQL dump of the
-// database streamed straight to the client. Nothing is stored — no backup
+// Dump handles GET /v1/databases/{id}/dump[?schema=]: a gzip-compressed SQL
+// dump of the database, or of one PostgreSQL schema, streamed straight to
+// the client. Nothing is stored — no backup
 // destination is needed and no backup record is created.
 func (h *DBAdminHandler) Dump(w http.ResponseWriter, r *http.Request) {
 	// A dump of a large database may stream for a long time; the server's
@@ -479,10 +480,15 @@ func (h *DBAdminHandler) Dump(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("database dump: cannot extend write deadline", "error", err.Error())
 	}
 	id := r.PathValue("id")
+	schema := r.URL.Query().Get("schema")
 	started := false
-	err := h.svc.Dump(r.Context(), id, w, func(dbName string) {
+	err := h.svc.Dump(r.Context(), id, schema, w, func(dbName string) {
 		started = true
-		filename := dumpFilename(dbName, time.Now().UTC())
+		name := dbName
+		if schema != "" {
+			name += "-" + schema
+		}
+		filename := dumpFilename(name, time.Now().UTC())
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 		w.WriteHeader(http.StatusOK)
@@ -499,7 +505,7 @@ func (h *DBAdminHandler) Dump(w http.ResponseWriter, r *http.Request) {
 		slog.Error("database dump failed mid-stream", "database_id", id, "user_id", user, "error", err.Error())
 		return
 	}
-	slog.Info("database dump downloaded", "database_id", id, "user_id", user)
+	slog.Info("database dump downloaded", "database_id", id, "schema", schema, "user_id", user)
 }
 
 // dumpWriteDeadline is a little above the service's dump timeout, so the dump,
@@ -1262,16 +1268,17 @@ func (h *DBAdminHandler) SetDBUserPassword(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed"})
 }
 
-// requireInstanceWrite asks for instance:write on the database's instance:
-// granting privileges, even on one schema, decides who may read and change
-// data, like the instance's own grants.
+// requireInstanceWrite asks for instance:write on the database's instance,
+// for changes that reach beyond the data: granting privileges, even on one
+// schema, decides who may read and change data, like the instance's own
+// grants; an extension can run code as a superuser.
 func (h *DBAdminHandler) requireInstanceWrite(r *http.Request) error {
 	info, err := h.svc.DataAccess(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
 	if err := authorizeResource(r.Context(), h.resolver, "instance:write", authz.ResourceInstance, info.InstanceID); err != nil {
-		return apperr.Forbidden("changing privileges needs instance:write on the server")
+		return apperr.Forbidden("this change needs instance:write on the server as well")
 	}
 	return nil
 }
@@ -1470,4 +1477,85 @@ func (h *DBAdminHandler) Partitions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// ---- PostgreSQL extensions ----
+
+// Extensions handles GET /v1/databases/{id}/extensions.
+func (h *DBAdminHandler) Extensions(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.Extensions(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+type installExtensionRequest struct {
+	Name    string `json:"name"`
+	Schema  string `json:"schema"`
+	Version string `json:"version"`
+}
+
+// extensionWrite asks for instance:write as well as database:write: an
+// extension can run code as a superuser and is part of the server's setup.
+func (h *DBAdminHandler) extensionWrite(fn func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+	return h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		if err := h.requireInstanceWrite(r); err != nil {
+			return err
+		}
+		return fn(w, r)
+	})
+}
+
+// InstallExtension handles POST /v1/databases/{id}/extensions.
+func (h *DBAdminHandler) InstallExtension(w http.ResponseWriter, r *http.Request) {
+	h.extensionWrite(func(w http.ResponseWriter, r *http.Request) error {
+		var req installExtensionRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if req.Name == "" {
+			return apperr.Invalid("name", "name is required")
+		}
+		if err := h.svc.InstallExtension(r.Context(), r.PathValue("id"), req.Name, req.Schema, req.Version); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusCreated, map[string]string{"status": "installed"})
+		return nil
+	})(w, r)
+}
+
+type updateExtensionRequest struct {
+	Version string `json:"version"`
+}
+
+// UpdateExtension handles POST /v1/databases/{id}/extensions/{name}/update.
+func (h *DBAdminHandler) UpdateExtension(w http.ResponseWriter, r *http.Request) {
+	h.extensionWrite(func(w http.ResponseWriter, r *http.Request) error {
+		var req updateExtensionRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.UpdateExtension(r.Context(), r.PathValue("id"), r.PathValue("name"), req.Version); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+		return nil
+	})(w, r)
+}
+
+// DropExtension handles POST /v1/databases/{id}/extensions/{name}/drop.
+func (h *DBAdminHandler) DropExtension(w http.ResponseWriter, r *http.Request) {
+	h.extensionWrite(func(w http.ResponseWriter, r *http.Request) error {
+		var req dropSchemaRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.DropExtension(r.Context(), r.PathValue("id"), r.PathValue("name"), req.Cascade); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "dropped"})
+		return nil
+	})(w, r)
 }

@@ -231,6 +231,8 @@ export interface Backup {
   verify_status?: "running" | "passed" | "failed" | null;
   verified_at?: string | null;
   verify_error?: string | null;
+  /** Set on a backup of one PostgreSQL schema. */
+  schema_name?: string | null;
 }
 
 export interface Destination {
@@ -398,6 +400,8 @@ export interface UpdateDestinationInput {
 export interface TriggerBackupInput {
   database_id: string;
   destination_id: string;
+  /** PostgreSQL: back up only this schema. */
+  schema?: string;
 }
 
 export interface RestoreBackupInput {
@@ -1316,4 +1320,21 @@ export interface PartitionInfo {
   total_bytes: number;
   rows: number;
   partitioned: boolean;
+}
+
+/** A PostgreSQL extension the server offers (GET …/extensions). */
+export interface ExtensionInfo {
+  name: string;
+  default_version: string;
+  comment: string;
+  /** Set when it is installed in the database. */
+  installed_version?: string;
+  schema?: string;
+  relocatable: boolean;
+  /** A non-superuser with CREATE on the database may install it. */
+  trusted: boolean;
+  /** Installing it needs a superuser, unless it is trusted. */
+  superuser: boolean;
+  /** Versions the installed one can be updated to. */
+  updates?: string[];
 }

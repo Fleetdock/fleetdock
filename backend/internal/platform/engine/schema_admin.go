@@ -99,5 +99,14 @@ func CheckNewSchemaName(name string) error {
 	return nil
 }
 
-// CheckSchemaName validates the name of an existing user schema.
-func CheckSchemaName(name string) error { return checkUserSchema(name) }
+// CheckSchemaName validates the name of an existing user schema, for work
+// on it as a whole (copies, backups, exports).
+func CheckSchemaName(name string) error {
+	if err := existingName("schema", name); err != nil {
+		return err
+	}
+	if systemSchema(name) {
+		return fmt.Errorf("%s is one of PostgreSQL's own schemas", name)
+	}
+	return nil
+}

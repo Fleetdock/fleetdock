@@ -53,8 +53,10 @@ type MoveSpec struct {
 type TriggerInput struct {
 	DatabaseID    string
 	DestinationID string
-	Move          *MoveSpec // set only for the backup leg of a move
-	CreatedBy     *uuid.UUID
+	// Schema, when set, backs up only that schema of a PostgreSQL database.
+	Schema    string
+	Move      *MoveSpec // set only for the backup leg of a move
+	CreatedBy *uuid.UUID
 }
 
 // Trigger creates a manual backup record and its operation.
@@ -67,7 +69,15 @@ func (s *Service) Trigger(ctx context.Context, in TriggerInput) (*backupdom.Back
 	if err != nil {
 		return nil, nil, apperr.Invalid("destination_id", "destination_id must be a valid UUID")
 	}
-	return s.trigger(ctx, dbID, destID, "manual", nil, nil, in.Move, in.CreatedBy)
+	if in.Schema != "" {
+		if in.Move != nil {
+			return nil, nil, apperr.Invalid("schema", "a move backs up the whole database")
+		}
+		if err := engine.CheckSchemaName(in.Schema); err != nil {
+			return nil, nil, apperr.Invalid("schema", err.Error())
+		}
+	}
+	return s.trigger(ctx, dbID, destID, "manual", in.Schema, nil, nil, in.Move, in.CreatedBy)
 }
 
 // TriggerScheduled creates a scheduled backup with a retention boundary. It is
@@ -75,11 +85,11 @@ func (s *Service) Trigger(ctx context.Context, in TriggerInput) (*backupdom.Back
 // records are internal bookkeeping).
 func (s *Service) TriggerScheduled(ctx context.Context, databaseID, destinationID, scheduleID uuid.UUID, retentionDays int, createdBy *uuid.UUID) error {
 	expiresAt := time.Now().Add(time.Duration(retentionDays) * 24 * time.Hour)
-	_, _, err := s.trigger(ctx, databaseID, destinationID, "scheduled", &scheduleID, &expiresAt, nil, createdBy)
+	_, _, err := s.trigger(ctx, databaseID, destinationID, "scheduled", "", &scheduleID, &expiresAt, nil, createdBy)
 	return err
 }
 
-func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind string, scheduleID *uuid.UUID, expiresAt *time.Time, move *MoveSpec, createdBy *uuid.UUID) (*backupdom.Backup, *jobdom.Job, error) {
+func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind, schema string, scheduleID *uuid.UUID, expiresAt *time.Time, move *MoveSpec, createdBy *uuid.UUID) (*backupdom.Backup, *jobdom.Job, error) {
 	db, err := s.databases.GetByID(ctx, dbID)
 	if err != nil {
 		return nil, nil, err
@@ -91,6 +101,9 @@ func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind stri
 	if !inst.HasCredentials() {
 		return nil, nil, apperr.Invalid("database_id",
 			"the instance has no admin credentials; add a username/password to the instance to enable backups")
+	}
+	if schema != "" && inst.Engine != instancedom.EnginePostgres {
+		return nil, nil, apperr.Invalid("schema", "only PostgreSQL databases have schemas to back up on their own")
 	}
 	dest, err := s.dests.GetByID(ctx, destID)
 	if err != nil {
@@ -107,6 +120,7 @@ func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind stri
 		BackupID:      backupID.String(),
 		DestinationID: dest.ID.String(),
 		Key:           key,
+		Schema:        schema,
 	}
 	if move != nil {
 		params.MoveSourceDatabaseID = db.ID.String()
@@ -130,6 +144,9 @@ func (s *Service) trigger(ctx context.Context, dbID, destID uuid.UUID, kind stri
 		Status:        backupdom.StatusPending,
 		ExpiresAt:     expiresAt,
 		CreatedBy:     createdBy,
+	}
+	if schema != "" {
+		b.SchemaName = &schema
 	}
 	if err := s.backups.Create(ctx, b); err != nil {
 		return nil, nil, err
@@ -162,6 +179,9 @@ func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, er
 	}
 	if b.Status != backupdom.StatusCompleted || b.StorageURL == nil || b.DestinationID == nil {
 		return nil, apperr.Invalid("backup_id", "backup is not completed or has no stored artifact")
+	}
+	if b.SchemaName != nil {
+		return nil, apperr.Invalid("backup_id", "this is a backup of schema "+*b.SchemaName+"; restore it with restore-schema")
 	}
 
 	db, err := s.databases.GetByID(ctx, b.DatabaseID)
@@ -237,6 +257,11 @@ func (s *Service) Verify(ctx context.Context, backupID string, createdBy *uuid.U
 	if b.Status != backupdom.StatusCompleted || b.StorageURL == nil || b.DestinationID == nil {
 		return nil, apperr.Invalid("id", "only completed backups can be verified")
 	}
+	if b.SchemaName != nil {
+		// Its objects may need other schemas of the database, which a
+		// throwaway database does not have.
+		return nil, apperr.Invalid("id", "backups of one schema cannot be test-restored on their own")
+	}
 	if b.VerifyStatus != nil && *b.VerifyStatus == "running" {
 		return nil, apperr.Conflict("a verification of this backup is already running")
 	}
@@ -286,6 +311,9 @@ func (s *Service) RestoreCopy(ctx context.Context, backupID, copyID uuid.UUID, s
 	}
 	if b.Status != backupdom.StatusCompleted || b.StorageURL == nil || b.DestinationID == nil {
 		return nil, apperr.Invalid("backup_id", "only completed backups in backup storage can be opened")
+	}
+	if b.SchemaName != nil {
+		return nil, apperr.Invalid("backup_id", "backups of one schema cannot be opened on their own")
 	}
 	db, err := s.databases.GetByID(ctx, b.DatabaseID)
 	if err != nil {
@@ -405,6 +433,81 @@ func (s *Service) ImportSQL(ctx context.Context, in ImportInput) (*jobdom.Job, e
 		Key:            key,
 		AccessRole:     "rw",
 		DeleteKeyAfter: true,
+	}, in.CreatedBy)
+}
+
+// RestoreSchemaInput restores a backup of one PostgreSQL schema.
+type RestoreSchemaInput struct {
+	BackupID string
+	// TargetDatabaseID defaults to the backed-up database. It may be on
+	// another PostgreSQL server.
+	TargetDatabaseID string
+	// TargetSchema defaults to the backed-up schema's name.
+	TargetSchema string
+	// Replace lets a restore under the schema's own name replace the
+	// objects it holds now; otherwise the target schema must not exist.
+	Replace   bool
+	CreatedBy *uuid.UUID
+}
+
+// RestoreSchema queues the restore of a schema backup into a database, under
+// its own name or another one.
+func (s *Service) RestoreSchema(ctx context.Context, in RestoreSchemaInput) (*jobdom.Job, error) {
+	bid, err := uuid.Parse(in.BackupID)
+	if err != nil {
+		return nil, apperr.Invalid("id", "id must be a valid UUID")
+	}
+	b, err := s.backups.GetByID(ctx, bid)
+	if err != nil {
+		return nil, err
+	}
+	if b.SchemaName == nil {
+		return nil, apperr.Invalid("id", "this is a backup of a whole database; restore it with restore")
+	}
+	if b.Status != backupdom.StatusCompleted || b.StorageURL == nil || b.DestinationID == nil {
+		return nil, apperr.Invalid("id", "backup is not completed or has no stored artifact")
+	}
+	target := in.TargetDatabaseID
+	if target == "" {
+		target = b.DatabaseID.String()
+	}
+	dst, inst, err := s.copyEnd(ctx, target, "target_database_id")
+	if err != nil {
+		return nil, err
+	}
+	if inst.Engine != instancedom.EnginePostgres {
+		return nil, apperr.Invalid("target_database_id", "a PostgreSQL schema can only be restored into a PostgreSQL database")
+	}
+	schema := in.TargetSchema
+	if schema == "" {
+		schema = *b.SchemaName
+	}
+	if schema != *b.SchemaName {
+		if err := engine.CheckNewSchemaName(schema); err != nil {
+			return nil, apperr.Invalid("target_schema", err.Error())
+		}
+	}
+	if in.Replace && schema != *b.SchemaName {
+		return nil, apperr.Invalid("replace", "only a restore under the schema's own name can replace it")
+	}
+	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
+	if err != nil {
+		return nil, err
+	}
+	key, err := keyFromStorageURL(*b.StorageURL, dest.Bucket)
+	if err != nil {
+		return nil, apperr.Internal(err)
+	}
+	return s.ops.Create(ctx, jobdom.TypeRestoreSchema, "backup", &b.ID, executorFor(inst), operationapp.Params{
+		InstanceID:       inst.ID.String(),
+		Database:         dst.Name,
+		TargetDatabaseID: dst.ID.String(),
+		Schema:           *b.SchemaName,
+		TargetSchema:     schema,
+		Replace:          in.Replace,
+		BackupID:         b.ID.String(),
+		DestinationID:    dest.ID.String(),
+		Key:              key,
 	}, in.CreatedBy)
 }
 
