@@ -1321,3 +1321,20 @@ export interface PartitionInfo {
   rows: number;
   partitioned: boolean;
 }
+
+/** A PostgreSQL extension the server offers (GET …/extensions). */
+export interface ExtensionInfo {
+  name: string;
+  default_version: string;
+  comment: string;
+  /** Set when it is installed in the database. */
+  installed_version?: string;
+  schema?: string;
+  relocatable: boolean;
+  /** A non-superuser with CREATE on the database may install it. */
+  trusted: boolean;
+  /** Installing it needs a superuser, unless it is trusted. */
+  superuser: boolean;
+  /** Versions the installed one can be updated to. */
+  updates?: string[];
+}

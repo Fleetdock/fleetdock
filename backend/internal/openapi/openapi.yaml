@@ -1621,6 +1621,115 @@ paths:
                         rows: {type: integer, format: int64}
                         partitioned: {type: boolean}
         default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/extensions:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Extensions of a database
+      description: >-
+        PostgreSQL only. Every extension the server offers (pg_available_extensions), installed ones first with their
+        version and schema, whether it is trusted or needs a superuser, and the versions it can be updated to.
+      responses:
+        "200":
+          description: The extensions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        default_version: {type: string}
+                        comment: {type: string}
+                        installed_version: {type: string}
+                        schema: {type: string}
+                        relocatable: {type: boolean}
+                        trusted: {type: boolean}
+                        superuser: {type: boolean}
+                        updates: {type: array, items: {type: string}}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Install an extension
+      description: >-
+        PostgreSQL only. CREATE EXTENSION [SCHEMA s] [VERSION v], as the server's admin login. Most extensions need a
+        superuser unless they are trusted; managed services allow only their own list. Needs database:write and
+        instance:write on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                schema: {type: string}
+                version: {type: string}
+      responses:
+        "201":
+          description: Installed
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/extensions/{name}/update:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: name, in: path, required: true, schema: {type: string}, description: The extension.}
+      summary: Update an extension
+      description: PostgreSQL only. ALTER EXTENSION … UPDATE [TO version]. Needs database:write and instance:write on the server.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: {type: string, description: Empty updates to the default version.}
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/extensions/{name}/drop:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: name, in: path, required: true, schema: {type: string}, description: The extension.}
+      summary: Drop an extension
+      description: >-
+        PostgreSQL only. DROP EXTENSION … RESTRICT, or with cascade everything that uses it (columns of its types,
+        functions). plpgsql is refused. Needs database:write and instance:write on the server.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cascade: {type: boolean}
+      responses:
+        "200":
+          description: Dropped
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/search-path:
     get:
       tags: [Structure]
