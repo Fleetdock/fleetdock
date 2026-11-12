@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **PostgreSQL schemas without tables are shown.** The data browser listed
+  only schemas holding a table or view; empty ones now show in the schema
+  picker and the tree, with **Create table here**. Create table opens in the
+  chosen schema instead of always `public`. API: `GET
+  /v1/databases/{id}/schemas` lists every schema with its owner, comment and
+  size. (#136)
+
 ## [0.11.0] - 2026-11-11
 
 Upgrading: no database migrations since 0.10.0, so `fleetdock update` (or
