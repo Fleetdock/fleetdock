@@ -122,3 +122,82 @@ func TestIntegrationPostgresSchemaAdmin(t *testing.T) {
 		t.Error("dependents of a missing schema")
 	}
 }
+
+// TestIntegrationPostgresMoveObject moves a table (with its serial sequence),
+// a view, a function and an enum to another schema, and refuses what it
+// cannot move.
+func TestIntegrationPostgresMoveObject(t *testing.T) {
+	ctx := context.Background()
+	root := itParams(t, "FLEETDOCK_IT_POSTGRES", "postgres")
+	pg := &Postgres{}
+	waitReady(t, pg, root)
+	const db = "fd_it_move"
+	mustQuery(t, pg, root, "postgres", "DROP DATABASE IF EXISTS "+db, true)
+	mustQuery(t, pg, root, "postgres", "CREATE DATABASE "+db, true)
+	t.Cleanup(func() { mustQuery(t, pg, root, "postgres", "DROP DATABASE IF EXISTS "+db, true) })
+	for _, stmt := range []string{
+		"CREATE SCHEMA archive",
+		"CREATE TYPE mood AS ENUM ('ok', 'bad')",
+		"CREATE TABLE orders (id serial PRIMARY KEY, how mood)",
+		"CREATE VIEW recent AS SELECT * FROM orders",
+		"CREATE FUNCTION total() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM public.orders'",
+		"CREATE FUNCTION twice(int) RETURNS int LANGUAGE sql AS 'SELECT $1 * 2'",
+		"CREATE FUNCTION twice(bigint) RETURNS bigint LANGUAGE sql AS 'SELECT $1 * 2'",
+		"CREATE TABLE archive.recent (id int)",
+	} {
+		mustQuery(t, pg, root, db, stmt, true)
+	}
+	// where lists the schemas holding a relation of that name.
+	where := func(rel string) string {
+		res := mustQuery(t, pg, root, db, `SELECT string_agg(n.nspname, ',' ORDER BY n.nspname) FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = '`+rel+`'`, false)
+		if len(res.Rows) == 0 || res.Rows[0][0] == nil {
+			return ""
+		}
+		return *res.Rows[0][0]
+	}
+
+	for _, obj := range []SchemaObject{
+		{Kind: "relation", Schema: "public", Name: "orders"},
+		{Kind: "function", Schema: "public", Name: "total"},
+		{Kind: "type", Schema: "public", Name: "mood"},
+	} {
+		if err := pg.MoveObject(ctx, root, db, obj, "archive"); err != nil {
+			t.Fatalf("move %+v: %v", obj, err)
+		}
+	}
+	if got := where("orders"); got != "archive" {
+		t.Errorf("orders in %q", got)
+	}
+	if got := where("orders_id_seq"); got != "archive" {
+		t.Errorf("the serial's sequence stayed behind: %q", got)
+	}
+	// The view in public still works: it points at the table, not its name.
+	mustQuery(t, pg, root, db, "SELECT * FROM public.recent", false)
+
+	// archive already has a relation called recent.
+	if err := pg.MoveObject(ctx, root, db, SchemaObject{Kind: "relation", Schema: "public", Name: "recent"}, "archive"); err == nil ||
+		!strings.Contains(err.Error(), "already has") {
+		t.Errorf("name clash: %v", err)
+	}
+	if err := pg.MoveObject(ctx, root, db, SchemaObject{Kind: "function", Schema: "public", Name: "twice"}, "archive"); err == nil ||
+		!strings.Contains(err.Error(), "there are 2") {
+		t.Errorf("overloaded function: %v", err)
+	}
+	// With its arguments, one overload moves.
+	if err := pg.MoveObject(ctx, root, db, SchemaObject{Kind: "function", Schema: "public", Name: "twice(bigint)"}, "archive"); err != nil {
+		t.Errorf("move twice(bigint): %v", err)
+	}
+	if n := mustQuery(t, pg, root, db, `SELECT count(*) FROM pg_proc WHERE proname = 'twice' AND pronamespace = 'archive'::regnamespace`, false); *n.Rows[0][0] != "1" {
+		t.Errorf("overloads in archive = %s", *n.Rows[0][0])
+	}
+	if err := pg.MoveObject(ctx, root, db, SchemaObject{Kind: "relation", Schema: "public", Name: "nope"}, "archive"); err == nil {
+		t.Error("moved a missing table")
+	}
+	if err := pg.MoveObject(ctx, root, db, SchemaObject{Kind: "relation", Schema: "archive", Name: "orders"}, "pg_catalog"); err == nil {
+		t.Error("moved into pg_catalog")
+	}
+	if err := pg.MoveObject(ctx, root, db, SchemaObject{Kind: "trigger", Schema: "archive", Name: "x"}, "public"); err == nil {
+		t.Error("moved a trigger")
+	}
+}

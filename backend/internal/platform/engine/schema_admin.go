@@ -21,6 +21,18 @@ type SchemaAdmin interface {
 	// DropSchema drops a schema: only when it is empty, or with cascade
 	// everything in it and everything that depends on it.
 	DropSchema(ctx context.Context, p ConnParams, database, name string, cascade bool) error
+	// MoveObject moves an object to another schema (ALTER … SET SCHEMA).
+	MoveObject(ctx context.Context, p ConnParams, database string, obj SchemaObject, target string) error
+}
+
+// SchemaObject names an object in a schema. Kind is "relation" (a table,
+// view, materialized view, foreign table or sequence: which one is read from
+// the catalog), "function", "procedure" or "type" (an enum, domain,
+// composite or range type).
+type SchemaObject struct {
+	Kind   string `json:"kind"`
+	Schema string `json:"schema"`
+	Name   string `json:"name"`
 }
 
 // SchemaChange is what AlterSchema changes.

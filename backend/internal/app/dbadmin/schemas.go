@@ -101,3 +101,11 @@ func (s *Service) DropSchema(ctx context.Context, databaseID, name string, casca
 		return sa.DropSchema(ctx, conn, db.Name, name, cascade)
 	})
 }
+
+// MoveObject moves a table, view, sequence, function, procedure or type to
+// another schema.
+func (s *Service) MoveObject(ctx context.Context, databaseID string, obj engine.SchemaObject, target string) error {
+	return s.withSchemaAdmin(ctx, databaseID, func(ctx context.Context, sa engine.SchemaAdmin, conn engine.ConnParams, db *databasedom.Database) error {
+		return sa.MoveObject(ctx, conn, db.Name, obj, target)
+	})
+}

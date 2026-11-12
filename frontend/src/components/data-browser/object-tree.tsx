@@ -28,6 +28,7 @@ import {
   Download,
   Eye,
   Folder,
+  FolderInput,
   FolderOpen,
   FolderPlus,
   MessageSquareText,
@@ -49,7 +50,7 @@ import {
 } from "lucide-react";
 
 import { useContextMenu } from "./context-menu";
-import { SchemaDialogs, type SchemaDialog } from "./schema-dialogs";
+import { SchemaDialogs, type MovableObject, type SchemaDialog } from "./schema-dialogs";
 import { SchemaPicker } from "./schema-picker";
 import { TreeRowsSkeleton } from "./skeleton";
 
@@ -145,6 +146,8 @@ export const ObjectTree = forwardRef<
     onCreateTable: (schema?: string) => void;
     /** Every PostgreSQL schema from the server, so schemas without tables show too. */
     schemaList?: SchemaSummary[];
+    /** An object moved to another schema: tabs naming it follow it. */
+    onObjectMoved?: (from: string, to: string, label: string) => void;
     onRefresh: () => void;
     refreshing: boolean;
   }
@@ -161,6 +164,7 @@ export const ObjectTree = forwardRef<
     onNewQuery,
     onCreateTable,
     schemaList,
+    onObjectMoved,
     onRefresh,
     refreshing,
   },
@@ -364,6 +368,29 @@ export const ObjectTree = forwardRef<
     </div>
   );
 
+  // What can move to another schema, and how the server names its kind.
+  const movable = (item: TreeItem): MovableObject | null => {
+    if (!pg || !canWrite) return null;
+    if (item.kind === "table" || item.kind === "view") {
+      const noun = item.kind === "table" ? "table" : item.sub === "materialized_view" ? "materialized view" : "view";
+      return { kind: "relation", schema: item.schema, name: item.label, noun };
+    }
+    if (item.sub === "sequence") return { kind: "relation", schema: item.schema, name: item.label, noun: "sequence" };
+    if (item.sub === "function" || item.sub === "procedure") return { kind: item.sub, schema: item.schema, name: item.label, noun: item.sub };
+    return null;
+  };
+  const moveItem = (item: TreeItem) => {
+    const obj = movable(item);
+    if (obj) setSchemaDialog({ kind: "move", object: obj, schemas: summary.map((s) => s.name) });
+  };
+  const onMoved = (obj: MovableObject, target: string) => {
+    const item = items.find((i) => i.schema === obj.schema && i.label === obj.name && (i.kind !== "object" || i.sub === obj.noun));
+    if (!item) return;
+    const to =
+      item.kind === "object" ? objectName({ kind: item.sub ?? "", schema: target, name: item.label }) : `${target}.${item.label}`;
+    onObjectMoved?.(item.name, to, item.label);
+  };
+
   function menuFor(item: TreeItem) {
     if (item.kind === "object") {
       return [
@@ -381,6 +408,12 @@ export const ObjectTree = forwardRef<
           label: "Copy name",
           icon: <Copy size={14} />,
           onSelect: () => copy(`${item.schema}.${item.label}`, `Copied ${item.label}`),
+        },
+        {
+          label: "Move to schema…",
+          icon: <FolderInput size={14} />,
+          hidden: !movable(item),
+          onSelect: () => moveItem(item),
         },
       ];
     }
@@ -402,6 +435,12 @@ export const ObjectTree = forwardRef<
         label: "Copy name",
         icon: <Copy size={14} />,
         onSelect: () => copy(item.name, `Copied ${item.name}`),
+      },
+      {
+        label: "Move to schema…",
+        icon: <FolderInput size={14} />,
+        hidden: !movable(item),
+        onSelect: () => moveItem(item),
       },
       {
         label: "Export CSV",
@@ -672,6 +711,7 @@ export const ObjectTree = forwardRef<
         onRenamed={onSchemaRenamed}
         onDropped={onSchemaDropped}
         onCreated={onSchemaCreated}
+        onMoved={onMoved}
       />
     </div>
   );

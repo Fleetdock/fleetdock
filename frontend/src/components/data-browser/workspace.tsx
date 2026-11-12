@@ -480,6 +480,9 @@ function Workspace({
       onNewQuery={newQuery}
       onCreateTable={(schema) => setCreating({ schema: pg ? schema ?? "public" : null })}
       schemaList={schemaList.data}
+      onObjectMoved={(from, to, label) => {
+        for (const t of ws.tabs) if (t.name === from) dispatch({ type: "rename", id: t.id, name: to, label });
+      }}
       onRefresh={refreshObjects}
       refreshing={tables.isFetching || objects.isFetching || schemaList.isFetching}
     />

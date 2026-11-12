@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 
 import { useToast } from "@/components/toast";
-import { Button, Checkbox, ErrorText, Field, Input, Modal, Spinner, Textarea } from "@/components/ui";
+import { Button, Checkbox, ErrorText, Field, Input, Modal, Select, Spinner, Textarea } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import type { SchemaSummary } from "@/lib/data-browser/schemas";
 import { useSchemaDependents, useSchemaMutations } from "@/lib/hooks";
@@ -11,10 +11,20 @@ import { useSchemaDependents, useSchemaMutations } from "@/lib/hooks";
 // Dialogs that create, change and drop PostgreSQL schemas, opened from the
 // data browser's tree.
 
+/** An object the Move dialog moves; name is as the tree shows it. */
+export type MovableObject = {
+  kind: "relation" | "function" | "procedure" | "type";
+  schema: string;
+  name: string;
+  /** What to call it in the dialog: "table", "view", "sequence", … */
+  noun: string;
+};
+
 export type SchemaDialog =
   | { kind: "create" }
   | { kind: "rename" | "owner" | "comment"; schema: SchemaSummary }
-  | { kind: "drop"; schema: SchemaSummary };
+  | { kind: "drop"; schema: SchemaSummary }
+  | { kind: "move"; object: MovableObject; schemas: string[] };
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
 
@@ -37,6 +47,7 @@ export function SchemaDialogs({
   onRenamed,
   onDropped,
   onCreated,
+  onMoved,
 }: {
   databaseId: string;
   dialog: SchemaDialog | null;
@@ -46,8 +57,21 @@ export function SchemaDialogs({
   onRenamed: (from: string, to: string) => void;
   onDropped: (name: string) => void;
   onCreated: (name: string) => void;
+  /** An object moved from one schema to another. */
+  onMoved?: (object: MovableObject, target: string) => void;
 }) {
   if (!dialog) return null;
+  if (dialog.kind === "move") {
+    return (
+      <MoveObject
+        databaseId={databaseId}
+        object={dialog.object}
+        schemas={dialog.schemas}
+        onClose={onClose}
+        onMoved={(target) => onMoved?.(dialog.object, target)}
+      />
+    );
+  }
   if (dialog.kind === "create") {
     return <CreateSchema databaseId={databaseId} owners={owners} onClose={onClose} onCreated={onCreated} />;
   }
@@ -304,6 +328,76 @@ function DropSchema({
           Drop schema
         </Button>
       </div>
+    </Modal>
+  );
+}
+
+function MoveObject({
+  databaseId,
+  object,
+  schemas,
+  onClose,
+  onMoved,
+}: {
+  databaseId: string;
+  object: MovableObject;
+  schemas: string[];
+  onClose: () => void;
+  onMoved: (target: string) => void;
+}) {
+  const { move } = useSchemaMutations(databaseId);
+  const { push } = useToast();
+  const others = schemas.filter((s) => s !== object.schema);
+  const [target, setTarget] = useState(others[0] ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!target) return;
+    setError(null);
+    try {
+      await move.mutateAsync({ kind: object.kind, schema: object.schema, name: object.name, target });
+      push("success", `Moved ${object.name} to ${target}`);
+      onMoved(target);
+      onClose();
+    } catch (err) {
+      setError(errorText(err, "Could not move it."));
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Move ${object.noun} ${object.schema}.${object.name}`}>
+      <form onSubmit={submit}>
+        {others.length === 0 ? (
+          <p className="text-sm">There is no other schema to move it to. Create one from a schema&apos;s menu first.</p>
+        ) : (
+          <Field
+            label="To schema"
+            hint={
+              object.kind === "relation"
+                ? "Indexes, constraints and the sequences of serial columns move with a table. Views and functions that use it keep working; SQL that names it with the old schema does not."
+                : "SQL that names it with the old schema has to be changed."
+            }
+          >
+            <Select value={target} onChange={(e) => setTarget(e.target.value)}>
+              {others.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        <ErrorText message={error ?? undefined} />
+        <div className="modal-actions">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" loading={move.isPending} disabled={!target}>
+            Move
+          </Button>
+        </div>
+      </form>
     </Modal>
   );
 }

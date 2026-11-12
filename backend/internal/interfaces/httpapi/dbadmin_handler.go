@@ -1001,6 +1001,26 @@ func (h *DBAdminHandler) DropSchema(w http.ResponseWriter, r *http.Request) {
 	})(w, r)
 }
 
+type moveObjectRequest struct {
+	engine.SchemaObject
+	Target string `json:"target"`
+}
+
+// MoveObject handles POST /v1/databases/{id}/objects/move.
+func (h *DBAdminHandler) MoveObject(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req moveObjectRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.MoveObject(r.Context(), r.PathValue("id"), req.SchemaObject, req.Target); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "moved"})
+		return nil
+	})(w, r)
+}
+
 // Diagram handles GET /v1/databases/{id}/diagram.
 func (h *DBAdminHandler) Diagram(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.interactive(r); err != nil {

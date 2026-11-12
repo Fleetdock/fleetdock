@@ -679,7 +679,12 @@ export function useSchemaMutations(databaseId: string) {
       api.post(`${base}/${encodeURIComponent(v.schema)}/drop`, { cascade: v.cascade }),
     onSuccess: invalidate,
   });
-  return { create, alter, drop };
+  const move = useMutation({
+    mutationFn: (v: { kind: "relation" | "function" | "procedure" | "type"; schema: string; name: string; target: string }) =>
+      api.post(`/v1/databases/${databaseId}/objects/move`, v),
+    onSuccess: invalidate,
+  });
+  return { create, alter, drop, move };
 }
 
 // useSchemaDependents loads what dropping a schema would remove.

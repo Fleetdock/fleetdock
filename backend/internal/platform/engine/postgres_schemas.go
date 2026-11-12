@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -209,5 +210,112 @@ func (pg *Postgres) DropSchema(ctx context.Context, p ConnParams, database, name
 			mode = " CASCADE"
 		}
 		return []string{"DROP SCHEMA " + quotePGIdent(name) + mode}, nil
+	})
+}
+
+// MoveObject moves a table, view, materialized view, foreign table, sequence,
+// function, procedure or type to another schema. A table takes its indexes,
+// constraints and the sequences of its serial columns along. PostgreSQL
+// refuses objects that belong to an extension or a sequence owned by a
+// column; those come back as errors.
+func (pg *Postgres) MoveObject(ctx context.Context, p ConnParams, database string, obj SchemaObject, target string) error {
+	if err := checkUserSchema(obj.Schema); err != nil {
+		return err
+	}
+	if err := checkUserSchema(target); err != nil {
+		return err
+	}
+	if err := existingName("object", obj.Name); err != nil {
+		return err
+	}
+	if obj.Schema == target {
+		return fmt.Errorf("%s is already in schema %s", obj.Name, target)
+	}
+	return pg.ddlTx(ctx, p, database, func(ctx context.Context, conn *pgx.Conn) ([]string, error) {
+		if ok, err := schemaExists(ctx, conn, target); err != nil {
+			return nil, err
+		} else if !ok {
+			return nil, fmt.Errorf("schema %s not found", target)
+		}
+		src := quotePGIdent(obj.Schema) + "." + quotePGIdent(obj.Name)
+		var stmt string
+		switch obj.Kind {
+		case "relation":
+			var relkind string
+			err := conn.QueryRow(ctx, `SELECT c.relkind::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r','p','f','v','m','S')`, obj.Schema, obj.Name).Scan(&relkind)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("%s.%s not found", obj.Schema, obj.Name)
+			} else if err != nil {
+				return nil, err
+			}
+			var taken bool
+			if err := conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = $1 AND c.relname = $2)`, target, obj.Name).Scan(&taken); err != nil {
+				return nil, err
+			}
+			if taken {
+				return nil, fmt.Errorf("schema %s already has a relation named %s", target, obj.Name)
+			}
+			word := map[string]string{"r": "TABLE", "p": "TABLE", "f": "FOREIGN TABLE", "v": "VIEW", "m": "MATERIALIZED VIEW", "S": "SEQUENCE"}[relkind]
+			stmt = "ALTER " + word + " " + src
+		case "function", "procedure":
+			// The name may carry its identity arguments, "twice(integer)", as the
+			// object list shows it, which tells overloads apart.
+			name, wantArgs, withArgs := strings.Cut(obj.Name, "(")
+			if withArgs {
+				wantArgs = strings.TrimSuffix(wantArgs, ")")
+			}
+			src = quotePGIdent(obj.Schema) + "." + quotePGIdent(name)
+			prokind := map[string]string{"function": "f", "procedure": "p"}[obj.Kind]
+			rows, err := conn.Query(ctx, `SELECT pg_get_function_identity_arguments(p.oid) FROM pg_proc p
+				JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.proname = $2 AND p.prokind = $3`,
+				obj.Schema, name, prokind)
+			if err != nil {
+				return nil, err
+			}
+			var args []string
+			for rows.Next() {
+				var a string
+				if err := rows.Scan(&a); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				if !withArgs || a == wantArgs {
+					args = append(args, a)
+				}
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
+				return nil, err
+			}
+			switch len(args) {
+			case 0:
+				return nil, fmt.Errorf("%s %s.%s not found", obj.Kind, obj.Schema, obj.Name)
+			case 1:
+			default:
+				return nil, fmt.Errorf("there are %d %ss named %s.%s; name one with its arguments, like %s(integer)", len(args), obj.Kind, obj.Schema, name, name)
+			}
+			// The identity arguments come from the catalog in SQL form.
+			stmt = "ALTER " + strings.ToUpper(obj.Kind) + " " + src + "(" + args[0] + ")"
+		case "type":
+			var typtype string
+			err := conn.QueryRow(ctx, `SELECT t.typtype::text FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+				WHERE n.nspname = $1 AND t.typname = $2 AND (t.typtype IN ('e','d','r','m')
+				  OR (t.typtype = 'c' AND (SELECT relkind FROM pg_class WHERE oid = t.typrelid) = 'c'))`, obj.Schema, obj.Name).Scan(&typtype)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("type %s.%s not found", obj.Schema, obj.Name)
+			} else if err != nil {
+				return nil, err
+			}
+			word := "TYPE"
+			if typtype == "d" {
+				word = "DOMAIN"
+			}
+			stmt = "ALTER " + word + " " + src
+		default:
+			return nil, fmt.Errorf("cannot move a %q; tables, views, sequences, functions, procedures and types can be moved", obj.Kind)
+		}
+		return []string{stmt + " SET SCHEMA " + quotePGIdent(target)}, nil
 	})
 }

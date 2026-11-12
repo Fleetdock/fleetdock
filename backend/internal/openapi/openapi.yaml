@@ -1305,6 +1305,36 @@ paths:
             application/json:
               schema: {type: object, properties: {status: {type: string}}}
         default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/objects/move:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Move an object to another schema
+      description: >-
+        PostgreSQL only. Moves a table, view, materialized view, foreign table, sequence, function, procedure or type with
+        ALTER … SET SCHEMA. A table takes its indexes, constraints and its serial columns' sequences along. Refused when the
+        target schema already has an object of that name, or a function name is overloaded and given without its arguments.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, schema, name, target]
+              properties:
+                kind: {type: string, enum: [relation, function, procedure, type], description: "relation covers tables, views, materialized views, foreign tables and sequences."}
+                schema: {type: string, description: The schema the object is in.}
+                name: {type: string, description: "A function or procedure may carry its identity arguments, as the object list shows it (\"twice(integer)\"), to pick one overload."}
+                target: {type: string, description: The schema to move it to.}
+      responses:
+        "200":
+          description: Moved
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/diagram:
     get:
       tags: [Structure]
