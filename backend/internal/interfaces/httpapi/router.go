@@ -260,6 +260,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("GET /v1/databases/{id}/objects", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Objects))
 	mux.HandleFunc("GET /v1/databases/{id}/columns", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Columns))
 	mux.HandleFunc("GET /v1/databases/{id}/diagram", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Diagram))
+	mux.HandleFunc("GET /v1/databases/{id}/schemas", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.DBAdmin.Schemas))
 	// Saved table views (data browser).
 	mux.HandleFunc("GET /v1/databases/{id}/table-views", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.TableViews.List))
 	mux.HandleFunc("POST /v1/databases/{id}/table-views", requireResourcePerm(rv, "database:read", authz.ResourceDatabase, "id", d.TableViews.Create))

@@ -419,18 +419,22 @@ components:
         name: {type: string, minLength: 1, maxLength: 100}
         state: {type: object}
         shared: {type: boolean}
+    SchemaSummary:
+      type: object
+      properties:
+        name: {type: string}
+        tables: {type: integer, description: Tables (and foreign tables) the data login can read.}
+        views: {type: integer, description: Views and materialized views the data login can read.}
+        owner: {type: string}
+        comment: {type: string}
+        bytes: {type: integer, format: int64, description: Size on disk of the schema's tables, indexes and materialized views.}
     Diagram:
       type: object
       properties:
         schemas:
           type: array
           description: Every PostgreSQL schema with its tables and views, whatever the filter. Absent on MySQL/MariaDB.
-          items:
-            type: object
-            properties:
-              name: {type: string}
-              tables: {type: integer}
-              views: {type: integer}
+          items: {$ref: "#/components/schemas/SchemaSummary"}
         truncated:
           type: boolean
           description: The database has more tables, columns or foreign keys than are listed (5000 tables, 100000 columns, 20000 foreign keys).
@@ -1166,6 +1170,29 @@ paths:
               schema: {$ref: "#/components/schemas/ColumnCatalog"}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/databases/{id}/schemas:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: List PostgreSQL schemas
+      description: >-
+        Every user schema of a PostgreSQL database, including schemas with no tables, with how many tables and views
+        the data login can read in each, the owner, the comment and the size on disk. Empty on MySQL/MariaDB, which have
+        no schemas.
+      responses:
+        "200":
+          description: Schemas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/SchemaSummary"}
+        default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/diagram:
     get:
       tags: [Structure]

@@ -9,10 +9,12 @@ import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells
 import {
   isSelected,
   loadSelection,
+  mergeSchemas,
   resolveSelection,
   saveSelection,
   summarizeSchemas,
   type SchemaSelection,
+  type SchemaSummary,
 } from "@/lib/data-browser/schemas";
 import { collapsedSchemas, saveCollapsedSchemas } from "@/lib/data-browser/storage";
 import { objectName, type OpenRequest } from "@/lib/data-browser/tabs";
@@ -133,7 +135,10 @@ export const ObjectTree = forwardRef<
     canWrite: boolean;
     onOpen: (req: OpenRequest) => void;
     onNewQuery: (sql?: string) => void;
-    onCreateTable: () => void;
+    /** Opens the create-table dialog; schema is the PostgreSQL schema to create it in. */
+    onCreateTable: (schema?: string) => void;
+    /** Every PostgreSQL schema from the server, so schemas without tables show too. */
+    schemaList?: SchemaSummary[];
     onRefresh: () => void;
     refreshing: boolean;
   }
@@ -149,6 +154,7 @@ export const ObjectTree = forwardRef<
     onOpen,
     onNewQuery,
     onCreateTable,
+    schemaList,
     onRefresh,
     refreshing,
   },
@@ -178,7 +184,13 @@ export const ObjectTree = forwardRef<
 
   // PostgreSQL schemas to show: one remembered choice per database (shared
   // with the ER diagram). Everything else below works on the chosen ones.
-  const summary = useMemo(() => summarizeSchemas(items), [items]);
+  const pg = dialect === "postgres";
+  // Schemas from the table list, plus the server's list so that schemas
+  // without tables or views show as well.
+  const summary = useMemo(
+    () => (pg ? mergeSchemas(summarizeSchemas(items), schemaList) : summarizeSchemas(items)),
+    [items, schemaList, pg],
+  );
   const [storedSel, setStoredSel] = useState(() => loadSelection(databaseId));
   const [selFor, setSelFor] = useState(databaseId);
   if (selFor !== databaseId) {
@@ -207,8 +219,22 @@ export const ObjectTree = forwardRef<
   }
 
   const relations = useMemo(() => scoped.filter((i) => i.kind !== "object"), [scoped]);
-  const schemas = useMemo(() => [...new Set(scoped.map((i) => i.schema))], [scoped]);
+  // Schema groups to draw: on PostgreSQL every chosen schema, empty or not;
+  // elsewhere whatever the items carry.
+  const schemas = useMemo(
+    () =>
+      pg && summary.length > 0
+        ? summary.map((s) => s.name).filter((n) => !pickSchemas || isSelected(selection, n))
+        : [...new Set(scoped.map((i) => i.schema))],
+    // selection is derived from storedSel and summary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pg, summary, pickSchemas, storedSel, scoped],
+  );
   const grouped = schemas.length > 1;
+  const schemaInfo = (name: string) => summary.find((s) => s.name === name);
+  // Where the toolbar's Create table puts a new table: the one schema shown,
+  // else public when it is shown, else the first shown.
+  const createSchema = pg ? (schemas.includes("public") && schemas.length > 1 ? "public" : schemas[0] ?? "public") : undefined;
   const isMatch = (i: TreeItem) => !q || i.label.toLowerCase().includes(q) || `${i.schema}.${i.label}`.toLowerCase().includes(q);
   const matches = relations.filter(isMatch);
   const otherMatches =
@@ -256,6 +282,51 @@ export const ObjectTree = forwardRef<
       setCursor(-1);
     }
   }
+
+  function schemaMenu(schema: string) {
+    return [
+      {
+        label: "Create table here",
+        icon: <Plus size={14} />,
+        hidden: !canWrite,
+        onSelect: () => onCreateTable(schema),
+      },
+      {
+        label: "Copy name",
+        icon: <Copy size={14} />,
+        onSelect: () => copy(schema, `Copied ${schema}`),
+      },
+    ];
+  }
+
+  function schemaTitle(name: string) {
+    const info = schemaInfo(name);
+    return [
+      name,
+      info?.owner ? `owner ${info.owner}` : null,
+      info?.bytes ? formatBytes(info.bytes) : null,
+      info?.comment,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  const emptySchemaNote = (schema: string, nested: boolean) => (
+    <div key={`empty:${schema}`} className={`dbx-tree-note${nested ? " nested" : ""}`}>
+      {nested ? "No tables or views." : `Schema “${schema}” has no tables or views.`}
+      {canWrite ? (
+        <Button
+          size="sm"
+          variant={nested ? "ghost" : undefined}
+          className={nested ? "-ml-2" : "mt-2"}
+          icon={<Plus size={14} aria-hidden />}
+          onClick={() => onCreateTable(schema)}
+        >
+          Create table here
+        </Button>
+      ) : null}
+    </div>
+  );
 
   function menuFor(item: TreeItem) {
     if (item.kind === "object") {
@@ -370,22 +441,27 @@ export const ObjectTree = forwardRef<
         </Button>
       </div>
     );
-  } else if (relations.length === 0 && objectCount === 0 && !q) {
-    body = (
-      <div className="dbx-tree-note">
-        {items.length === 0 ? "This database has no tables yet." : "No tables in the chosen schemas."}
-      </div>
-    );
-  } else if (matches.length === 0 && objectGroups.length === 0 && otherMatches.length === 0) {
+  } else if (relations.length === 0 && objectCount === 0 && !q && !grouped) {
+    body =
+      pg && schemas.length === 1 ? (
+        emptySchemaNote(schemas[0], false)
+      ) : (
+        <div className="dbx-tree-note">
+          {items.length === 0 ? "This database has no tables yet." : "No tables in the chosen schemas."}
+        </div>
+      );
+  } else if (q && matches.length === 0 && objectGroups.length === 0 && otherMatches.length === 0) {
     body = <div className="dbx-tree-note">Nothing matches “{query}”.</div>;
-  } else if (matches.length === 0) {
+  } else if (matches.length === 0 && (q || !grouped)) {
     body = null;
   } else if (!grouped) {
     body = matches.map(renderItem);
   } else {
     body = schemas.map((s) => {
       const list = matches.filter((i) => i.schema === s);
-      if (list.length === 0) return null;
+      // While searching, schemas without a match are left out.
+      if (list.length === 0 && q) return null;
+      const empty = !relations.some((i) => i.schema === s);
       const isOpen = Boolean(q) || !collapsed.has(s);
       return (
         <div key={s}>
@@ -393,6 +469,8 @@ export const ObjectTree = forwardRef<
             type="button"
             className="dbx-tree-schema"
             aria-expanded={isOpen}
+            title={schemaTitle(s)}
+            onContextMenu={(e) => ctx.open(e, schemaMenu(s))}
             onClick={() =>
               setCollapsed((prev) => {
                 const next = new Set(prev);
@@ -408,9 +486,9 @@ export const ObjectTree = forwardRef<
             <span className="truncate flex-1">
               {s}
             </span>
-            <span className="dbx-tree-count">{list.length}</span>
+            <span className="dbx-tree-count">{empty ? "empty" : list.length}</span>
           </button>
-          {isOpen ? list.map(renderItem) : null}
+          {isOpen ? (empty ? emptySchemaNote(s, true) : list.map(renderItem)) : null}
         </div>
       );
     });
@@ -487,7 +565,10 @@ export const ObjectTree = forwardRef<
             <SquareTerminal size={14} aria-hidden />
           </IconButton>
           {canWrite ? (
-            <IconButton label="Create table" onClick={onCreateTable}>
+            <IconButton
+              label={createSchema ? `Create table in ${createSchema}` : "Create table"}
+              onClick={() => onCreateTable(createSchema)}
+            >
               <Plus size={15} aria-hidden />
             </IconButton>
           ) : null}

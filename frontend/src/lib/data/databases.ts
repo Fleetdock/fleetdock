@@ -43,6 +43,7 @@ import type {
   TableInfo,
   TableSchema,
   RunQueryInput,
+  SchemaInfo,
 } from "../types";
 import type { Mutation, MutationResult } from "../data-browser/pending";
 import { writeStatements } from "../sql";
@@ -258,6 +259,8 @@ export function useRunQuery(databaseId: string) {
       if (writeStatements(input.sql).length > 0) {
         qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
         qc.invalidateQueries({ queryKey: ["diagram", databaseId] });
+    qc.invalidateQueries({ queryKey: ["schemas", databaseId] });
+        qc.invalidateQueries({ queryKey: ["schemas", databaseId] });
       }
     },
   });
@@ -638,6 +641,18 @@ export function useDiagram(databaseId: string, schemas?: string[], enabled = tru
   });
 }
 
+// useSchemas lists a PostgreSQL database's schemas, including empty ones
+// (GET /v1/databases/{id}/schemas). Off for other engines.
+export function useSchemas(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["schemas", databaseId],
+    queryFn: () => api.get<{ items: SchemaInfo[] }>(`/v1/databases/${databaseId}/schemas`).then((r) => r.items),
+    enabled: Boolean(databaseId) && enabled,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
 export function useDBObjects(databaseId: string) {
   return useQuery({
     queryKey: ["db-objects", databaseId],
@@ -661,6 +676,7 @@ export function useStructureMutations(databaseId: string, table = "") {
     qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
     qc.invalidateQueries({ queryKey: ["index-insights", databaseId] });
     qc.invalidateQueries({ queryKey: ["diagram", databaseId] });
+    qc.invalidateQueries({ queryKey: ["schemas", databaseId] });
   };
   const createTable = useMutation({ mutationFn: (spec: TableSpec) => api.post(base, spec), onSuccess: invalidate });
   const alter = useMutation({ mutationFn: (ops: AlterOp[]) => api.patch(t, { ops }), onSuccess: invalidate });

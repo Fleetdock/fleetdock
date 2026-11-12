@@ -869,10 +869,22 @@ export interface DiagramTable {
   ghost?: boolean;
 }
 
+/** SchemaInfo is one PostgreSQL schema (GET /v1/databases/{id}/schemas). */
+export interface SchemaInfo {
+  name: string;
+  /** Tables and views the data login can read. */
+  tables: number;
+  views: number;
+  owner?: string;
+  comment?: string;
+  /** Size on disk of the schema's tables, indexes and materialized views. */
+  bytes?: number;
+}
+
 /** Diagram is what the database page's Diagram tab draws. */
 export interface Diagram {
   /** Every PostgreSQL schema with its counts, whatever the filter; absent on MySQL/MariaDB. */
-  schemas?: { name: string; tables: number; views: number }[];
+  schemas?: SchemaInfo[];
   tables: DiagramTable[];
   /** Foreign keys between the tables; table and ref_table are "schema.table" on PostgreSQL. */
   relations: ForeignKey[];

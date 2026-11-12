@@ -32,7 +32,7 @@ import {
 } from "@/lib/data-browser/tabs";
 import { DATA_BROWSER_SHORTCUTS } from "@/lib/data-browser/shortcuts";
 import { isFocusShortcut, useBrowserFullscreen, useDataBrowserFocus, useFullscreenSupported } from "@/lib/focus-mode";
-import { useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
+import { useCanOn, useDatabase, useDBObjects, useSchemas, useTables } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
 import { Eye, Maximize, Maximize2, Minimize, Minimize2, PanelLeftClose, PanelLeftOpen, SquareTerminal, Table2 } from "lucide-react";
 
@@ -337,6 +337,7 @@ function Workspace({
   // ---- objects ----
   const tables = useTables(db.id);
   const objects = useDBObjects(db.id);
+  const schemaList = useSchemas(db.id, pg);
   const items = useMemo(
     () => buildItems(tables.data?.items ?? [], objects.data ?? [], dialect),
     [tables.data, objects.data, dialect],
@@ -456,10 +457,12 @@ function Workspace({
     return () => window.removeEventListener("keydown", onKey);
   }, [close, newQuery]);
 
-  const [creating, setCreating] = useState(false);
+  // The create-table dialog, with the PostgreSQL schema to create the table in.
+  const [creating, setCreating] = useState<{ schema: string | null } | null>(null);
   const refreshObjects = () => {
     void qc.invalidateQueries({ queryKey: ["tables", db.id] });
     void qc.invalidateQueries({ queryKey: ["db-objects", db.id] });
+    void qc.invalidateQueries({ queryKey: ["schemas", db.id] });
   };
   const listError = tables.error ?? objects.error;
 
@@ -475,9 +478,10 @@ function Workspace({
       canWrite={canWrite && !db.system}
       onOpen={open}
       onNewQuery={newQuery}
-      onCreateTable={() => setCreating(true)}
+      onCreateTable={(schema) => setCreating({ schema: pg ? schema ?? "public" : null })}
+      schemaList={schemaList.data}
       onRefresh={refreshObjects}
-      refreshing={tables.isFetching || objects.isFetching}
+      refreshing={tables.isFetching || objects.isFetching || schemaList.isFetching}
     />
   );
 
@@ -529,13 +533,14 @@ function Workspace({
       {creating ? (
         <CreateTableModal
           databaseId={db.id}
-          schema={pg ? "public" : null}
+          schema={creating.schema}
           dialect={dialect}
-          onClose={() => setCreating(false)}
+          onClose={() => setCreating(null)}
           onCreated={(name) => {
-            setCreating(false);
+            const schema = creating.schema ?? "public";
+            setCreating(null);
             refreshObjects();
-            const full = pg && !name.includes(".") ? `public.${name}` : name;
+            const full = pg && !name.includes(".") ? `${schema}.${name}` : name;
             open({ kind: "table", name: full, label: splitName(full, pg).label });
           }}
         />

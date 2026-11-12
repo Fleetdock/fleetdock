@@ -36,6 +36,12 @@ type SchemaCount struct {
 	Name   string `json:"name"`
 	Tables int    `json:"tables"`
 	Views  int    `json:"views"`
+	// Owner, Comment and Bytes describe the schema itself. Bytes is the
+	// on-disk size of its tables, indexes and materialized views, whether
+	// or not the login may read them.
+	Owner   string `json:"owner,omitempty"`
+	Comment string `json:"comment,omitempty"`
+	Bytes   int64  `json:"bytes,omitempty"`
 }
 
 // Catalog size limits: a database beyond them is reported truncated rather

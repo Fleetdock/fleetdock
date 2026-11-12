@@ -259,6 +259,11 @@
     align-items: flex-start;
     gap: 0.3rem;
   }
+  /* The note under an empty schema's header, indented like its tables would be. */
+  .dbx-tree-note.nested {
+    padding: 0.3rem 0.85rem 0.5rem 2.1rem;
+    font-size: 0.8rem;
+  }
   .dbx-chevron {
     transition: transform 0.12s ease;
     flex-shrink: 0;

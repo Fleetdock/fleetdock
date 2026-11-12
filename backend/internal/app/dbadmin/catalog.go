@@ -176,6 +176,29 @@ func (s *Service) Diagram(ctx context.Context, databaseID string, schemas []stri
 	return out, err
 }
 
+// Schemas lists the database's PostgreSQL schemas with their table and view
+// counts, owner, comment and size, including schemas with nothing in them.
+// MySQL and MariaDB have no schemas and get an empty list.
+func (s *Service) Schemas(ctx context.Context, databaseID string) ([]engine.SchemaCount, error) {
+	out := []engine.SchemaCount{}
+	err := s.scoped(ctx, databaseID, dbaccessdom.ModeRead, opTimeout,
+		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
+			cat, err := catalog(admin)
+			if err != nil {
+				return err
+			}
+			counts, err := cat.SchemaCounts(ctx, conn, db.Name)
+			if err != nil {
+				return err
+			}
+			if counts != nil {
+				out = counts
+			}
+			return nil
+		})
+	return out, err
+}
+
 // buildDiagram joins the column catalog with row estimates.
 func buildDiagram(cols *engine.ColumnCatalog, fks []engine.ForeignKey, tables []engine.TableInfo) *Diagram {
 	rows := make(map[string]int64, len(tables))
