@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Table statistics…** lists sizes, dead rows and the last vacuum and
   analyze. Partitioned tables now appear, with their partitions under them.
   (#141)
+- **Back up, restore and export one PostgreSQL schema.** The backup dialog
+  can back up or download a single schema, also from a schema's menu in the
+  data browser. A schema backup restores into any PostgreSQL database, under
+  its own name (optionally replacing it) or a new one. API: `schema` on `POST
+  /v1/backups`, `POST /v1/backups/{id}/restore-schema`, `?schema=` on the
+  SQL download. (#142)
 
 ### Fixed
 
