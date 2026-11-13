@@ -86,3 +86,27 @@ func checkUserSchema(name string) error {
 	}
 	return nil
 }
+
+// CheckNewSchemaName validates the name of a schema Fleetdock is about to
+// create: a plain identifier that is not reserved for PostgreSQL.
+func CheckNewSchemaName(name string) error {
+	if err := validName("schema", name); err != nil {
+		return err
+	}
+	if systemSchema(name) {
+		return fmt.Errorf("%s is reserved for PostgreSQL's own schemas", name)
+	}
+	return nil
+}
+
+// CheckSchemaName validates the name of an existing user schema, for work
+// on it as a whole (copies, backups, exports).
+func CheckSchemaName(name string) error {
+	if err := existingName("schema", name); err != nil {
+		return err
+	}
+	if systemSchema(name) {
+		return fmt.Errorf("%s is one of PostgreSQL's own schemas", name)
+	}
+	return nil
+}

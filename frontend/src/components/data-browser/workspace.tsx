@@ -32,6 +32,7 @@ import {
 } from "@/lib/data-browser/tabs";
 import { DATA_BROWSER_SHORTCUTS } from "@/lib/data-browser/shortcuts";
 import { isFocusShortcut, useBrowserFullscreen, useDataBrowserFocus, useFullscreenSupported } from "@/lib/focus-mode";
+import { BackupDatabaseModal } from "@/components/database/backup-database-modal";
 import { useCanOn, useDatabase, useDBObjects, useSchemas, useTables } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
 import { Eye, Maximize, Maximize2, Minimize, Minimize2, PanelLeftClose, PanelLeftOpen, SquareTerminal, Table2 } from "lucide-react";
@@ -297,6 +298,8 @@ function Workspace({
   const canOn = useCanOn();
   const canWrite = canOn("database:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
   const canBackup = canOn("backup:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
+  // The schema being backed up or exported from the tree.
+  const [backupSchema, setBackupSchema] = useState<string | null>(null);
   const dialect: Dialect = dialectOf(db.instance?.engine);
   const pg = dialect === "postgres";
 
@@ -483,6 +486,7 @@ function Workspace({
       onObjectMoved={(from, to, label) => {
         for (const t of ws.tabs) if (t.name === from) dispatch({ type: "rename", id: t.id, name: to, label });
       }}
+      onBackupSchema={canBackup && !db.system ? setBackupSchema : undefined}
       onRefresh={refreshObjects}
       refreshing={tables.isFetching || objects.isFetching || schemaList.isFetching}
     />
@@ -547,6 +551,9 @@ function Workspace({
             open({ kind: "table", name: full, label: splitName(full, pg).label });
           }}
         />
+      ) : null}
+      {backupSchema !== null ? (
+        <BackupDatabaseModal database={db} schema={backupSchema} onClose={() => setBackupSchema(null)} />
       ) : null}
     </>
   );
