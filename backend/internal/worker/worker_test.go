@@ -29,6 +29,43 @@ func TestNewWorkerIntervals(t *testing.T) {
 	}
 }
 
+type probeCounter struct{ calls int }
+
+func (p *probeCounter) ProbeAll(context.Context) (int, error) {
+	p.calls++
+	return 1, nil
+}
+
+func TestHealthPassUsesIndependentLock(t *testing.T) {
+	probe := &probeCounter{}
+	var healthLockCalls, housekeepingLockCalls int
+	w := New(Deps{
+		Probe: probe,
+		HealthLock: func(context.Context) (func(), bool, error) {
+			healthLockCalls++
+			return func() {}, true, nil
+		},
+		HousekeepingLock: func(context.Context) (func(), bool, error) {
+			housekeepingLockCalls++
+			return func() {}, true, nil
+		},
+	})
+
+	w.healthPass(context.Background())
+	if healthLockCalls != 1 || housekeepingLockCalls != 0 || probe.calls != 1 {
+		t.Fatalf("health lock calls = %d, housekeeping lock calls = %d, probes = %d",
+			healthLockCalls, housekeepingLockCalls, probe.calls)
+	}
+
+	w.deps.HealthLock = func(context.Context) (func(), bool, error) {
+		return nil, false, nil
+	}
+	w.healthPass(context.Background())
+	if probe.calls != 1 {
+		t.Fatalf("probe ran while another replica held the health lock: %d calls", probe.calls)
+	}
+}
+
 // Housekeeping runs once across replicas: only the one holding the lock
 // does the work, it always releases the lock, and a panic in a pass is
 // contained instead of taking the API process down.

@@ -242,6 +242,7 @@ func parseKeyList(raw string) map[string]string {
 
 // Load reads configuration from the environment and validates it.
 func Load() (Config, error) {
+	// Keep these defaults aligned with worker.New's interval defaults.
 	jobPollInterval, err := getenvDurationAtLeast("FLEETDOCK_JOB_POLL_INTERVAL", 3*time.Second, time.Second)
 	if err != nil {
 		return Config{}, err

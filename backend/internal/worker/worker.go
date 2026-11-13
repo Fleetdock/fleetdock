@@ -22,7 +22,6 @@ import (
 	endpointapp "github.com/Fleetdock/fleetdock/backend/internal/app/endpoint"
 	notificationapp "github.com/Fleetdock/fleetdock/backend/internal/app/notification"
 	operationapp "github.com/Fleetdock/fleetdock/backend/internal/app/operation"
-	probeapp "github.com/Fleetdock/fleetdock/backend/internal/app/probe"
 	scheduleapp "github.com/Fleetdock/fleetdock/backend/internal/app/schedule"
 	schemahistoryapp "github.com/Fleetdock/fleetdock/backend/internal/app/schemahistory"
 	jobdom "github.com/Fleetdock/fleetdock/backend/internal/domain/job"
@@ -48,16 +47,20 @@ type Deps struct {
 	Notifications       *notificationapp.Service
 	Endpoints           *endpointapp.Service
 	Credentials         *dbcredentialapp.Service
-	Probe               *probeapp.Service
+	Probe interface {
+		ProbeAll(context.Context) (int, error)
+	}
 	JobPollInterval     time.Duration
 	AlertInterval       time.Duration
 	HealthCheckInterval time.Duration
 	HeartbeatTimeout    time.Duration
 	MetricsRetention    time.Duration
 	// HousekeepingLock, when set, is taken (without waiting) before each
-	// housekeeping, alert or health pass so only one replica performs it.
+	// housekeeping or alert pass so only one replica performs it.
 	// ok=false means another replica holds it this round.
 	HousekeepingLock func(ctx context.Context) (release func(), ok bool, err error)
+	// HealthLock keeps slow probes from delaying housekeeping or alerts.
+	HealthLock func(ctx context.Context) (release func(), ok bool, err error)
 	// RowChanges is the data-browser change journal, pruned after
 	// RowChangeRetention.
 	RowChanges         rowchangedom.Repository
@@ -113,13 +116,14 @@ func (w *Worker) Run(ctx context.Context) {
 	defer minute.Stop()
 	alerts := time.NewTicker(w.deps.AlertInterval)
 	defer alerts.Stop()
-	health := time.NewTicker(w.deps.HealthCheckInterval)
-	defer health.Stop()
 
 	slog.Info("operations worker started")
 	metrics.WorkerTick()
 	if (w.deps.Catalog != nil && w.deps.Catalog.Enabled()) || (w.deps.SchemaHistory != nil && w.deps.SchemaHistory.Enabled()) {
 		go w.catalogLoop(ctx)
+	}
+	if w.deps.Probe != nil {
+		go w.healthLoop(ctx)
 	}
 	for {
 		select {
@@ -132,8 +136,6 @@ func (w *Worker) Run(ctx context.Context) {
 			}
 		case <-alerts.C:
 			w.locked(ctx, w.evaluateAndDispatch)
-		case <-health.C:
-			w.locked(ctx, w.probeHealth)
 		case <-minute.C:
 			w.locked(ctx, w.housekeeping)
 		}
@@ -150,13 +152,13 @@ func (w *Worker) locked(ctx context.Context, fn func(context.Context)) {
 func (w *Worker) withLock(ctx context.Context, lock func(context.Context) (func(), bool, error), fn func(context.Context)) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("worker housekeeping panicked", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+			slog.Error("worker pass panicked", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 		}
 	}()
 	if lock != nil {
 		release, ok, err := lock(ctx)
 		if err != nil {
-			slog.Error("housekeeping lock", "error", err.Error())
+			slog.Error("worker pass lock", "error", err.Error())
 			return
 		}
 		if !ok {
@@ -189,6 +191,23 @@ func (w *Worker) catalogLoop(ctx context.Context) {
 			})
 		}
 	}
+}
+
+func (w *Worker) healthLoop(ctx context.Context) {
+	tick := time.NewTicker(w.deps.HealthCheckInterval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			w.healthPass(ctx)
+		}
+	}
+}
+
+func (w *Worker) healthPass(ctx context.Context) {
+	w.withLock(ctx, w.deps.HealthLock, w.probeHealth)
 }
 
 // evaluateAndDispatch runs alert evaluation then delivers queued notifications.

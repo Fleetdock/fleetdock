@@ -271,6 +271,7 @@ func run() error {
 			HeartbeatTimeout:    cfg.HeartbeatTimeout,
 			MetricsRetention:    cfg.MetricsRetention,
 			HousekeepingLock:    postgres.HousekeepingLock(pool),
+			HealthLock:          postgres.HealthLock(pool),
 			Probe:               probeSvc,
 			Catalog:             catalogSvc,
 			SchemaHistory:       schemaSvc,
