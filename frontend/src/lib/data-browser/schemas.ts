@@ -5,7 +5,14 @@
 import { loadJSON, save } from "./storage";
 
 export type SchemaSelection = { all: true } | { all: false; schemas: string[] };
-export type SchemaSummary = { name: string; tables: number; views: number };
+export type SchemaSummary = {
+  name: string;
+  tables: number;
+  views: number;
+  owner?: string;
+  comment?: string;
+  bytes?: number;
+};
 
 const key = (databaseId: string) => `schemas:${databaseId}`;
 
@@ -34,6 +41,29 @@ export function summarizeSchemas(items: { schema: string; kind: string }[]): Sch
     if (!s) m.set(i.schema, (s = { name: i.schema, tables: 0, views: 0 }));
     if (i.kind === "table") s.tables++;
     else if (i.kind === "view") s.views++;
+  }
+  return [...m.values()].sort((a, b) =>
+    a.name === "public" ? -1 : b.name === "public" ? 1 : a.name.localeCompare(b.name),
+  );
+}
+
+/**
+ * mergeSchemas adds the schemas the server lists to a summary built from the
+ * table list, so schemas without tables or views show up too. Counts from the
+ * table list win; owner, comment and size come from the server.
+ */
+export function mergeSchemas(summary: SchemaSummary[], server: SchemaSummary[] | undefined): SchemaSummary[] {
+  if (!server?.length) return summary;
+  const m = new Map(summary.map((s) => [s.name, { ...s }]));
+  for (const s of server) {
+    const have = m.get(s.name);
+    if (have) {
+      have.owner = s.owner;
+      have.comment = s.comment;
+      have.bytes = s.bytes;
+    } else {
+      m.set(s.name, { ...s });
+    }
   }
   return [...m.values()].sort((a, b) =>
     a.name === "public" ? -1 : b.name === "public" ? 1 : a.name.localeCompare(b.name),

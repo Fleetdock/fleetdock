@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Manage PostgreSQL schemas.** From a schema's menu in the data browser:
+  New schema, Rename, Change owner, Comment and Drop schema. Dropping shows
+  what the schema holds and what depends on it, and needs CASCADE and the
+  schema's name typed when it is not empty. API: `POST
+  /v1/databases/{id}/schemas`, `PATCH …/schemas/{schema}`, `GET
+  …/schemas/{schema}/dependents`, `POST …/schemas/{schema}/drop`. (#137)
+- **Move PostgreSQL objects between schemas.** Tables, views, sequences,
+  functions and procedures have **Move to schema…** in the data browser's
+  tree; a table takes its indexes, constraints and serial sequences along.
+  API: `POST /v1/databases/{id}/objects/move`. (#138)
+- **Copy a PostgreSQL schema.** **Copy to new schema…** in a schema's menu
+  copies it, with its rows or only its structure, to a new schema in the
+  same database or another one on the same server. Views, foreign keys,
+  defaults and sequences in the copy point at the copy; function bodies are
+  copied unchanged. Runs as an operation (`copy_schema`); managed servers
+  need an updated agent. API: `POST …/schemas/{schema}/copy`. (#139)
+- **PostgreSQL schema privileges, default privileges and search_path.** The
+  database's Access tab shows, per schema, which roles have USAGE and
+  CREATE and what new objects are granted, and changes both (this also
+  needs write access to the server). The search_path of the database and of
+  roles can be set there, and the SQL console has a schema picker for its
+  session. (#140)
+- **PostgreSQL housekeeping in the data browser.** Sequences show their next
+  value and can be set; materialized views can be refreshed (also
+  concurrently); tables can be vacuumed, analyzed and reindexed; a schema's
+  **Table statistics…** lists sizes, dead rows and the last vacuum and
+  analyze. Partitioned tables now appear, with their partitions under them.
+  (#141)
+- **Back up, restore and export one PostgreSQL schema.** The backup dialog
+  can back up or download a single schema, also from a schema's menu in the
+  data browser. A schema backup restores into any PostgreSQL database, under
+  its own name (optionally replacing it) or a new one. API: `schema` on `POST
+  /v1/backups`, `POST /v1/backups/{id}/restore-schema`, `?schema=` on the
+  SQL download. (#142)
+- **PostgreSQL extensions.** A new Extensions tab on the database page lists
+  installed extensions and those the server offers, and installs, updates and
+  removes them (this also needs write access to the server). A refusal says
+  whether a superuser is needed. API: `GET/POST
+  /v1/databases/{id}/extensions`, `POST …/extensions/{name}/update`, `POST
+  …/extensions/{name}/drop`. (#143)
+
+### Fixed
+
+- **Access tab on PostgreSQL 16 and older.** The database's grants list
+  failed with "information_schema.schema_privileges does not exist"; it now
+  reads the schema privileges directly. (#140)
+- **PostgreSQL schemas without tables are shown.** The data browser listed
+  only schemas holding a table or view; empty ones now show in the schema
+  picker and the tree, with **Create table here**. Create table opens in the
+  chosen schema instead of always `public`. API: `GET
+  /v1/databases/{id}/schemas` lists every schema with its owner, comment and
+  size. (#136)
+
 ## [0.11.0] - 2026-11-11
 
 Upgrading: no database migrations since 0.10.0, so `fleetdock update` (or

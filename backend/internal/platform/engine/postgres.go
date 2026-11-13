@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -60,6 +61,13 @@ func (pg *Postgres) connect(ctx context.Context, p ConnParams, database string) 
 		ms := strconv.FormatInt(t.Milliseconds(), 10)
 		cfg.RuntimeParams["statement_timeout"] = ms
 		cfg.RuntimeParams["idle_in_transaction_session_timeout"] = ms
+	}
+	if len(p.SearchPath) > 0 {
+		list, err := searchPathList(p.SearchPath)
+		if err != nil {
+			return nil, err
+		}
+		cfg.RuntimeParams["search_path"] = list
 	}
 	conn, err := pgx.ConnectConfig(cctx, cfg)
 	if err != nil || !p.AssumeOwner {
@@ -208,6 +216,53 @@ func (pg *Postgres) RestoreArgs(p ConnParams, database string) ([]string, []stri
 		"--single-transaction",
 		"--dbname=" + database,
 	}, []string{"PGPASSWORD=" + p.Password}
+}
+
+// PartialDump selects part of a PostgreSQL database for PartialDumpArgs.
+type PartialDump struct {
+	// Schema limits the dump to one schema; empty dumps every schema.
+	Schema string
+	// SkipDataOf names schemas whose tables are dumped without their rows.
+	SkipDataOf []string
+	// SchemaOnly leaves out every table's rows.
+	SchemaOnly bool
+	// Clean emits DROP … IF EXISTS before each object, so the dump replaces
+	// what it holds when restored over it (as whole-database backups do).
+	Clean bool
+}
+
+// PartialDumpArgs builds a pg_dump argv for part of a database. Like DumpArgs
+// it leaves out owners and privileges; it emits DROP statements only with
+// Clean.
+func (pg *Postgres) PartialDumpArgs(p ConnParams, database string, part PartialDump) ([]string, []string, []string) {
+	args := []string{
+		"--host=" + p.Host,
+		"--port=" + strconv.Itoa(p.Port),
+		"--username=" + p.User,
+		"--no-password",
+		"--no-owner",
+		"--no-privileges",
+	}
+	if part.Clean {
+		args = append(args, "--clean", "--if-exists")
+	}
+	if part.Schema != "" {
+		args = append(args, "--schema="+dumpPattern(part.Schema))
+	}
+	if part.SchemaOnly {
+		args = append(args, "--schema-only")
+	} else {
+		for _, s := range part.SkipDataOf {
+			args = append(args, "--exclude-table-data="+dumpPattern(s)+".*")
+		}
+	}
+	return []string{"pg_dump"}, append(args, database), []string{"PGPASSWORD=" + p.Password}
+}
+
+// dumpPattern quotes a name for a pg_dump pattern, so it matches exactly that
+// name: inside double quotes wildcards and case are taken literally.
+func dumpPattern(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 // quoteIdent double-quotes a validated identifier for use in DDL.
