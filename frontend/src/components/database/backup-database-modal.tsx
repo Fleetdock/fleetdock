@@ -6,19 +6,26 @@ import { CloudUpload, Download } from "lucide-react";
 
 import { Button, ErrorText, Field, Modal, Select } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { downloadDatabaseDump, useDestinations, useTriggerBackup } from "@/lib/hooks";
+import { downloadDatabaseDump, useDestinations, useSchemas, useTriggerBackup } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
 
 type Target = "download" | "storage";
 
 export function BackupDatabaseModal({
   database,
+  schema: initialSchema,
   onClose,
 }: {
   database: Database | null;
+  /** PostgreSQL: start with this schema chosen instead of the whole database. */
+  schema?: string;
   onClose: () => void;
 }) {
   const trigger = useTriggerBackup();
+  const pg = database?.instance?.engine === "postgres";
+  const { data: schemas } = useSchemas(database?.id ?? "", pg);
+  // "" is the whole database.
+  const [scope, setScope] = useState(initialSchema ?? "");
   const { data: destinations } = useDestinations();
   const hasStorage = (destinations?.items.length ?? 0) > 0;
   // Until the user picks, default to storage when there is some and to a
@@ -36,11 +43,12 @@ export function BackupDatabaseModal({
     try {
       if (target === "download") {
         setPreparing(true);
-        await downloadDatabaseDump(database!.id);
+        await downloadDatabaseDump(database!.id, scope || undefined);
       } else {
         await trigger.mutateAsync({
           database_id: database!.id,
           destination_id: destinationId,
+          schema: scope || undefined,
         });
       }
       setDone(target);
@@ -58,6 +66,7 @@ export function BackupDatabaseModal({
   }
 
   function close() {
+    setScope(initialSchema ?? "");
     setPicked(null);
     setDestinationId("");
     setDone(null);
@@ -68,13 +77,13 @@ export function BackupDatabaseModal({
   if (!database) return null;
   const busy = trigger.isPending || preparing;
   return (
-    <Modal open onClose={close} title={`Back up "${database.name}"`}>
+    <Modal open onClose={close} title={scope ? `Back up schema ${scope} of "${database.name}"` : `Back up "${database.name}"`}>
       {done ? (
         <div>
           {done === "download" ? (
             <>
               <p className="text-sm">
-                Your download has started: <code>{database.name}-….sql.gz</code>. A large database can take a
+                Your download has started: <code>{database.name}{scope ? `-${scope}` : ""}-….sql.gz</code>. A large database can take a
                 while — keep this tab open until your browser finishes it.
               </p>
               <p className="text-sm muted mt-2">
@@ -96,6 +105,25 @@ export function BackupDatabaseModal({
         </div>
       ) : (
         <form onSubmit={onSubmit}>
+          {pg && (schemas?.length ?? 0) > 0 ? (
+            <Field
+              label="What to back up"
+              hint={
+                scope
+                  ? "Only this schema's objects and rows. Restoring it needs the schemas it refers to in the target database."
+                  : undefined
+              }
+            >
+              <Select value={scope} onChange={(e) => setScope(e.target.value)}>
+                <option value="">The whole database</option>
+                {schemas!.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    Schema {s.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
           <div role="radiogroup" aria-label="Where to put the backup" className="choice-list">
             <button
               type="button"

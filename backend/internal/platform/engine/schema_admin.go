@@ -21,6 +21,18 @@ type SchemaAdmin interface {
 	// DropSchema drops a schema: only when it is empty, or with cascade
 	// everything in it and everything that depends on it.
 	DropSchema(ctx context.Context, p ConnParams, database, name string, cascade bool) error
+	// MoveObject moves an object to another schema (ALTER … SET SCHEMA).
+	MoveObject(ctx context.Context, p ConnParams, database string, obj SchemaObject, target string) error
+}
+
+// SchemaObject names an object in a schema. Kind is "relation" (a table,
+// view, materialized view, foreign table or sequence: which one is read from
+// the catalog), "function", "procedure" or "type" (an enum, domain,
+// composite or range type).
+type SchemaObject struct {
+	Kind   string `json:"kind"`
+	Schema string `json:"schema"`
+	Name   string `json:"name"`
 }
 
 // SchemaChange is what AlterSchema changes.
@@ -71,6 +83,30 @@ func checkUserSchema(name string) error {
 	}
 	if systemSchema(name) {
 		return fmt.Errorf("%s is a system schema and cannot be changed", name)
+	}
+	return nil
+}
+
+// CheckNewSchemaName validates the name of a schema Fleetdock is about to
+// create: a plain identifier that is not reserved for PostgreSQL.
+func CheckNewSchemaName(name string) error {
+	if err := validName("schema", name); err != nil {
+		return err
+	}
+	if systemSchema(name) {
+		return fmt.Errorf("%s is reserved for PostgreSQL's own schemas", name)
+	}
+	return nil
+}
+
+// CheckSchemaName validates the name of an existing user schema, for work
+// on it as a whole (copies, backups, exports).
+func CheckSchemaName(name string) error {
+	if err := existingName("schema", name); err != nil {
+		return err
+	}
+	if systemSchema(name) {
+		return fmt.Errorf("%s is one of PostgreSQL's own schemas", name)
 	}
 	return nil
 }

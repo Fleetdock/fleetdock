@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/google/uuid"
+
 	dbaccessapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbaccess"
 	databasedom "github.com/Fleetdock/fleetdock/backend/internal/domain/database"
 	dbaccessdom "github.com/Fleetdock/fleetdock/backend/internal/domain/dbaccess"
@@ -100,4 +102,25 @@ func (s *Service) DropSchema(ctx context.Context, databaseID, name string, casca
 	return s.withSchemaAdmin(ctx, databaseID, func(ctx context.Context, sa engine.SchemaAdmin, conn engine.ConnParams, db *databasedom.Database) error {
 		return sa.DropSchema(ctx, conn, db.Name, name, cascade)
 	})
+}
+
+// MoveObject moves a table, view, sequence, function, procedure or type to
+// another schema.
+func (s *Service) MoveObject(ctx context.Context, databaseID string, obj engine.SchemaObject, target string) error {
+	return s.withSchemaAdmin(ctx, databaseID, func(ctx context.Context, sa engine.SchemaAdmin, conn engine.ConnParams, db *databasedom.Database) error {
+		return sa.MoveObject(ctx, conn, db.Name, obj, target)
+	})
+}
+
+// SchemaCopied runs after a schema was copied into a database: the copy is
+// new to the data roles' grants and to the catalog.
+func (s *Service) SchemaCopied(ctx context.Context, databaseID uuid.UUID) {
+	db, err := s.databases.GetByID(ctx, databaseID)
+	if err != nil {
+		return
+	}
+	s.refreshGrants(ctx, db)
+	if s.schemaChanged != nil {
+		s.schemaChanged(db.ID)
+	}
 }
