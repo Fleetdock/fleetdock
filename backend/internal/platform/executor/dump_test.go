@@ -27,7 +27,7 @@ func TestDumpStreamsGzippedSQL(t *testing.T) {
 	fakePgDump(t, `echo "CREATE TABLE t (id int);"`)
 	var out bytes.Buffer
 	started := false
-	err := Dump(context.Background(), "postgres", engine.ConnParams{Host: "db", Port: 5432}, "app", &out, func() { started = true })
+	err := Dump(context.Background(), "postgres", engine.ConnParams{Host: "db", Port: 5432}, "app", "", &out, func() { started = true })
 	if err != nil {
 		t.Fatalf("dump: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestDumpFailureBeforeOutputReportsStderr(t *testing.T) {
 	fakePgDump(t, `echo 'pg_dump: error: connection failed: password authentication failed' >&2; exit 1`)
 	var out bytes.Buffer
 	started := false
-	err := Dump(context.Background(), "postgres", engine.ConnParams{Host: "db", Port: 5432}, "app", &out, func() { started = true })
+	err := Dump(context.Background(), "postgres", engine.ConnParams{Host: "db", Port: 5432}, "app", "", &out, func() { started = true })
 	if err == nil || !strings.Contains(err.Error(), "password authentication failed") {
 		t.Fatalf("expected the tool's error, got %v", err)
 	}

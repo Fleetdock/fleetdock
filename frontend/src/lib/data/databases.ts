@@ -8,6 +8,11 @@ import { api, download } from "../api";
 import { randomUUID } from "../uuid";
 import type {
   ColumnCatalog,
+  ExtensionInfo,
+  MaintenanceOp,
+  PartitionInfo,
+  SequenceInfo,
+  TableStat,
   DefaultPrivilegeObject,
   SchemaAccess,
   SearchPaths,
@@ -814,4 +819,100 @@ export function useSetSearchPath(databaseId: string) {
     mutationFn: (v: { role?: string; schemas: string[] }) => api.put(`/v1/databases/${databaseId}/search-path`, v),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["search-path", databaseId] }),
   });
+}
+
+const enc = encodeURIComponent;
+
+// useSequence loads a PostgreSQL sequence and its current value.
+export function useSequence(databaseId: string, schema: string, name: string) {
+  return useQuery({
+    queryKey: ["sequence", databaseId, schema, name],
+    queryFn: () => api.get<SequenceInfo>(`/v1/databases/${databaseId}/sequences/${enc(schema)}/${enc(name)}`),
+    enabled: Boolean(databaseId && schema && name),
+    retry: false,
+  });
+}
+
+// useTableStats loads tables' sizes, dead rows and last vacuum and analyze.
+export function useTableStats(databaseId: string, schema: string) {
+  return useQuery({
+    queryKey: ["table-stats", databaseId, schema],
+    queryFn: () => api.get<{ items: TableStat[] }>(`/v1/databases/${databaseId}/table-stats?schema=${enc(schema)}`),
+    enabled: Boolean(databaseId),
+    retry: false,
+  });
+}
+
+// usePartitions loads a partitioned table's partitions with their bounds.
+export function usePartitions(databaseId: string, schema: string, table: string) {
+  return useQuery({
+    queryKey: ["partitions", databaseId, schema, table],
+    queryFn: () => api.get<{ items: PartitionInfo[] }>(`/v1/databases/${databaseId}/partitions/${enc(schema)}/${enc(table)}`),
+    enabled: Boolean(databaseId && schema && table),
+    retry: false,
+  });
+}
+
+// useMaintenanceMutations sets sequences, refreshes materialized views and
+// runs VACUUM / ANALYZE / REINDEX.
+export function useMaintenanceMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const base = `/v1/databases/${databaseId}`;
+  const setval = useMutation({
+    mutationFn: (v: { schema: string; name: string; value: number; called: boolean }) =>
+      api.post(`${base}/sequences/${enc(v.schema)}/${enc(v.name)}/setval`, { value: v.value, called: v.called }),
+    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["sequence", databaseId, v.schema, v.name] }),
+  });
+  const refresh = useMutation({
+    mutationFn: (v: { schema: string; name: string; concurrently: boolean }) =>
+      api.post(`${base}/matviews/${enc(v.schema)}/${enc(v.name)}/refresh`, { concurrently: v.concurrently }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["table-stats", databaseId] }),
+  });
+  const maintain = useMutation({
+    mutationFn: (v: { op: MaintenanceOp; schema: string; table?: string }) =>
+      api.post<{ ran: string[] }>(`${base}/maintenance`, v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["table-stats", databaseId] });
+      qc.invalidateQueries({ queryKey: ["tables", databaseId] });
+    },
+  });
+  return { setval, refresh, maintain };
+}
+
+// useExtensions loads a PostgreSQL database's available and installed
+// extensions.
+export function useExtensions(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["extensions", databaseId],
+    queryFn: () => api.get<{ items: ExtensionInfo[] }>(`/v1/databases/${databaseId}/extensions`),
+    enabled: Boolean(databaseId) && enabled,
+    retry: false,
+  });
+}
+
+// useExtensionMutations installs, updates and drops extensions. They bring
+// types and functions, so the schema views are refreshed too.
+export function useExtensionMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const base = `/v1/databases/${databaseId}/extensions`;
+  const invalidate = () => {
+    for (const key of ["extensions", "schemas", "db-objects", "schema-columns", "tables"]) {
+      qc.invalidateQueries({ queryKey: [key, databaseId] });
+    }
+  };
+  const install = useMutation({
+    mutationFn: (v: { name: string; schema?: string; version?: string }) => api.post(base, v),
+    onSuccess: invalidate,
+  });
+  const update = useMutation({
+    mutationFn: (v: { name: string; version?: string }) =>
+      api.post(`${base}/${encodeURIComponent(v.name)}/update`, { version: v.version }),
+    onSuccess: invalidate,
+  });
+  const drop = useMutation({
+    mutationFn: (v: { name: string; cascade: boolean }) =>
+      api.post(`${base}/${encodeURIComponent(v.name)}/drop`, { cascade: v.cascade }),
+    onSuccess: invalidate,
+  });
+  return { install, update, drop };
 }

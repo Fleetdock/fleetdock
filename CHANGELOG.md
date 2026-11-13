@@ -31,6 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needs write access to the server). The search_path of the database and of
   roles can be set there, and the SQL console has a schema picker for its
   session. (#140)
+- **PostgreSQL housekeeping in the data browser.** Sequences show their next
+  value and can be set; materialized views can be refreshed (also
+  concurrently); tables can be vacuumed, analyzed and reindexed; a schema's
+  **Table statistics…** lists sizes, dead rows and the last vacuum and
+  analyze. Partitioned tables now appear, with their partitions under them.
+  (#141)
+- **Back up, restore and export one PostgreSQL schema.** The backup dialog
+  can back up or download a single schema, also from a schema's menu in the
+  data browser. A schema backup restores into any PostgreSQL database, under
+  its own name (optionally replacing it) or a new one. API: `schema` on `POST
+  /v1/backups`, `POST /v1/backups/{id}/restore-schema`, `?schema=` on the
+  SQL download. (#142)
+- **PostgreSQL extensions.** A new Extensions tab on the database page lists
+  installed extensions and those the server offers, and installs, updates and
+  removes them (this also needs write access to the server). A refusal says
+  whether a superuser is needed. API: `GET/POST
+  /v1/databases/{id}/extensions`, `POST …/extensions/{name}/update`, `POST
+  …/extensions/{name}/drop`. (#143)
 
 ### Fixed
 

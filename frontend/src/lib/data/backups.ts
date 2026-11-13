@@ -81,11 +81,11 @@ export async function downloadBackup(id: string) {
  * into memory would not cope with large databases. The session cookie
  * authenticates the GET.
  */
-export async function downloadDatabaseDump(databaseId: string) {
+export async function downloadDatabaseDump(databaseId: string, schema?: string) {
   const id = encodeURIComponent(databaseId);
   await api.post<void>(`/v1/databases/${id}/dump/check`, {});
   const a = document.createElement("a");
-  a.href = `${API_URL}/v1/databases/${id}/dump`;
+  a.href = `${API_URL}/v1/databases/${id}/dump${schema ? `?schema=${encodeURIComponent(schema)}` : ""}`;
   a.download = "";
   document.body.appendChild(a);
   a.click();
@@ -164,5 +164,17 @@ export function useDeleteSchedule() {
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/v1/backup-schedules/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+// useRestoreSchema restores a backup of one PostgreSQL schema.
+export function useRestoreSchema() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { backup_id: string; target_database_id?: string; target_schema?: string; replace?: boolean }) => {
+      const { backup_id, ...body } = v;
+      return api.post<{ operation_id: string }>(`/v1/backups/${backup_id}/restore-schema`, body);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["operations"] }),
   });
 }
