@@ -13,7 +13,7 @@ export default function NotificationsPage() {
     <div>
       <PageHeader
         title="Notifications"
-        description="Where Fleetdock sends alerts (email, Slack, webhooks) and which events trigger them."
+        description="Where Fleetdock sends alerts (email, Slack, webhooks, PagerDuty) and which events trigger them."
       />
       <ChannelsSection canWrite={canWrite} />
       <RulesSection canWrite={canWrite} />

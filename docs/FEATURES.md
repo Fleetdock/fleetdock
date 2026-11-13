@@ -233,10 +233,11 @@ views/routines, SQL console, per-database users & grants with grant/revoke).
 - **Scheduled backups** — cron-scheduled recurring backups per database with a
   retention window; the worker enqueues them and prunes expired backups (object
   - metadata). Managed from the **Schedules** page.
-- **Notifications & alerts** — email / Slack / webhook channels and alert rules
+- **Notifications & alerts** — email / Slack / webhook / PagerDuty channels and alert rules
   on server metrics (CPU, memory %, disk %, connections). Backup failures and
   offline servers notify automatically; the worker evaluates rules and delivers
-  events via a transactional outbox. Managed on the **Notifications** page.
+  events via a transactional outbox. PagerDuty alerts update one incident per
+  rule and server, then resolve it on recovery. Managed on the **Notifications** page.
 - **Audit log** — Activity → **Audit log** lists who did what: sign-ins
   (and failed ones), users, roles, grants and tokens, servers, database
   servers and databases, backups, storage and schedules, notification

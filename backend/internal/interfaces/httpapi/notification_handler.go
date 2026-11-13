@@ -51,7 +51,7 @@ func toChannelResponse(c *notifdom.Channel) channelResponse {
 func redactChannelConfig(c *notifdom.Channel) map[string]string {
 	out := map[string]string{}
 	for k, v := range c.Config {
-		if (k == "webhook_url" || k == "url" || k == "password") && v != "" {
+		if (k == "webhook_url" || k == "url" || k == "password" || k == "routing_key") && v != "" {
 			out[k] = "••••••"
 			continue
 		}

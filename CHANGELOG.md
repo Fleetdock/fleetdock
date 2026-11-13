@@ -16,6 +16,8 @@ Thanks to @Whitedragon115, who contributed most of this release.
 
 ### Added
 
+- **PagerDuty notification channels.** Send alert triggers and recoveries through
+  Events API v2 with stable incident deduplication and mapped severities.
 - **Data browser: JSON as a tree.** A cell holding a JSON object or array,
   in any column type, shows as a collapsible tree in the value and row
   panels, with a raw view. Editing such a cell opens the value panel with
