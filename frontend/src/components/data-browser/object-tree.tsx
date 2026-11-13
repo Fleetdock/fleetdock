@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { useToast } from "@/components/toast";
-import { Button, IconButton, Input, Spinner } from "@/components/ui";
+import { useCopy, useToast } from "@/components/toast";
+import { Button, IconButton, Input } from "@/components/ui";
 import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells";
 import {
   isSelected,
@@ -43,6 +43,7 @@ import {
 
 import { useContextMenu } from "./context-menu";
 import { SchemaPicker } from "./schema-picker";
+import { TreeRowsSkeleton } from "./skeleton";
 
 export type TreeItem = {
   kind: "table" | "view" | "object";
@@ -167,6 +168,7 @@ export const ObjectTree = forwardRef<
   const listRef = useRef<HTMLDivElement>(null);
   const ctx = useContextMenu();
   const { push } = useToast();
+  const copy = useCopy();
 
   useImperativeHandle(ref, () => ({ focusSearch: () => searchRef.current?.select() }), []);
 
@@ -271,8 +273,7 @@ export const ObjectTree = forwardRef<
         {
           label: "Copy name",
           icon: <Copy size={14} />,
-          onSelect: () =>
-            void navigator.clipboard?.writeText(`${item.schema}.${item.label}`).then(() => push("info", `Copied ${item.label}`)),
+          onSelect: () => copy(`${item.schema}.${item.label}`, `Copied ${item.label}`),
         },
       ];
     }
@@ -293,7 +294,7 @@ export const ObjectTree = forwardRef<
       {
         label: "Copy name",
         icon: <Copy size={14} />,
-        onSelect: () => void navigator.clipboard?.writeText(item.name).then(() => push("info", `Copied ${item.name}`)),
+        onSelect: () => copy(item.name, `Copied ${item.name}`),
       },
       {
         label: "Export CSV",
@@ -359,11 +360,7 @@ export const ObjectTree = forwardRef<
 
   let body: ReactNode;
   if (isLoading) {
-    body = (
-      <div className="dbx-tree-note">
-        <Spinner /> Connecting…
-      </div>
-    );
+    body = <TreeRowsSkeleton />;
   } else if (error) {
     body = (
       <div className="dbx-tree-note text-danger">

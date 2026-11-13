@@ -35,6 +35,13 @@
     font-feature-settings: "cv11", "ss01";
     text-rendering: optimizeLegibility;
   }
+  /* Neutral style: compact density; every rem-based size scales from this. */
+  html[data-style="neutral"] {
+    font-size: 15px;
+  }
+  html[data-style="neutral"] body {
+    line-height: 1.45;
+  }
   a {
     color: inherit;
     text-decoration: none;
@@ -158,6 +165,64 @@
   }
 }
 
+/* Page transitions (components/page-transition.tsx): fade out, then fade in with a slight rise. */
+::view-transition {
+  /* Clicks during the animation reach the live page. */
+  pointer-events: none;
+}
+::view-transition-group(root) {
+  animation-duration: var(--dur);
+}
+::view-transition-old(.page-exit) {
+  animation: 100ms var(--ease) both page-fade-out;
+}
+::view-transition-new(.page-enter) {
+  animation: 200ms var(--ease) 60ms both page-fade-in;
+}
+/* The page replacing the loading skeleton: a plain fade, no second rise. */
+::view-transition-old(.skeleton-exit) {
+  animation: 120ms var(--ease) both page-fade-out;
+}
+::view-transition-new(.page-reveal) {
+  animation: 180ms var(--ease) both page-reveal;
+}
+@keyframes page-reveal {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes page-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Animations setting (Settings → Appearance, lib/appearance.ts). Reduced: pages only fade. */
+:root[data-motion="reduced"]::view-transition-new(.page-enter) {
+  animation: 180ms var(--ease) both page-reveal;
+}
+/* Off: the same as the system's reduce-motion setting below. */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+:root[data-motion="off"]::view-transition-group(*),
+:root[data-motion="off"]::view-transition-old(*),
+:root[data-motion="off"]::view-transition-new(*) {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -166,5 +231,11 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
   }
 }

@@ -10,6 +10,10 @@
 #       Prints that version's section, with links made absolute so they work
 #       on the GitHub release page. The release workflow uses this.
 #
+#   scripts/changelog.sh previous v0.11.0
+#       Prints the release before it (0.10.0), or nothing for the first one.
+#       The release workflow uses it to list the release's contributors.
+#
 # REPO (owner/name) and CHANGELOG (path) can be set in the environment.
 set -eu
 
@@ -86,6 +90,22 @@ notes() {
     sed -E "s|\]\(([^)/:#][^):]*)\)|](https://github.com/$REPO/blob/$tag/\1)|g"
 }
 
+previous() {
+  ver="${1#v}"
+  [ -f "$CHANGELOG" ] || die "$CHANGELOG not found"
+  # The first released heading after this version's.
+  awk -v ver="$ver" '
+    /^## \[/ {
+      if (seen) { sub(/^## \[/, ""); sub(/\].*/, ""); print; exit }
+      if (index($0, "## [" ver "]") == 1) seen = 1
+    }
+  ' "$CHANGELOG" | {
+    # Old headings such as "0.8.1 – 0.8.5" are not a single release.
+    read -r prev || true
+    if [ -n "${prev:-}" ] && valid_version "$prev"; then echo "$prev"; fi
+  }
+}
+
 case "${1:-}" in
   prepare)
     [ $# -eq 2 ] || die "usage: $0 prepare <version>"
@@ -95,7 +115,11 @@ case "${1:-}" in
     [ $# -eq 2 ] || die "usage: $0 notes <tag>"
     notes "$2"
     ;;
+  previous)
+    [ $# -eq 2 ] || die "usage: $0 previous <tag>"
+    previous "$2"
+    ;;
   *)
-    die "usage: $0 prepare <version> | notes <tag>"
+    die "usage: $0 prepare <version> | notes <tag> | previous <tag>"
     ;;
 esac
