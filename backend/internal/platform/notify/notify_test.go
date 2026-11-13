@@ -89,6 +89,33 @@ func TestDeliverPagerDutyTriggerAndResolve(t *testing.T) {
 	}
 }
 
+func TestPagerDutySkipsInformationalEventsAndRequiresDedupKey(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	sender := local()
+	sender.pagerDutyURL = srv.URL
+	channel := Channel{Type: "pagerduty", Config: map[string]string{"routing_key": "integration-key"}}
+	if err := sender.Deliver(context.Background(), channel, Message{
+		Title: "Schema changed", Severity: "info", Event: "schema.changed", DedupKey: "fleetdock/database/1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 0 {
+		t.Fatalf("informational event sent %d PagerDuty requests", requests)
+	}
+	if err := sender.Deliver(context.Background(), channel, Message{Severity: "critical", Event: "backup.failed"}); err == nil {
+		t.Fatal("PagerDuty accepted a trigger without a deduplication key")
+	}
+	if requests != 0 {
+		t.Fatalf("missing dedup key sent %d PagerDuty requests", requests)
+	}
+}
+
 func TestDeliverRefusals(t *testing.T) {
 	ctx := context.Background()
 	for _, c := range []Channel{

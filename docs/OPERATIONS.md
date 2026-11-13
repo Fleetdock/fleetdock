@@ -301,6 +301,11 @@ a running SQL console query only works when the request reaches the replica that
 runs it (use sticky sessions), and operations orphaned by a crashed replica are
 failed automatically after 2h15m (the maximum run time plus margin).
 
+Metric alert firing state is kept in memory. If the API restarts while an alert
+is firing and the metric recovers before the next evaluation, the resolve event
+may not be emitted; review and resolve any stale PagerDuty incident after such
+a restart.
+
 ## Admin password reset
 
 Prefer the dashboard **Users** page when any admin account still works.

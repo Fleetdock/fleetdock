@@ -76,15 +76,17 @@ func (s *Sender) deliverPagerDuty(ctx context.Context, routingKey string, msg Me
 	if routingKey == "" {
 		return fmt.Errorf("pagerduty routing key is empty")
 	}
-	dedupKey := msg.DedupKey
-	if dedupKey == "" {
-		dedupKey = "fleetdock/test"
+	if msg.DedupKey == "" {
+		return fmt.Errorf("pagerduty deduplication key is empty")
+	}
+	if msg.Severity == "info" && msg.Event != "alert.resolved" && msg.Event != "test" {
+		return nil
 	}
 	action := "trigger"
 	payload := map[string]any{
 		"routing_key":  routingKey,
 		"event_action": action,
-		"dedup_key":    dedupKey,
+		"dedup_key":    msg.DedupKey,
 	}
 	if msg.Event == "alert.resolved" {
 		payload["event_action"] = "resolve"

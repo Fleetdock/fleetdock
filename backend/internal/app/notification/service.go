@@ -22,10 +22,14 @@ type MetricsSource interface {
 	LatestServerHealth(ctx context.Context) ([]serverdom.HealthSample, error)
 }
 
+type channelSender interface {
+	Deliver(ctx context.Context, ch notify.Channel, msg notify.Message) error
+}
+
 // Service implements notification use cases.
 type Service struct {
 	repo    notifdom.Repository
-	sender  *notify.Sender
+	sender  channelSender
 	metrics MetricsSource
 	secrets SecretStore // nil keeps channel secrets in the config (tests)
 
@@ -145,15 +149,25 @@ func (s *Service) TestChannel(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	err = s.sender.Deliver(ctx, notify.Channel{Type: string(c.Type), Config: config}, notify.Message{
+	ch := notify.Channel{Type: string(c.Type), Config: config}
+	msg := notify.Message{
 		Title:    "Fleetdock test notification",
 		Body:     "This is a test message from Fleetdock. If you can read this, the channel works.",
 		Severity: "info",
 		Event:    "test",
 		DedupKey: "fleetdock/test/" + c.ID.String(),
-	})
+	}
+	err = s.sender.Deliver(ctx, ch, msg)
 	if err != nil {
 		return apperr.Invalid("channel", "delivery failed: "+err.Error())
+	}
+	if c.Type == notifdom.ChannelPagerDuty {
+		msg.Event = "alert.resolved"
+		msg.Title = "Fleetdock test notification resolved"
+		msg.Body = "The PagerDuty test incident was resolved after delivery verification."
+		if err := s.sender.Deliver(ctx, ch, msg); err != nil {
+			return apperr.Invalid("channel", "test incident could not be resolved: "+err.Error())
+		}
 	}
 	return nil
 }
@@ -268,6 +282,7 @@ func (s *Service) Emit(ctx context.Context, eventType, title, message, severity 
 		Title:         title,
 		Message:       message,
 		Severity:      severity,
+		DedupKey:      fmt.Sprintf("fleetdock/%s/%s/%s", eventType, aggregateType, aggregateID),
 	})
 	if err != nil {
 		slog.Error("notification: enqueue", "event", eventType, "error", err.Error())
@@ -289,6 +304,10 @@ func (s *Service) DispatchPending(ctx context.Context) (int, error) {
 			_ = s.repo.MarkFailed(ctx, row.ID)
 			continue
 		}
+		dedupKey := row.Event.DedupKey
+		if dedupKey == "" {
+			dedupKey = fmt.Sprintf("fleetdock/outbox/%d", row.ID)
+		}
 		ok := true
 		for _, ch := range channels {
 			config, derr := s.open(ctx, ch)
@@ -302,7 +321,7 @@ func (s *Service) DispatchPending(ctx context.Context) (int, error) {
 				Body:     row.Event.Message,
 				Severity: row.Event.Severity,
 				Event:    row.Event.EventType,
-				DedupKey: row.Event.DedupKey,
+				DedupKey: dedupKey,
 			})
 			if derr != nil {
 				slog.Warn("notification: delivery failed", "channel", ch.Name, "error", derr.Error())
