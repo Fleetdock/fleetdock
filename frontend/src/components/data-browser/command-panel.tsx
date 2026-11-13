@@ -8,6 +8,7 @@ import { useToast } from "@/components/toast";
 import { Button, ConfirmModal, IconButton } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { load, save } from "@/lib/data-browser/storage";
+import { useSessionSchema } from "@/components/database/session-schema";
 import { cancelQuery, useRunQuery, useSchemaColumns } from "@/lib/hooks";
 import { previewBlocker, splitStatements, writeStatements } from "@/lib/sql";
 import { sqlCompletion } from "@/lib/sql-schema";
@@ -57,6 +58,8 @@ export function CommandPanel({
   onClose: () => void;
 }) {
   const run = useRunQuery(databaseId);
+  // The data browser's session schema, shared with the SQL console.
+  const { searchPath } = useSessionSchema(databaseId, engine === "postgres");
   const columns = useSchemaColumns(databaseId);
   const completion = useMemo(() => sqlCompletion(columns.data, engine === "postgres"), [columns.data, engine]);
   const editorRef = useRef<SqlEditorHandle>(null);
@@ -119,7 +122,7 @@ export function CommandPanel({
     setError(null);
     setChecking(true);
     try {
-      const out = await run.mutateAsync({ sql: text, limit: 1, query_id: randomUUID(), preview: true });
+      const out = await run.mutateAsync({ sql: text, limit: 1, query_id: randomUUID(), preview: true, search_path: searchPath });
       if (out.error) {
         setError(`Statement ${out.error.statement} would fail: ${out.error.message}`);
         return;
@@ -148,7 +151,7 @@ export function CommandPanel({
     const id = randomUUID();
     setQueryId(id);
     try {
-      const out: QueryOutput = await run.mutateAsync({ sql: text, limit: LIMIT, query_id: id, preview: false });
+      const out: QueryOutput = await run.mutateAsync({ sql: text, limit: LIMIT, query_id: id, preview: false, search_path: searchPath });
       if (out.error) setError(`Statement ${out.error.statement} failed: ${out.error.message}`);
       const wrote = out.results.filter((r) => !r.read_only);
       if (wrote.length > 0) {

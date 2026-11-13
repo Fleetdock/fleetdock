@@ -295,6 +295,8 @@ type queryRequest struct {
 	QueryID string `json:"query_id"`
 	// Preview dry-runs the script and rolls it back.
 	Preview bool `json:"preview"`
+	// SearchPath (PostgreSQL) is the session's search_path.
+	SearchPath []string `json:"search_path"`
 }
 
 // Query handles POST /v1/databases/{id}/query. Whether write statements are
@@ -322,6 +324,7 @@ func (h *DBAdminHandler) Query(w http.ResponseWriter, r *http.Request) {
 	in := dbadminapp.QueryInput{
 		DatabaseID: r.PathValue("id"), SQL: req.SQL, Limit: req.Limit,
 		AllowWrite: allowWrite, QueryID: req.QueryID, Preview: req.Preview,
+		SearchPath: req.SearchPath,
 	}
 	if id := callerID(r); id != nil {
 		in.UserID = *id
@@ -466,8 +469,9 @@ func (h *DBAdminHandler) CheckDump(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-// Dump handles GET /v1/databases/{id}/dump: a gzip-compressed SQL dump of the
-// database streamed straight to the client. Nothing is stored — no backup
+// Dump handles GET /v1/databases/{id}/dump[?schema=]: a gzip-compressed SQL
+// dump of the database, or of one PostgreSQL schema, streamed straight to
+// the client. Nothing is stored — no backup
 // destination is needed and no backup record is created.
 func (h *DBAdminHandler) Dump(w http.ResponseWriter, r *http.Request) {
 	// A dump of a large database may stream for a long time; the server's
@@ -476,10 +480,15 @@ func (h *DBAdminHandler) Dump(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("database dump: cannot extend write deadline", "error", err.Error())
 	}
 	id := r.PathValue("id")
+	schema := r.URL.Query().Get("schema")
 	started := false
-	err := h.svc.Dump(r.Context(), id, w, func(dbName string) {
+	err := h.svc.Dump(r.Context(), id, schema, w, func(dbName string) {
 		started = true
-		filename := dumpFilename(dbName, time.Now().UTC())
+		name := dbName
+		if schema != "" {
+			name += "-" + schema
+		}
+		filename := dumpFilename(name, time.Now().UTC())
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 		w.WriteHeader(http.StatusOK)
@@ -496,7 +505,7 @@ func (h *DBAdminHandler) Dump(w http.ResponseWriter, r *http.Request) {
 		slog.Error("database dump failed mid-stream", "database_id", id, "user_id", user, "error", err.Error())
 		return
 	}
-	slog.Info("database dump downloaded", "database_id", id, "user_id", user)
+	slog.Info("database dump downloaded", "database_id", id, "schema", schema, "user_id", user)
 }
 
 // dumpWriteDeadline is a little above the service's dump timeout, so the dump,
@@ -1257,4 +1266,296 @@ func (h *DBAdminHandler) SetDBUserPassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed"})
+}
+
+// requireInstanceWrite asks for instance:write on the database's instance,
+// for changes that reach beyond the data: granting privileges, even on one
+// schema, decides who may read and change data, like the instance's own
+// grants; an extension can run code as a superuser.
+func (h *DBAdminHandler) requireInstanceWrite(r *http.Request) error {
+	info, err := h.svc.DataAccess(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if err := authorizeResource(r.Context(), h.resolver, "instance:write", authz.ResourceInstance, info.InstanceID); err != nil {
+		return apperr.Forbidden("this change needs instance:write on the server as well")
+	}
+	return nil
+}
+
+// SchemaAccess handles GET /v1/databases/{id}/schemas/{schema}/privileges.
+func (h *DBAdminHandler) SchemaAccess(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.SchemaAccess(r.Context(), r.PathValue("id"), r.PathValue("schema"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type schemaGrantRequest struct {
+	Role   string `json:"role"`
+	Usage  bool   `json:"usage"`
+	Create bool   `json:"create"`
+}
+
+// SetSchemaGrant handles PUT /v1/databases/{id}/schemas/{schema}/privileges.
+func (h *DBAdminHandler) SetSchemaGrant(w http.ResponseWriter, r *http.Request) {
+	if err := h.requireInstanceWrite(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	var req schemaGrantRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if req.Role == "" {
+		writeError(w, apperr.Invalid("role", "role is required"))
+		return
+	}
+	if err := h.svc.SetSchemaGrant(r.Context(), r.PathValue("id"), r.PathValue("schema"), req.Role, req.Usage, req.Create); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// AlterDefaultPrivileges handles POST
+// /v1/databases/{id}/schemas/{schema}/default-privileges.
+func (h *DBAdminHandler) AlterDefaultPrivileges(w http.ResponseWriter, r *http.Request) {
+	if err := h.requireInstanceWrite(r); err != nil {
+		writeError(w, err)
+		return
+	}
+	var req engine.DefaultPrivilegeChange
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if req.Grantee == "" {
+		writeError(w, apperr.Invalid("grantee", "grantee is required"))
+		return
+	}
+	if err := h.svc.AlterDefaultPrivileges(r.Context(), r.PathValue("id"), r.PathValue("schema"), req); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// SearchPaths handles GET /v1/databases/{id}/search-path.
+func (h *DBAdminHandler) SearchPaths(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.SearchPaths(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type searchPathRequest struct {
+	// Role is empty for the database's own setting.
+	Role    string   `json:"role"`
+	Schemas []string `json:"schemas"`
+}
+
+// SetSearchPath handles PUT /v1/databases/{id}/search-path. A role's setting
+// steers that role's sessions, so it needs instance:write like a grant.
+func (h *DBAdminHandler) SetSearchPath(w http.ResponseWriter, r *http.Request) {
+	var req searchPathRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if req.Role != "" {
+		if err := h.requireInstanceWrite(r); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	if err := h.svc.SetSearchPath(r.Context(), r.PathValue("id"), req.Role, req.Schemas); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// ---- PostgreSQL maintenance ----
+
+// Sequence handles GET /v1/databases/{id}/sequences/{schema}/{sequence}.
+func (h *DBAdminHandler) Sequence(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.Sequence(r.Context(), r.PathValue("id"), r.PathValue("schema"), r.PathValue("sequence"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type setSequenceRequest struct {
+	Value *int64 `json:"value"`
+	// Called false makes the next nextval return value itself.
+	Called bool `json:"called"`
+}
+
+// SetSequence handles POST /v1/databases/{id}/sequences/{schema}/{sequence}/setval.
+func (h *DBAdminHandler) SetSequence(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req setSequenceRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if req.Value == nil {
+			return apperr.Invalid("value", "value is required")
+		}
+		if err := h.svc.SetSequence(r.Context(), r.PathValue("id"), r.PathValue("schema"), r.PathValue("sequence"), *req.Value, req.Called); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "set"})
+		return nil
+	})(w, r)
+}
+
+type refreshRequest struct {
+	Concurrently bool `json:"concurrently"`
+}
+
+// RefreshMaterializedView handles POST /v1/databases/{id}/matviews/{schema}/{view}/refresh.
+func (h *DBAdminHandler) RefreshMaterializedView(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req refreshRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.RefreshMaterializedView(r.Context(), r.PathValue("id"), r.PathValue("schema"), r.PathValue("view"), req.Concurrently); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
+		return nil
+	})(w, r)
+}
+
+type maintainRequest struct {
+	Op     engine.MaintenanceOp `json:"op"`
+	Schema string               `json:"schema"`
+	// Table, when empty, covers every table of the schema.
+	Table string `json:"table"`
+}
+
+// Maintain handles POST /v1/databases/{id}/maintenance.
+func (h *DBAdminHandler) Maintain(w http.ResponseWriter, r *http.Request) {
+	h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		var req maintainRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		ran, err := h.svc.Maintain(r.Context(), r.PathValue("id"), req.Op, req.Schema, req.Table)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ran": ran})
+		return nil
+	})(w, r)
+}
+
+// TableStats handles GET /v1/databases/{id}/table-stats.
+func (h *DBAdminHandler) TableStats(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.TableStats(r.Context(), r.PathValue("id"), r.URL.Query().Get("schema"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// Partitions handles GET /v1/databases/{id}/partitions/{schema}/{table}.
+func (h *DBAdminHandler) Partitions(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.Partitions(r.Context(), r.PathValue("id"), r.PathValue("schema"), r.PathValue("table"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// ---- PostgreSQL extensions ----
+
+// Extensions handles GET /v1/databases/{id}/extensions.
+func (h *DBAdminHandler) Extensions(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.Extensions(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+type installExtensionRequest struct {
+	Name    string `json:"name"`
+	Schema  string `json:"schema"`
+	Version string `json:"version"`
+}
+
+// extensionWrite asks for instance:write as well as database:write: an
+// extension can run code as a superuser and is part of the server's setup.
+func (h *DBAdminHandler) extensionWrite(fn func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+	return h.structural(func(w http.ResponseWriter, r *http.Request) error {
+		if err := h.requireInstanceWrite(r); err != nil {
+			return err
+		}
+		return fn(w, r)
+	})
+}
+
+// InstallExtension handles POST /v1/databases/{id}/extensions.
+func (h *DBAdminHandler) InstallExtension(w http.ResponseWriter, r *http.Request) {
+	h.extensionWrite(func(w http.ResponseWriter, r *http.Request) error {
+		var req installExtensionRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if req.Name == "" {
+			return apperr.Invalid("name", "name is required")
+		}
+		if err := h.svc.InstallExtension(r.Context(), r.PathValue("id"), req.Name, req.Schema, req.Version); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusCreated, map[string]string{"status": "installed"})
+		return nil
+	})(w, r)
+}
+
+type updateExtensionRequest struct {
+	Version string `json:"version"`
+}
+
+// UpdateExtension handles POST /v1/databases/{id}/extensions/{name}/update.
+func (h *DBAdminHandler) UpdateExtension(w http.ResponseWriter, r *http.Request) {
+	h.extensionWrite(func(w http.ResponseWriter, r *http.Request) error {
+		var req updateExtensionRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.UpdateExtension(r.Context(), r.PathValue("id"), r.PathValue("name"), req.Version); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+		return nil
+	})(w, r)
+}
+
+// DropExtension handles POST /v1/databases/{id}/extensions/{name}/drop.
+func (h *DBAdminHandler) DropExtension(w http.ResponseWriter, r *http.Request) {
+	h.extensionWrite(func(w http.ResponseWriter, r *http.Request) error {
+		var req dropSchemaRequest
+		if err := decodeJSON(r, &req); err != nil {
+			return err
+		}
+		if err := h.svc.DropExtension(r.Context(), r.PathValue("id"), r.PathValue("name"), req.Cascade); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "dropped"})
+		return nil
+	})(w, r)
 }

@@ -32,7 +32,9 @@ func DumpPreflight(engineName string) error {
 // can still answer with an error status when the dump fails to start (bad
 // login, unreachable host, missing tool). A failure after that leaves w with a
 // truncated stream, which gzip's trailer check exposes when it is read.
-func Dump(ctx context.Context, engineName string, c engine.ConnParams, database string, w io.Writer, onStart func()) error {
+//
+// schema, when set, limits a PostgreSQL dump to that schema.
+func Dump(ctx context.Context, engineName string, c engine.ConnParams, database, schema string, w io.Writer, onStart func()) error {
 	eng, err := engine.For(engineName)
 	if err != nil {
 		return err
@@ -42,7 +44,10 @@ func Dump(ctx context.Context, engineName string, c engine.ConnParams, database 
 		return err
 	}
 	defer closeTunnel()
-	binaries, args, env := eng.DumpArgs(conn, database)
+	binaries, args, env, err := dumpArgs(eng, conn, database, schema)
+	if err != nil {
+		return err
+	}
 	bin, err := lookPath(binaries)
 	if err != nil {
 		return err

@@ -39,11 +39,15 @@ type Payload struct {
 	StorageURL string            `json:"storage_url,omitempty"`
 	Checksum   string            `json:"checksum,omitempty"` // expected sha256, verified on restore
 	Provision  *ProvisionSpec    `json:"provision,omitempty"`
-	// Copy schema: Database is the source database.
+	// Copy schema: Database is the source database. Backup and restore of
+	// one schema use Schema too.
 	Schema         string `json:"schema,omitempty"`
 	TargetSchema   string `json:"target_schema,omitempty"`
 	TargetDatabase string `json:"target_database,omitempty"`
 	StructureOnly  bool   `json:"structure_only,omitempty"`
+	// Restore schema: Replace lets a backup restored under its own name
+	// replace that schema's objects.
+	Replace bool `json:"replace,omitempty"`
 }
 
 // ProvisionSpec describes a Docker container lifecycle action on a managed
@@ -141,6 +145,13 @@ func Execute(ctx context.Context, jobType string, p *Payload, sink LogSink) (jso
 		}
 		res = *out
 
+	case "restore_schema":
+		out, err := runRestoreSchema(ctx, p, sink)
+		if err != nil {
+			return nil, err
+		}
+		res = *out
+
 	case "copy_schema":
 		out, err := runCopySchema(ctx, p, sink)
 		if err != nil {
@@ -162,7 +173,10 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 		return nil, err
 	}
 	defer closeTunnel()
-	binaries, args, env := eng.DumpArgs(conn, p.Database)
+	binaries, args, env, err := dumpArgs(eng, conn, p.Database, p.Schema)
+	if err != nil {
+		return nil, err
+	}
 	bin, err := lookPath(binaries)
 	if err != nil {
 		return nil, err
@@ -180,7 +194,11 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 	hasher := sha256.New()
 	gz := gzip.NewWriter(io.MultiWriter(tmp, hasher))
 
-	sink.Log("info", "dumping database "+p.Database)
+	if p.Schema != "" {
+		sink.Log("info", "dumping schema "+p.Schema+" of "+p.Database)
+	} else {
+		sink.Log("info", "dumping database "+p.Database)
+	}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout = gz
@@ -231,6 +249,22 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 		Checksum:   checksum,
 		StorageURL: p.StorageURL,
 	}, nil
+}
+
+// dumpArgs is the dump argv for a whole database, or for one schema of a
+// PostgreSQL database. A schema dump drops and recreates what it holds when
+// restored, like a database dump.
+func dumpArgs(eng engine.Client, conn engine.ConnParams, database, schema string) ([]string, []string, []string, error) {
+	if schema == "" {
+		b, a, e := eng.DumpArgs(conn, database)
+		return b, a, e, nil
+	}
+	pg, ok := eng.(*engine.Postgres)
+	if !ok {
+		return nil, nil, nil, errors.New("only PostgreSQL databases have schemas to dump on their own")
+	}
+	b, a, e := pg.PartialDumpArgs(conn, database, engine.PartialDump{Schema: schema, Clean: true})
+	return b, a, e, nil
 }
 
 // runRestore downloads a dump via the presigned GET URL to a temp file,

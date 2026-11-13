@@ -426,6 +426,55 @@ components:
         name: {type: string, minLength: 1, maxLength: 100}
         state: {type: object}
         shared: {type: boolean}
+    SequenceInfo:
+      type: object
+      properties:
+        schema: {type: string}
+        name: {type: string}
+        data_type: {type: string}
+        start: {type: integer, format: int64}
+        increment: {type: integer, format: int64}
+        min: {type: integer, format: int64}
+        max: {type: integer, format: int64}
+        cycle: {type: boolean}
+        last_value: {type: [integer, 'null'], format: int64, description: The last value handed out; null before the first nextval or after a setval with called false.}
+        next_value: {type: [integer, 'null'], format: int64, description: What the next nextval returns; null when the sequence is used up.}
+        owned_by: {type: string}
+    TableStat:
+      type: object
+      properties:
+        schema: {type: string}
+        name: {type: string}
+        total_bytes: {type: integer, format: int64}
+        live_rows: {type: integer, format: int64}
+        dead_rows: {type: integer, format: int64}
+        last_vacuum: {type: [string, 'null'], format: date-time}
+        last_autovacuum: {type: [string, 'null'], format: date-time}
+        last_analyze: {type: [string, 'null'], format: date-time}
+        last_autoanalyze: {type: [string, 'null'], format: date-time}
+    SchemaAccess:
+      type: object
+      properties:
+        schema: {type: string}
+        owner: {type: string}
+        grants:
+          type: array
+          items:
+            type: object
+            properties:
+              role: {type: string}
+              usage: {type: boolean}
+              create: {type: boolean}
+        default_privileges:
+          type: array
+          items:
+            type: object
+            properties:
+              creator: {type: string}
+              object_type: {type: string}
+              grantee: {type: string}
+              privileges: {type: array, items: {type: string}}
+        roles: {type: array, items: {type: string}}
     SchemaSummary:
       type: object
       properties:
@@ -710,6 +759,7 @@ components:
         verified_at: {type: [string, 'null'], format: date-time}
         verify_error: {type: [string, 'null']}
         verify_status: {type: [string, 'null']}
+        schema_name: {type: [string, 'null'], description: Set on a backup of one PostgreSQL schema.}
     Operation:
       type: object
       required: [id, type, resource_type, status, progress, created_at]
@@ -1305,6 +1355,89 @@ paths:
             application/json:
               schema: {type: object, properties: {status: {type: string}}}
         default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/schemas/{schema}/privileges:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Who may use a schema
+      description: >-
+        PostgreSQL only. The schema's owner, the roles other than the owner with USAGE or CREATE on it (PUBLIC is every
+        role), its default privileges (ALTER DEFAULT PRIVILEGES … IN SCHEMA), and the roles that could be granted something.
+      responses:
+        "200":
+          description: The schema's privileges
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SchemaAccess"}
+        default: {$ref: "#/components/responses/Error"}
+    put:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Set a role's privileges on a schema
+      description: >-
+        PostgreSQL only. Grants or revokes USAGE and CREATE so that the role (or PUBLIC) ends up with exactly the ones
+        given. The owner's privileges cannot be changed. Needs database:write and instance:write on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: {type: string}
+                usage: {type: boolean}
+                create: {type: boolean}
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/schemas/{schema}/default-privileges:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/SchemaName"
+      summary: Change a schema's default privileges
+      description: >-
+        PostgreSQL only. Runs ALTER DEFAULT PRIVILEGES [FOR ROLE creator] IN SCHEMA … GRANT or REVOKE, which decides what
+        objects that role creates in the schema from now on are granted. Existing objects keep their privileges. Needs
+        database:write and instance:write on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [object_type, grantee, privileges]
+              properties:
+                creator: {type: string, description: The role whose new objects it covers; defaults to the server's admin login.}
+                object_type: {type: string, enum: [tables, sequences, functions, types]}
+                grantee: {type: string, description: A role, or PUBLIC.}
+                privileges:
+                  type: array
+                  items: {type: string}
+                  description: >-
+                    tables - SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER; sequences - USAGE, SELECT,
+                    UPDATE; functions - EXECUTE; types - USAGE; or ALL.
+                revoke: {type: boolean}
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/schemas/{schema}/copy:
     post:
       tags: [Structure]
@@ -1336,6 +1469,321 @@ paths:
           content:
             application/json:
               schema: {type: object, properties: {operation_id: {type: string, format: uuid}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/sequences/{schema}/{sequence}:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: schema, in: path, required: true, schema: {type: string}, description: The sequence's schema.}
+        - {name: sequence, in: path, required: true, schema: {type: string}, description: The sequence's name.}
+      summary: Read a sequence
+      description: >-
+        PostgreSQL only. The sequence's type, start, increment, bounds, cycle, the last value handed out (null before the first nextval) and the column it belongs to.
+      responses:
+        "200":
+          description: The sequence
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SequenceInfo"}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/sequences/{schema}/{sequence}/setval:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: schema, in: path, required: true, schema: {type: string}, description: The sequence's schema.}
+        - {name: sequence, in: path, required: true, schema: {type: string}, description: The sequence's name.}
+      summary: Set a sequence's value
+      description: >-
+        PostgreSQL only. Runs setval. With called false the next nextval returns value itself; with called true, the value after it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: {type: integer, format: int64}
+                called: {type: boolean}
+      responses:
+        "200":
+          description: Set
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/matviews/{schema}/{view}/refresh:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: schema, in: path, required: true, schema: {type: string}, description: The view's schema.}
+        - {name: view, in: path, required: true, schema: {type: string}, description: The materialized view's name.}
+      summary: Refresh a materialized view
+      description: >-
+        PostgreSQL only. REFRESH MATERIALIZED VIEW; with concurrently the view stays readable meanwhile, which needs a unique index on it.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                concurrently: {type: boolean}
+      responses:
+        "200":
+          description: Refreshed
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/maintenance:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Run VACUUM, ANALYZE or REINDEX
+      description: >-
+        PostgreSQL only. Runs VACUUM, VACUUM (ANALYZE), ANALYZE or REINDEX on one table, or on every table of the schema when table is empty (REINDEX SCHEMA for a schema). Runs as the admin login, within the request's time limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [op, schema]
+              properties:
+                op: {type: string, enum: [vacuum, vacuum_analyze, analyze, reindex]}
+                schema: {type: string}
+                table: {type: string}
+      responses:
+        "200":
+          description: The statements that ran
+          content:
+            application/json:
+              schema: {type: object, properties: {ran: {type: array, items: {type: string}}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/table-stats:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: schema, in: query, required: false, schema: {type: string}, description: Only this schema's tables.}
+      summary: Table sizes and housekeeping
+      description: >-
+        PostgreSQL only. Per table (pg_stat_user_tables) its total size, live and dead rows, and the last manual and automatic vacuum and analyze.
+      responses:
+        "200":
+          description: The tables
+          content:
+            application/json:
+              schema: 
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/TableStat"}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/partitions/{schema}/{table}:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: schema, in: path, required: true, schema: {type: string}, description: The table's schema.}
+        - {name: table, in: path, required: true, schema: {type: string}, description: The partitioned table's name.}
+      summary: Partitions of a table
+      description: >-
+        PostgreSQL only. The direct partitions of a partitioned table with their bounds, sizes and row estimates.
+      responses:
+        "200":
+          description: The partitions
+          content:
+            application/json:
+              schema: 
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        schema: {type: string}
+                        name: {type: string}
+                        bound: {type: string}
+                        total_bytes: {type: integer, format: int64}
+                        rows: {type: integer, format: int64}
+                        partitioned: {type: boolean}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/extensions:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Extensions of a database
+      description: >-
+        PostgreSQL only. Every extension the server offers (pg_available_extensions), installed ones first with their
+        version and schema, whether it is trusted or needs a superuser, and the versions it can be updated to.
+      responses:
+        "200":
+          description: The extensions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        default_version: {type: string}
+                        comment: {type: string}
+                        installed_version: {type: string}
+                        schema: {type: string}
+                        relocatable: {type: boolean}
+                        trusted: {type: boolean}
+                        superuser: {type: boolean}
+                        updates: {type: array, items: {type: string}}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Install an extension
+      description: >-
+        PostgreSQL only. CREATE EXTENSION [SCHEMA s] [VERSION v], as the server's admin login. Most extensions need a
+        superuser unless they are trusted; managed services allow only their own list. Needs database:write and
+        instance:write on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                schema: {type: string}
+                version: {type: string}
+      responses:
+        "201":
+          description: Installed
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/extensions/{name}/update:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: name, in: path, required: true, schema: {type: string}, description: The extension.}
+      summary: Update an extension
+      description: PostgreSQL only. ALTER EXTENSION … UPDATE [TO version]. Needs database:write and instance:write on the server.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: {type: string, description: Empty updates to the default version.}
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/extensions/{name}/drop:
+    post:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - {name: name, in: path, required: true, schema: {type: string}, description: The extension.}
+      summary: Drop an extension
+      description: >-
+        PostgreSQL only. DROP EXTENSION … RESTRICT, or with cascade everything that uses it (columns of its types,
+        functions). plpgsql is refused. Needs database:write and instance:write on the server.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cascade: {type: boolean}
+      responses:
+        "200":
+          description: Dropped
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/databases/{id}/search-path:
+    get:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: search_path settings of a database
+      description: >-
+        PostgreSQL only. The search_path set on the database (empty when none), set for roles in this database, and
+        PostgreSQL's built-in default.
+      responses:
+        "200":
+          description: The settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  database: {type: string}
+                  server: {type: string}
+                  roles:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        role: {type: string}
+                        path: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+    put:
+      tags: [Structure]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      summary: Set the search_path of a database or a role
+      description: >-
+        PostgreSQL only. ALTER DATABASE … SET search_path, or ALTER ROLE … IN DATABASE … SET search_path when a role is
+        given (which also needs instance:write on the server). No schemas resets it. New sessions pick it up.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: {type: string}
+                schemas:
+                  type: array
+                  items: {type: string}
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}}}
         default: {$ref: "#/components/responses/Error"}
   /v1/databases/{id}/objects/move:
     post:
@@ -3717,6 +4165,10 @@ paths:
                 limit: {type: integer, maximum: 5000, default: 100, description: Rows returned per statement (larger values are capped at 5000)}
                 query_id: {type: string, format: uuid}
                 preview: {type: boolean, default: false, description: Dry run in a transaction that is rolled back.}
+                search_path:
+                  type: array
+                  items: {type: string}
+                  description: PostgreSQL only. The session's search_path, set when the session starts; names are taken literally.
       responses:
         "200":
           description: Results of the statements that ran
@@ -3803,9 +4255,11 @@ paths:
         stored: no backup destination is needed and no backup record is
         created. Errors before the first byte return JSON; a failure
         mid-stream truncates the file, which its gzip trailer check exposes.
-        Requires backup:write on the database.
+        Requires backup:write on the database. With `schema` (PostgreSQL) only
+        that schema is dumped, as `<database>-<schema>-<YYYYMMDD-HHMMSS>.sql.gz`.
       parameters:
         - $ref: "#/components/parameters/ResourceID"
+        - {name: schema, in: query, required: false, schema: {type: string}, description: Dump only this PostgreSQL schema.}
       responses:
         "200":
           description: The dump
@@ -3888,6 +4342,21 @@ paths:
       tags: [Backups]
       security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Trigger backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [database_id, destination_id]
+              properties:
+                database_id: {type: string, format: uuid}
+                destination_id: {type: string, format: uuid}
+                schema:
+                  type: string
+                  description: >-
+                    PostgreSQL only. Backs up just this schema (pg_dump -n). Restore it with
+                    POST /v1/backups/{id}/restore-schema.
       responses:
         "202":
           description: Backup started
@@ -3929,6 +4398,35 @@ paths:
       responses:
         "202":
           description: Restore started
+        default: {$ref: "#/components/responses/Error"}
+  /v1/backups/{id}/restore-schema:
+    post:
+      tags: [Backups]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      summary: Restore a schema backup
+      description: >-
+        Restores a backup of one PostgreSQL schema into a database, on the same or another PostgreSQL server. Under the
+        schema's own name the backup is applied as it is; with replace it replaces the schema's current objects,
+        otherwise the schema must not exist there. Under another name it goes through a scratch database, so views,
+        foreign keys, defaults and sequences of the restored schema point at it; function bodies are restored unchanged.
+        Needs backup:write on the backup and database:write on the target database.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target_database_id: {type: string, format: uuid, description: Defaults to the backed-up database.}
+                target_schema: {type: string, description: Defaults to the backed-up schema's name.}
+                replace: {type: boolean}
+      responses:
+        "202":
+          description: Restore started
+          content:
+            application/json:
+              schema: {type: object, properties: {operation_id: {type: string, format: uuid}}}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/moves:

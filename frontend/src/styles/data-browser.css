@@ -241,6 +241,17 @@
     color: var(--muted);
     flex-shrink: 0;
   }
+  /* A partitioned table: its chevron opens the partitions under it. */
+  .dbx-tree-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+    margin-left: -0.35rem;
+    cursor: pointer;
+  }
+  .dbx-tree-icon.partition {
+    opacity: 0.7;
+  }
   .dbx-tree-icon.view {
     color: var(--dbx-view);
   }

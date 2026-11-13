@@ -76,7 +76,8 @@ type Service struct {
 	mover     Mover
 	copies    BackupCopyHook
 	onDropped func(ctx context.Context, databaseID, instanceID uuid.UUID)
-	// onSchemaCopied runs after a schema was copied into a database.
+	// onSchemaCopied runs after a schema was copied or restored into a
+	// database.
 	onSchemaCopied func(ctx context.Context, databaseID uuid.UUID)
 	roleCreds      func(ctx context.Context, databaseID uuid.UUID) (user, password string, err error)
 	gateway        GatewayReconciler
@@ -97,8 +98,9 @@ func (s *Service) SetDatabaseDropHook(f func(ctx context.Context, databaseID, in
 	s.onDropped = f
 }
 
-// SetSchemaCopyHook registers a callback run after a schema was copied into
-// a database (optional) — used to extend its data roles' grants to it.
+// SetSchemaCopyHook registers a callback run after a schema was copied or
+// restored into a database (optional) — used to extend its data roles'
+// grants to it.
 func (s *Service) SetSchemaCopyHook(f func(ctx context.Context, databaseID uuid.UUID)) {
 	s.onSchemaCopied = f
 }
@@ -162,6 +164,9 @@ type Params struct {
 	TargetDatabase   string `json:"target_database,omitempty"`
 	TargetDatabaseID string `json:"target_database_id,omitempty"`
 	StructureOnly    bool   `json:"structure_only,omitempty"`
+	// Restore schema: Replace lets a schema backup restored under its own
+	// name replace that schema's objects.
+	Replace bool `json:"replace,omitempty"`
 }
 
 // isProvisionType reports whether a job type is a container lifecycle op.
@@ -376,6 +381,7 @@ func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Pa
 		TargetSchema:   p.TargetSchema,
 		TargetDatabase: p.TargetDatabase,
 		StructureOnly:  p.StructureOnly,
+		Replace:        p.Replace,
 	}
 
 	switch j.Type {
@@ -390,7 +396,7 @@ func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Pa
 		}
 		payload.PutURL = putURL
 		payload.StorageURL = fmt.Sprintf("s3://%s/%s", dest.Bucket, p.Key)
-	case jobdom.TypeRestore:
+	case jobdom.TypeRestore, jobdom.TypeRestoreSchema:
 		_, client, err := s.storageFor(ctx, p.DestinationID)
 		if err != nil {
 			return nil, err
@@ -617,7 +623,7 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 				s.onDropped(ctx, dbID, instID)
 			}
 		}
-	case jobdom.TypeCopySchema:
+	case jobdom.TypeCopySchema, jobdom.TypeRestoreSchema:
 		if ok && s.onSchemaCopied != nil {
 			if dbID, e := uuid.Parse(p.TargetDatabaseID); e == nil {
 				s.onSchemaCopied(ctx, dbID)

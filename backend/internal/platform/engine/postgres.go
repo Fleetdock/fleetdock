@@ -62,6 +62,13 @@ func (pg *Postgres) connect(ctx context.Context, p ConnParams, database string) 
 		cfg.RuntimeParams["statement_timeout"] = ms
 		cfg.RuntimeParams["idle_in_transaction_session_timeout"] = ms
 	}
+	if len(p.SearchPath) > 0 {
+		list, err := searchPathList(p.SearchPath)
+		if err != nil {
+			return nil, err
+		}
+		cfg.RuntimeParams["search_path"] = list
+	}
 	conn, err := pgx.ConnectConfig(cctx, cfg)
 	if err != nil || !p.AssumeOwner {
 		return conn, err
@@ -219,11 +226,14 @@ type PartialDump struct {
 	SkipDataOf []string
 	// SchemaOnly leaves out every table's rows.
 	SchemaOnly bool
+	// Clean emits DROP … IF EXISTS before each object, so the dump replaces
+	// what it holds when restored over it (as whole-database backups do).
+	Clean bool
 }
 
 // PartialDumpArgs builds a pg_dump argv for part of a database. Like DumpArgs
-// it leaves out owners and privileges, but it never emits DROP statements:
-// its output goes into a database that does not hold those objects yet.
+// it leaves out owners and privileges; it emits DROP statements only with
+// Clean.
 func (pg *Postgres) PartialDumpArgs(p ConnParams, database string, part PartialDump) ([]string, []string, []string) {
 	args := []string{
 		"--host=" + p.Host,
@@ -232,6 +242,9 @@ func (pg *Postgres) PartialDumpArgs(p ConnParams, database string, part PartialD
 		"--no-password",
 		"--no-owner",
 		"--no-privileges",
+	}
+	if part.Clean {
+		args = append(args, "--clean", "--if-exists")
 	}
 	if part.Schema != "" {
 		args = append(args, "--schema="+dumpPattern(part.Schema))

@@ -231,6 +231,8 @@ export interface Backup {
   verify_status?: "running" | "passed" | "failed" | null;
   verified_at?: string | null;
   verify_error?: string | null;
+  /** Set on a backup of one PostgreSQL schema. */
+  schema_name?: string | null;
 }
 
 export interface Destination {
@@ -398,6 +400,8 @@ export interface UpdateDestinationInput {
 export interface TriggerBackupInput {
   database_id: string;
   destination_id: string;
+  /** PostgreSQL: back up only this schema. */
+  schema?: string;
 }
 
 export interface RestoreBackupInput {
@@ -493,6 +497,10 @@ export interface TableInfo {
   data_bytes: number;
   index_bytes: number;
   comment: string;
+  /** PostgreSQL: a partitioned table; rows and sizes cover all its partitions. */
+  partitioned?: boolean;
+  /** PostgreSQL: the partitioned table ("schema.table") this is a partition of. */
+  partition_of?: string;
 }
 
 export interface ColumnInfo {
@@ -578,6 +586,8 @@ export interface RunQueryInput {
   query_id?: string;
   /** Dry run: one transaction, rolled back. */
   preview?: boolean;
+  /** PostgreSQL: the session's search_path. */
+  search_path?: string[];
 }
 
 export interface CreateDBUserInput {
@@ -1237,4 +1247,94 @@ export interface SavedTableView {
   author_email?: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Who may use a PostgreSQL schema (GET …/schemas/{schema}/privileges). */
+export interface SchemaAccess {
+  schema: string;
+  owner: string;
+  /** Roles other than the owner with USAGE or CREATE; "PUBLIC" is every role. */
+  grants: { role: string; usage: boolean; create: boolean }[];
+  default_privileges: DefaultPrivilege[];
+  /** Roles that could be granted something. */
+  roles: string[];
+}
+
+export type DefaultPrivilegeObject = "tables" | "sequences" | "functions" | "types";
+
+export interface DefaultPrivilege {
+  /** The role whose new objects get the grant. */
+  creator: string;
+  object_type: DefaultPrivilegeObject;
+  grantee: string;
+  privileges: string[];
+}
+
+/** search_path settings of a PostgreSQL database (GET …/search-path). */
+export interface SearchPaths {
+  /** The database's own setting; empty when it has none. */
+  database: string;
+  /** PostgreSQL's built-in default. */
+  server: string;
+  roles: { role: string; path: string }[];
+}
+
+/** A PostgreSQL sequence (GET …/sequences/{schema}/{sequence}). */
+export interface SequenceInfo {
+  schema: string;
+  name: string;
+  data_type: string;
+  start: number;
+  increment: number;
+  min: number;
+  max: number;
+  cycle: boolean;
+  /** The last value handed out; null before the first nextval. */
+  last_value: number | null;
+  /** What the next nextval returns; null when the sequence is used up. */
+  next_value: number | null;
+  /** "schema.table.column" of a serial or identity column. */
+  owned_by?: string;
+}
+
+export type MaintenanceOp = "vacuum" | "vacuum_analyze" | "analyze" | "reindex";
+
+/** A table's size and housekeeping state (GET …/table-stats). */
+export interface TableStat {
+  schema: string;
+  name: string;
+  total_bytes: number;
+  live_rows: number;
+  dead_rows: number;
+  last_vacuum: string | null;
+  last_autovacuum: string | null;
+  last_analyze: string | null;
+  last_autoanalyze: string | null;
+}
+
+/** One partition of a partitioned table. */
+export interface PartitionInfo {
+  schema: string;
+  name: string;
+  bound: string;
+  total_bytes: number;
+  rows: number;
+  partitioned: boolean;
+}
+
+/** A PostgreSQL extension the server offers (GET …/extensions). */
+export interface ExtensionInfo {
+  name: string;
+  default_version: string;
+  comment: string;
+  /** Set when it is installed in the database. */
+  installed_version?: string;
+  schema?: string;
+  relocatable: boolean;
+  /** A non-superuser with CREATE on the database may install it. */
+  trusted: boolean;
+  /** Installing it needs a superuser, unless it is trusted. */
+  superuser: boolean;
+  /** Versions the installed one can be updated to. */
+  updates?: string[];
 }

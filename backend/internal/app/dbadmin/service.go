@@ -460,6 +460,9 @@ type QueryInput struct {
 	Preview bool
 	// Timeout bounds the run (0 = the console's default).
 	Timeout time.Duration
+	// SearchPath, when set, is the PostgreSQL search_path the statements
+	// run with, set when the session starts.
+	SearchPath []string
 }
 
 // BatchFailure says which statement of a run failed (1-based) and why.
@@ -506,6 +509,12 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 		}
 	}
 
+	if len(in.SearchPath) > 0 {
+		if _, err := engine.SearchPathSQL(in.SearchPath); err != nil {
+			return nil, apperr.Invalid("search_path", err.Error())
+		}
+	}
+
 	ctx, done := s.track(ctx, in)
 	defer done()
 
@@ -519,6 +528,12 @@ func (s *Service) Query(ctx context.Context, in QueryInput) (*QueryOutput, error
 	err := s.scoped(ctx, in.DatabaseID, mode, timeout,
 		func(ctx context.Context, db *databasedom.Database, admin engine.Admin, conn engine.ConnParams) error {
 			onSession := func(pid int64) { s.setSessionID(in.QueryID, pid) }
+			if len(in.SearchPath) > 0 {
+				if _, ok := admin.(engine.SchemaPrivileges); !ok {
+					return apperr.Invalid("search_path", "a search_path is a PostgreSQL setting")
+				}
+				conn.SearchPath = in.SearchPath
+			}
 			var res []engine.QueryResult
 			var err error
 			if in.Preview {
@@ -1067,17 +1082,25 @@ func (s *Service) CheckDump(ctx context.Context, databaseID string) error {
 	return nil
 }
 
-// Dump streams a gzip-compressed SQL dump of the database to w without
-// storing it anywhere. onStart receives the database name just before the
-// first byte is written.
-func (s *Service) Dump(ctx context.Context, databaseID string, w io.Writer, onStart func(dbName string)) error {
+// Dump streams a gzip-compressed SQL dump of the database, or of one of its
+// PostgreSQL schemas, to w without storing it anywhere. onStart receives the
+// database name just before the first byte is written.
+func (s *Service) Dump(ctx context.Context, databaseID, schema string, w io.Writer, onStart func(dbName string)) error {
 	db, engineName, conn, err := s.dumpTarget(ctx, databaseID)
 	if err != nil {
 		return err
 	}
+	if schema != "" {
+		if engineName != "postgres" {
+			return apperr.Invalid("schema", "only PostgreSQL databases have schemas to export on their own")
+		}
+		if err := engine.CheckSchemaName(schema); err != nil {
+			return apperr.Invalid("schema", err.Error())
+		}
+	}
 	cctx, cancel := context.WithTimeout(ctx, dumpTimeout)
 	defer cancel()
-	if err := executor.Dump(cctx, engineName, conn, db.Name, w, func() { onStart(db.Name) }); err != nil {
+	if err := executor.Dump(cctx, engineName, conn, db.Name, schema, w, func() { onStart(db.Name) }); err != nil {
 		return apperr.Invalid("database", err.Error())
 	}
 	return nil
