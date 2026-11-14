@@ -2715,6 +2715,10 @@ paths:
                 tls_mode:
                   type: string
                   enum: [disable, prefer, require, verify-full]
+                  description: >
+                    Defaults to `prefer`, except for ClickHouse, which defaults
+                    to `require`: its HTTP interface cannot negotiate TLS, so
+                    `prefer` means HTTPS only on ports 8443 and 443.
                 labels: {type: object, additionalProperties: {type: string}}
                 tags: {type: array, items: {type: string}}
                 ssh_tunnel:

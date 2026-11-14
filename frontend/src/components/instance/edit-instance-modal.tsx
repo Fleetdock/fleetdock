@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
+import { ClearPasswordWarning } from "@/components/database/clear-password-warning";
 import { DataAccessFields } from "@/components/database/data-access-fields";
 import { SSHTunnelFields } from "@/components/database/ssh-tunnel-fields";
 import { Button, Checkbox, ErrorText, Field, Modal } from "@/components/ui";
@@ -127,6 +128,7 @@ export function EditInstanceModal({
             <option value="disable">Never encrypt</option>
           </select>
         </Field>
+        <ClearPasswordWarning engine={instance.engine} tls={tlsMode} port={Number(port)} />
         {instance.kind === "external" ? (
           <>
             <Field

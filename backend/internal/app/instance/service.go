@@ -123,6 +123,9 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*instancedom.
 		return nil, apperr.Invalid("tls_mode", "tls_mode must be disable, prefer, require or verify-full")
 	}
 	inst.TLSMode = in.TLSMode
+	if inst.TLSMode == "" {
+		inst.TLSMode = inst.DefaultTLSMode()
+	}
 
 	var sshCreds *sshtunnel.Credentials
 	if in.SSHTunnel != nil {

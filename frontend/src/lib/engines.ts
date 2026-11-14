@@ -1,3 +1,5 @@
+import type { TLSMode } from "./types";
+
 /** The database engines Fleetdock manages, with sensible defaults. */
 export type EngineId = "mariadb" | "mysql" | "postgres" | "clickhouse";
 
@@ -26,6 +28,8 @@ type EngineInfo = {
   lacks?: EngineFeature[];
   /** Shown under the port field when the default needs explaining. */
   portHint?: string;
+  /** Encryption setting a new connection starts with (default "prefer"). */
+  defaultTLS?: TLSMode;
 };
 
 export const ENGINES: Record<EngineId, EngineInfo> = {
@@ -36,10 +40,11 @@ export const ENGINES: Record<EngineId, EngineInfo> = {
     label: "ClickHouse",
     version: "25.8",
     versions: ["25.8", "25.3", "24.8"],
-    port: 8123,
+    port: 8443,
     adminUser: "default",
     lacks: ["rowEditing", "backups", "provisioning", "structureEditing", "preview", "insights"],
-    portHint: "The HTTP interface: 8123, or 8443 with TLS.",
+    portHint: "The HTTP interface: 8443 with TLS, or 8123 without.",
+    defaultTLS: "require",
   },
 };
 
@@ -49,8 +54,21 @@ export const ENGINE_IDS = Object.keys(ENGINES) as EngineId[];
  * engineFamily groups engines whose dumps load into each other: an engine id
  * ("mariadb"), or the dump tool a backup records ("pg_dump").
  */
-export function engineFamily(engineOrTool: string): "postgres" | "mysql" {
-  return engineOrTool === "postgres" || engineOrTool === "pg_dump" ? "postgres" : "mysql";
+export function engineFamily(engineOrTool: string): "postgres" | "clickhouse" | "mysql" {
+  if (engineOrTool === "postgres" || engineOrTool === "pg_dump") return "postgres";
+  if (engineOrTool === "clickhouse" || engineOrTool === "clickhouse-native") return "clickhouse";
+  return "mysql";
+}
+
+/**
+ * sendsPasswordInClear reports whether a connection would carry the admin
+ * password unencrypted although the setting does not say "never encrypt"
+ * outright: ClickHouse's HTTP interface cannot switch to TLS in-band, so
+ * "when available" means HTTPS only on 8443 and 443 (as the API decides).
+ */
+export function sendsPasswordInClear(engine: string, tls: TLSMode, port: number): boolean {
+  if (engine !== "clickhouse") return false;
+  return tls === "disable" || (tls === "prefer" && port !== 8443 && port !== 443);
 }
 
 /** engineLabel returns the display name of an engine id ("postgres" → "PostgreSQL"). */

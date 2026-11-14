@@ -233,12 +233,24 @@ type Health struct {
 	CheckedAt time.Time    `json:"checked_at"`
 }
 
-// TLSModeOrDefault returns the TLS mode, defaulting to "prefer".
+// TLSModeOrDefault returns the TLS mode, defaulting to DefaultTLSMode.
 func (i *Instance) TLSModeOrDefault() string {
 	if i.TLSMode == "" {
-		return "prefer"
+		return i.DefaultTLSMode()
 	}
 	return i.TLSMode
+}
+
+// DefaultTLSMode is the TLS mode a new instance gets when none is given:
+// "prefer", which MySQL and PostgreSQL negotiate in-band. ClickHouse's HTTP
+// interface cannot fall back that way — "prefer" there means plain HTTP on
+// 8123 — so it defaults to "require" rather than sending the admin password
+// unencrypted.
+func (i *Instance) DefaultTLSMode() string {
+	if i.Engine == EngineClickHouse {
+		return "require"
+	}
+	return "prefer"
 }
 
 // HasCredentials reports whether SQL-level operations are possible.

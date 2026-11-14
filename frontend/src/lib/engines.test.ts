@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ENGINE_IDS, engineLabel, engineSupports } from "./engines";
+import { ENGINE_IDS, ENGINES, engineFamily, engineLabel, engineSupports, sendsPasswordInClear } from "./engines";
 
 describe("engines", () => {
   it("labels ClickHouse", () => {
@@ -20,5 +20,26 @@ describe("engines", () => {
       expect(engineSupports(id, "rowEditing")).toBe(true);
       expect(engineSupports(id, "backups")).toBe(true);
     }
+  });
+
+  it("gives ClickHouse its own family, matching its backups", () => {
+    expect(engineFamily("clickhouse")).toBe("clickhouse");
+    expect(engineFamily("clickhouse-native")).toBe("clickhouse");
+    expect(engineFamily("mariadb")).toBe(engineFamily("mysql"));
+    expect(engineFamily("pg_dump")).toBe("postgres");
+  });
+
+  it("starts ClickHouse encrypted on its HTTPS port", () => {
+    expect(ENGINES.clickhouse.port).toBe(8443);
+    expect(ENGINES.clickhouse.defaultTLS).toBe("require");
+  });
+
+  it("flags settings that send a ClickHouse password over plain HTTP", () => {
+    expect(sendsPasswordInClear("clickhouse", "prefer", 8123)).toBe(true);
+    expect(sendsPasswordInClear("clickhouse", "disable", 8443)).toBe(true);
+    expect(sendsPasswordInClear("clickhouse", "prefer", 8443)).toBe(false);
+    expect(sendsPasswordInClear("clickhouse", "require", 8123)).toBe(false);
+    // MySQL and PostgreSQL negotiate TLS in-band; "prefer" is fine there.
+    expect(sendsPasswordInClear("postgres", "prefer", 5432)).toBe(false);
   });
 });

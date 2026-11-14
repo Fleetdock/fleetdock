@@ -14,6 +14,7 @@ import type { Instance, TLSMode } from "@/lib/types";
 import { dataAccessDraft, dataAccessInput } from "@/lib/data-access";
 import { sshDraft, sshInput } from "@/lib/ssh-tunnel";
 
+import { ClearPasswordWarning } from "./clear-password-warning";
 import { DataAccessFields } from "./data-access-fields";
 import { SSHTunnelFields } from "./ssh-tunnel-fields";
 
@@ -100,6 +101,7 @@ export function AddServerWizard({
     setEngine(e);
     setVersion(ENGINES[e].version);
     setPort(String(ENGINES[e].port));
+    setTls(ENGINES[e].defaultTLS ?? "prefer");
   }
 
   async function onSubmit(e: FormEvent) {
@@ -270,6 +272,7 @@ export function AddServerWizard({
                   <option value="disable">Never encrypt</option>
                 </Select>
               </Field>
+              <ClearPasswordWarning engine={engine} tls={tls} port={Number(port)} />
               <DataAccessFields value={dataAccess} onChange={setDataAccess} error={error} />
             </>
           ) : (
