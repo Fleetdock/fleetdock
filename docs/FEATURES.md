@@ -87,7 +87,8 @@ Backend (Go):
   the current password). Suspended accounts cannot log in and existing
   sessions/tokens stop working immediately.
 - **ClickHouse** — connect existing ClickHouse servers over the HTTP
-  interface (8123, or 8443 with TLS; directly or via an SSH tunnel). Health
+  interface (8443 with TLS by default, or 8123 without; directly or via an
+  SSH tunnel). Health
   checks, database import/create/drop, SQL console (one server session per
   run, so `SET` and temporary tables carry over; no transactions, so earlier
   statements stay applied if a later one fails), a read-only data browser
@@ -99,8 +100,8 @@ Backend (Go):
   `system.metrics`, `system.server_settings`, database sizes). Read-only
   logins are pinned to `readonly = 2`. Not yet supported: row editing,
   backups and everything built on them (restore, schedules, moves, dumps,
-  SQL import), provisioning ClickHouse as a container, structure editing,
-  write previews and query insights.
+  SQL import), provisioning ClickHouse as a container, public access
+  through the gateway, structure editing, write previews and query insights.
 - **Live DB administration** — for **MariaDB, MySQL, and PostgreSQL**:
   - accounts and grants: list/create/drop users (MariaDB `user@host`,
     PostgreSQL roles), set passwords, view grants, grant/revoke schema
