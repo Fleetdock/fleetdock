@@ -301,6 +301,14 @@ func TestIntegrationClickHouseAccessRoles(t *testing.T) {
 		t.Fatalf("reading another database should be permission denied, got %v", err)
 	}
 
+	// The data browser works as the read-only role, and only on its database.
+	if res, err := c.BrowseRows(ctx, reader, "fd_it_roles", BrowseRequest{Table: "events", Limit: 5}); err != nil || len(res.Rows) == 0 {
+		t.Fatalf("browse as the read-only role: %v (%v)", err, res)
+	}
+	if _, err := c.BrowseRows(ctx, reader, "fd_it_other", BrowseRequest{Table: "events", Limit: 5}); err == nil {
+		t.Fatal("the read-only role browsed another database")
+	}
+
 	mustQuery(t, c, writer, "fd_it_roles", "INSERT INTO events (id) VALUES (10)", true)
 	mustQuery(t, c, writer, "fd_it_roles", "CREATE TABLE scratch (x UInt8) ENGINE = Memory", true)
 	mustFail(t, c, writer, "fd_it_other", "INSERT INTO events (id) VALUES (10)", true)
@@ -397,5 +405,27 @@ func TestIntegrationClickHouseMonitor(t *testing.T) {
 	}
 	if size <= 0 {
 		t.Fatalf("fd_it_mon size = %d in %+v", size, stats)
+	}
+}
+
+// A login whose profile has readonly=1 may not change settings, which every
+// request does; it must get an explanation rather than a raw refusal.
+func TestIntegrationClickHouseReadonlyProfile(t *testing.T) {
+	c, p := chIT(t)
+	ctx := context.Background()
+	const user = "fd_it_ro1"
+	_ = c.DropDBUser(ctx, p, user, "%")
+	if err := c.CreateDBUser(ctx, p, user, "%", "Pw-"+user); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.DropDBUser(context.Background(), p, user, "%") })
+	if err := c.exec(ctx, p, chRequest{query: "ALTER USER " + quoteCHIdent(user) + " SETTINGS readonly = 1"}); err != nil {
+		t.Fatal(err)
+	}
+	q := p
+	q.User, q.Password = user, "Pw-"+user
+	_, err := c.Ping(ctx, q)
+	if err == nil || !strings.Contains(err.Error(), "readonly = 2") {
+		t.Fatalf("Ping as a readonly=1 login = %v, want the readonly=1 explanation", err)
 	}
 }

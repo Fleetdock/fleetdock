@@ -457,14 +457,11 @@ func (c *ClickHouse) runStatement(ctx context.Context, p ConnParams, req chReque
 	start := time.Now()
 	readOnly := isReadOnlyStmt(req.query)
 	res := &QueryResult{Columns: []string{}, Rows: [][]*string{}, ReadOnly: readOnly}
-	if readOnly {
-		req.readOnly = !allowWrite
-		// Let the server stop producing rows soon after the limit.
-		req.settings = map[string]string{
-			"max_result_rows":      strconv.Itoa(limit + 1),
-			"result_overflow_mode": "break",
-		}
-	}
+	// The row limit is applied here, by reading no further: closing the
+	// body then cancels the read on the server. max_result_rows with
+	// result_overflow_mode=break would also cut subqueries and Distributed
+	// reads short, silently returning wrong results.
+	req.readOnly = readOnly && !allowWrite
 	resp, err := c.open(ctx, p, req)
 	if err != nil {
 		return nil, err
@@ -556,11 +553,7 @@ func (c *ClickHouse) ExportCSV(ctx context.Context, p ConnParams, database, tabl
 // to maxExportRows. NULL is written as an empty field, as on the other
 // engines.
 func (c *ClickHouse) streamCSV(ctx context.Context, p ConnParams, req chRequest, w io.Writer, onStart func()) (int64, error) {
-	req.readOnly = true
-	req.settings = map[string]string{
-		"max_result_rows":      strconv.Itoa(maxExportRows + 1),
-		"result_overflow_mode": "break",
-	}
+	req.readOnly = true // the row cap is applied while reading, as in runStatement
 	resp, err := c.open(ctx, p, req)
 	if err != nil {
 		return 0, err

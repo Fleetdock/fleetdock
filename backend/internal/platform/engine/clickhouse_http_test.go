@@ -90,3 +90,46 @@ func TestClickHouseAcceptsClickHouseResponses(t *testing.T) {
 		t.Fatalf("Ping = %q, %v; want 25.8.1.1", v, err)
 	}
 }
+
+func TestClickHouseReadonlyProfileIsExplained(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-ClickHouse-Exception-Code", "164")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("Code: 164. DB::Exception: Cannot modify 'default_format' setting in readonly mode. (READONLY)\n"))
+	}))
+	defer srv.Close()
+	_, err := (&ClickHouse{}).Ping(context.Background(), chTestParams(t, srv))
+	if err == nil || !strings.Contains(err.Error(), "readonly = 2") {
+		t.Fatalf("err = %v, want the readonly=1 explanation", err)
+	}
+
+	// A write refused under readonly=2 is the same code but not a profile problem.
+	write := &ClickHouseError{Code: chReadonly, Message: "Cannot execute query in readonly mode. (READONLY)"}
+	if got := readonlyProfileError(write); got != write {
+		t.Errorf("a refused write was rewritten: %v", got)
+	}
+}
+
+func TestClickHouseRowLimitIsClientSide(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		w.Header().Set("X-ClickHouse-Query-Id", "q1")
+		w.Header().Set("X-ClickHouse-Format", chResultFormat)
+		_, _ = w.Write([]byte("[\"n\"]\n[\"UInt64\"]\n[\"1\"]\n[\"2\"]\n[\"3\"]\n"))
+	}))
+	defer srv.Close()
+	res, err := (&ClickHouse{}).runStatement(context.Background(), chTestParams(t, srv), chRequest{query: "SELECT n FROM t"}, 2, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RowCount != 2 || !res.Truncated {
+		t.Errorf("rows = %d truncated = %v, want 2 and truncated", res.RowCount, res.Truncated)
+	}
+	if strings.Contains(query, "max_result_rows") || strings.Contains(query, "result_overflow_mode") {
+		t.Errorf("request sets a server-side row limit, which also cuts subqueries short: %s", query)
+	}
+	if !strings.Contains(query, "readonly=2") {
+		t.Errorf("a read must still run with readonly=2: %s", query)
+	}
+}

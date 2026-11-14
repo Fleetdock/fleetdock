@@ -55,7 +55,23 @@ const (
 	chUnknownUser          = 192
 	chAccessDenied         = 497
 	chAuthenticationFailed = 516
+	chReadonly             = 164
 )
+
+// errReadonlyProfile explains a login whose profile has readonly=1: such a
+// login may not change any setting, and every request sets some (the output
+// format, and readonly=2 for reads).
+const errReadonlyProfile = "this login's settings profile has readonly=1, which forbids changing settings, so Fleetdock cannot use it. " +
+	"Use readonly=2 instead (still read-only, but settings may change): ALTER USER <name> SETTINGS readonly = 2"
+
+// readonlyProfileError rewrites the server's refusal to change a setting in
+// readonly=1 mode; other errors are returned as they are.
+func readonlyProfileError(e *ClickHouseError) *ClickHouseError {
+	if e.Code == chReadonly && strings.Contains(e.Message, "Cannot modify") {
+		return &ClickHouseError{Code: e.Code, Message: errReadonlyProfile}
+	}
+	return e
+}
 
 // chResultFormat is the output format for result sets: one JSON array per
 // line, the first two carrying column names and types. Unlike the *Strings
@@ -343,10 +359,11 @@ func (c *ClickHouse) open(ctx context.Context, p ConnParams, req chRequest) (*ch
 			return nil, errNotClickHouse(resp.StatusCode)
 		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		if e := parseCHError(string(body)); e != nil {
-			return nil, e
+		e := parseCHError(string(body))
+		if e == nil {
+			e = &ClickHouseError{Code: code, Message: firstLineOf(string(body))}
 		}
-		return nil, &ClickHouseError{Code: code, Message: firstLineOf(string(body))}
+		return nil, readonlyProfileError(e)
 	}
 	if !isClickHouseResponse(resp) {
 		_ = resp.Body.Close()
