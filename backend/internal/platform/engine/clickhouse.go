@@ -56,6 +56,7 @@ const (
 	chAccessDenied         = 497
 	chAuthenticationFailed = 516
 	chReadonly             = 164
+	chSyntaxError          = 62
 )
 
 // errReadonlyProfile explains a login whose profile has readonly=1: such a

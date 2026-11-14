@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -239,7 +240,20 @@ func (c *ClickHouse) ApplyAccessProfile(ctx context.Context, p ConnParams, user,
 	if profile == ProfileReadonly {
 		return c.exec(ctx, p, chRequest{query: "ALTER USER " + u + " SETTINGS readonly = 2 READONLY"})
 	}
-	return c.exec(ctx, p, chRequest{query: "ALTER USER " + u + " DROP ALL SETTINGS"})
+	return c.clearUserSettings(ctx, p, u)
+}
+
+// clearUserSettings removes an account's own settings (the readonly pin of a
+// former readonly profile). DROP ALL SETTINGS is the current syntax; older
+// servers (24.8 among them) reject it as a syntax error, so they get
+// SETTINGS NONE.
+func (c *ClickHouse) clearUserSettings(ctx context.Context, p ConnParams, quotedUser string) error {
+	err := c.exec(ctx, p, chRequest{query: "ALTER USER " + quotedUser + " DROP ALL SETTINGS"})
+	var ce *ClickHouseError
+	if errors.As(err, &ce) && ce.Code == chSyntaxError {
+		return c.exec(ctx, p, chRequest{query: "ALTER USER " + quotedUser + " SETTINGS NONE"})
+	}
+	return err
 }
 
 // setPassword changes an account's password.

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -131,5 +132,27 @@ func TestClickHouseRowLimitIsClientSide(t *testing.T) {
 	}
 	if !strings.Contains(query, "readonly=2") {
 		t.Errorf("a read must still run with readonly=2: %s", query)
+	}
+}
+
+func TestClickHouseClearUserSettingsFallsBackOnOldServers(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = append(got, string(b))
+		w.Header().Set("X-ClickHouse-Query-Id", "q")
+		if strings.Contains(string(b), "DROP ALL SETTINGS") {
+			// 24.8's parser.
+			w.Header().Set("X-ClickHouse-Exception-Code", "62")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("Code: 62. DB::Exception: Syntax error: failed at position 32 ('ALL'). (SYNTAX_ERROR)\n"))
+		}
+	}))
+	defer srv.Close()
+	if err := (&ClickHouse{}).clearUserSettings(context.Background(), chTestParams(t, srv), "`app`"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || !strings.HasSuffix(got[1], "SETTINGS NONE") {
+		t.Fatalf("statements = %q, want DROP ALL SETTINGS then SETTINGS NONE", got)
 	}
 }
