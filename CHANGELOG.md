@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **pgvector for new PostgreSQL servers.** Creating a PostgreSQL database
+  server offers "Include pgvector", which runs the official
+  `pgvector/pgvector` image for that major version, so `CREATE EXTENSION
+  vector` works. Needs an agent from this release. Over the API, pass
+  `"pgvector": true` to `POST /v1/instances/provision`. Existing servers are
+  untouched.
+- **Vector columns in the table editor.** PostgreSQL tables accept `vector`,
+  `halfvec` and `sparsevec` columns (listed under "Vector (pgvector)", or any
+  size via Custom…). Adding one to a database without the extension says to
+  run `CREATE EXTENSION vector` first.
+
 ## [0.11.0] - 2026-11-11
 
 Upgrading: no database migrations since 0.10.0, so `fleetdock update` (or

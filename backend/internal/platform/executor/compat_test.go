@@ -51,3 +51,20 @@ func TestEngineContainerDataPath(t *testing.T) {
 		}
 	}
 }
+
+func TestImageRef(t *testing.T) {
+	cases := []struct {
+		eng  string
+		spec ProvisionSpec
+		want string
+	}{
+		{"mariadb", ProvisionSpec{Version: "11.4"}, "mariadb:11.4"},
+		{"postgres", ProvisionSpec{Image: "postgres", Version: "17"}, "postgres:17"},
+		{"postgres", ProvisionSpec{Image: "pgvector/pgvector", Version: "17", Tag: "pg17"}, "pgvector/pgvector:pg17"},
+	}
+	for _, c := range cases {
+		if got := imageRef(c.eng, &c.spec); got != c.want {
+			t.Errorf("imageRef(%q, %+v) = %q, want %q", c.eng, c.spec, got, c.want)
+		}
+	}
+}
