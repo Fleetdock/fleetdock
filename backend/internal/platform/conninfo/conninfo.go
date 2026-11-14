@@ -53,6 +53,14 @@ func BuildURL(t endpointdom.Target, user, password, database string) (string, er
 		q.Set("sslmode", sslMode(t.Protocol, t.TLSMode))
 		u.RawQuery = q.Encode()
 	}
+	// ClickHouse's HTTP interface ignores the path; the database goes in the
+	// query string.
+	if t.Protocol == endpointdom.ProtocolClickHouse {
+		u.Path = "/"
+		if database != "" {
+			u.RawQuery = url.Values{"database": {database}}.Encode()
+		}
+	}
 	return u.String(), nil
 }
 

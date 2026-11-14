@@ -4,7 +4,7 @@ import { Archive, ArrowRight, CalendarClock, Globe, Lock } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { connectionURL } from "@/components/connectivity/connectivity-section";
+import { connectionURL } from "@/lib/connection-url";
 import { BackupDatabaseModal } from "@/components/database/backup-database-modal";
 import { IndexHealthCard } from "@/components/database/index-health";
 import { Badge, Button, KeyValueList, Skeleton, StatusBadge, Time } from "@/components/ui";
@@ -95,7 +95,7 @@ function ConnectCard({ database, manageHref }: { database: Database; manageHref:
               label: "Private",
               value: `${data.private.host}:${data.private.port}`,
               mono: true,
-              copy: connectionURL(data.private.protocol, data.private.host, data.private.port, database.name),
+              copy: connectionURL(data.private.protocol, data.private.host, data.private.port, database.name, data.private.tls_mode),
             },
             {
               label: "Public",
