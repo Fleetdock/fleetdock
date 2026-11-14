@@ -230,6 +230,10 @@ func chScheme(p ConnParams) string {
 // client builds an HTTP client that dials through netsafe or the SSH tunnel.
 // Keep-alives are off: each request opens its own connection and closes it
 // with the response, the same lifetime as the other engines' connections.
+//
+// Redirects are never followed: netsafe vets only the address dialled, and a
+// redirect would carry the credential headers (and, on 307/308, the
+// statement) to a host nobody chose. open reports any 3xx as an error.
 func (c *ClickHouse) client(p ConnParams) *http.Client {
 	dial := p.dialFunc()
 	tr := &http.Transport{
@@ -246,7 +250,30 @@ func (c *ClickHouse) client(p ConnParams) *http.Client {
 			MinVersion:         tls.VersionTLS12,
 		}
 	}
-	return &http.Client{Transport: tr}
+	return &http.Client{
+		Transport:     tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
+// isClickHouseResponse reports whether a response came from a ClickHouse
+// server, which sets X-ClickHouse-* headers (query id, format, timezone,
+// summary) on every HTTP response.
+func isClickHouseResponse(resp *http.Response) bool {
+	for k := range resp.Header {
+		if strings.HasPrefix(http.CanonicalHeaderKey(k), "X-Clickhouse-") {
+			return true
+		}
+	}
+	return false
+}
+
+// errNotClickHouse reports an endpoint that did not answer as ClickHouse.
+// Nothing from its response is included: an address pointed at some other
+// internal HTTP service must not turn the connection test into a way to read
+// that service's responses.
+func errNotClickHouse(status int) error {
+	return fmt.Errorf("clickhouse: not a ClickHouse server (HTTP %d); check the host and that the port is the HTTP interface (8123, or 8443 with TLS)", status)
 }
 
 // open sends a statement and returns the response for reading. Server
@@ -309,14 +336,21 @@ func (c *ClickHouse) open(ctx context.Context, p ConnParams, req chRequest) (*ch
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
+		// Only a ClickHouse exception's text is shown; it is marked by the
+		// X-ClickHouse-Exception-Code header.
+		code, err := strconv.Atoi(resp.Header.Get("X-ClickHouse-Exception-Code"))
+		if err != nil {
+			return nil, errNotClickHouse(resp.StatusCode)
+		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		if e := parseCHError(string(body)); e != nil {
 			return nil, e
 		}
-		if code, err := strconv.Atoi(resp.Header.Get("X-ClickHouse-Exception-Code")); err == nil {
-			return nil, &ClickHouseError{Code: code, Message: strings.TrimSpace(string(body))}
-		}
-		return nil, fmt.Errorf("clickhouse: HTTP %d: %s", resp.StatusCode, firstLineOf(string(body)))
+		return nil, &ClickHouseError{Code: code, Message: firstLineOf(string(body))}
+	}
+	if !isClickHouseResponse(resp) {
+		_ = resp.Body.Close()
+		return nil, errNotClickHouse(resp.StatusCode)
 	}
 	return &chResponse{body: resp, r: bufio.NewReaderSize(resp.Body, 64<<10), format: resp.Header.Get("X-ClickHouse-Format")}, nil
 }
