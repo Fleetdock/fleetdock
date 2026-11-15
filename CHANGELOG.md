@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-15
+
+Upgrading: `fleetdock update` (or pulling the new image) applies three new
+migrations (`0030_copy_schema`, `0030_pagerduty_notifications`,
+`0031_schema_backups`). Update the agents afterwards: copying a schema,
+restoring a schema backup and creating a server with pgvector need an agent
+from this release on managed servers; everything else works with 0.11
+agents.
+
+Thanks to @shubhambhar007 and @shahawiz for their contributions to this
+release.
+
 ### Added
 
 - **Manage PostgreSQL schemas.** From a schema's menu in the data browser:
@@ -54,15 +66,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pgvector/pgvector` image for that major version, so `CREATE EXTENSION
   vector` works. Needs an agent from this release. Over the API, pass
   `"pgvector": true` to `POST /v1/instances/provision`. Existing servers are
-  untouched. `(#144, thanks @shahawiz)`
+  untouched. (#144, thanks @shahawiz)
 - **Vector columns in the table editor.** PostgreSQL tables accept `vector`,
   `halfvec` and `sparsevec` columns (listed under "Vector (pgvector)", or any
   size via Custom…). Adding one to a database without the extension says to
-  run `CREATE EXTENSION vector` first. `(#144, thanks @shahawiz)`
-- **PagerDuty notification channels.** Send alert triggers and recoveries through
-  Events API v2 with stable incident deduplication and mapped severities. (#112, thanks @shubhambhar007)
-- **Worker intervals are configurable.** Job polling, alert processing and
-  instance health probes can be tuned independently with environment variables. (#111, thanks @shubhambhar007)
+  run `CREATE EXTENSION vector` first. (#144, thanks @shahawiz)
+- **PagerDuty notification channels.** Alerts open a PagerDuty incident
+  through Events API v2, one per rule and server, and resolve it on
+  recovery; failed backups and offline servers open their own incidents.
+  Informational events are not sent, and **Test** resolves its incident right
+  away. The routing key is stored encrypted. (#112, thanks @shubhambhar007)
+- **Worker intervals are configurable.** `FLEETDOCK_JOB_POLL_INTERVAL`
+  (3s), `FLEETDOCK_ALERT_INTERVAL` (15s) and `FLEETDOCK_HEALTH_CHECK_INTERVAL`
+  (1m) set how often queued operations are claimed, alerts are evaluated and
+  database servers are probed. Health probes now run on their own, so slow
+  ones no longer delay backups or alerts. An invalid value stops the control
+  plane from starting. (#111, thanks @shubhambhar007)
 
 ### Fixed
 
@@ -992,7 +1011,8 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Fleetdock/fleetdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Fleetdock/fleetdock/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Fleetdock/fleetdock/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/Fleetdock/fleetdock/compare/v0.9.2...v0.9.3
