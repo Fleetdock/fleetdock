@@ -94,3 +94,43 @@ func TestIntegrationProvisionClickHouse(t *testing.T) {
 		t.Fatal("the volume should have been removed")
 	}
 }
+
+// A container that never becomes ready fails the operation and is removed,
+// volume included, rather than left running with its admin login exposed.
+func TestIntegrationProvisionNotReadyIsRemoved(t *testing.T) {
+	ps := os.Getenv("FLEETDOCK_IT_DOCKER_PORT")
+	if ps == "" {
+		t.Skip("FLEETDOCK_IT_DOCKER_PORT not set")
+	}
+	port, _ := strconv.Atoi(ps)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	old := readyTimeout
+	readyTimeout = time.Millisecond // no server answers that fast
+	t.Cleanup(func() { readyTimeout = old })
+
+	spec := &ProvisionSpec{
+		ContainerName: "fleetdock-it-provision-notready",
+		Image:         "clickhouse",
+		Version:       "25.8",
+		Port:          port,
+		RootPassword:  "Pw-it-provision-2",
+		Volume:        "fleetdock-it-provision-notready",
+	}
+	p := &Payload{Engine: "clickhouse", Provision: spec}
+	t.Cleanup(func() {
+		spec.RemoveVolume = true
+		_, _ = Execute(context.Background(), "remove_instance", p, NopSink{})
+	})
+
+	if _, err := Execute(ctx, "provision_instance", p, NopSink{}); err == nil {
+		t.Fatal("provisioning must fail when the server does not become ready")
+	}
+	if _, err := runDocker(ctx, "inspect", spec.ContainerName); err == nil {
+		t.Error("the container that failed to start is still there")
+	}
+	if _, err := runDocker(ctx, "volume", "inspect", spec.Volume); err == nil {
+		t.Error("the new volume of the failed container is still there")
+	}
+}

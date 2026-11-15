@@ -34,6 +34,8 @@ describe("engines", () => {
   it("starts ClickHouse encrypted on its HTTPS port", () => {
     expect(ENGINES.clickhouse.port).toBe(8443);
     expect(ENGINES.clickhouse.defaultTLS).toBe("require");
+    // A server Fleetdock creates serves plain HTTP: it starts on 8123.
+    expect(ENGINES.clickhouse.provisionPort).toBe(8123);
   });
 
   it("flags settings that send a ClickHouse password over plain HTTP", () => {

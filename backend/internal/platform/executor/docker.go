@@ -128,6 +128,17 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, si
 	if len(ec.readyCmd) > 0 {
 		sink.Log("info", "waiting for the server to accept connections")
 		if err := waitReady(ctx, spec.ContainerName, ec.readyCmd); err != nil {
+			// The operation fails, so nothing will ever manage this
+			// container: left running (--restart unless-stopped) it would
+			// hold the port with its admin login exposed. The volume is the
+			// one just created for this new instance.
+			cctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, rerr := removeContainer(cctx, &ProvisionSpec{ContainerName: spec.ContainerName, Volume: spec.Volume, RemoveVolume: true}); rerr != nil {
+				sink.Log("warn", "could not remove the failed container: "+rerr.Error())
+			} else {
+				sink.Log("info", "removed the container that failed to start")
+			}
 			return nil, err
 		}
 		sink.Log("info", "server is ready")
@@ -136,7 +147,7 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, si
 }
 
 // waitReady runs cmd in the container until it succeeds, the container
-// stops, or readyTimeout passes.
+// stops or starts crash-looping, or readyTimeout passes.
 func waitReady(ctx context.Context, container string, cmd []string) error {
 	ctx, cancel := context.WithTimeout(ctx, readyTimeout)
 	defer cancel()
@@ -144,9 +155,10 @@ func waitReady(ctx context.Context, container string, cmd []string) error {
 		if _, err := runDocker(ctx, append([]string{"exec", container}, cmd...)...); err == nil {
 			return nil
 		}
-		if out, err := runDocker(ctx, "inspect", "-f", "{{.State.Running}}", container); err == nil && strings.TrimSpace(out) == "false" {
-			logs, _ := runDocker(ctx, "logs", "--tail", "5", container)
-			return fmt.Errorf("the container stopped while starting: %s", firstLine(logs))
+		if out, err := runDocker(ctx, "inspect", "-f", "{{.State.Running}} {{.State.Restarting}} {{.RestartCount}}", container); err == nil {
+			if crashed(out) {
+				return fmt.Errorf("the container stopped while starting: %s", lastLogLine(ctx, container))
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -154,6 +166,51 @@ func waitReady(ctx context.Context, container string, cmd []string) error {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// crashed reports, from "{{.State.Running}} {{.State.Restarting}}
+// {{.RestartCount}}", a container that stopped or is crash-looping: with a
+// restart policy one that keeps failing reads as running most of the time,
+// so a restart already counts.
+func crashed(inspect string) bool {
+	f := strings.Fields(inspect)
+	if len(f) != 3 {
+		return false
+	}
+	return f[0] == "false" || f[1] == "true" || f[2] != "0"
+}
+
+// lastLogLine returns the container's most telling recent log line: the last
+// one mentioning an error, or else the last one. Both streams are read, since
+// servers such as ClickHouse log to stderr.
+func lastLogLine(ctx context.Context, container string) string {
+	out, _ := exec.CommandContext(ctx, "docker", "logs", "--tail", "50", container).CombinedOutput()
+	return pickLogLine(string(out))
+}
+
+func pickLogLine(logs string) string {
+	var last, lastErr string
+	for _, l := range strings.Split(logs, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		last = l
+		if lo := strings.ToLower(l); strings.Contains(lo, "error") || strings.Contains(lo, "exception") || strings.Contains(lo, "fatal") {
+			lastErr = l
+		}
+	}
+	line := last
+	if lastErr != "" {
+		line = lastErr
+	}
+	if len(line) > 500 {
+		line = line[:500] + "…"
+	}
+	if line == "" {
+		return "no log output"
+	}
+	return line
 }
 
 func removeContainer(ctx context.Context, spec *ProvisionSpec) (*Result, error) {

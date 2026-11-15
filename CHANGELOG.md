@@ -60,9 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   official `clickhouse` image with a persistent volume, a generated password
   for the `default` login (with SQL-driven account management, so console
   roles and credentials work), the recommended open-files limit, and its
-  HTTP interface published on the port you pick. The operation succeeds only
-  once the server answers, so a container that fails to start fails the
-  operation instead of appearing as running. Start, stop, restart and remove
+  HTTP interface published on the port you pick (8123 by default). The
+  server speaks plain HTTP, and its encryption setting says so whatever the
+  port. The operation succeeds only once the server answers; a container
+  that stops, crash-loops or doesn't answer in time fails the operation with
+  its last log error and is removed with its new volume, instead of being
+  left running with its admin login exposed. Start, stop, restart and remove
   work as for the other engines.
 
 ## [0.11.0] - 2026-11-11

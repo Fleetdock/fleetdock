@@ -51,3 +51,33 @@ func TestEngineContainerDataPath(t *testing.T) {
 		}
 	}
 }
+
+func TestCrashed(t *testing.T) {
+	cases := map[string]bool{
+		"true false 0\n": false, // starting normally
+		"false false 0":  true,  // stopped
+		"true true 2":    true,  // being restarted
+		"true false 3":   true,  // came back after crashing: a crash loop
+		"":               false, // inspect output not understood: keep waiting
+	}
+	for in, want := range cases {
+		if got := crashed(in); got != want {
+			t.Errorf("crashed(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestPickLogLine(t *testing.T) {
+	logs := "Processing configuration file '/etc/clickhouse-server/config.xml'.\n" +
+		"2026.11.15 00:00:01.000 <Error> Application: DB::Exception: Listen [::]:8123 failed: Address already in use\n" +
+		"Logging trace to /var/log/clickhouse-server/clickhouse-server.log\n\n"
+	if got := pickLogLine(logs); !strings.Contains(got, "Address already in use") {
+		t.Errorf("pickLogLine = %q, want the error line", got)
+	}
+	if got := pickLogLine("starting\nstill starting\n"); got != "still starting" {
+		t.Errorf("without an error line, the last line: %q", got)
+	}
+	if got := pickLogLine(""); got != "no log output" {
+		t.Errorf("empty logs: %q", got)
+	}
+}
