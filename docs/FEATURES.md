@@ -106,9 +106,12 @@ Backend (Go):
   restored, moved, downloaded) use Fleetdock's own dump, written over the
   HTTP interface with no tool to install: definitions plus Native-format rows
   of data-holding tables and materialized views (`.fdch.gz`). Each table is
-  read in one query (one snapshot per table, none across tables). Restoring
-  under a new name repoints views and restores `Replicated*MergeTree` tables
-  as plain `*MergeTree`. Credentials the server masks in definitions are
+  read in one query (one snapshot per table, none across tables). Tables are
+  loaded into a temporary table and swapped in, so materialized views never
+  count restored rows twice. A restore anywhere but back in place repoints
+  views, restores `Replicated*MergeTree` tables as plain `*MergeTree` and
+  leaves out streaming tables (Kafka, S3Queue, ...) and the views reading
+  them. Credentials the server masks in definitions are
   reported in the backup log and are only included when the server shows
   secrets. Not yet supported: row editing, SQL file import, comparing a table
   with a backup, provisioning ClickHouse as a container, public access

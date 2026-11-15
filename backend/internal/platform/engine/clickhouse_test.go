@@ -165,6 +165,8 @@ func TestRewriteCHDatabase(t *testing.T) {
 		// Literals, comments, other qualifiers and look-alike names stay.
 		{"SELECT 'src.t', x.src.y, srcx.t, a.src FROM src.t -- src.t", "SELECT 'src.t', x.src.y, srcx.t, a.src FROM `dst`.t -- src.t"},
 		{"SOURCE(CLICKHOUSE(DB 'src' TABLE 'src'))", "SOURCE(CLICKHOUSE(DB 'dst' TABLE 'src'))"},
+		// dictGet names the dictionary as a string; other strings stay.
+		{"SELECT dictGet('src.kinds', 'n', k), dictGetOrDefault( 'src.kinds', 'n', k, 0), concat('src.kinds')", "SELECT dictGet('dst.kinds', 'n', k), dictGetOrDefault( 'dst.kinds', 'n', k, 0), concat('src.kinds')"},
 	}
 	for _, tc := range cases {
 		if got := rewriteCHDatabase(tc.in, "src", "dst"); got != tc.want {
@@ -173,19 +175,104 @@ func TestRewriteCHDatabase(t *testing.T) {
 	}
 }
 
+func TestRewriteCHEngineDB(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"CREATE TABLE `dst`.b (x UInt8) ENGINE = Buffer('src', 'events', 16, 10, 100, 10000, 1000000, 10000000, 100000000)",
+			"CREATE TABLE `dst`.b (x UInt8) ENGINE = Buffer('dst', 'events', 16, 10, 100, 10000, 1000000, 10000000, 100000000)"},
+		{"CREATE TABLE `dst`.m (x UInt8) ENGINE = Merge(src, '^events')", "CREATE TABLE `dst`.m (x UInt8) ENGINE = Merge(`dst`, '^events')"},
+		{"CREATE TABLE `dst`.d (x UInt8) ENGINE = Distributed('cluster', 'src', 'events', rand())",
+			"CREATE TABLE `dst`.d (x UInt8) ENGINE = Distributed('cluster', 'dst', 'events', rand())"},
+		// Another database, or a regexp, stays.
+		{"CREATE TABLE `dst`.m (x UInt8) ENGINE = Merge(REGEXP('^s'), '^events')", "CREATE TABLE `dst`.m (x UInt8) ENGINE = Merge(REGEXP('^s'), '^events')"},
+		{"CREATE TABLE `dst`.d (x UInt8) ENGINE = Distributed('src', 'other', 'events')", "CREATE TABLE `dst`.d (x UInt8) ENGINE = Distributed('src', 'other', 'events')"},
+	}
+	for _, tc := range cases {
+		if got := rewriteCHEngineDB(tc.in, "src", "dst"); got != tc.want {
+			t.Errorf("rewriteCHEngineDB(%q)\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestCHRestoreDDLReplicated(t *testing.T) {
 	in := "CREATE TABLE src.t (v UInt64) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/src/t', '{replica}', v) ORDER BY v"
-	got, notes := chRestoreDDL(in, "src", "copy", true)
+	got, notes := chRestoreDDL(in, "src", "copy", true, true)
 	want := "CREATE TABLE `copy`.t (v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY v"
 	if got != want || len(notes) != 1 {
 		t.Fatalf("got %q (%v), want %q", got, notes, want)
 	}
-	if got, _ := chRestoreDDL("CREATE TABLE src.t (v UInt8) ENGINE = ReplicatedMergeTree ORDER BY v", "src", "copy", true); got != "CREATE TABLE `copy`.t (v UInt8) ENGINE = MergeTree() ORDER BY v" {
+	if got, _ := chRestoreDDL("CREATE TABLE src.t (v UInt8) ENGINE = ReplicatedMergeTree ORDER BY v", "src", "copy", true, true); got != "CREATE TABLE `copy`.t (v UInt8) ENGINE = MergeTree() ORDER BY v" {
 		t.Fatalf("bare Replicated engine: %q", got)
 	}
-	// Restoring under the same name keeps the definition as it was.
-	if got, notes := chRestoreDDL(in, "src", "src", false); got != in || notes != nil {
-		t.Fatalf("same-name restore changed the DDL: %q", got)
+	// Restoring in place keeps the definition as it was.
+	if got, notes := chRestoreDDL(in, "src", "src", false, false); got != in || notes != nil {
+		t.Fatalf("in-place restore changed the DDL: %q", got)
+	}
+	// Under the same name on another server, replication is still dropped.
+	if got, _ := chRestoreDDL(in, "src", "src", false, true); got != "CREATE TABLE src.t (v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY v" {
+		t.Fatalf("same name, other server: %q", got)
+	}
+}
+
+func TestCHSkipReason(t *testing.T) {
+	kafka := chDumpRecord{Kind: "table", Name: "queue", Engine: "Kafka"}
+	repl := chDumpRecord{Kind: "table", Name: "events", Engine: "ReplicatedMergeTree"}
+	plain := chDumpRecord{Kind: "table", Name: "t", Engine: "MergeTree"}
+	cases := []struct {
+		rec                  chDumpRecord
+		inPlace, deReplicate bool
+		skip                 bool
+	}{
+		{kafka, false, true, true},  // a copy (new name, verification)
+		{kafka, false, false, true}, // same name, unknown or other server
+		{kafka, true, false, false}, // back where it came from
+		{chDumpRecord{Kind: "table", Engine: "S3Queue"}, false, true, true},
+		{repl, true, false, true},  // same name: would rejoin its replicas
+		{repl, false, true, false}, // a copy: converted instead
+		{plain, false, false, false},
+	}
+	for _, c := range cases {
+		if got := chSkipReason(c.rec, c.inPlace, c.deReplicate, nil) != ""; got != c.skip {
+			t.Errorf("%s inPlace=%v deReplicate=%v: skip = %v, want %v", c.rec.Engine, c.inPlace, c.deReplicate, got, c.skip)
+		}
+	}
+}
+
+func TestCHReadsFrom(t *testing.T) {
+	mv := "CREATE MATERIALIZED VIEW `dst`.consumer TO `dst`.events AS SELECT _key, value FROM `dst`.queue"
+	if got := chReadsFrom(mv, []string{"queue"}); got != "queue" {
+		t.Errorf("a view reading the skipped queue: %q", got)
+	}
+	if got := chReadsFrom(mv, []string{"que", "events_queue"}); got != "" {
+		t.Errorf("look-alike names matched: %q", got)
+	}
+}
+
+func TestCHRenameCreate(t *testing.T) {
+	cases := map[string]string{
+		"CREATE TABLE `dst`.t (a UInt8) ENGINE = Memory":                     "CREATE TABLE `dst`.`.fd_restore.t` (a UInt8) ENGINE = Memory",
+		"CREATE TABLE db.`odd name` (a UInt8) ENGINE = MergeTree ORDER BY a": "CREATE TABLE db.`.fd_restore.t` (a UInt8) ENGINE = MergeTree ORDER BY a",
+	}
+	for in, want := range cases {
+		got, err := chRenameCreate(in, chRestoreTempName("t"))
+		if err != nil || got != want {
+			t.Errorf("chRenameCreate(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	if _, err := chRenameCreate("CREATE VIEW db.v AS SELECT 1", "x"); err == nil {
+		t.Error("only tables are renamed")
+	}
+}
+
+func TestCHTrailingException(t *testing.T) {
+	native := "\x02\x01\x00binary rows"
+	if e := chTrailingException(native + "Code: 241. DB::Exception: Memory limit exceeded. (MEMORY_LIMIT_EXCEEDED)\n"); e == nil || e.Code != 241 {
+		t.Errorf("current spelling not detected: %v", e)
+	}
+	if e := chTrailingException(native + "Code: 241, e.displayText() = DB::Exception: Memory limit exceeded\n"); e == nil || e.Code != 241 {
+		t.Errorf("older spelling not detected: %v", e)
+	}
+	if e := chTrailingException(native); e != nil {
+		t.Errorf("clean data reported as failed: %v", e)
 	}
 }
 

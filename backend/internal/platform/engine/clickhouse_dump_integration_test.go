@@ -138,3 +138,87 @@ func TestIntegrationClickHouseDumpRestore(t *testing.T) {
 		}
 	})
 }
+
+// A restore must not feed materialized views (here one in another database
+// watching the restored table), and a copy must not consume the original's
+// stream (a Kafka table, the view consuming it, and a view reading it).
+func TestIntegrationClickHouseRestoreSafety(t *testing.T) {
+	c, p := chIT(t)
+	ctx := context.Background()
+	const src, watch, dst = "fd_it_safe_src", "fd_it_safe_watch", "fd_it_safe_copy"
+	for _, db := range []string{src, watch, dst} {
+		_ = c.DropDatabase(ctx, p, db)
+		if err := c.CreateDatabase(ctx, p, db, "", ""); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = c.DropDatabase(context.Background(), p, db) })
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE events (id UInt64, value String) ENGINE = MergeTree ORDER BY id`,
+		`INSERT INTO events SELECT number, toString(number) FROM numbers(1000)`,
+		// Nothing listens on port 1: the table and its consumer exist, but
+		// never receive a message.
+		`CREATE TABLE queue (id UInt64, value String) ENGINE = Kafka
+			SETTINGS kafka_broker_list = '127.0.0.1:1', kafka_topic_list = 'events',
+			         kafka_group_name = 'fd_it', kafka_format = 'JSONEachRow'`,
+		`CREATE MATERIALIZED VIEW consumer TO events AS SELECT id, value FROM queue`,
+		`CREATE VIEW queue_peek AS SELECT id FROM queue`,
+	} {
+		mustQuery(t, c, p, src, stmt, true)
+	}
+	mustQuery(t, c, p, watch, "CREATE MATERIALIZED VIEW mirror ENGINE = MergeTree ORDER BY id AS SELECT id FROM "+src+".events", true)
+	mustQuery(t, c, p, src, "INSERT INTO events VALUES (5000, 'seen')", true)
+	mirror := chChecksum(t, c, p, watch, "mirror")
+	events := chChecksum(t, c, p, src, "events")
+
+	var dump bytes.Buffer
+	if err := c.Dump(ctx, p, src, &dump, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	exists := func(db, name string) bool {
+		r := mustQuery(t, c, p, db, "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = '"+name+"'", false)
+		return *r.Rows[0][0] == "1"
+	}
+
+	t.Run("in place", func(t *testing.T) {
+		if err := c.Restore(ctx, p, src, bytes.NewReader(dump.Bytes()), func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		if got := chChecksum(t, c, p, src, "events"); got != events {
+			t.Errorf("events = %s, want %s", got, events)
+		}
+		if got := chChecksum(t, c, p, watch, "mirror"); got != mirror {
+			t.Errorf("the restore fed a materialized view in another database: %s, want %s", got, mirror)
+		}
+		for _, name := range []string{"queue", "consumer", "queue_peek"} {
+			if !exists(src, name) {
+				t.Errorf("%s was not restored back in place", name)
+			}
+		}
+		// No temporary table is left behind.
+		if r := mustQuery(t, c, p, src, "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.fd_restore.%'", false); *r.Rows[0][0] != "0" {
+			t.Error("a temporary restore table was left behind")
+		}
+	})
+
+	t.Run("copy", func(t *testing.T) {
+		var logs []string
+		if err := c.Restore(ctx, p, dst, bytes.NewReader(dump.Bytes()), func(s string) { logs = append(logs, s) }); err != nil {
+			t.Fatal(err)
+		}
+		if got := chChecksum(t, c, p, dst, "events"); got != events {
+			t.Errorf("events = %s, want %s", got, events)
+		}
+		for _, name := range []string{"queue", "consumer", "queue_peek"} {
+			if exists(dst, name) {
+				t.Errorf("%s was restored into a copy, where it would consume the original's messages", name)
+			}
+		}
+		if log := strings.Join(logs, "\n"); !strings.Contains(log, "queue: not restored") || !strings.Contains(log, "consumer: not restored") {
+			t.Errorf("left-out objects must be logged:\n%s", log)
+		}
+		if got := chChecksum(t, c, p, watch, "mirror"); got != mirror {
+			t.Errorf("mirror changed: %s, want %s", got, mirror)
+		}
+	})
+}
