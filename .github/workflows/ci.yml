@@ -107,6 +107,8 @@ jobs:
       FLEETDOCK_IT_POSTGRES: 127.0.0.1:54329
       FLEETDOCK_IT_CLICKHOUSE: 127.0.0.1:18123
       FLEETDOCK_IT_PASSWORD: rootpw
+      # A free host port for containers the provisioning tests create.
+      FLEETDOCK_IT_DOCKER_PORT: "18124"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -115,6 +117,8 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: engine integration tests
         run: go test -tags integration -count=1 -v ./internal/platform/engine/ -run Integration
+      - name: provisioning integration tests (Docker)
+        run: go test -tags integration -count=1 -v ./internal/platform/executor/ -run IntegrationProvision
       - name: repository integration tests
         run: go test -tags integration -count=1 -v ./internal/infra/postgres/ -run Integration
       - name: migrations apply cleanly and are idempotent

@@ -97,13 +97,13 @@ export function AddServerWizard({
   function chooseMode(m: Mode) {
     setMode(m);
     // Not every engine can be created as a container (ClickHouse).
-    if (m === "provision" && !engineSupports(engine, "provisioning")) pickEngine("postgres");
+    pickEngine(m === "provision" && !engineSupports(engine, "provisioning") ? "postgres" : engine, m);
   }
 
-  function pickEngine(e: EngineId) {
+  function pickEngine(e: EngineId, m: Mode | null = mode) {
     setEngine(e);
     setVersion(ENGINES[e].version);
-    setPort(String(ENGINES[e].port));
+    setPort(String(m === "provision" ? (ENGINES[e].provisionPort ?? ENGINES[e].port) : ENGINES[e].port));
     setTls(ENGINES[e].defaultTLS ?? "prefer");
   }
 

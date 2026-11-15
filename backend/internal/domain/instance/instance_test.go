@@ -1,6 +1,10 @@
 package instance
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/google/uuid"
+)
 
 func TestTLSModeOrDefault(t *testing.T) {
 	cases := []struct {
@@ -30,5 +34,21 @@ func TestFamilies(t *testing.T) {
 	}
 	if EngineMariaDB.Family() != EngineMySQL.Family() || EnginePostgres.Family() != DumpFamily("pg_dump") {
 		t.Error("existing families changed")
+	}
+}
+
+func TestNewProvisionedClickHouseIsPlainHTTP(t *testing.T) {
+	for _, port := range []int{8123, 8443} {
+		inst, err := NewProvisioned(uuid.New(), "ch", EngineClickHouse, "25.8", port)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := inst.TLSModeOrDefault(); got != "disable" {
+			t.Errorf("port %d: tls = %q, want disable (the container serves plain HTTP)", port, got)
+		}
+	}
+	pg, _ := NewProvisioned(uuid.New(), "pg", EnginePostgres, "17", 5432)
+	if got := pg.TLSModeOrDefault(); got != "prefer" {
+		t.Errorf("postgres tls = %q, want prefer", got)
 	}
 }

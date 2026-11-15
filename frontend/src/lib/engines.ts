@@ -34,6 +34,8 @@ type EngineInfo = {
   portHint?: string;
   /** Encryption setting a new connection starts with (default "prefer"). */
   defaultTLS?: TLSMode;
+  /** Port a server Fleetdock creates starts with, when it differs from port. */
+  provisionPort?: number;
 };
 
 export const ENGINES: Record<EngineId, EngineInfo> = {
@@ -49,6 +51,8 @@ export const ENGINES: Record<EngineId, EngineInfo> = {
     lacks: ["rowEditing", "sqlImport", "backupCompare", "structureEditing", "preview", "insights"],
     portHint: "The HTTP interface: 8443 with TLS, or 8123 without. A server Fleetdock creates serves plain HTTP on the port you pick.",
     defaultTLS: "require",
+    // A created server serves plain HTTP, so it starts on the HTTP port.
+    provisionPort: 8123,
   },
 };
 

@@ -31,7 +31,7 @@ func runProvision(ctx context.Context, jobType string, p *Payload, sink LogSink)
 		if spec.TLS != nil {
 			sink.Log("info", "with TLS (certificate valid until "+spec.TLS.NotAfter+")")
 		}
-		return provisionContainer(ctx, p.Engine, spec, imageRef(p.Engine, spec), sink)
+		return provisionContainer(ctx, p.Engine, spec, imageRef(p.Engine, spec), true, sink)
 	case "configure_tls":
 		return configureTLS(ctx, p.Engine, spec, sink)
 	case "start_instance":
@@ -97,8 +97,10 @@ func engineContainerFor(eng, version string) engineContainer {
 // and a published port. The root password is passed via a temporary env-file
 // (removed immediately) so it never appears in the process list. With
 // spec.TLS the certificate is written on the host and mounted read-only, and
-// the engine is started with TLS on.
-func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, image string, sink LogSink) (*Result, error) {
+// the engine is started with TLS on. fresh is set for a new instance, whose
+// volume was just created; configureTLS recreates a container on an existing
+// volume and passes false.
+func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, image string, fresh bool, sink LogSink) (*Result, error) {
 	if spec.TLS != nil && eng == "clickhouse" {
 		return nil, fmt.Errorf("TLS is not supported yet for ClickHouse servers Fleetdock creates")
 	}
@@ -148,6 +150,17 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, im
 	if len(ec.readyCmd) > 0 {
 		sink.Log("info", "waiting for the server to accept connections")
 		if err := waitReady(ctx, spec.ContainerName, ec.readyCmd); err != nil {
+			// The operation fails, so nothing will ever manage this
+			// container: left running (--restart unless-stopped) it would
+			// hold the port with its admin login exposed. Only a new
+			// instance's volume is removed; an existing one keeps its data.
+			cctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, rerr := removeContainer(cctx, &ProvisionSpec{ContainerName: spec.ContainerName, Volume: spec.Volume, RemoveVolume: fresh}); rerr != nil {
+				sink.Log("warn", "could not remove the failed container: "+rerr.Error())
+			} else {
+				sink.Log("info", "removed the container that failed to start")
+			}
 			return nil, err
 		}
 		sink.Log("info", "server is ready")
@@ -268,7 +281,7 @@ func configureTLS(ctx context.Context, eng string, spec *ProvisionSpec, sink Log
 	}
 	// The data volume isn't used again by the image's first-start setup, so
 	// the root password only matters for a fresh volume.
-	res, err := provisionContainer(ctx, eng, spec, image, sink)
+	res, err := provisionContainer(ctx, eng, spec, image, false, sink)
 	if err == nil {
 		err = waitRunning(ctx, spec.ContainerName)
 	}
@@ -333,7 +346,7 @@ func imageRef(eng string, spec *ProvisionSpec) string {
 }
 
 // waitReady runs cmd in the container until it succeeds, the container
-// stops, or readyTimeout passes.
+// stops or starts crash-looping, or readyTimeout passes.
 func waitReady(ctx context.Context, container string, cmd []string) error {
 	ctx, cancel := context.WithTimeout(ctx, readyTimeout)
 	defer cancel()
@@ -341,9 +354,10 @@ func waitReady(ctx context.Context, container string, cmd []string) error {
 		if _, err := runDocker(ctx, append([]string{"exec", container}, cmd...)...); err == nil {
 			return nil
 		}
-		if out, err := runDocker(ctx, "inspect", "-f", "{{.State.Running}}", container); err == nil && strings.TrimSpace(out) == "false" {
-			logs, _ := runDocker(ctx, "logs", "--tail", "5", container)
-			return fmt.Errorf("the container stopped while starting: %s", firstLine(logs))
+		if out, err := runDocker(ctx, "inspect", "-f", "{{.State.Running}} {{.State.Restarting}} {{.RestartCount}}", container); err == nil {
+			if crashed(out) {
+				return fmt.Errorf("the container stopped while starting: %s", lastLogLine(ctx, container))
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -351,6 +365,51 @@ func waitReady(ctx context.Context, container string, cmd []string) error {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// crashed reports, from "{{.State.Running}} {{.State.Restarting}}
+// {{.RestartCount}}", a container that stopped or is crash-looping: with a
+// restart policy one that keeps failing reads as running most of the time,
+// so a restart already counts.
+func crashed(inspect string) bool {
+	f := strings.Fields(inspect)
+	if len(f) != 3 {
+		return false
+	}
+	return f[0] == "false" || f[1] == "true" || f[2] != "0"
+}
+
+// lastLogLine returns the container's most telling recent log line: the last
+// one mentioning an error, or else the last one. Both streams are read, since
+// servers such as ClickHouse log to stderr.
+func lastLogLine(ctx context.Context, container string) string {
+	out, _ := exec.CommandContext(ctx, "docker", "logs", "--tail", "50", container).CombinedOutput()
+	return pickLogLine(string(out))
+}
+
+func pickLogLine(logs string) string {
+	var last, lastErr string
+	for _, l := range strings.Split(logs, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		last = l
+		if lo := strings.ToLower(l); strings.Contains(lo, "error") || strings.Contains(lo, "exception") || strings.Contains(lo, "fatal") {
+			lastErr = l
+		}
+	}
+	line := last
+	if lastErr != "" {
+		line = lastErr
+	}
+	if len(line) > 500 {
+		line = line[:500] + "…"
+	}
+	if line == "" {
+		return "no log output"
+	}
+	return line
 }
 
 func removeContainer(ctx context.Context, spec *ProvisionSpec) (*Result, error) {

@@ -287,6 +287,12 @@ func NewProvisioned(serverID uuid.UUID, name string, engine Engine, engineVersio
 	base.ServerID = &serverID
 	base.Kind = KindManaged
 	base.Status = StatusProvisioning
+	if engine == EngineClickHouse {
+		// The container serves plain HTTP on whatever port was picked, 8443
+		// included: say so rather than let the ClickHouse default
+		// ("require") or the port number suggest HTTPS.
+		base.TLSMode = "disable"
+	}
 	return base, nil
 }
 
