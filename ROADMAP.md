@@ -6,13 +6,14 @@ compatible see [RELEASING.md](RELEASING.md).
 
 ---
 
-## 0.11 — what is in it
+## 0.12 — what is in it
 
 **Fleet.** Servers with a sandboxed agent (one-command install, in-place
 updates, version checks), database servers that Fleetdock creates in Docker or
 that you connect anywhere (directly, through an SSH bastion, or through the
 optional gateway), automatic database discovery and health checks, MySQL,
-MariaDB and PostgreSQL in one dashboard.
+MariaDB and PostgreSQL in one dashboard, with PostgreSQL schemas and
+extensions managed from it.
 
 **Backups.** Schedules with retention to your own S3-compatible storage,
 automatic test restores, restore and copy/move between servers of the same
@@ -37,9 +38,17 @@ Neutral style; borderless; animations), the data browser's command panel, JSON
 cells as a tree with a JSON editor, loading skeletons, the new logo, copying
 and queries over plain HTTP on a LAN address, built with Go 1.26.11.
 
+**New in 0.12.** PostgreSQL schemas end to end: every schema shown, create,
+rename, re-own, comment and drop, move objects between schemas, copy a schema,
+schema privileges, default privileges and search_path, housekeeping (sequences,
+materialized view refresh, VACUUM/ANALYZE/REINDEX, table statistics,
+partitions), per-schema backup, restore and export, and extensions. Also
+pgvector for new PostgreSQL servers, PagerDuty notifications and configurable
+worker intervals.
+
 ---
 
-## Next — 0.12
+## Next — 0.13
 
 | Item | Notes | Issue |
 |------|-------|-------|
@@ -81,8 +90,7 @@ line.
 | Access | Cloudflare Tunnel / TCP proxy for external databases without open ports | #100 |
 | Operations | Helm chart; Terraform module for a single VM | #101 |
 | Operations | OpenTelemetry traces | #102 |
-| Operations | Configurable worker intervals | #103 |
-| Notifications | More channels: Discord, Microsoft Teams, PagerDuty | #104, #105, #106 |
+| Notifications | More channels: Discord, Microsoft Teams | #104, #105 |
 | Dashboard | Translations | #107 |
 | Community | Public read-only demo; comparison with phpMyAdmin and cloud consoles | #108, #109 |
 

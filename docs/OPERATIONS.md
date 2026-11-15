@@ -79,14 +79,14 @@ Stop the API during restore to avoid concurrent writes.
 
 ```bash
 fleetdock update              # latest
-fleetdock update --tag v0.11.0 # a specific release
+fleetdock update --tag v0.12.0 # a specific release
 ```
 
 ### Compose (build from source)
 
 ```bash
 git fetch origin
-git checkout v0.11.0  # or main for latest
+git checkout v0.12.0  # or main for latest
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
@@ -142,7 +142,7 @@ migrations). What changes on the way:
 2. **Update the control plane**: `fleetdock update --tag v0.10.0`, or pull the
    image and restart. On its first start 0.10 records a checksum for every
    migration already applied and encrypts the secrets of notification
-   channels saved before (webhook URLs, SMTP password, PagerDuty routing keys). Check the sidebar shows
+   channels saved before (webhook URLs, SMTP password). Check the sidebar shows
    the new version.
 3. **Update the agents**: every server shows **Update** (agents before 0.10
    reported themselves as 0.1.0). Run the update command on each (below).
@@ -155,6 +155,23 @@ migrations). What changes on the way:
 6. **Compose installs managed by hand**: take the new `docker-compose.yml`; it
    passes `FLEETDOCK_ENCRYPTION_KEY_ID`, `FLEETDOCK_ENCRYPTION_KEYS_OLD` and
    `FLEETDOCK_METRICS_TOKEN` to the container (`fleetdock update` fetches it).
+
+### Upgrading to 0.12
+
+0.12 upgrades in place from 0.11 with `fleetdock update --tag v0.12.0` (or by
+pulling the image and restarting). It applies three migrations: two new
+operation types (copying a PostgreSQL schema, restoring a schema backup), a
+`schema_name` on backups, and the PagerDuty channel type.
+
+Then update the agents (below). 0.11 agents keep working, but on managed
+servers copying a schema, restoring a schema backup and creating a
+PostgreSQL server with pgvector need a 0.12 agent; an older one fails those
+operations with "unsupported operation type" or an image it cannot pull.
+
+New, optional settings: `FLEETDOCK_JOB_POLL_INTERVAL`,
+`FLEETDOCK_ALERT_INTERVAL` and `FLEETDOCK_HEALTH_CHECK_INTERVAL`
+([CONFIGURATION.md](CONFIGURATION.md)). Unlike other durations, an invalid
+value for one of them stops the control plane from starting.
 
 ### Updating agents
 

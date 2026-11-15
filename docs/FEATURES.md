@@ -98,7 +98,21 @@ Backend (Go):
     search, a neighbours view and PNG/SVG export
     (`GET /v1/databases/{id}/diagram`);
   - PostgreSQL schemas: the table tree and the diagram show the schemas
-    you pick (remembered per database); searching still finds the others;
+    you pick (remembered per database), empty ones included; searching
+    still finds the others. From a schema's menu: create, rename, change
+    owner, comment, drop (CASCADE only after seeing what depends on it),
+    copy to a new schema (with or without rows, in this or another
+    database), back up or export it, and table statistics with VACUUM
+    ANALYZE. Tables, views, sequences, functions and types can be moved
+    between schemas. Partitioned tables list their partitions under them;
+    sequences show and set their next value; materialized views refresh;
+  - PostgreSQL access: per schema, which roles have USAGE and CREATE and the
+    default privileges of new objects; the search_path of the database and
+    of roles (Access tab), and per SQL console session;
+  - PostgreSQL extensions: the **Extensions** tab lists installed and
+    available extensions and installs, updates and removes them; new
+    PostgreSQL servers can include pgvector, and the table editor offers
+    vector columns;
   - saved table views: named filters, sort and columns, private or shared,
     with a link (`/v1/databases/{id}/table-views`);
   - full screen (Alt+Shift+F) hides the app's sidebar and top bar; choose
