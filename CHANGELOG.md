@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Worker intervals are configurable.** Job polling, alert processing and
+  instance health probes can be tuned independently with environment variables.
+
+
 ## [0.11.0] - 2026-11-11
 
 Upgrading: no database migrations since 0.10.0, so `fleetdock update` (or
@@ -16,8 +22,6 @@ Thanks to @Whitedragon115, who contributed most of this release.
 
 ### Added
 
-- **Worker intervals are configurable.** Job polling, alert processing and
-  instance health probes can be tuned independently with environment variables.
 - **Data browser: JSON as a tree.** A cell holding a JSON object or array,
   in any column type, shows as a collapsible tree in the value and row
   panels, with a raw view. Editing such a cell opens the value panel with
