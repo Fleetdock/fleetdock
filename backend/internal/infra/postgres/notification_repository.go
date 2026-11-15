@@ -254,11 +254,12 @@ type outboxPayload struct {
 	Message    string      `json:"message"`
 	Severity   string      `json:"severity"`
 	ChannelIDs []uuid.UUID `json:"channel_ids"`
+	DedupKey   string      `json:"dedup_key,omitempty"`
 }
 
 func (r *NotificationRepository) Enqueue(ctx context.Context, e notifdom.Event) error {
 	payload, _ := json.Marshal(outboxPayload{
-		Title: e.Title, Message: e.Message, Severity: e.Severity, ChannelIDs: e.ChannelIDs,
+		Title: e.Title, Message: e.Message, Severity: e.Severity, ChannelIDs: e.ChannelIDs, DedupKey: e.DedupKey,
 	})
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO outbox (aggregate_type, aggregate_id, event_type, payload)
@@ -293,6 +294,7 @@ func (r *NotificationRepository) ListUnpublished(ctx context.Context, limit int)
 		_ = json.Unmarshal(payloadRaw, &p)
 		row.Event.Title, row.Event.Message, row.Event.Severity = p.Title, p.Message, p.Severity
 		row.Event.ChannelIDs = p.ChannelIDs
+		row.Event.DedupKey = p.DedupKey
 		out = append(out, row)
 	}
 	return out, rows.Err()

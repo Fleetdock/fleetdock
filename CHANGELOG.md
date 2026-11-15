@@ -14,11 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pgvector/pgvector` image for that major version, so `CREATE EXTENSION
   vector` works. Needs an agent from this release. Over the API, pass
   `"pgvector": true` to `POST /v1/instances/provision`. Existing servers are
-  untouched.
+  untouched. `(#144, thanks @shahawiz)`
 - **Vector columns in the table editor.** PostgreSQL tables accept `vector`,
   `halfvec` and `sparsevec` columns (listed under "Vector (pgvector)", or any
   size via Custom…). Adding one to a database without the extension says to
-  run `CREATE EXTENSION vector` first.
+  run `CREATE EXTENSION vector` first. `(#144, thanks @shahawiz)`
+- **PagerDuty notification channels.** Send alert triggers and recoveries through
+  Events API v2 with stable incident deduplication and mapped severities. (#112, thanks @shubhambhar007)
+- **Worker intervals are configurable.** Job polling, alert processing and
+  instance health probes can be tuned independently with environment variables. (#111, thanks @shubhambhar007)
 
 ## [0.11.0] - 2026-11-11
 

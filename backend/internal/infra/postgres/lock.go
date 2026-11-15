@@ -12,6 +12,7 @@ const (
 	lockKeyMigrations   int64 = 0x666c6474_00000001 // "fldt" + 1
 	lockKeyHousekeeping int64 = 0x666c6474_00000002
 	lockKeyCatalog      int64 = 0x666c6474_00000003
+	lockKeyHealth       int64 = 0x666c6474_00000004
 )
 
 // TryLock takes a session-level advisory lock on its own pooled connection,
@@ -49,6 +50,14 @@ func HousekeepingLock(pool *pgxpool.Pool) func(context.Context) (func(), bool, e
 func CatalogLock(pool *pgxpool.Pool) func(context.Context) (func(), bool, error) {
 	return func(ctx context.Context) (func(), bool, error) {
 		return TryLock(ctx, pool, lockKeyCatalog)
+	}
+}
+
+// HealthLock is TryLock for health probes, separate from housekeeping so slow
+// probes never delay schedules, alerts or retention.
+func HealthLock(pool *pgxpool.Pool) func(context.Context) (func(), bool, error) {
+	return func(ctx context.Context) (func(), bool, error) {
+		return TryLock(ctx, pool, lockKeyHealth)
 	}
 }
 
