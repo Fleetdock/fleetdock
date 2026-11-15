@@ -22,10 +22,14 @@ type MetricsSource interface {
 	LatestServerHealth(ctx context.Context) ([]serverdom.HealthSample, error)
 }
 
+type channelSender interface {
+	Deliver(ctx context.Context, ch notify.Channel, msg notify.Message) error
+}
+
 // Service implements notification use cases.
 type Service struct {
 	repo    notifdom.Repository
-	sender  *notify.Sender
+	sender  channelSender
 	metrics MetricsSource
 	secrets SecretStore // nil keeps channel secrets in the config (tests)
 
@@ -80,7 +84,7 @@ const RedactedMask = "••••••"
 
 // secretConfigKeys hold sensitive values that are masked on read; when an
 // update sends them blank or masked, the stored value is preserved.
-var secretConfigKeys = map[string]bool{"url": true, "webhook_url": true, "password": true}
+var secretConfigKeys = map[string]bool{"url": true, "webhook_url": true, "password": true, "routing_key": true}
 
 // UpdateChannel validates and persists channel changes.
 func (s *Service) UpdateChannel(ctx context.Context, id string, in ChannelInput) (*notifdom.Channel, error) {
@@ -145,14 +149,25 @@ func (s *Service) TestChannel(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	err = s.sender.Deliver(ctx, notify.Channel{Type: string(c.Type), Config: config}, notify.Message{
+	ch := notify.Channel{Type: string(c.Type), Config: config}
+	msg := notify.Message{
 		Title:    "Fleetdock test notification",
 		Body:     "This is a test message from Fleetdock. If you can read this, the channel works.",
 		Severity: "info",
 		Event:    "test",
-	})
+		DedupKey: "fleetdock/test/" + c.ID.String(),
+	}
+	err = s.sender.Deliver(ctx, ch, msg)
 	if err != nil {
 		return apperr.Invalid("channel", "delivery failed: "+err.Error())
+	}
+	if c.Type == notifdom.ChannelPagerDuty {
+		msg.Event = "alert.resolved"
+		msg.Title = "Fleetdock test notification resolved"
+		msg.Body = "The PagerDuty test incident was resolved after delivery verification."
+		if err := s.sender.Deliver(ctx, ch, msg); err != nil {
+			return apperr.Invalid("channel", "test incident could not be resolved: "+err.Error())
+		}
 	}
 	return nil
 }
@@ -267,6 +282,7 @@ func (s *Service) Emit(ctx context.Context, eventType, title, message, severity 
 		Title:         title,
 		Message:       message,
 		Severity:      severity,
+		DedupKey:      fmt.Sprintf("fleetdock/%s/%s/%s", eventType, aggregateType, aggregateID),
 	})
 	if err != nil {
 		slog.Error("notification: enqueue", "event", eventType, "error", err.Error())
@@ -288,6 +304,10 @@ func (s *Service) DispatchPending(ctx context.Context) (int, error) {
 			_ = s.repo.MarkFailed(ctx, row.ID)
 			continue
 		}
+		dedupKey := row.Event.DedupKey
+		if dedupKey == "" {
+			dedupKey = fmt.Sprintf("fleetdock/outbox/%d", row.ID)
+		}
 		ok := true
 		for _, ch := range channels {
 			config, derr := s.open(ctx, ch)
@@ -301,6 +321,7 @@ func (s *Service) DispatchPending(ctx context.Context) (int, error) {
 				Body:     row.Event.Message,
 				Severity: row.Event.Severity,
 				Event:    row.Event.EventType,
+				DedupKey: dedupKey,
 			})
 			if derr != nil {
 				slog.Warn("notification: delivery failed", "channel", ch.Name, "error", derr.Error())
@@ -359,10 +380,10 @@ func (s *Service) evaluateOne(ctx context.Context, rule *notifdom.Rule, sample s
 
 	if !breaching {
 		if s.firing[key] {
-			s.Emit(ctx, "alert.resolved",
+			s.emitAlert(ctx, rule, "alert.resolved",
 				fmt.Sprintf("Resolved: %s on %s", rule.Name, sample.ServerName),
 				fmt.Sprintf("%s is back to %.1f (threshold %s %.1f)", rule.Metric, value, rule.Comparator, rule.Threshold),
-				"info", "alert_rule", rule.ID)
+				"info", key)
 		}
 		delete(s.firing, key)
 		delete(s.breaching, key)
@@ -381,19 +402,20 @@ func (s *Service) evaluateOne(ctx context.Context, rule *notifdom.Rule, sample s
 		s.firing[key] = true
 		msg := fmt.Sprintf("%s = %.1f %s threshold %.1f on server %s",
 			rule.Metric, value, rule.Comparator, rule.Threshold, sample.ServerName)
-		s.emitToChannels(ctx, rule, fmt.Sprintf("Alert: %s", rule.Name), msg)
+		s.emitAlert(ctx, rule, "alert.firing", fmt.Sprintf("Alert: %s", rule.Name), msg, rule.Severity, key)
 	}
 }
 
-func (s *Service) emitToChannels(ctx context.Context, rule *notifdom.Rule, title, message string) {
+func (s *Service) emitAlert(ctx context.Context, rule *notifdom.Rule, eventType, title, message, severity, dedupKey string) {
 	err := s.repo.Enqueue(ctx, notifdom.Event{
 		AggregateType: "alert_rule",
 		AggregateID:   rule.ID,
-		EventType:     "alert.firing",
+		EventType:     eventType,
 		Title:         title,
 		Message:       message,
-		Severity:      rule.Severity,
+		Severity:      severity,
 		ChannelIDs:    rule.ChannelIDs,
+		DedupKey:      dedupKey,
 	})
 	if err != nil {
 		slog.Error("notification: enqueue alert", "rule", rule.ID, "error", err.Error())

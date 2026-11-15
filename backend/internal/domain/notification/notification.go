@@ -1,5 +1,5 @@
 // Package notification is the domain model for notification channels
-// (email/slack/webhook), alert rules, and the outbox events that connect
+// (email/slack/webhook/PagerDuty), alert rules, and the outbox events that connect
 // them.
 package notification
 
@@ -16,15 +16,16 @@ import (
 type ChannelType string
 
 const (
-	ChannelEmail   ChannelType = "email"
-	ChannelSlack   ChannelType = "slack"
-	ChannelWebhook ChannelType = "webhook"
+	ChannelEmail     ChannelType = "email"
+	ChannelSlack     ChannelType = "slack"
+	ChannelWebhook   ChannelType = "webhook"
+	ChannelPagerDuty ChannelType = "pagerduty"
 )
 
 // Valid reports whether t is a known channel type.
 func (t ChannelType) Valid() bool {
 	switch t {
-	case ChannelEmail, ChannelSlack, ChannelWebhook:
+	case ChannelEmail, ChannelSlack, ChannelWebhook, ChannelPagerDuty:
 		return true
 	}
 	return false
@@ -70,7 +71,7 @@ func validateChannel(name string, t ChannelType, config map[string]string) error
 		return apperr.Invalid("name", "name is required and must be at most 63 characters")
 	}
 	if !t.Valid() {
-		return apperr.Invalid("type", "type must be one of: email, slack, webhook")
+		return apperr.Invalid("type", "type must be one of: email, slack, webhook, pagerduty")
 	}
 	switch t {
 	case ChannelWebhook:
@@ -84,6 +85,10 @@ func validateChannel(name string, t ChannelType, config map[string]string) error
 	case ChannelEmail:
 		if config["to"] == "" {
 			return apperr.Invalid("config", "email channels require a config.to address")
+		}
+	case ChannelPagerDuty:
+		if config["routing_key"] == "" {
+			return apperr.Invalid("config", "pagerduty channels require a config.routing_key")
 		}
 	}
 	return nil
@@ -216,6 +221,7 @@ type Event struct {
 	Message       string
 	Severity      string
 	ChannelIDs    []uuid.UUID // empty = all enabled channels
+	DedupKey      string
 }
 
 // OutboxRow is a persisted, not-yet-delivered event.

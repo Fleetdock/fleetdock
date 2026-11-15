@@ -56,10 +56,14 @@ type ProvisionSpec struct {
 	ContainerName string `json:"container_name"`
 	Image         string `json:"image"`   // e.g. "mariadb"
 	Version       string `json:"version"` // e.g. "11.4"
-	Port          int    `json:"port"`
-	RootPassword  string `json:"root_password,omitempty"` // provision only
-	Volume        string `json:"volume"`
-	RemoveVolume  bool   `json:"remove_volume,omitempty"` // remove only
+	// Tag, when set, is the image tag to run instead of Version, for images
+	// tagged differently from the engine (e.g. "pg17" for pgvector/pgvector).
+	// Version still names the engine version.
+	Tag          string `json:"tag,omitempty"`
+	Port         int    `json:"port"`
+	RootPassword string `json:"root_password,omitempty"` // provision only
+	Volume       string `json:"volume"`
+	RemoveVolume bool   `json:"remove_volume,omitempty"` // remove only
 }
 
 // Result is the outcome data of one operation.

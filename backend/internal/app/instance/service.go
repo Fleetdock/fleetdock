@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strconv"
 	"strings"
 	"time"
 
@@ -214,7 +215,10 @@ type ProvisionInput struct {
 	Engine        string
 	EngineVersion string
 	Port          int
-	CreatedBy     *uuid.UUID
+	// PGVector runs a PostgreSQL image with the pgvector extension
+	// available (postgres only).
+	PGVector  bool
+	CreatedBy *uuid.UUID
 }
 
 // Provision creates a managed instance and enqueues a job for the server's
@@ -229,6 +233,10 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 		eng = instancedom.EngineMariaDB
 	}
 	inst, err := instancedom.NewProvisioned(serverID, in.Name, eng, in.EngineVersion, in.Port)
+	if err != nil {
+		return nil, nil, err
+	}
+	image, tag, err := provisionImage(eng, in.EngineVersion, in.PGVector)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -252,7 +260,7 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 	}
 
 	job, err := s.ops.Create(ctx, jobdom.TypeProvisionInstance, "instance", &inst.ID, &serverID,
-		operationapp.Params{InstanceID: inst.ID.String(), Image: string(eng), Version: in.EngineVersion}, in.CreatedBy)
+		operationapp.Params{InstanceID: inst.ID.String(), Image: image, Version: in.EngineVersion, Tag: tag}, in.CreatedBy)
 	if err != nil {
 		_ = s.repo.SetStatus(ctx, inst.ID, instancedom.StatusError)
 		return nil, nil, err
@@ -717,4 +725,21 @@ func clampLimit(l int) int {
 	default:
 		return l
 	}
+}
+
+// provisionImage picks the Docker image (and a tag overriding the version,
+// if any) to provision eng at version. With pgvector it is the official
+// pgvector/pgvector image, which is tagged by PostgreSQL major ("pg17").
+func provisionImage(eng instancedom.Engine, version string, pgvector bool) (image, tag string, err error) {
+	if !pgvector {
+		return string(eng), "", nil
+	}
+	if eng != instancedom.EnginePostgres {
+		return "", "", apperr.Invalid("pgvector", "pgvector is only available for PostgreSQL")
+	}
+	major, err := strconv.Atoi(strings.SplitN(strings.TrimSpace(version), ".", 2)[0])
+	if err != nil || major < 13 {
+		return "", "", apperr.Invalid("engine_version", "pgvector needs PostgreSQL 13 or newer, given as a major version such as 17")
+	}
+	return "pgvector/pgvector", "pg" + strconv.Itoa(major), nil
 }

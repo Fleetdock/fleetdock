@@ -1,5 +1,5 @@
 // Package notify delivers notification events to channels (webhook, Slack,
-// email). It has no dependency on the domain or storage layers — callers pass
+// email, PagerDuty). It has no dependency on the domain or storage layers — callers pass
 // a plain Message and Channel description.
 package notify
 
@@ -32,6 +32,7 @@ type Message struct {
 	Body     string
 	Severity string
 	Event    string
+	DedupKey string
 }
 
 // Channel is the subset of a notification channel notify needs to deliver.
@@ -42,14 +43,17 @@ type Channel struct {
 
 // Sender delivers messages to channels.
 type Sender struct {
-	smtp   SMTPConfig
-	client *http.Client
+	smtp         SMTPConfig
+	client       *http.Client
+	pagerDutyURL string
 }
 
-// New builds a Sender. Webhook/Slack delivery uses an SSRF-guarded HTTP client
-// that refuses to connect to loopback, link-local or metadata addresses.
+const pagerDutyEventsURL = "https://events.pagerduty.com/v2/enqueue"
+
+// New builds a Sender. HTTP delivery uses an SSRF-guarded client that refuses
+// to connect to loopback, link-local or metadata addresses.
 func New(smtp SMTPConfig) *Sender {
-	return &Sender{smtp: smtp, client: netsafe.GuardedClient(10 * time.Second)}
+	return &Sender{smtp: smtp, client: netsafe.GuardedClient(10 * time.Second), pagerDutyURL: pagerDutyEventsURL}
 }
 
 // Deliver sends a message to a single channel.
@@ -61,9 +65,47 @@ func (s *Sender) Deliver(ctx context.Context, ch Channel, msg Message) error {
 		return s.deliverSlack(ctx, ch.Config["webhook_url"], msg)
 	case "email":
 		return s.deliverEmail(ch.Config["to"], msg)
+	case "pagerduty":
+		return s.deliverPagerDuty(ctx, ch.Config["routing_key"], msg)
 	default:
 		return fmt.Errorf("unknown channel type %q", ch.Type)
 	}
+}
+
+func (s *Sender) deliverPagerDuty(ctx context.Context, routingKey string, msg Message) error {
+	if routingKey == "" {
+		return fmt.Errorf("pagerduty routing key is empty")
+	}
+	if msg.DedupKey == "" {
+		return fmt.Errorf("pagerduty deduplication key is empty")
+	}
+	if msg.Severity == "info" && msg.Event != "alert.resolved" && msg.Event != "test" {
+		return nil
+	}
+	action := "trigger"
+	payload := map[string]any{
+		"routing_key":  routingKey,
+		"event_action": action,
+		"dedup_key":    msg.DedupKey,
+	}
+	if msg.Event == "alert.resolved" {
+		payload["event_action"] = "resolve"
+	} else {
+		severity := msg.Severity
+		switch severity {
+		case "info", "warning", "critical":
+		default:
+			severity = "info"
+		}
+		payload["payload"] = map[string]any{
+			"summary":        msg.Title,
+			"source":         "Fleetdock",
+			"severity":       severity,
+			"custom_details": map[string]string{"message": msg.Body, "event": msg.Event},
+		}
+	}
+	body, _ := json.Marshal(payload)
+	return s.post(ctx, s.pagerDutyURL, body)
 }
 
 func (s *Sender) deliverWebhook(ctx context.Context, url string, msg Message) error {

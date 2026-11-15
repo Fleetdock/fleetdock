@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func ptrS(s string) *string { return &s }
@@ -170,12 +173,12 @@ func TestStructureValidation(t *testing.T) {
 			t.Errorf("mysql type %q rejected: %v", ok, err)
 		}
 	}
-	for _, ok := range []string{"character varying(20)", "timestamp with time zone", "integer[]", "numeric(10, 2)", "jsonb"} {
+	for _, ok := range []string{"character varying(20)", "timestamp with time zone", "integer[]", "numeric(10, 2)", "jsonb", "vector(1536)", "halfvec(768)", "sparsevec", "VECTOR"} {
 		if _, err := checkType(pgTypeRe, ok); err != nil {
 			t.Errorf("pg type %q rejected: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"int; drop table x", "varchar(20) DEFAULT 1", "text) --"} {
+	for _, bad := range []string{"int; drop table x", "varchar(20) DEFAULT 1", "text) --", "vector(1536); drop table x"} {
 		if _, err := checkType(pgTypeRe, bad); err == nil {
 			t.Errorf("type %q accepted", bad)
 		}
@@ -243,5 +246,16 @@ func TestBrowseWhereRejectsBadOperands(t *testing.T) {
 		if _, _, err := mysqlDialect.where(m, BrowseRequest{Filters: []Filter{f}}, nil); err == nil {
 			t.Errorf("accepted %+v", f)
 		}
+	}
+}
+
+func TestWithExtensionHint(t *testing.T) {
+	missing := &pgconn.PgError{Code: "42704", Message: `type "vector" does not exist`}
+	if err := withExtensionHint(missing); !strings.Contains(err.Error(), "CREATE EXTENSION vector") || !errors.Is(err, missing) {
+		t.Errorf("missing vector type: got %v", err)
+	}
+	other := &pgconn.PgError{Code: "42704", Message: `type "geography" does not exist`}
+	if err := withExtensionHint(other); err != other {
+		t.Errorf("other missing type was changed: %v", err)
 	}
 }

@@ -373,6 +373,7 @@ export interface ProvisionInstanceInput {
   engine?: string;
   engine_version: string;
   port: number;
+  pgvector?: boolean;
 }
 
 export interface CreateDestinationInput {
@@ -668,7 +669,7 @@ export interface UpdateScheduleInput {
 }
 
 // ---- Notification channels + alert rules ----
-export type ChannelType = "email" | "slack" | "webhook";
+export type ChannelType = "email" | "slack" | "webhook" | "pagerduty";
 
 export interface NotificationChannel {
   id: string;
