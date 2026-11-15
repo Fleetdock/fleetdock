@@ -173,7 +173,7 @@ func existingName(kind, name string) error {
 
 var (
 	mysqlTypeRe = regexp.MustCompile(`(?i)^(tinyint|smallint|mediumint|int|integer|bigint|decimal|numeric|float|double|bit|bool|boolean|char|varchar|binary|varbinary|tinytext|text|mediumtext|longtext|tinyblob|blob|mediumblob|longblob|date|time|datetime|timestamp|year|json|geometry|point)(\(\d{1,5}(,\d{1,3})?\))?( unsigned)?( zerofill)?$`)
-	pgTypeRe    = regexp.MustCompile(`(?i)^(smallint|integer|int|bigint|int2|int4|int8|decimal|numeric|real|double precision|float4|float8|money|boolean|bool|char|character|varchar|character varying|text|citext|bytea|date|time|timetz|time with time zone|time without time zone|timestamp|timestamptz|timestamp with time zone|timestamp without time zone|interval|uuid|json|jsonb|inet|cidr|macaddr|tsvector|xml|point)(\(\d{1,5}(,\d{1,3})?\))?(\[\])?$`)
+	pgTypeRe    = regexp.MustCompile(`(?i)^(smallint|integer|int|bigint|int2|int4|int8|decimal|numeric|real|double precision|float4|float8|money|boolean|bool|char|character|varchar|character varying|text|citext|bytea|date|time|timetz|time with time zone|time without time zone|timestamp|timestamptz|timestamp with time zone|timestamp without time zone|interval|uuid|json|jsonb|inet|cidr|macaddr|tsvector|xml|point|vector|halfvec|sparsevec)(\(\d{1,5}(,\d{1,3})?\))?(\[\])?$`)
 	intTypeRe   = regexp.MustCompile(`(?i)^(tinyint|smallint|mediumint|int|integer|bigint|int2|int4|int8)\b`)
 	numberRe    = regexp.MustCompile(`^-?\d{1,30}(\.\d{1,30})?$`)
 	refActions  = map[string]string{"": "", "CASCADE": "CASCADE", "SET NULL": "SET NULL", "RESTRICT": "RESTRICT", "NO ACTION": "NO ACTION"}

@@ -2729,6 +2729,29 @@ paths:
       tags: [Instances]
       security: [{bearerAuth: []}, {cookieAuth: []}]
       summary: Provision managed instance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [server_id, name, engine_version, port]
+              properties:
+                server_id: {type: string, format: uuid}
+                name: {type: string}
+                engine:
+                  type: string
+                  enum: [mariadb, mysql, postgres]
+                  default: mariadb
+                engine_version: {type: string, example: "17"}
+                port: {type: integer}
+                pgvector:
+                  type: boolean
+                  default: false
+                  description: >
+                    PostgreSQL only: run the pgvector/pgvector image (tagged by
+                    major version, e.g. `pg17`) so `CREATE EXTENSION vector`
+                    works. Needs PostgreSQL 13 or newer.
       responses:
         "202":
           description: Provisioning started

@@ -32,6 +32,7 @@ export const TYPE_GROUPS: Record<Dialect, TypeGroup[]> = {
     { label: "Text", types: ["char(10)", "varchar(50)", "varchar(100)", "varchar(255)", "text", "citext"] },
     { label: "Date & time", types: ["date", "time", "timetz", "timestamp", "timestamptz", "interval"] },
     { label: "Other", types: ["uuid", "json", "jsonb", "bytea", "inet", "cidr", "macaddr", "tsvector", "xml", "text[]", "integer[]"] },
+    { label: "Vector (pgvector)", types: ["vector(1536)", "vector(768)", "vector(384)", "halfvec(1536)", "sparsevec"] },
   ],
 };
 

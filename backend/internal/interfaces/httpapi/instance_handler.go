@@ -226,6 +226,7 @@ type provisionInstanceRequest struct {
 	Engine        string `json:"engine"`
 	EngineVersion string `json:"engine_version"`
 	Port          int    `json:"port"`
+	PGVector      bool   `json:"pgvector"`
 }
 
 // Provision handles POST /v1/instances/provision.
@@ -250,6 +251,7 @@ func (h *InstanceHandler) Provision(w http.ResponseWriter, r *http.Request) {
 		Engine:        req.Engine,
 		EngineVersion: req.EngineVersion,
 		Port:          req.Port,
+		PGVector:      req.PGVector,
 		CreatedBy:     callerID(r),
 	})
 	if err != nil {

@@ -69,13 +69,7 @@ func engineContainerFor(eng, version string) engineContainer {
 // and a published port. The root password is passed via a temporary env-file
 // (removed immediately) so it never appears in the process list.
 func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec) (*Result, error) {
-	image := spec.Image
-	if image == "" {
-		image = eng // engine name doubles as the Docker Hub image (e.g. "mariadb")
-	}
-	if spec.Version != "" {
-		image = image + ":" + spec.Version
-	}
+	image := imageRef(eng, spec)
 	ec := engineContainerFor(eng, spec.Version)
 
 	// Best-effort cleanup of any stale container with the same name.
@@ -106,6 +100,22 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec) (*
 		containerID = containerID[:12]
 	}
 	return &Result{OK: true, ContainerID: containerID}, nil
+}
+
+// imageRef is the image reference to run for spec.
+func imageRef(eng string, spec *ProvisionSpec) string {
+	image := spec.Image
+	if image == "" {
+		image = eng // engine name doubles as the Docker Hub image (e.g. "mariadb")
+	}
+	tag := spec.Version
+	if spec.Tag != "" {
+		tag = spec.Tag
+	}
+	if tag != "" {
+		image = image + ":" + tag
+	}
+	return image
 }
 
 func removeContainer(ctx context.Context, spec *ProvisionSpec) (*Result, error) {

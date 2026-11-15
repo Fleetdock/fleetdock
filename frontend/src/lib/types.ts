@@ -371,6 +371,7 @@ export interface ProvisionInstanceInput {
   engine?: string;
   engine_version: string;
   port: number;
+  pgvector?: boolean;
 }
 
 export interface CreateDestinationInput {

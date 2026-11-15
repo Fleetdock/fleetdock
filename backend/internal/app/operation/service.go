@@ -123,6 +123,7 @@ type Params struct {
 	// Provisioning (container lifecycle) params.
 	Image        string `json:"image,omitempty"`
 	Version      string `json:"version,omitempty"`
+	Tag          string `json:"tag,omitempty"`
 	RemoveVolume bool   `json:"remove_volume,omitempty"`
 	// Move saga: set on the backup and restore legs of a database move so the
 	// move advances via completion hooks without a dedicated table. A move has
@@ -417,6 +418,7 @@ func (s *Service) provisionPayload(ctx context.Context, typ jobdom.Type, p Param
 		}
 		spec.Image = p.Image
 		spec.Version = p.Version
+		spec.Tag = p.Tag
 		spec.Port = inst.Port
 		engineName = string(inst.Engine)
 		if inst.RootSecretRef != nil {
