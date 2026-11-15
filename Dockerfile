@@ -26,7 +26,7 @@ RUN npm run build \
  && cp -a public /out/public
 
 # ---- control plane build ----
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS api
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS api
 ARG TARGETARCH
 # Stamped into every binary (internal/version); the release workflow passes the
 # tag, a local `docker build` reports "dev".
