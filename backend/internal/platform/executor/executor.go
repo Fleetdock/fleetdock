@@ -64,6 +64,18 @@ type ProvisionSpec struct {
 	RootPassword string `json:"root_password,omitempty"` // provision only
 	Volume       string `json:"volume"`
 	RemoveVolume bool   `json:"remove_volume,omitempty"` // remove only
+	// TLS, when set, is the server certificate the engine serves TLS with
+	// (provision_instance and configure_tls).
+	TLS *TLSFiles `json:"tls,omitempty"`
+}
+
+// TLSFiles is a server certificate for a managed instance, issued by the
+// install's certificate authority.
+type TLSFiles struct {
+	CertPEM  string `json:"cert_pem"`
+	KeyPEM   string `json:"key_pem"`
+	CAPEM    string `json:"ca_pem"`
+	NotAfter string `json:"not_after"` // RFC 3339
 }
 
 // Result is the outcome data of one operation.
@@ -76,6 +88,9 @@ type Result struct {
 	StorageURL  string                `json:"storage_url,omitempty"`
 	ContainerID string                `json:"container_id,omitempty"`
 	TableCount  int                   `json:"table_count,omitempty"` // tables present after a restore
+	// TLSNotAfter is when the certificate a provision or configure_tls
+	// installed expires (RFC 3339); empty when TLS was not set up.
+	TLSNotAfter string `json:"tls_not_after,omitempty"`
 }
 
 // Execute runs the operation named by jobType with the given payload. Progress
@@ -86,7 +101,7 @@ func Execute(ctx context.Context, jobType string, p *Payload, sink LogSink) (jso
 	// Container lifecycle operations run on the host via Docker and need no
 	// database engine client.
 	switch jobType {
-	case "provision_instance", "start_instance", "stop_instance", "restart_instance", "remove_instance":
+	case "provision_instance", "start_instance", "stop_instance", "restart_instance", "remove_instance", "configure_tls":
 		res, err := runProvision(ctx, jobType, p, sink)
 		if err != nil {
 			return nil, err

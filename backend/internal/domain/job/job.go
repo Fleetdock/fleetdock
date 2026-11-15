@@ -30,6 +30,9 @@ const (
 	TypeReconcileGateway  Type = "reconcile_gateway"
 	TypeCopySchema        Type = "copy_schema"
 	TypeRestoreSchema     Type = "restore_schema"
+	// TypeConfigureTLS turns TLS on for a managed instance, or renews its
+	// certificate (the agent recreates the container with it mounted).
+	TypeConfigureTLS Type = "configure_tls"
 )
 
 // Valid reports whether t is a known job type.
@@ -38,7 +41,8 @@ func (t Type) Valid() bool {
 	case TypeCreateDatabase, TypeDeleteDatabase, TypeBackup, TypeRestore,
 		TypeTestConnection, TypeImportDatabases,
 		TypeProvisionInstance, TypeStartInstance, TypeStopInstance,
-		TypeRestartInstance, TypeRemoveInstance, TypeReconcileGateway, TypeCopySchema, TypeRestoreSchema:
+		TypeRestartInstance, TypeRemoveInstance, TypeReconcileGateway, TypeCopySchema, TypeRestoreSchema,
+		TypeConfigureTLS:
 		return true
 	}
 	return false
