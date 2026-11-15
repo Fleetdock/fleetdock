@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PagerDuty notification channels.** Send alert triggers and recoveries through
+  Events API v2 with stable incident deduplication and mapped severities. (#112, thanks @shubhambhar007)
 - **Worker intervals are configurable.** Job polling, alert processing and
-  instance health probes can be tuned independently with environment variables.
-
+  instance health probes can be tuned independently with environment variables. (#111, thanks @shubhambhar007)
 
 ## [0.11.0] - 2026-11-11
 

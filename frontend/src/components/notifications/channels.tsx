@@ -14,7 +14,7 @@ import type { ChannelType, NotificationChannel } from "@/lib/types";
 
 import { CHANNEL_LABEL } from "./labels";
 
-/** ChannelsSection lists where notifications go (email, Slack, webhooks). */
+/** ChannelsSection lists where notifications go (email, Slack, webhooks, PagerDuty). */
 export function ChannelsSection({ canWrite }: { canWrite: boolean }) {
   const { data, isLoading, error, refetch } = useChannels();
   const del = useDeleteChannel();
@@ -112,7 +112,7 @@ export function ChannelsSection({ canWrite }: { canWrite: boolean }) {
         errorTitle="Could not load channels"
         onRetry={() => void refetch()}
         emptyTitle="No channels yet"
-        emptyHint="Add a webhook, Slack or email channel to receive notifications."
+        emptyHint="Add a webhook, Slack, email or PagerDuty channel to receive notifications."
         emptyAction={addButton}
       />
       <ChannelModal mode="create" open={addOpen} onClose={() => setAddOpen(false)} />
@@ -124,6 +124,7 @@ export function ChannelsSection({ canWrite }: { canWrite: boolean }) {
 function channelTarget(c: NotificationChannel): string {
   if (c.type === "email") return c.config.to ?? "—";
   if (c.type === "slack") return c.config.webhook_url ?? "—";
+  if (c.type === "pagerduty") return c.config.routing_key ?? "—";
   return c.config.url ?? "—";
 }
 
@@ -141,6 +142,7 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
   const [url, setUrl] = useState("");
   const [slackUrl, setSlackUrl] = useState("");
   const [to, setTo] = useState("");
+  const [routingKey, setRoutingKey] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
@@ -152,6 +154,7 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
       setUrl(channel.config.url ?? "");
       setSlackUrl(channel.config.webhook_url ?? "");
       setTo(channel.config.to ?? "");
+      setRoutingKey(channel.config.routing_key ?? "");
       setEnabled(channel.enabled);
     } else if (!isEdit) {
       setName("");
@@ -159,6 +162,7 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
       setUrl("");
       setSlackUrl("");
       setTo("");
+      setRoutingKey("");
       setEnabled(true);
     }
     setError(null);
@@ -169,6 +173,7 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
   function buildConfig(): Record<string, string> {
     if (type === "webhook") return { url };
     if (type === "slack") return { webhook_url: slackUrl };
+    if (type === "pagerduty") return { routing_key: routingKey };
     return { to };
   }
 
@@ -203,6 +208,7 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
               <option value="webhook">Webhook</option>
               <option value="slack">Slack</option>
               <option value="email">Email</option>
+              <option value="pagerduty">PagerDuty</option>
             </Select>
           </Field>
         </div>
@@ -238,6 +244,17 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
               onChange={(e) => setTo(e.target.value)}
               placeholder="oncall@example.com"
               required
+            />
+          </Field>
+        ) : null}
+        {type === "pagerduty" ? (
+          <Field label="PagerDuty routing key" hint={keepHint} error={configError}>
+            <Input
+              type="password"
+              value={routingKey}
+              onChange={(e) => setRoutingKey(e.target.value)}
+              placeholder="Events API v2 integration key"
+              required={!isEdit}
             />
           </Field>
         ) : null}

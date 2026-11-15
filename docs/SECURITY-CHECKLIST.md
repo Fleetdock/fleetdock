@@ -71,7 +71,7 @@ See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
 - [ ] **`FLEETDOCK_ENCRYPTION_KEY`** — unique per environment; rotate with `fleetdock rotate-keys` ([OPERATIONS.md](OPERATIONS.md#encryption-key-rotation))
 - [ ] **`FLEETDOCK_JWT_SECRET`** — unique per environment; rotating it signs everyone out of the dashboard (API tokens keep working)
 - [ ] Metadata Postgres — encrypted storage at rest (provider feature or disk encryption)
-- [ ] S3/R2 destination keys, database passwords, SSH keys and notification secrets (webhook URLs, SMTP password) — encrypted in the DB; agents receive presigned URLs only for backup/restore
+- [ ] S3/R2 destination keys, database passwords, SSH keys and notification secrets (webhook URLs, SMTP password, PagerDuty routing keys) — encrypted in the DB; agents receive presigned URLs only for backup/restore
 
 ## Metadata database
 
