@@ -38,10 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table, dictionary and view definition, and the rows of data-holding tables
   and materialized views in ClickHouse's Native format, gzip-compressed and
   checksummed like the other engines' backups (`.fdch.gz`). Nothing needs
-  installing on the control plane or the agent. A restore under another name
-  repoints views at the new database and restores `Replicated*MergeTree`
-  tables as plain `*MergeTree`, so the copy never joins the original's
-  replication. Definitions whose credentials the server masks (dictionary
+  installing on the control plane or the agent. Each table is loaded into a
+  temporary table and swapped in once complete, so a failed load leaves the
+  original untouched and no materialized view counts the restored rows a
+  second time. Restoring anywhere but back in place (another name, another
+  server, or a verification) repoints views, dictionaries and
+  Buffer/Merge/Distributed tables at the new database, restores
+  `Replicated*MergeTree` tables as plain `*MergeTree`, and leaves out
+  streaming tables (Kafka, RabbitMQ, NATS, S3Queue, ...) and the views
+  reading from them, so a copy never joins the original's replication or
+  consumes its messages. A replicated table restored under its own name is
+  left as it is (with a warning) rather than replicating the restored rows
+  to every replica. Definitions whose credentials the server masks (dictionary
   sources, MySQL/S3/Kafka tables) are reported in the backup's log; they are
   included only when the server shows secrets
   (`display_secrets_in_show_and_select`). ClickHouse backups restore only into

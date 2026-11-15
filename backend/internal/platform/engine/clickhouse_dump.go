@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,7 +26,8 @@ import (
 // followed by a payload in length-prefixed chunks (4-byte big-endian length,
 // then that many bytes), ended by a zero length. The first record is the
 // manifest and the last is "end", which carries the object count, so a
-// truncated stream is detected rather than half-restored.
+// truncated stream fails the restore. A table cut short is never swapped in,
+// but tables restored before the cut stay restored (see Restore).
 //
 // Consistency: each table is read by one query, which sees one snapshot of
 // that table; there is no snapshot across tables (ClickHouse has none).
@@ -43,9 +45,13 @@ type chDumpRecord struct {
 	Type string `json:"type"` // manifest | object | end
 
 	// manifest
-	Database      string    `json:"database,omitempty"`
-	ServerVersion string    `json:"server_version,omitempty"`
-	CreatedAt     time.Time `json:"created_at,omitzero"`
+	Database      string `json:"database,omitempty"`
+	ServerVersion string `json:"server_version,omitempty"`
+	// ServerUUID identifies the server the backup was taken on, so a restore
+	// can tell "back in place" from "onto another server" (empty in backups
+	// from before it was recorded, and on servers without serverUUID()).
+	ServerUUID string    `json:"server_uuid,omitempty"`
+	CreatedAt  time.Time `json:"created_at,omitzero"`
 
 	// object
 	Kind   string `json:"kind,omitempty"` // table | dictionary | view | materialized_view
@@ -58,6 +64,19 @@ type chDumpRecord struct {
 
 	// end
 	Objects int `json:"objects,omitempty"`
+}
+
+// chStreamingEngine reports engines that consume from an external stream
+// (a Kafka consumer group, a queue, S3Queue's processed-files registry, a
+// PostgreSQL replication slot). A second copy of such a table competes with
+// the original for the same messages, so one is only recreated by a restore
+// back into its own database on its own server.
+func chStreamingEngine(engine string) bool {
+	switch engine {
+	case "Kafka", "RabbitMQ", "NATS", "S3Queue", "AzureQueue", "MaterializedPostgreSQL":
+		return true
+	}
+	return false
 }
 
 // chDataEngines are the table engines whose rows live in ClickHouse and are
@@ -124,7 +143,8 @@ func (c *ClickHouse) Dump(ctx context.Context, p ConnParams, database string, w 
 	if _, err := bw.WriteString(chDumpMagic); err != nil {
 		return err
 	}
-	if err := writeCHRecord(bw, chDumpRecord{Type: "manifest", Database: database, ServerVersion: version, CreatedAt: time.Now().UTC()}, nil); err != nil {
+	man := chDumpRecord{Type: "manifest", Database: database, ServerVersion: version, ServerUUID: c.serverUUID(ctx, p), CreatedAt: time.Now().UTC()}
+	if err := writeCHRecord(bw, man, nil); err != nil {
 		return err
 	}
 
@@ -253,7 +273,40 @@ func (c *ClickHouse) dumpData(ctx context.Context, p ConnParams, database, table
 		}
 		return n, fmt.Errorf("reading rows: %w", err)
 	}
+	// Older servers report a failure that happens mid-stream by appending
+	// the exception text and ending the response normally; without this the
+	// broken dump would be stored as a good backup.
+	if e := chTrailingException(tail.String()); e != nil {
+		return n, fmt.Errorf("the server failed while sending rows: %w", e)
+	}
 	return n, cw.Close()
+}
+
+// chTrailingExceptionRe matches an exception message at the very end of a
+// response, in the current ("Code: 241. DB::Exception: ...") and the older
+// ("Code: 241, e.displayText() = DB::Exception: ...") spelling.
+var chTrailingExceptionRe = regexp.MustCompile(`Code: (\d+)[.,] (?:e\.displayText\(\) = )?DB::Exception: ([^\n]*)\n?$`)
+
+// chTrailingException returns the exception a response ends with, or nil.
+func chTrailingException(tail string) *ClickHouseError {
+	m := chTrailingExceptionRe.FindStringSubmatch(tail)
+	if m == nil {
+		return nil
+	}
+	code, _ := strconv.Atoi(m[1])
+	return &ClickHouseError{Code: code, Message: strings.TrimSpace(m[2])}
+}
+
+// serverUUID returns the server's UUID, or "" when it cannot be read.
+func (c *ClickHouse) serverUUID(ctx context.Context, p ConnParams) string {
+	rows, err := c.rows(ctx, p, chRequest{query: "SELECT toString(serverUUID())"})
+	if err != nil || len(rows) == 0 || len(rows[0]) == 0 {
+		return ""
+	}
+	if u := str(rows[0][0]); u != "00000000-0000-0000-0000-000000000000" {
+		return u
+	}
+	return ""
 }
 
 // tailBuffer keeps the last max bytes written to it.
@@ -402,10 +455,24 @@ type chPending struct {
 // same-named ones already there (as a MySQL dump's DROP TABLE IF EXISTS
 // does); other objects are left alone.
 //
-// Restoring under a different name rewrites the source database's name in
-// the definitions, and turns Replicated*MergeTree tables into their plain
-// MergeTree form: kept replicated, the copy would join the original's
-// replication and its restored rows would be inserted into production.
+// A table is loaded into a temporary table and swapped in once all its rows
+// are there, so a failed or truncated load leaves the original untouched and
+// no materialized view (in this database or another) sees the inserts: they
+// would otherwise add the restored rows to its aggregates a second time.
+// Each table is swapped in as soon as it is loaded; the dump's trailer is
+// only checked at the end, so a dump truncated between tables leaves the
+// tables before the cut restored.
+//
+// Restoring anywhere but back into the same database on the same server:
+//   - Replicated*MergeTree tables become their plain MergeTree form, so the
+//     copy never joins the original's replication;
+//   - streaming tables (Kafka, RabbitMQ, NATS, S3Queue, ...) and the views
+//     reading from them are left out, so the copy never consumes the
+//     original's messages.
+//
+// Restoring under the same name, a Replicated table is left as it is: put
+// back on the server it came from, it would rejoin its replicas and
+// replicate the restored rows to all of them on top of their own.
 func (c *ClickHouse) Restore(ctx context.Context, p ConnParams, database string, r io.Reader, log func(string)) (err error) {
 	if !validDBName(database) {
 		return fmt.Errorf("invalid database name")
@@ -427,7 +494,18 @@ func (c *ClickHouse) Restore(ctx context.Context, p ConnParams, database string,
 	}
 	source := man.Database
 	renamed := source != database
+	targetUUID := c.serverUUID(ctx, p)
+	knownServers := man.ServerUUID != "" && targetUUID != ""
+	sameServer := knownServers && man.ServerUUID == targetUUID
+	inPlace := !renamed && sameServer
+	// A copy elsewhere must not join the original's replication. Under the
+	// same name on an unknown server the table is left alone instead.
+	deReplicate := renamed || (knownServers && !sameServer)
 	log(fmt.Sprintf("backup of %s taken %s on ClickHouse %s", source, man.CreatedAt.Format(time.RFC3339), man.ServerVersion))
+	if !inPlace {
+		log("restoring as a copy: streaming tables (Kafka, RabbitMQ, NATS, S3Queue, ...) and views reading from them are left out, " +
+			"so the copy cannot consume the original's messages")
+	}
 
 	var pending []*chPending
 	defer func() {
@@ -439,6 +517,7 @@ func (c *ClickHouse) Restore(ctx context.Context, p ConnParams, database string,
 		}
 	}()
 
+	var skipped []string // tables left out; objects reading from them are too
 	objects := 0
 	for {
 		rec, err := readCHHeader(br)
@@ -459,7 +538,19 @@ func (c *ClickHouse) Restore(ctx context.Context, p ConnParams, database string,
 			return fmt.Errorf("corrupt dump: unexpected record %q", rec.Type)
 		}
 		objects++
-		create, notes := chRestoreDDL(rec.Create, source, database, renamed)
+
+		if reason := chSkipReason(rec, inPlace, deReplicate, skipped); reason != "" {
+			if err := payload.drain(); err != nil {
+				return err
+			}
+			if rec.Kind == "table" {
+				skipped = append(skipped, rec.Name)
+			}
+			log(fmt.Sprintf("%s %s: not restored (%s)", strings.ReplaceAll(rec.Kind, "_", " "), rec.Name, reason))
+			continue
+		}
+
+		create, notes := chRestoreDDL(rec.Create, source, database, renamed, deReplicate)
 		if strings.Contains(create, chHiddenSecret) {
 			notes = append(notes, "warning: restored without its credentials (the server hid them when the backup was taken); recreate it with them")
 		}
@@ -488,27 +579,38 @@ func (c *ClickHouse) Restore(ctx context.Context, p ConnParams, database string,
 			continue
 		}
 
-		if err := c.replaceObject(ctx, p, database, rec); err != nil {
-			_ = payload.drain()
-			return fmt.Errorf("create table %s: %w", rec.Name, err)
-		}
-		if len(rec.Columns) > 0 {
-			n, err := c.insertNative(ctx, p, database, rec, payload)
-			if err != nil {
-				return fmt.Errorf("load table %s: %w", rec.Name, err)
-			}
-			log(fmt.Sprintf("table %s: %d rows", rec.Name, n))
-		} else {
+		if len(rec.Columns) == 0 {
 			if err := payload.drain(); err != nil {
 				return err
 			}
+			if err := c.replaceObject(ctx, p, database, rec); err != nil {
+				return fmt.Errorf("create table %s: %w", rec.Name, err)
+			}
 			log(fmt.Sprintf("table %s: definition (%s keeps no data here)", rec.Name, rec.Engine))
+			continue
 		}
+		n, err := c.restoreTable(ctx, p, database, rec, payload)
+		if err != nil {
+			_ = payload.drain()
+			return fmt.Errorf("table %s: %w", rec.Name, err)
+		}
+		log(fmt.Sprintf("table %s: %d rows", rec.Name, n))
+	}
+
+	// Views reading from a table that was left out cannot be created (and
+	// must not be: a view on a Kafka table consumes when queried).
+	var create []*chPending
+	for _, pd := range pending {
+		if t := chReadsFrom(pd.rec.Create, skipped); t != "" {
+			log(fmt.Sprintf("%s %s: not restored (it reads from %s, which was left out)", strings.ReplaceAll(pd.rec.Kind, "_", " "), pd.rec.Name, t))
+			continue
+		}
+		create = append(create, pd)
 	}
 
 	// Dictionaries and views may depend on each other in any order: create
 	// what can be created until a pass makes no progress.
-	left := pending
+	left := create
 	for len(left) > 0 {
 		var retry []*chPending
 		var lastErr error
@@ -525,20 +627,172 @@ func (c *ClickHouse) Restore(ctx context.Context, p ConnParams, database string,
 		}
 		left = retry
 	}
-	for _, pd := range pending {
+	for _, pd := range create {
 		if pd.data == nil {
 			continue
 		}
 		if _, err := pd.data.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
-		n, err := c.insertNative(ctx, p, database, pd.rec, bufio.NewReader(pd.data))
+		// Into the view's own storage, not through the view: inserting into
+		// the view would also fire views built on it, which get their own
+		// rows from the dump.
+		storage, err := c.innerTable(ctx, p, database, pd.rec.Name)
+		if err != nil {
+			return fmt.Errorf("load %s: %w", pd.rec.Name, err)
+		}
+		n, err := c.insertNative(ctx, p, database, storage, pd.rec.Columns, bufio.NewReader(pd.data))
 		if err != nil {
 			return fmt.Errorf("load %s: %w", pd.rec.Name, err)
 		}
 		log(fmt.Sprintf("materialized view %s: %d rows", pd.rec.Name, n))
 	}
 	return nil
+}
+
+// chSkipReason says why an object is left out of a restore, or "".
+func chSkipReason(rec chDumpRecord, inPlace, deReplicate bool, skipped []string) string {
+	if rec.Kind != "table" {
+		return "" // decided once the tables are done (chReadsFrom)
+	}
+	switch {
+	case chStreamingEngine(rec.Engine) && !inPlace:
+		return "a " + rec.Engine + " table consumes from its source; a copy would take the original's messages"
+	case strings.HasPrefix(rec.Engine, "Replicated") && !deReplicate:
+		return "a replicated table restored under its own name would rejoin its replicas and replicate the restored rows to all of them; " +
+			"restore under another name and copy the rows over"
+	}
+	return ""
+}
+
+// chReadsFrom returns the first of tables that a definition mentions, or "".
+func chReadsFrom(create string, tables []string) string {
+	for _, t := range tables {
+		re := regexp.MustCompile("(?:^|[^\\w])[`\"]?" + regexp.QuoteMeta(t) + "[`\"]?(?:[^\\w]|$)")
+		if re.MatchString(create) {
+			return t
+		}
+	}
+	return ""
+}
+
+// restoreTable loads a table's rows into a temporary table and swaps it in
+// for the existing one (or renames it into place).
+func (c *ClickHouse) restoreTable(ctx context.Context, p ConnParams, database string, rec chDumpRecord, data io.Reader) (int64, error) {
+	tmp := chRestoreTempName(rec.Name)
+	tmpCreate, err := chRenameCreate(rec.Create, tmp)
+	if err != nil {
+		return 0, err
+	}
+	qdb := quoteCHIdent(database)
+	qt, qtmp := qdb+"."+quoteCHIdent(rec.Name), qdb+"."+quoteCHIdent(tmp)
+	drop := func(name string) error {
+		return c.exec(ctx, p, chRequest{
+			query: "DROP TABLE IF EXISTS " + name + " SYNC", database: database,
+			settings: map[string]string{"check_table_dependencies": "0", "check_referential_table_dependencies": "0"},
+		})
+	}
+	if err := drop(qtmp); err != nil {
+		return 0, err
+	}
+	if err := c.exec(ctx, p, chRequest{query: tmpCreate, database: database}); err != nil {
+		return 0, fmt.Errorf("create: %w", err)
+	}
+	n, err := c.insertNative(ctx, p, database, tmp, rec.Columns, data)
+	if err != nil {
+		_ = drop(qtmp)
+		return 0, fmt.Errorf("load: %w", err)
+	}
+	rows, err := c.rows(ctx, p, chRequest{
+		query:  "SELECT count() FROM system.tables WHERE database = {db:String} AND name = {t:String}",
+		params: map[string]string{"db": database, "t": rec.Name},
+	})
+	if err != nil {
+		_ = drop(qtmp)
+		return 0, err
+	}
+	if i64(rows[0][0]) == 0 {
+		err = c.exec(ctx, p, chRequest{query: "RENAME TABLE " + qtmp + " TO " + qt, database: database})
+	} else if err = c.exec(ctx, p, chRequest{query: "EXCHANGE TABLES " + qtmp + " AND " + qt, database: database}); err == nil {
+		err = drop(qtmp) // now the old table
+	} else {
+		// EXCHANGE needs an Atomic database; an Ordinary one gets the
+		// same through two renames.
+		old := qdb + "." + quoteCHIdent(chRestoreTempName(rec.Name+"_old"))
+		if err = c.exec(ctx, p, chRequest{query: "RENAME TABLE " + qt + " TO " + old + ", " + qtmp + " TO " + qt, database: database}); err == nil {
+			err = drop(old)
+		}
+	}
+	if err != nil {
+		_ = drop(qtmp)
+		return 0, fmt.Errorf("swap in: %w", err)
+	}
+	return n, nil
+}
+
+// chRestoreTempName is the temporary table a table's rows are loaded into.
+func chRestoreTempName(name string) string { return ".fd_restore." + name }
+
+// chRenameCreate rewrites the object name of a "CREATE TABLE db.name ..."
+// statement (the form system.tables reports), keeping its database.
+func chRenameCreate(create, name string) (string, error) {
+	const prefix = "CREATE TABLE "
+	if !strings.HasPrefix(create, prefix) {
+		return "", fmt.Errorf("unexpected definition: %.40q", create)
+	}
+	i := len(prefix)
+	skipIdent := func(i int) int {
+		if i < len(create) && (create[i] == '`' || create[i] == '"') {
+			q := create[i]
+			for j := i + 1; j < len(create); j++ {
+				switch create[j] {
+				case '\\':
+					j++
+				case q:
+					return j + 1
+				}
+			}
+			return -1
+		}
+		j := i
+		for j < len(create) && (create[j] == '_' || create[j] == '$' || create[j] >= '0' && create[j] <= '9' ||
+			create[j] >= 'a' && create[j] <= 'z' || create[j] >= 'A' && create[j] <= 'Z') {
+			j++
+		}
+		if j == i {
+			return -1
+		}
+		return j
+	}
+	dbEnd := skipIdent(i)
+	if dbEnd < 0 || dbEnd >= len(create) || create[dbEnd] != '.' {
+		return "", fmt.Errorf("unexpected definition: %.40q", create)
+	}
+	nameEnd := skipIdent(dbEnd + 1)
+	if nameEnd < 0 {
+		return "", fmt.Errorf("unexpected definition: %.40q", create)
+	}
+	return create[:dbEnd+1] + quoteCHIdent(name) + create[nameEnd:], nil
+}
+
+// innerTable returns the table a materialized view stores its rows in: its
+// .inner_id.<uuid> table (Atomic databases) or .inner.<name> (Ordinary).
+func (c *ClickHouse) innerTable(ctx context.Context, p ConnParams, database, view string) (string, error) {
+	rows, err := c.rows(ctx, p, chRequest{
+		query: `
+			SELECT name FROM system.tables
+			WHERE database = {db:String}
+			  AND name IN (concat('.inner_id.', (SELECT toString(uuid) FROM system.tables WHERE database = {db:String} AND name = {v:String})),
+			               concat('.inner.', {v:String}))`,
+		params: map[string]string{"db": database, "v": view},
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(rows) == 0 {
+		return "", fmt.Errorf("its storage table was not found")
+	}
+	return str(rows[0][0]), nil
 }
 
 func readCHHeader(br *bufio.Reader) (chDumpRecord, error) {
@@ -570,10 +824,10 @@ func (c *ClickHouse) replaceObject(ctx context.Context, p ConnParams, database s
 	return c.exec(ctx, p, chRequest{query: rec.Create, database: database})
 }
 
-// insertNative loads a Native payload into an object's stored columns.
-func (c *ClickHouse) insertNative(ctx context.Context, p ConnParams, database string, rec chDumpRecord, data io.Reader) (int64, error) {
+// insertNative loads a Native payload into a table's stored columns.
+func (c *ClickHouse) insertNative(ctx context.Context, p ConnParams, database, table string, cols []string, data io.Reader) (int64, error) {
 	resp, err := c.open(ctx, p, chRequest{
-		query:    fmt.Sprintf("INSERT INTO %s.%s (%s) FORMAT Native", quoteCHIdent(database), quoteCHIdent(rec.Name), chColumnList(rec.Columns)),
+		query:    fmt.Sprintf("INSERT INTO %s.%s (%s) FORMAT Native", quoteCHIdent(database), quoteCHIdent(table), chColumnList(cols)),
 		database: database,
 		body:     data,
 	})
@@ -588,13 +842,17 @@ func (c *ClickHouse) insertNative(ctx context.Context, p ConnParams, database st
 // arguments (the ZooKeeper path and replica name come first).
 var chReplicatedRe = regexp.MustCompile(`ENGINE = Replicated(\w*MergeTree)(\((?:[^()']|'(?:[^'\\]|\\.)*')*\))?`)
 
-// chRestoreDDL adapts a CREATE statement to the target database.
-func chRestoreDDL(create, source, target string, renamed bool) (string, []string) {
-	if !renamed {
-		return create, nil
-	}
+// chRestoreDDL adapts a CREATE statement to the target database: it names
+// the target database when renamed, and drops replication when deReplicate.
+func chRestoreDDL(create, source, target string, renamed, deReplicate bool) (string, []string) {
 	var notes []string
-	out := rewriteCHDatabase(create, source, target)
+	out := create
+	if renamed {
+		out = rewriteCHEngineDB(rewriteCHDatabase(out, source, target), source, target)
+	}
+	if !deReplicate {
+		return out, notes
+	}
 	out = chReplicatedRe.ReplaceAllStringFunc(out, func(m string) string {
 		sub := chReplicatedRe.FindStringSubmatch(m)
 		args := splitCHArgs(strings.TrimSuffix(strings.TrimPrefix(sub[2], "("), ")"))
@@ -604,7 +862,7 @@ func chRestoreDDL(create, source, target string, renamed bool) (string, []string
 		if len(args) >= 2 && strings.HasPrefix(args[0], "'") && strings.HasPrefix(args[1], "'") {
 			rest = args[2:]
 		}
-		notes = append(notes, "restored as non-replicated "+sub[1]+" (restoring under another name must not join the original's replication)")
+		notes = append(notes, "restored as non-replicated "+sub[1]+" (a copy must not join the original's replication)")
 		return "ENGINE = " + sub[1] + "(" + strings.Join(rest, ", ") + ")"
 	})
 	return out, notes
@@ -642,6 +900,83 @@ func splitCHArgs(s string) []string {
 	return out
 }
 
+// chInDictCall reports whether the literal at i is the first argument of a
+// dictionary function (dictGet, dictGetOrDefault, dictHas, ...).
+func chInDictCall(sql string, i int) bool {
+	j := i
+	for j > 0 && sql[j-1] == ' ' {
+		j--
+	}
+	if j == 0 || sql[j-1] != '(' {
+		return false
+	}
+	j--
+	k := j
+	for k > 0 && (sql[k-1] == '_' || sql[k-1] >= 'a' && sql[k-1] <= 'z' || sql[k-1] >= 'A' && sql[k-1] <= 'Z') {
+		k--
+	}
+	return strings.HasPrefix(strings.ToLower(sql[k:j]), "dict")
+}
+
+// chEngineDBArg is the position of the database argument of engines that
+// name another table's database.
+var chEngineDBArg = map[string]int{"Buffer": 0, "Merge": 0, "Distributed": 1}
+
+// chEngineRe finds those engines' argument lists.
+var chEngineRe = regexp.MustCompile(`ENGINE = (Buffer|Merge|Distributed)\(`)
+
+// rewriteCHEngineDB points a Buffer, Merge or Distributed engine at target
+// when its database argument names source ('src', `src` or src).
+func rewriteCHEngineDB(sql, source, target string) string {
+	m := chEngineRe.FindStringSubmatchIndex(sql)
+	if m == nil {
+		return sql
+	}
+	open := m[1] - 1
+	end := chMatchingParen(sql, open)
+	if end < 0 {
+		return sql
+	}
+	args := splitCHArgs(sql[open+1 : end])
+	pos := chEngineDBArg[sql[m[2]:m[3]]]
+	if pos >= len(args) {
+		return sql
+	}
+	switch args[pos] {
+	case quoteCHString(source):
+		args[pos] = quoteCHString(target)
+	case source, quoteCHIdent(source):
+		args[pos] = quoteCHIdent(target)
+	default:
+		return sql
+	}
+	return sql[:open+1] + strings.Join(args, ", ") + sql[end:]
+}
+
+// chMatchingParen returns the index of the parenthesis closing the one at
+// open, skipping string literals, or -1.
+func chMatchingParen(s string, open int) int {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch s[i] {
+		case '\'':
+			for i++; i < len(s) && s[i] != '\''; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 // rewriteCHDatabase replaces the database qualifier source. with target. in
 // a statement: plain, `quoted` or "quoted" identifiers immediately followed
 // by a dot. String literals and comments are left alone, except the
@@ -677,8 +1012,12 @@ func rewriteCHDatabase(sql, source, target string) string {
 			}
 			j = min(j+1, len(sql))
 			lit := sql[i:j]
-			if lit == quoteCHString(source) && prevWord(i) == "DB" {
+			switch {
+			case lit == quoteCHString(source) && prevWord(i) == "DB":
 				lit = quoteCHString(target)
+			case strings.HasPrefix(lit, "'"+source+".") && chInDictCall(sql, i):
+				// dictGet('db.dict', ...) names the dictionary as a string.
+				lit = "'" + target + lit[len(source)+1:]
 			}
 			b.WriteString(lit)
 			i = j
