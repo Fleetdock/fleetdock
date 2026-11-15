@@ -9,6 +9,7 @@ import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 
 import { Providers } from "@/components/providers";
+import { APPEARANCE_SCRIPT } from "@/lib/appearance-script";
 
 export const metadata: Metadata = {
   title: { default: "Fleetdock", template: "%s · Fleetdock" },
@@ -29,18 +30,16 @@ export const viewport: Viewport = {
   ],
 };
 
-// Applies the persisted theme before paint to avoid a flash of the wrong theme.
-const themeScript = `(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark');}catch(e){}})();`;
-
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
       className={`${GeistSans.variable} ${GeistMono.variable}`}
+      // The appearance script sets .dark / data-style / data-borders before React hydrates.
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: APPEARANCE_SCRIPT }} />
       </head>
       <body>
         <Providers>{children}</Providers>

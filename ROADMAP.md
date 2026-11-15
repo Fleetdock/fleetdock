@@ -6,7 +6,7 @@ compatible see [RELEASING.md](RELEASING.md).
 
 ---
 
-## 0.10 — what is in it
+## 0.11 — what is in it
 
 **Fleet.** Servers with a sandboxed agent (one-command install, in-place
 updates, version checks), database servers that Fleetdock creates in Docker or
@@ -32,15 +32,35 @@ per-account sign-in lockout.
 upgrade checks, Prometheus metrics, signed releases, CI that upgrades the last
 release, dumps every engine with the image's tools and runs end-to-end tests.
 
+**New in 0.11.** Appearance settings (Light, Dark or System; Classic or
+Neutral style; borderless; animations), the data browser's command panel, JSON
+cells as a tree with a JSON editor, loading skeletons, the new logo, copying
+and queries over plain HTTP on a LAN address, built with Go 1.26.11.
+
 ---
 
-## Next — 0.11
+## Next — 0.12
 
 | Item | Notes | Issue |
 |------|-------|-------|
 | Two-factor sign-in (TOTP) | Recovery codes; owners and admins can be required to use it | #91 |
 | SSO / OIDC | Sign in with your identity provider; map groups to roles | #92 |
 | Session list | See and end your signed-in browsers one by one | #93 |
+
+## AI First
+
+AI agents (any MCP client) and later a built-in assistant work with your fleet,
+and can never read a credential or delete data: a fixed set of read-only tools,
+SQL under the read-only role, row values only when allowed and masked, changes
+only as proposals a person approves. Design:
+[docs/proposals/ai-first.md](docs/proposals/ai-first.md); epic #113.
+
+| Phase | Item | Issue |
+|-------|------|-------|
+| 1 | MCP server: read-only, metadata only | #114 |
+| 2 | Read-only SQL with row data and column masking | #115 |
+| 3 | Changes as proposals a person approves | #116 |
+| 4 | Built-in assistant with your own model | #117 |
 
 ## Toward 1.0
 

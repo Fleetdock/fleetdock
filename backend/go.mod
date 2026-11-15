@@ -4,7 +4,7 @@ go 1.26.0
 
 // Builds use at least this patch release, so the standard library carries
 // the latest security fixes even on machines with an older Go installed.
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	github.com/go-sql-driver/mysql v1.10.1

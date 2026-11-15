@@ -163,6 +163,7 @@ export const NAV: NavSection[] = [
     pages: [
       { href: "/settings/notifications", label: "Notifications", requires: [{ perm: "notification:read" }], keywords: "alerts email slack webhook" },
       { href: "/settings/profile", label: "Your profile", keywords: "password email account" },
+      { href: "/settings/appearance", label: "Appearance", keywords: "theme dark light mode style classic neutral borderless borders animations motion transitions" },
     ],
   },
 ];

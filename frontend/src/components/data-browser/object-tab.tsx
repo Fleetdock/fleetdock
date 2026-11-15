@@ -1,7 +1,7 @@
 "use client";
 
 import { SqlEditor } from "@/components/sql-editor";
-import { useToast } from "@/components/toast";
+import { useCopy, useToast } from "@/components/toast";
 import { Badge, Button, EmptyState, Spinner } from "@/components/ui";
 import type { Dialect } from "@/lib/data-browser/cells";
 import { objectName, type OpenRequest, type Tab } from "@/lib/data-browser/tabs";
@@ -39,6 +39,7 @@ export function ObjectTab({
 }) {
   const { data, isLoading, error } = useDBObjects(databaseId);
   const { push } = useToast();
+  const copy = useCopy();
   const obj = data?.find((o) => objectName(o) === tab.name);
 
   if (isLoading) {
@@ -94,12 +95,7 @@ export function ObjectTab({
             <Button
               size="sm"
               icon={<ClipboardCopy size={14} aria-hidden />}
-              onClick={() =>
-                void navigator.clipboard
-                  ?.writeText(definition)
-                  .then(() => push("success", "Copied definition"))
-                  .catch(() => push("error", "The browser did not allow copying"))
-              }
+              onClick={() => copy(definition, "Copied definition")}
             >
               Copy
             </Button>

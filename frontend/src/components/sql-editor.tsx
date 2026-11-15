@@ -28,7 +28,7 @@ export function fleetdockEditorTheme(dark: boolean): Extension {
   return EditorView.theme(
     {
       "&": {
-        backgroundColor: "var(--panel)",
+        backgroundColor: "var(--editor-bg)",
         color: "var(--fg)",
         fontSize: "13px",
       },
@@ -50,7 +50,7 @@ export function fleetdockEditorTheme(dark: boolean): Extension {
         backgroundColor: dark ? "color-mix(in srgb, var(--panel-2) 80%, transparent)" : "color-mix(in srgb, var(--panel-2) 65%, transparent)",
       },
       ".cm-gutters": {
-        backgroundColor: "var(--panel-2)",
+        backgroundColor: "var(--editor-gutter)",
         color: "var(--muted)",
         border: "none",
         borderRight: "1px solid var(--border)",

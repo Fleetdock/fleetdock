@@ -4,7 +4,7 @@ import { Bookmark, ChevronDown, Link2, Pencil, Trash2, Users } from "lucide-reac
 import { useState, type FormEvent } from "react";
 
 import { useConfirm } from "@/components/confirm";
-import { useToast } from "@/components/toast";
+import { useCopy, useToast } from "@/components/toast";
 import { Button, Checkbox, ErrorText, Field, IconButton, Input, Modal, cx } from "@/components/ui";
 import type { TableView } from "@/lib/data-browser/tabs";
 import { isModified, pickSavedState, savedViewLink } from "@/lib/data-browser/view-state";
@@ -38,6 +38,7 @@ export function ViewsMenu({
   const { update, remove } = useTableViewMutations(databaseId, table);
   const { data: me } = useMe();
   const { push } = useToast();
+  const copy = useCopy();
   const confirm = useConfirm();
 
   const active = views?.find((v) => v.id === view.savedView);
@@ -46,10 +47,10 @@ export function ViewsMenu({
   const shared = (views ?? []).filter((v) => v.created_by !== me?.id);
 
   const copyLink = (v: SavedTableView) =>
-    void navigator.clipboard
-      ?.writeText(savedViewLink(window.location.origin, databaseId, table, v.id))
-      .then(() => push("success", "Link copied. People who can open this database see the view if it is shared."))
-      .catch(() => push("error", "The browser did not allow copying"));
+    copy(
+      savedViewLink(window.location.origin, databaseId, table, v.id),
+      "Link copied. People who can open this database see the view if it is shared.",
+    );
 
   const del = async (v: SavedTableView) => {
     const ok = await confirm({

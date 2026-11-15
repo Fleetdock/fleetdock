@@ -7,8 +7,11 @@
  * border-border, rounded-lg, shadow-md, font-mono …).
  */
 
-/* Tailwind's dark: variant follows the .dark class set by the theme script,
-   not the OS setting. */
+/*
+ * Two styles, each light and dark, set on <html> before paint (lib/appearance-script.ts):
+ * Classic (default, teal) and Neutral (data-style="neutral", compact gray), whose blocks
+ * override Classic's. The .dark class picks the variant; Tailwind's dark: follows it.
+ */
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
@@ -20,14 +23,18 @@
   --panel-2: #f3f4f5;
   --panel-3: #e9eaec;
   --overlay: rgb(9 9 11 / 0.5);
+  /* SQL editor surfaces (the Neutral dark variant darkens them) */
+  --editor-bg: var(--panel);
+  --editor-gutter: var(--panel-2);
 
   /* text */
   --fg: #0b0b0d;
   --muted: #62626b; /* 5.6:1 on --panel, 5.3:1 on --bg */
   --fg-subtle: #8b8b94; /* decorative / placeholder only */
 
-  /* lines */
-  --border: #e3e4e7;
+  /* lines (--border is what components use; borderless mode blanks it) */
+  --border-line: #e3e4e7;
+  --border: var(--border-line);
   --border-strong: #cfd1d5;
 
   /* brand */
@@ -110,7 +117,7 @@
     Consolas, monospace;
 }
 
-.dark {
+:root.dark {
   color-scheme: dark;
 
   --bg: #09090b;
@@ -123,7 +130,7 @@
   --muted: #a1a1aa; /* 7.4:1 on --panel */
   --fg-subtle: #71717a;
 
-  --border: #26262b;
+  --border-line: #26262b;
   --border-strong: #3a3a41;
 
   --primary: #2dd4bf; /* dark text 10:1 */
@@ -165,6 +172,168 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 6px 16px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.03);
   --shadow-lg: 0 18px 48px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+
+/* Neutral style: metrics and light colours. */
+:root[data-style="neutral"] {
+  color-scheme: light;
+
+  --bg: #f5f5f5;
+  --panel: #ffffff;
+  --panel-2: #f2f2f2;
+  --panel-3: #e8e8e8;
+  --overlay: rgb(0 0 0 / 0.4);
+  --editor-bg: #f3f3f3;
+  --editor-gutter: #ebebeb;
+
+  --fg: #171717;
+  --muted: #5c5c5c; /* 6.7:1 on --panel */
+  --fg-subtle: #8c8c8c;
+
+  --border-line: #e3e3e3;
+  --border-strong: #cccccc;
+
+  --primary: #262626; /* white text 15:1 */
+  --primary-hover: #404040;
+  --primary-fg: #fafafa;
+  --accent: #0a0a0a;
+  --accent-soft: color-mix(in srgb, var(--accent) 6%, transparent);
+
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #dc2626;
+  --info: #2563eb;
+  --success-soft: color-mix(in srgb, var(--success) 10%, var(--panel));
+  --warning-soft: color-mix(in srgb, var(--warning) 10%, var(--panel));
+  --danger-soft: color-mix(in srgb, var(--danger) 9%, var(--panel));
+  --info-soft: color-mix(in srgb, var(--info) 9%, var(--panel));
+
+  --ring: rgb(0 0 0 / 0.16);
+
+  --chart-1: #737373;
+  --chart-2: #2563eb;
+  --chart-3: #d97706;
+  --chart-4: #7c3aed;
+  --chart-5: #db2777;
+  --chart-grid: #ececec;
+
+  --engine-postgres: #336791;
+  --engine-mysql: #00758f;
+  --engine-mariadb: #a0522d;
+  --dbx-view: #7c3aed;
+
+  --syntax-keyword: #7c3aed;
+  --syntax-string: #15803d;
+  --syntax-number: #b45309;
+  --syntax-comment: #8c8c8c;
+  --syntax-function: #2563eb;
+  --syntax-operator: #404040;
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 16px 40px rgb(0 0 0 / 0.14), 0 0 0 1px rgb(0 0 0 / 0.05);
+
+  /* radius */
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius: 8px;
+  --radius-xl: 10px;
+
+  /* type scale (rem; the root is 15px in this style, see base.css) */
+  --fs-2xs: 0.6875rem; /* 10.3 — engine pills, counters */
+  --fs-xs: 0.75rem; /* 11.3 — captions, table headers, badges */
+  --fs-sm: 0.8125rem; /* 12.2 — dense UI, hints */
+  --fs-base: 0.875rem; /* 13.1 — body, controls */
+  --fs-md: 1rem; /* 15 — section titles */
+  --fs-lg: 1.2rem; /* 18 — page titles */
+  --fs-xl: 1.4rem; /* 21 — stat values */
+
+  /* layout */
+  --topbar-h: 46px;
+  --sidebar-w: 212px;
+  --sidebar-rail: 56px;
+}
+
+/* Neutral style, dark variant. */
+:root[data-style="neutral"].dark {
+  color-scheme: dark;
+
+  /* surfaces */
+  --bg: #1c1c1c;
+  --panel: #232323;
+  --panel-2: #2a2a2a;
+  --panel-3: #333333;
+  --overlay: rgb(0 0 0 / 0.6);
+  /* SQL editor surfaces: darker than --panel so code input stands out */
+  --editor-bg: #141414;
+  --editor-gutter: #191919;
+
+  /* text */
+  --fg: #e6e6e6;
+  --muted: #a6a6a6; /* 6.6:1 on --panel */
+  --fg-subtle: #767676; /* decorative / placeholder only */
+
+  /* lines. --border itself is set once, in :root: setting it here would beat
+     borderless mode, whose selector is less specific than this one. */
+  --border-line: #333333;
+  --border-strong: #454545;
+
+  /* brand: neutral gray, no hue */
+  --primary: #d6d6d6; /* dark text 11:1 */
+  --primary-hover: #ededed;
+  --primary-fg: #1a1a1a;
+  --accent: #f2f2f2; /* links/active nav: brighter than --fg */
+  --accent-soft: color-mix(in srgb, var(--accent) 9%, transparent);
+
+  /* status (kept in colour: they carry meaning) */
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+  --success-soft: color-mix(in srgb, var(--success) 12%, var(--panel));
+  --warning-soft: color-mix(in srgb, var(--warning) 11%, var(--panel));
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--panel));
+  --info-soft: color-mix(in srgb, var(--info) 12%, var(--panel));
+
+  --ring: rgb(255 255 255 / 0.28);
+
+  /* data visualisation: ordered categorical series */
+  --chart-1: #a3a3a3;
+  --chart-2: #3b82f6;
+  --chart-3: #c98008;
+  --chart-4: #8b5cf6;
+  --chart-5: #ec4899;
+  --chart-grid: #2e2e2e;
+
+  /* engines (vendor colours, used on small badges only) */
+  --engine-postgres: #4b7bab;
+  --engine-mysql: #1188a8;
+  --engine-mariadb: #b0653f;
+  --dbx-view: #a78bfa;
+
+  /* SQL syntax */
+  --syntax-keyword: #c4b5fd;
+  --syntax-string: #86efac;
+  --syntax-number: #fcd34d;
+  --syntax-comment: #767676;
+  --syntax-function: #93c5fd;
+  --syntax-operator: #cfcfcf;
+
+  /* elevation */
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 6px 16px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.03);
+  --shadow-lg: 0 18px 48px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+
+/* Borderless UI: structural lines disappear and surfaces are told apart by fill.
+   Inputs (--border-strong) and the data browser tab strip keep their lines. */
+:root[data-borders="none"] {
+  --border: transparent;
+}
+:root[data-borders="none"] .dbx-tabbar {
+  --border: var(--border-line);
 }
 
 @theme inline {

@@ -7,20 +7,13 @@ import { useEffect } from "react";
 import { buttonClass } from "@/components/ui";
 
 // The last resort: the root layout itself failed, so this replaces the whole
-// document and must bring its own <html>, styles and theme.
+// document and must bring its own <html>, styles and the .dark class.
 export default function GlobalError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   useEffect(() => {
     console.error(error);
-    try {
-      const t = localStorage.getItem("theme");
-      const dark = t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.classList.toggle("dark", dark);
-    } catch {
-      /* storage unavailable */
-    }
   }, [error]);
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body>
         <title>Fleetdock hit an error</title>
         <main className="standalone-page">

@@ -113,6 +113,10 @@ Add tests for new service logic. Focus on validation, state transitions, and err
 
 1. Ensure `make lint && make test && make build` pass.
 2. Update [CHANGELOG.md](CHANGELOG.md) under `Unreleased` if the change is user-facing.
+   End the entry with the PR number and, if you are not a maintainer, your
+   GitHub login, e.g. `(#119, thanks @your-login)`. Add the number after
+   opening the PR; the maintainer fills it in otherwise. Release notes also
+   list everyone whose commits are in the release.
 3. Open a PR against `main` using the PR template.
 4. Describe what changed and how you tested it.
 

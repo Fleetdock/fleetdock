@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { useCopy } from "@/components/toast";
 import { IconButton } from "@/components/ui";
 import type { Tab } from "@/lib/data-browser/tabs";
 import { Copy, Eye, Plus, SquareTerminal, Table2, X } from "lucide-react";
@@ -38,12 +39,13 @@ export function TabBar({
   onNewQuery: () => void;
   /** Controls shown before the tabs (sidebar toggle). */
   leading?: ReactNode;
-  /** Controls at the end of the bar (full screen, theme). */
+  /** Controls at the end of the bar (full screen). */
   trailing?: ReactNode;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ id: string; over: number | null } | null>(null);
   const ctx = useContextMenu();
+  const copy = useCopy();
 
   // Keep the active tab in view when it changes (opened from the sidebar, cycled by key).
   useEffect(() => {
@@ -146,7 +148,7 @@ export function TabBar({
                     label: "Copy name",
                     icon: <Copy size={14} />,
                     hidden: t.kind === "query" || t.kind === "object",
-                    onSelect: () => void navigator.clipboard?.writeText(t.name),
+                    onSelect: () => copy(t.name, `Copied ${t.name}`),
                   },
                 ])
               }

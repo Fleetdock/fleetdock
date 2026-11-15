@@ -3,19 +3,12 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
+import { DataBrowserSkeleton } from "@/components/data-browser/skeleton";
 import { DataBrowser } from "@/components/data-browser/workspace";
-import { Skeleton } from "@/components/ui";
 
 export default function DataBrowserPage() {
   return (
-    <Suspense
-      fallback={
-        <div role="status" aria-label="Loading Data Browser" className="flex gap-3 p-4">
-          <Skeleton width="15rem" height="70vh" radius="var(--radius)" className="hide-sm shrink-0" />
-          <Skeleton height="70vh" radius="var(--radius)" className="flex-1" />
-        </div>
-      }
-    >
+    <Suspense fallback={<DataBrowserSkeleton />}>
       <DataBrowserRoute />
     </Suspense>
   );

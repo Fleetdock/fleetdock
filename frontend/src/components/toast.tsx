@@ -14,6 +14,8 @@ import {
 
 import { CheckCircle2, Info, X, XCircle } from "lucide-react";
 
+import { copyText } from "./ui/base";
+
 export type ToastKind = "success" | "error" | "info";
 
 interface Toast {
@@ -173,6 +175,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 // components stay usable in isolation.
 export function useToast(): ToastContextValue {
   return useContext(ToastContext) ?? { push: () => {} };
+}
+
+/**
+ * useCopy returns a function that copies text and toasts the outcome, so a
+ * copy that the browser refuses (plain HTTP on a LAN address) is not silent.
+ */
+export function useCopy(): (text: string, done: string) => void {
+  const { push } = useToast();
+  return useCallback(
+    (text: string, done: string) =>
+      void copyText(text).then((ok) => push(ok ? "success" : "error", ok ? done : "The browser did not allow copying")),
+    [push],
+  );
 }
 
 /**
