@@ -74,6 +74,13 @@ type Config struct {
 	// WorkerEnabled runs the in-process operations worker (external
 	// instances, offline detection).
 	WorkerEnabled bool
+	// JobPollInterval controls how often the worker claims queued operations.
+	JobPollInterval time.Duration
+	// AlertInterval controls how often alert rules are evaluated and pending
+	// notifications are delivered.
+	AlertInterval time.Duration
+	// HealthCheckInterval controls how often instance health and size probes run.
+	HealthCheckInterval time.Duration
 	// HeartbeatTimeout is how long without a heartbeat before a server is
 	// marked offline.
 	HeartbeatTimeout time.Duration
@@ -235,6 +242,20 @@ func parseKeyList(raw string) map[string]string {
 
 // Load reads configuration from the environment and validates it.
 func Load() (Config, error) {
+	// Keep these defaults aligned with worker.New's interval defaults.
+	jobPollInterval, err := getenvDurationAtLeast("FLEETDOCK_JOB_POLL_INTERVAL", 3*time.Second, time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	alertInterval, err := getenvDurationAtLeast("FLEETDOCK_ALERT_INTERVAL", 15*time.Second, 5*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	healthCheckInterval, err := getenvDurationAtLeast("FLEETDOCK_HEALTH_CHECK_INTERVAL", time.Minute, 15*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+
 	cfg := Config{
 		HTTPAddr:        getenv("FLEETDOCK_HTTP_ADDR", ":8080"),
 		DatabaseURL:     os.Getenv("FLEETDOCK_DATABASE_URL"),
@@ -264,9 +285,12 @@ func Load() (Config, error) {
 		UINodeBin:        getenv("FLEETDOCK_UI_NODE_BIN", "node"),
 		UIStartupTimeout: getenvDuration("FLEETDOCK_UI_STARTUP_TIMEOUT", 45*time.Second),
 
-		WorkerEnabled:    getenvBool("FLEETDOCK_WORKER_ENABLED", true),
-		HeartbeatTimeout: getenvDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", 2*time.Minute),
-		MetricsRetention: getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
+		WorkerEnabled:       getenvBool("FLEETDOCK_WORKER_ENABLED", true),
+		JobPollInterval:     jobPollInterval,
+		AlertInterval:       alertInterval,
+		HealthCheckInterval: healthCheckInterval,
+		HeartbeatTimeout:    getenvDuration("FLEETDOCK_HEARTBEAT_TIMEOUT", 2*time.Minute),
+		MetricsRetention:    getenvDuration("FLEETDOCK_METRICS_RETENTION", 7*24*time.Hour),
 
 		CatalogRefreshInterval: getenvDuration("FLEETDOCK_CATALOG_REFRESH_INTERVAL", 30*time.Minute),
 		SchemaSnapshotInterval: getenvDuration("FLEETDOCK_SCHEMA_SNAPSHOT_INTERVAL", 15*time.Minute),
@@ -342,6 +366,21 @@ func getenvDuration(key string, def time.Duration) time.Duration {
 		}
 	}
 	return def
+}
+
+func getenvDurationAtLeast(key string, def, min time.Duration) (time.Duration, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("config: %s must be a valid duration: %w", key, err)
+	}
+	if d < min {
+		return 0, fmt.Errorf("config: %s must be at least %s", key, min)
+	}
+	return d, nil
 }
 
 func getenvBool(key string, def bool) bool {
