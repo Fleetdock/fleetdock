@@ -9,25 +9,38 @@ import { compactCount, quoteTable, type Dialect } from "@/lib/data-browser/cells
 import {
   isSelected,
   loadSelection,
+  mergeSchemas,
   resolveSelection,
   saveSelection,
   summarizeSchemas,
   type SchemaSelection,
+  type SchemaSummary,
 } from "@/lib/data-browser/schemas";
 import { collapsedSchemas, saveCollapsedSchemas } from "@/lib/data-browser/storage";
 import { objectName, type OpenRequest } from "@/lib/data-browser/tabs";
 import { formatBytes } from "@/lib/format";
-import { exportTableCSV } from "@/lib/hooks";
+import { exportTableCSV, useMaintenanceMutations } from "@/lib/hooks";
 import type { DBObject, TableInfo } from "@/lib/types";
 import {
   CalendarClock,
   ChevronRight,
   Copy,
+  CopyPlus,
+  DatabaseBackup,
   Download,
   Eye,
   Folder,
+  FolderInput,
   FolderOpen,
+  FolderPlus,
+  MessageSquareText,
+  Pencil,
+  Trash2,
+  UserRound,
   FunctionSquare,
+  Gauge,
+  Hash,
+  Wrench,
   Layers,
   ListOrdered,
   Network,
@@ -42,6 +55,9 @@ import {
 } from "lucide-react";
 
 import { useContextMenu } from "./context-menu";
+import { nestPartitions, partitionCount } from "@/lib/data-browser/partitions";
+import { MaintenanceDialogs, OP_LABEL, useMaintenance, type MaintenanceDialog } from "./maintenance-dialogs";
+import { SchemaDialogs, type MovableObject, type SchemaDialog } from "./schema-dialogs";
 import { SchemaPicker } from "./schema-picker";
 import { TreeRowsSkeleton } from "./skeleton";
 
@@ -59,6 +75,10 @@ export type TreeItem = {
   comment?: string;
   /** Table a trigger fires on. */
   table?: string;
+  /** PostgreSQL: a partitioned table. */
+  partitioned?: boolean;
+  /** PostgreSQL: API name of the partitioned table this is a partition of. */
+  partitionOf?: string;
 };
 
 /** Routines and other non-relation objects, in sidebar order. */
@@ -92,6 +112,8 @@ export function buildItems(tables: TableInfo[], objects: DBObject[], dialect: Di
     rows: t.row_count,
     bytes: t.data_bytes + t.index_bytes,
     comment: t.comment || undefined,
+    partitioned: t.partitioned || undefined,
+    partitionOf: t.partition_of || undefined,
   }));
   for (const o of objects) {
     if (o.kind === "view" || o.kind === "materialized_view") {
@@ -133,12 +155,20 @@ export const ObjectTree = forwardRef<
     canWrite: boolean;
     onOpen: (req: OpenRequest) => void;
     onNewQuery: (sql?: string) => void;
-    onCreateTable: () => void;
+    /** Opens the create-table dialog; schema is the PostgreSQL schema to create it in. */
+    onCreateTable: (schema?: string) => void;
+    /** Every PostgreSQL schema from the server, so schemas without tables show too. */
+    schemaList?: SchemaSummary[];
+    /** An object moved to another schema: tabs naming it follow it. */
+    onObjectMoved?: (from: string, to: string, label: string) => void;
+    /** Backs up or exports one PostgreSQL schema; absent without backup:write. */
+    onBackupSchema?: (schema: string) => void;
     onRefresh: () => void;
     refreshing: boolean;
   }
 >(function ObjectTree(
   {
+    onBackupSchema,
     databaseId,
     items,
     isLoading,
@@ -149,6 +179,8 @@ export const ObjectTree = forwardRef<
     onOpen,
     onNewQuery,
     onCreateTable,
+    schemaList,
+    onObjectMoved,
     onRefresh,
     refreshing,
   },
@@ -178,7 +210,13 @@ export const ObjectTree = forwardRef<
 
   // PostgreSQL schemas to show: one remembered choice per database (shared
   // with the ER diagram). Everything else below works on the chosen ones.
-  const summary = useMemo(() => summarizeSchemas(items), [items]);
+  const pg = dialect === "postgres";
+  // Schemas from the table list, plus the server's list so that schemas
+  // without tables or views show as well.
+  const summary = useMemo(
+    () => (pg ? mergeSchemas(summarizeSchemas(items), schemaList) : summarizeSchemas(items)),
+    [items, schemaList, pg],
+  );
   const [storedSel, setStoredSel] = useState(() => loadSelection(databaseId));
   const [selFor, setSelFor] = useState(databaseId);
   if (selFor !== databaseId) {
@@ -207,10 +245,37 @@ export const ObjectTree = forwardRef<
   }
 
   const relations = useMemo(() => scoped.filter((i) => i.kind !== "object"), [scoped]);
-  const schemas = useMemo(() => [...new Set(scoped.map((i) => i.schema))], [scoped]);
+  // Schema groups to draw: on PostgreSQL every chosen schema, empty or not;
+  // elsewhere whatever the items carry.
+  const schemas = useMemo(
+    () =>
+      pg && summary.length > 0
+        ? summary.map((s) => s.name).filter((n) => !pickSchemas || isSelected(selection, n))
+        : [...new Set(scoped.map((i) => i.schema))],
+    // selection is derived from storedSel and summary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pg, summary, pickSchemas, storedSel, scoped],
+  );
   const grouped = schemas.length > 1;
+  const schemaInfo = (name: string) => summary.find((s) => s.name === name);
+  // Where the toolbar's Create table puts a new table: the one schema shown,
+  // else public when it is shown, else the first shown.
+  const createSchema = pg ? (schemas.includes("public") && schemas.length > 1 ? "public" : schemas[0] ?? "public") : undefined;
   const isMatch = (i: TreeItem) => !q || i.label.toLowerCase().includes(q) || `${i.schema}.${i.label}`.toLowerCase().includes(q);
   const matches = relations.filter(isMatch);
+  // Partitions sit under their partitioned table, which opens like a folder.
+  const [openTables, setOpenTables] = useState<Set<string>>(() => new Set());
+  const nested = nestPartitions(matches, openTables, Boolean(q));
+  const shown = nested.map((x) => x.item);
+  const depthOf = new Map(nested.map((x) => [x.item.name, x.depth]));
+  const partitions = partitionCount(items);
+  const toggleTable = (name: string) =>
+    setOpenTables((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   const otherMatches =
     q && pickSchemas
       ? items.filter((i) => i.kind !== "object" && !isSelected(selection, i.schema) && isMatch(i))
@@ -224,7 +289,7 @@ export const ObjectTree = forwardRef<
   const objectCount = scoped.length - relations.length;
   // What is on screen, in order: collapsed groups hide their items unless searching.
   const visible = [
-    ...(grouped && !q ? matches.filter((i) => !collapsed.has(i.schema)) : matches),
+    ...(grouped && !q ? shown.filter((i) => !collapsed.has(i.schema)) : shown),
     ...(showOthers ? otherMatches : []),
     ...objectGroups.flatMap((g) => (q || openKinds.has(g.kind) ? g.list : [])),
   ];
@@ -257,6 +322,146 @@ export const ObjectTree = forwardRef<
     }
   }
 
+  // Dialogs that create, change and drop schemas (PostgreSQL).
+  const [schemaDialog, setSchemaDialog] = useState<SchemaDialog | null>(null);
+  // PostgreSQL housekeeping: sequence values, table statistics, partitions.
+  const [maintDialog, setMaintDialog] = useState<MaintenanceDialog | null>(null);
+  const maint = useMaintenance(databaseId);
+  const { refresh: refreshView } = useMaintenanceMutations(databaseId);
+  const refreshMatview = async (item: TreeItem, concurrently: boolean) => {
+    try {
+      await refreshView.mutateAsync({ schema: item.schema, name: item.label, concurrently });
+      push("success", `Refreshed ${item.label}`);
+    } catch (err) {
+      push("error", err instanceof Error ? err.message : "Refresh failed");
+    }
+  };
+  const owners = useMemo(
+    () => [...new Set(summary.map((s) => s.owner).filter((o): o is string => Boolean(o)))].sort(),
+    [summary],
+  );
+  const editSchema = (kind: "rename" | "owner" | "comment" | "drop", name: string) =>
+    setSchemaDialog({ kind, schema: schemaInfo(name) ?? { name, tables: 0, views: 0 } });
+  // Keep the chosen schemas in step with renames, drops and new schemas.
+  const onSchemaRenamed = (from: string, to: string) => {
+    if (!selection.all && selection.schemas.includes(from)) {
+      changeSelection({ all: false, schemas: selection.schemas.map((n) => (n === from ? to : n)) });
+    }
+  };
+  const onSchemaDropped = (name: string) => {
+    if (!selection.all && selection.schemas.includes(name) && selection.schemas.length > 1) {
+      changeSelection({ all: false, schemas: selection.schemas.filter((n) => n !== name) });
+    }
+  };
+  const onSchemaCreated = (name: string) => {
+    if (!selection.all) changeSelection({ all: false, schemas: [...selection.schemas, name] });
+  };
+
+  function schemaMenu(schema: string) {
+    return [
+      {
+        label: "Create table here",
+        icon: <Plus size={14} />,
+        hidden: !canWrite,
+        onSelect: () => onCreateTable(schema),
+      },
+      {
+        label: "Copy name",
+        icon: <Copy size={14} />,
+        onSelect: () => copy(schema, `Copied ${schema}`),
+      },
+      "separator" as const,
+      { label: "New schema…", icon: <FolderPlus size={14} />, hidden: !canWrite || !pg, onSelect: () => setSchemaDialog({ kind: "create" }) },
+      { label: "Rename…", icon: <Pencil size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("rename", schema) },
+      { label: "Change owner…", icon: <UserRound size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("owner", schema) },
+      { label: "Comment…", icon: <MessageSquareText size={14} />, hidden: !canWrite || !pg, onSelect: () => editSchema("comment", schema) },
+      {
+        label: "Copy to new schema…",
+        icon: <CopyPlus size={14} />,
+        hidden: !canWrite || !pg,
+        onSelect: () =>
+          setSchemaDialog({
+            kind: "copy",
+            schema: schemaInfo(schema) ?? { name: schema, tables: 0, views: 0 },
+            schemas: summary.map((s) => s.name),
+          }),
+      },
+      "separator" as const,
+      {
+        label: "Back up or export…",
+        icon: <DatabaseBackup size={14} />,
+        hidden: !pg || !onBackupSchema,
+        onSelect: () => onBackupSchema?.(schema),
+      },
+      {
+        label: "Table statistics…",
+        icon: <Gauge size={14} />,
+        hidden: !pg,
+        onSelect: () => setMaintDialog({ kind: "stats", schema }),
+      },
+      {
+        label: "VACUUM ANALYZE all tables",
+        icon: <Wrench size={14} />,
+        hidden: !pg || !canWrite,
+        onSelect: () => void maint.run("vacuum_analyze", schema),
+      },
+      "separator" as const,
+      { label: "Drop schema…", icon: <Trash2 size={14} />, danger: true, hidden: !canWrite || !pg, onSelect: () => editSchema("drop", schema) },
+    ];
+  }
+
+  function schemaTitle(name: string) {
+    const info = schemaInfo(name);
+    return [
+      name,
+      info?.owner ? `owner ${info.owner}` : null,
+      info?.bytes ? formatBytes(info.bytes) : null,
+      info?.comment,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  const emptySchemaNote = (schema: string, nested: boolean) => (
+    <div key={`empty:${schema}`} className={`dbx-tree-note${nested ? " nested" : ""}`}>
+      {nested ? "No tables or views." : `Schema “${schema}” has no tables or views.`}
+      {canWrite ? (
+        <Button
+          size="sm"
+          variant={nested ? "ghost" : undefined}
+          className={nested ? "-ml-2" : "mt-2"}
+          icon={<Plus size={14} aria-hidden />}
+          onClick={() => onCreateTable(schema)}
+        >
+          Create table here
+        </Button>
+      ) : null}
+    </div>
+  );
+
+  // What can move to another schema, and how the server names its kind.
+  const movable = (item: TreeItem): MovableObject | null => {
+    if (!pg || !canWrite) return null;
+    if (item.kind === "table" || item.kind === "view") {
+      const noun = item.kind === "table" ? "table" : item.sub === "materialized_view" ? "materialized view" : "view";
+      return { kind: "relation", schema: item.schema, name: item.label, noun };
+    }
+    if (item.sub === "sequence") return { kind: "relation", schema: item.schema, name: item.label, noun: "sequence" };
+    if (item.sub === "function" || item.sub === "procedure") return { kind: item.sub, schema: item.schema, name: item.label, noun: item.sub };
+    return null;
+  };
+  const moveItem = (item: TreeItem) => {
+    const obj = movable(item);
+    if (obj) setSchemaDialog({ kind: "move", object: obj, schemas: summary.map((s) => s.name) });
+  };
+  const onMoved = (obj: MovableObject, target: string) => {
+    const item = items.find((i) => i.schema === obj.schema && i.label === obj.name && (i.kind !== "object" || i.sub === obj.noun));
+    if (!item) return;
+    const to =
+      item.kind === "object" ? objectName({ kind: item.sub ?? "", schema: target, name: item.label }) : `${target}.${item.label}`;
+    onObjectMoved?.(item.name, to, item.label);
+  };
+
   function menuFor(item: TreeItem) {
     if (item.kind === "object") {
       return [
@@ -271,9 +476,21 @@ export const ObjectTree = forwardRef<
           },
         },
         {
+          label: canWrite ? "Value…" : "Current value…",
+          icon: <Hash size={14} />,
+          hidden: !pg || item.sub !== "sequence",
+          onSelect: () => setMaintDialog({ kind: "sequence", schema: item.schema, name: item.label }),
+        },
+        {
           label: "Copy name",
           icon: <Copy size={14} />,
           onSelect: () => copy(`${item.schema}.${item.label}`, `Copied ${item.label}`),
+        },
+        {
+          label: "Move to schema…",
+          icon: <FolderInput size={14} />,
+          hidden: !movable(item),
+          onSelect: () => moveItem(item),
         },
       ];
     }
@@ -297,6 +514,12 @@ export const ObjectTree = forwardRef<
         onSelect: () => copy(item.name, `Copied ${item.name}`),
       },
       {
+        label: "Move to schema…",
+        icon: <FolderInput size={14} />,
+        hidden: !movable(item),
+        onSelect: () => moveItem(item),
+      },
+      {
         label: "Export CSV",
         icon: <Download size={14} />,
         hidden: item.kind !== "table",
@@ -305,6 +528,31 @@ export const ObjectTree = forwardRef<
             push("error", err instanceof Error ? err.message : "Export failed"),
           ),
       },
+      {
+        label: "Partitions…",
+        icon: <Layers size={14} />,
+        hidden: !pg || !item.partitioned,
+        onSelect: () => setMaintDialog({ kind: "partitions", schema: item.schema, table: item.label }),
+      },
+      "separator" as const,
+      {
+        label: "Refresh",
+        icon: <RefreshCw size={14} />,
+        hidden: !pg || !canWrite || item.sub !== "materialized_view",
+        onSelect: () => void refreshMatview(item, false),
+      },
+      {
+        label: "Refresh concurrently",
+        icon: <RefreshCw size={14} />,
+        hidden: !pg || !canWrite || item.sub !== "materialized_view",
+        onSelect: () => void refreshMatview(item, true),
+      },
+      ...(["vacuum_analyze", "analyze", "reindex"] as const).map((op) => ({
+        label: OP_LABEL[op],
+        icon: <Wrench size={14} />,
+        hidden: !pg || !canWrite || (item.kind !== "table" && item.sub !== "materialized_view"),
+        onSelect: () => void maint.run(op, item.schema, item.label),
+      })),
     ];
   }
 
@@ -318,18 +566,24 @@ export const ObjectTree = forwardRef<
       item.kind === "view" ? (item.sub === "materialized_view" ? "materialized view" : "view") : null,
       item.kind === "object" ? item.sub : null,
       item.table ? `on ${item.table}` : null,
+      item.partitioned ? `partitioned · ${partitions.get(item.name) ?? 0} partitions` : null,
+      item.partitionOf ? `partition of ${item.partitionOf}` : null,
       item.rows !== undefined ? `~${item.rows.toLocaleString()} rows` : null,
       item.bytes ? formatBytes(item.bytes) : null,
       item.comment,
     ]
       .filter(Boolean)
       .join(" · ");
+    const depth = item.kind === "table" ? depthOf.get(item.name) ?? 0 : 0;
+    const parts = item.partitioned ? partitions.get(item.name) ?? 0 : 0;
+    const partsOpen = openTables.has(item.name);
     return (
       <button
         key={`${item.kind}:${item.name}`}
         type="button"
         data-index={i}
         className={`dbx-tree-item${active ? " active" : ""}${i === cursor ? " cursor" : ""}${grouped || item.kind === "object" ? " nested" : ""}`}
+        style={depth ? { paddingLeft: `calc(${grouped ? "1.6rem" : ".45rem"} + ${depth * 0.9}rem)` } : undefined}
         title={title}
         // Shift/Ctrl/⌘-click keeps the tab open, like a double click.
         onClick={(e) => open(item, !(e.shiftKey || e.ctrlKey || e.metaKey))}
@@ -344,8 +598,24 @@ export const ObjectTree = forwardRef<
           ) : (
             <Eye size={14} className="dbx-tree-icon view" />
           )
+        ) : parts > 0 ? (
+          <span
+            role="button"
+            tabIndex={-1}
+            className="dbx-tree-toggle"
+            aria-label={`${partsOpen ? "Hide" : "Show"} the ${parts} partitions of ${item.label}`}
+            aria-expanded={partsOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTable(item.name);
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            <ChevronRight size={12} className={`dbx-chevron${partsOpen ? " open" : ""}`} />
+            <Table2 size={14} className="dbx-tree-icon" />
+          </span>
         ) : (
-          <Table2 size={14} className="dbx-tree-icon" />
+          <Table2 size={14} className={`dbx-tree-icon${item.partitionOf ? " partition" : ""}`} />
         )}
         <span className="truncate flex-1">
           {(item.kind === "object" && grouped) || (pickSchemas && !isSelected(selection, item.schema)) ? (
@@ -370,22 +640,27 @@ export const ObjectTree = forwardRef<
         </Button>
       </div>
     );
-  } else if (relations.length === 0 && objectCount === 0 && !q) {
-    body = (
-      <div className="dbx-tree-note">
-        {items.length === 0 ? "This database has no tables yet." : "No tables in the chosen schemas."}
-      </div>
-    );
-  } else if (matches.length === 0 && objectGroups.length === 0 && otherMatches.length === 0) {
+  } else if (relations.length === 0 && objectCount === 0 && !q && !grouped) {
+    body =
+      pg && schemas.length === 1 ? (
+        emptySchemaNote(schemas[0], false)
+      ) : (
+        <div className="dbx-tree-note">
+          {items.length === 0 ? "This database has no tables yet." : "No tables in the chosen schemas."}
+        </div>
+      );
+  } else if (q && matches.length === 0 && objectGroups.length === 0 && otherMatches.length === 0) {
     body = <div className="dbx-tree-note">Nothing matches “{query}”.</div>;
-  } else if (matches.length === 0) {
+  } else if (matches.length === 0 && (q || !grouped)) {
     body = null;
   } else if (!grouped) {
-    body = matches.map(renderItem);
+    body = shown.map(renderItem);
   } else {
     body = schemas.map((s) => {
-      const list = matches.filter((i) => i.schema === s);
-      if (list.length === 0) return null;
+      const list = shown.filter((i) => i.schema === s);
+      // While searching, schemas without a match are left out.
+      if (list.length === 0 && q) return null;
+      const empty = !relations.some((i) => i.schema === s);
       const isOpen = Boolean(q) || !collapsed.has(s);
       return (
         <div key={s}>
@@ -393,6 +668,8 @@ export const ObjectTree = forwardRef<
             type="button"
             className="dbx-tree-schema"
             aria-expanded={isOpen}
+            title={schemaTitle(s)}
+            onContextMenu={(e) => ctx.open(e, schemaMenu(s))}
             onClick={() =>
               setCollapsed((prev) => {
                 const next = new Set(prev);
@@ -408,9 +685,9 @@ export const ObjectTree = forwardRef<
             <span className="truncate flex-1">
               {s}
             </span>
-            <span className="dbx-tree-count">{list.length}</span>
+            <span className="dbx-tree-count">{empty ? "empty" : list.length}</span>
           </button>
-          {isOpen ? list.map(renderItem) : null}
+          {isOpen ? (empty ? emptySchemaNote(s, true) : list.map(renderItem)) : null}
         </div>
       );
     });
@@ -467,7 +744,7 @@ export const ObjectTree = forwardRef<
       </div>
     );
 
-  const tableCount = relations.filter((i) => i.kind === "table").length;
+  const tableCount = relations.filter((i) => i.kind === "table" && !i.partitionOf).length;
   const viewCount = relations.length - tableCount;
 
   return (
@@ -486,8 +763,16 @@ export const ObjectTree = forwardRef<
           <IconButton label="New SQL query" onClick={() => onNewQuery()}>
             <SquareTerminal size={14} aria-hidden />
           </IconButton>
+          {canWrite && pg ? (
+            <IconButton label="New schema" onClick={() => setSchemaDialog({ kind: "create" })}>
+              <FolderPlus size={14} aria-hidden />
+            </IconButton>
+          ) : null}
           {canWrite ? (
-            <IconButton label="Create table" onClick={onCreateTable}>
+            <IconButton
+              label={createSchema ? `Create table in ${createSchema}` : "Create table"}
+              onClick={() => onCreateTable(createSchema)}
+            >
               <Plus size={15} aria-hidden />
             </IconButton>
           ) : null}
@@ -542,6 +827,17 @@ export const ObjectTree = forwardRef<
         {objectsBody}
       </div>
       {ctx.element}
+      <SchemaDialogs
+        databaseId={databaseId}
+        dialog={schemaDialog}
+        owners={owners}
+        onClose={() => setSchemaDialog(null)}
+        onRenamed={onSchemaRenamed}
+        onDropped={onSchemaDropped}
+        onCreated={onSchemaCreated}
+        onMoved={onMoved}
+      />
+      <MaintenanceDialogs databaseId={databaseId} dialog={maintDialog} canWrite={canWrite} onClose={() => setMaintDialog(null)} />
     </div>
   );
 });

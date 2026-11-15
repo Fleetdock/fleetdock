@@ -27,7 +27,7 @@ var _ backupdom.Repository = (*BackupRepository)(nil)
 const backupColumns = `
 	id, database_id, job_id, schedule_id, destination_id, type, engine, status, storage_url,
 	size_bytes, checksum, started_at, completed_at, expires_at, error, created_by, created_at, version,
-	verify_status, verified_at, verify_error`
+	verify_status, verified_at, verify_error, schema_name`
 
 // backupNames resolves a backup's database and database server names for reads.
 const backupNames = `
@@ -37,11 +37,11 @@ const backupNames = `
 
 func (r *BackupRepository) Create(ctx context.Context, b *backupdom.Backup) error {
 	const q = `
-		INSERT INTO backups (id, database_id, job_id, schedule_id, destination_id, type, engine, status, expires_at, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO backups (id, database_id, job_id, schedule_id, destination_id, type, engine, status, expires_at, created_by, schema_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING created_at, version`
 	err := r.pool.QueryRow(ctx, q,
-		b.ID, b.DatabaseID, b.JobID, b.ScheduleID, b.DestinationID, b.Type, b.Engine, string(b.Status), b.ExpiresAt, b.CreatedBy,
+		b.ID, b.DatabaseID, b.JobID, b.ScheduleID, b.DestinationID, b.Type, b.Engine, string(b.Status), b.ExpiresAt, b.CreatedBy, b.SchemaName,
 	).Scan(&b.CreatedAt, &b.Version)
 	if err != nil {
 		return apperr.Internal(fmt.Errorf("insert backup: %w", err))
@@ -113,7 +113,7 @@ func (r *BackupRepository) List(ctx context.Context, f backupdom.ListFilter) (ba
 		if err := rows.Scan(
 			&b.ID, &b.DatabaseID, &b.JobID, &b.ScheduleID, &b.DestinationID, &b.Type, &b.Engine, &status, &b.StorageURL,
 			&b.SizeBytes, &b.Checksum, &b.StartedAt, &b.CompletedAt, &b.ExpiresAt, &b.Error, &b.CreatedBy, &b.CreatedAt, &b.Version,
-			&b.VerifyStatus, &b.VerifiedAt, &b.VerifyError,
+			&b.VerifyStatus, &b.VerifiedAt, &b.VerifyError, &b.SchemaName,
 			&b.DatabaseName, &b.InstanceName, &total,
 		); err != nil {
 			return backupdom.Page{}, apperr.Internal(fmt.Errorf("scan backup: %w", err))
@@ -158,7 +158,7 @@ func scanBackup(row rowScanner) (*backupdom.Backup, error) {
 	if err := row.Scan(
 		&b.ID, &b.DatabaseID, &b.JobID, &b.ScheduleID, &b.DestinationID, &b.Type, &b.Engine, &status, &b.StorageURL,
 		&b.SizeBytes, &b.Checksum, &b.StartedAt, &b.CompletedAt, &b.ExpiresAt, &b.Error, &b.CreatedBy, &b.CreatedAt, &b.Version,
-		&b.VerifyStatus, &b.VerifiedAt, &b.VerifyError,
+		&b.VerifyStatus, &b.VerifiedAt, &b.VerifyError, &b.SchemaName,
 		&b.DatabaseName, &b.InstanceName,
 	); err != nil {
 		return nil, err

@@ -8,6 +8,14 @@ import { api, download } from "../api";
 import { randomUUID } from "../uuid";
 import type {
   ColumnCatalog,
+  ExtensionInfo,
+  MaintenanceOp,
+  PartitionInfo,
+  SequenceInfo,
+  TableStat,
+  DefaultPrivilegeObject,
+  SchemaAccess,
+  SearchPaths,
   Diagram,
   RowFilter,
   SortKey,
@@ -43,6 +51,9 @@ import type {
   TableInfo,
   TableSchema,
   RunQueryInput,
+  SchemaInfo,
+  SchemaDependents,
+  SchemaPatch,
 } from "../types";
 import type { Mutation, MutationResult } from "../data-browser/pending";
 import { writeStatements } from "../sql";
@@ -258,6 +269,7 @@ export function useRunQuery(databaseId: string) {
       if (writeStatements(input.sql).length > 0) {
         qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
         qc.invalidateQueries({ queryKey: ["diagram", databaseId] });
+        qc.invalidateQueries({ queryKey: ["schemas", databaseId] });
       }
     },
   });
@@ -638,6 +650,71 @@ export function useDiagram(databaseId: string, schemas?: string[], enabled = tru
   });
 }
 
+// useSchemas lists a PostgreSQL database's schemas, including empty ones
+// (GET /v1/databases/{id}/schemas). Off for other engines.
+export function useSchemas(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["schemas", databaseId],
+    queryFn: () => api.get<{ items: SchemaInfo[] }>(`/v1/databases/${databaseId}/schemas`).then((r) => r.items),
+    enabled: Boolean(databaseId) && enabled,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+// useSchemaMutations creates, alters and drops PostgreSQL schemas. A schema
+// change can move or remove tables, so everything listing them is refreshed.
+export function useSchemaMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const base = `/v1/databases/${databaseId}/schemas`;
+  const invalidate = () => {
+    for (const key of ["schemas", "tables", "db-objects", "schema-columns", "diagram", "table-schema", "foreign-keys"]) {
+      qc.invalidateQueries({ queryKey: [key, databaseId] });
+    }
+  };
+  const create = useMutation({
+    mutationFn: (v: { name: string; owner?: string }) => api.post(base, v),
+    onSuccess: invalidate,
+  });
+  const alter = useMutation({
+    mutationFn: (v: { schema: string; change: SchemaPatch }) =>
+      api.patch(`${base}/${encodeURIComponent(v.schema)}`, v.change),
+    onSuccess: invalidate,
+  });
+  const drop = useMutation({
+    mutationFn: (v: { schema: string; cascade: boolean }) =>
+      api.post(`${base}/${encodeURIComponent(v.schema)}/drop`, { cascade: v.cascade }),
+    onSuccess: invalidate,
+  });
+  const move = useMutation({
+    mutationFn: (v: { kind: "relation" | "function" | "procedure" | "type"; schema: string; name: string; target: string }) =>
+      api.post(`/v1/databases/${databaseId}/objects/move`, v),
+    onSuccess: invalidate,
+  });
+  // A copy runs as an operation: the new schema shows up once it finishes.
+  const copy = useMutation({
+    mutationFn: (v: { schema: string; target_schema: string; target_database_id?: string; structure_only: boolean }) =>
+      api.post<{ operation_id: string }>(`${base}/${encodeURIComponent(v.schema)}/copy`, {
+        target_schema: v.target_schema,
+        target_database_id: v.target_database_id,
+        structure_only: v.structure_only,
+      }),
+  });
+  return { create, alter, drop, move, copy };
+}
+
+// useSchemaDependents loads what dropping a schema would remove.
+export function useSchemaDependents(databaseId: string, schema: string | null) {
+  return useQuery({
+    queryKey: ["schema-dependents", databaseId, schema],
+    queryFn: () =>
+      api.get<SchemaDependents>(`/v1/databases/${databaseId}/schemas/${encodeURIComponent(schema ?? "")}/dependents`),
+    enabled: Boolean(databaseId && schema),
+    retry: false,
+    staleTime: 0,
+  });
+}
+
 export function useDBObjects(databaseId: string) {
   return useQuery({
     queryKey: ["db-objects", databaseId],
@@ -661,6 +738,7 @@ export function useStructureMutations(databaseId: string, table = "") {
     qc.invalidateQueries({ queryKey: ["schema-columns", databaseId] });
     qc.invalidateQueries({ queryKey: ["index-insights", databaseId] });
     qc.invalidateQueries({ queryKey: ["diagram", databaseId] });
+    qc.invalidateQueries({ queryKey: ["schemas", databaseId] });
   };
   const createTable = useMutation({ mutationFn: (spec: TableSpec) => api.post(base, spec), onSuccess: invalidate });
   const alter = useMutation({ mutationFn: (ops: AlterOp[]) => api.patch(t, { ops }), onSuccess: invalidate });
@@ -679,4 +757,162 @@ export function useStructureMutations(databaseId: string, table = "") {
     onSuccess: invalidate,
   });
   return { createTable, alter, drop, truncate, rename, createIndex, dropIndex };
+}
+
+// useSchemaAccess loads who may use a PostgreSQL schema and its default
+// privileges.
+export function useSchemaAccess(databaseId: string, schema: string | null) {
+  return useQuery({
+    queryKey: ["schema-access", databaseId, schema],
+    queryFn: () =>
+      api.get<SchemaAccess>(`/v1/databases/${databaseId}/schemas/${encodeURIComponent(schema ?? "")}/privileges`),
+    enabled: Boolean(databaseId && schema),
+    retry: false,
+  });
+}
+
+// useSchemaPrivilegeMutations sets a role's USAGE/CREATE on a schema and
+// changes its default privileges.
+export function useSchemaPrivilegeMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const path = (schema: string) => `/v1/databases/${databaseId}/schemas/${encodeURIComponent(schema)}`;
+  const invalidate = (_d: unknown, v: { schema: string }) => {
+    qc.invalidateQueries({ queryKey: ["schema-access", databaseId, v.schema] });
+    qc.invalidateQueries({ queryKey: ["schema-grants", databaseId] });
+  };
+  const setGrant = useMutation({
+    mutationFn: (v: { schema: string; role: string; usage: boolean; create: boolean }) =>
+      api.put(`${path(v.schema)}/privileges`, { role: v.role, usage: v.usage, create: v.create }),
+    onSuccess: invalidate,
+  });
+  const alterDefaults = useMutation({
+    mutationFn: (v: {
+      schema: string;
+      creator?: string;
+      object_type: DefaultPrivilegeObject;
+      grantee: string;
+      privileges: string[];
+      revoke: boolean;
+    }) => {
+      const { schema, ...body } = v;
+      return api.post(`${path(schema)}/default-privileges`, body);
+    },
+    onSuccess: invalidate,
+  });
+  return { setGrant, alterDefaults };
+}
+
+// useSearchPaths loads the search_path of a PostgreSQL database and its roles.
+export function useSearchPaths(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["search-path", databaseId],
+    queryFn: () => api.get<SearchPaths>(`/v1/databases/${databaseId}/search-path`),
+    enabled: Boolean(databaseId) && enabled,
+    retry: false,
+  });
+}
+
+// useSetSearchPath sets or (with no schemas) resets a search_path.
+export function useSetSearchPath(databaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { role?: string; schemas: string[] }) => api.put(`/v1/databases/${databaseId}/search-path`, v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["search-path", databaseId] }),
+  });
+}
+
+const enc = encodeURIComponent;
+
+// useSequence loads a PostgreSQL sequence and its current value.
+export function useSequence(databaseId: string, schema: string, name: string) {
+  return useQuery({
+    queryKey: ["sequence", databaseId, schema, name],
+    queryFn: () => api.get<SequenceInfo>(`/v1/databases/${databaseId}/sequences/${enc(schema)}/${enc(name)}`),
+    enabled: Boolean(databaseId && schema && name),
+    retry: false,
+  });
+}
+
+// useTableStats loads tables' sizes, dead rows and last vacuum and analyze.
+export function useTableStats(databaseId: string, schema: string) {
+  return useQuery({
+    queryKey: ["table-stats", databaseId, schema],
+    queryFn: () => api.get<{ items: TableStat[] }>(`/v1/databases/${databaseId}/table-stats?schema=${enc(schema)}`),
+    enabled: Boolean(databaseId),
+    retry: false,
+  });
+}
+
+// usePartitions loads a partitioned table's partitions with their bounds.
+export function usePartitions(databaseId: string, schema: string, table: string) {
+  return useQuery({
+    queryKey: ["partitions", databaseId, schema, table],
+    queryFn: () => api.get<{ items: PartitionInfo[] }>(`/v1/databases/${databaseId}/partitions/${enc(schema)}/${enc(table)}`),
+    enabled: Boolean(databaseId && schema && table),
+    retry: false,
+  });
+}
+
+// useMaintenanceMutations sets sequences, refreshes materialized views and
+// runs VACUUM / ANALYZE / REINDEX.
+export function useMaintenanceMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const base = `/v1/databases/${databaseId}`;
+  const setval = useMutation({
+    mutationFn: (v: { schema: string; name: string; value: number; called: boolean }) =>
+      api.post(`${base}/sequences/${enc(v.schema)}/${enc(v.name)}/setval`, { value: v.value, called: v.called }),
+    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["sequence", databaseId, v.schema, v.name] }),
+  });
+  const refresh = useMutation({
+    mutationFn: (v: { schema: string; name: string; concurrently: boolean }) =>
+      api.post(`${base}/matviews/${enc(v.schema)}/${enc(v.name)}/refresh`, { concurrently: v.concurrently }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["table-stats", databaseId] }),
+  });
+  const maintain = useMutation({
+    mutationFn: (v: { op: MaintenanceOp; schema: string; table?: string }) =>
+      api.post<{ ran: string[] }>(`${base}/maintenance`, v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["table-stats", databaseId] });
+      qc.invalidateQueries({ queryKey: ["tables", databaseId] });
+    },
+  });
+  return { setval, refresh, maintain };
+}
+
+// useExtensions loads a PostgreSQL database's available and installed
+// extensions.
+export function useExtensions(databaseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["extensions", databaseId],
+    queryFn: () => api.get<{ items: ExtensionInfo[] }>(`/v1/databases/${databaseId}/extensions`),
+    enabled: Boolean(databaseId) && enabled,
+    retry: false,
+  });
+}
+
+// useExtensionMutations installs, updates and drops extensions. They bring
+// types and functions, so the schema views are refreshed too.
+export function useExtensionMutations(databaseId: string) {
+  const qc = useQueryClient();
+  const base = `/v1/databases/${databaseId}/extensions`;
+  const invalidate = () => {
+    for (const key of ["extensions", "schemas", "db-objects", "schema-columns", "tables"]) {
+      qc.invalidateQueries({ queryKey: [key, databaseId] });
+    }
+  };
+  const install = useMutation({
+    mutationFn: (v: { name: string; schema?: string; version?: string }) => api.post(base, v),
+    onSuccess: invalidate,
+  });
+  const update = useMutation({
+    mutationFn: (v: { name: string; version?: string }) =>
+      api.post(`${base}/${encodeURIComponent(v.name)}/update`, { version: v.version }),
+    onSuccess: invalidate,
+  });
+  const drop = useMutation({
+    mutationFn: (v: { name: string; cascade: boolean }) =>
+      api.post(`${base}/${encodeURIComponent(v.name)}/drop`, { cascade: v.cascade }),
+    onSuccess: invalidate,
+  });
+  return { install, update, drop };
 }

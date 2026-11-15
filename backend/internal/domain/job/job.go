@@ -28,6 +28,8 @@ const (
 	TypeRestartInstance   Type = "restart_instance"
 	TypeRemoveInstance    Type = "remove_instance"
 	TypeReconcileGateway  Type = "reconcile_gateway"
+	TypeCopySchema        Type = "copy_schema"
+	TypeRestoreSchema     Type = "restore_schema"
 )
 
 // Valid reports whether t is a known job type.
@@ -36,7 +38,7 @@ func (t Type) Valid() bool {
 	case TypeCreateDatabase, TypeDeleteDatabase, TypeBackup, TypeRestore,
 		TypeTestConnection, TypeImportDatabases,
 		TypeProvisionInstance, TypeStartInstance, TypeStopInstance,
-		TypeRestartInstance, TypeRemoveInstance, TypeReconcileGateway:
+		TypeRestartInstance, TypeRemoveInstance, TypeReconcileGateway, TypeCopySchema, TypeRestoreSchema:
 		return true
 	}
 	return false

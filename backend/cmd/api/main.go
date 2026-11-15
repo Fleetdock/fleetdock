@@ -190,6 +190,7 @@ func run() error {
 	accessSvc := dbaccessapp.NewService(postgres.NewDBAccessRepository(pool), secretsSvc)
 	dbadminSvc := dbadminapp.NewService(instanceRepo, databaseRepo, serverRepo, secretsSvc, accessSvc)
 	opsSvc.SetDatabaseDropHook(dbadminSvc.DropAccessRoles)
+	opsSvc.SetSchemaCopyHook(dbadminSvc.SchemaCopied)
 	opsSvc.SetAccessRoleResolver(dbadminSvc.WriteRoleCredentials)
 	consoleRepo := postgres.NewConsoleRepository(pool)
 	dbadminSvc.SetHistory(consoleRepo)

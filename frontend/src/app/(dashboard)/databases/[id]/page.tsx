@@ -14,7 +14,9 @@ import {
   CredentialsSection,
 } from "@/components/connectivity";
 import { DatabaseBackups } from "@/components/backup/database-backups";
+import { ExtensionsSection } from "@/components/database/extensions-section";
 import { GrantsSection } from "@/components/database/grants-section";
+import { SchemaPrivilegesSection } from "@/components/database/schema-privileges-section";
 import { SchemaHistorySection } from "@/components/database/schema-history";
 import { DatabaseOverview } from "@/components/database/overview";
 import { ImportSQLModal } from "@/components/database/import-sql-modal";
@@ -60,10 +62,11 @@ const TAB_LABEL = {
   backups: "Backups",
   users: "Access",
   schema: "Schema",
+  extensions: "Extensions",
 } as const;
 type Tab = keyof typeof TAB_LABEL;
 // These read the database itself, so they need the server's admin login.
-const NEEDS_LOGIN: Tab[] = ["users", "schema"];
+const NEEDS_LOGIN: Tab[] = ["users", "schema", "extensions"];
 
 export default function DatabaseDetailPage() {
   return (
@@ -265,6 +268,7 @@ function DatabaseDetail() {
             { id: "backups", label: "Backups" },
             { id: "users", label: "Access", hidden: !hasCreds },
             { id: "schema", label: "Schema", hidden: !hasCreds },
+            { id: "extensions", label: "Extensions", hidden: !hasCreds || instance?.engine !== "postgres" },
           ]}
         />
 
@@ -280,8 +284,19 @@ function DatabaseDetail() {
             <DatabaseBackups database={db} canBackup={canMove} />
           ) : tab === "schema" ? (
             <SchemaHistorySection database={db} canWrite={canWrite} />
+          ) : tab === "extensions" && instance?.engine === "postgres" ? (
+            <ExtensionsSection databaseId={id} canManage={canWrite && canOn("instance:write", scope)} />
           ) : (
-            <GrantsSection databaseId={id} canWrite={canWrite} />
+            <>
+              <GrantsSection databaseId={id} canWrite={canWrite} />
+              {instance?.engine === "postgres" && hasCreds ? (
+                <SchemaPrivilegesSection
+                  databaseId={id}
+                  canWrite={canWrite}
+                  canManage={canWrite && canOn("instance:write", scope)}
+                />
+              ) : null}
+            </>
           )}
         </div>
       </section>
@@ -325,7 +340,8 @@ function SummaryStrip({
 }) {
   const tables = useTables(hasCreds ? databaseId : "");
   const objects = useDBObjects(hasCreds ? databaseId : "");
-  const nTables = tables.data?.items.length;
+  // Partitions count with their partitioned table, not on their own.
+  const nTables = tables.data?.items.filter((t) => !t.partition_of).length;
   const nViews = objects.data?.filter((o) => o.kind === "view" || o.kind === "materialized_view").length;
   const nOther = objects.data ? objects.data.length - (nViews ?? 0) : undefined;
   const count = (n: number | undefined, loading: boolean) =>

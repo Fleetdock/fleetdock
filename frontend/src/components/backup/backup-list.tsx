@@ -12,6 +12,7 @@ import {
   Button,
   ButtonLink,
   Callout,
+  Checkbox,
   ConfirmModal,
   ErrorText,
   Field,
@@ -30,8 +31,10 @@ import {
   useBackupActions,
   useBackups,
   useCan,
+  useDatabases,
   useInstances,
   useRestoreBackup,
+  useRestoreSchema,
 } from "@/lib/hooks";
 import type { Backup } from "@/lib/types";
 import { engineFamily } from "@/lib/engines";
@@ -95,6 +98,11 @@ export function BackupList({
         <span className="flex flex-col">
           <Time value={b.created_at} />
           {b.type === "scheduled" ? <span className="muted text-sm">automatic</span> : null}
+          {b.schema_name ? (
+            <span className="text-sm">
+              <Badge title="A backup of one PostgreSQL schema">schema {b.schema_name}</Badge>
+            </span>
+          ) : null}
         </span>
       ),
     },
@@ -151,12 +159,13 @@ export function BackupList({
               {
                 label: "Check that it restores",
                 icon: <ShieldCheck size={15} aria-hidden />,
+                // A schema's objects may need the rest of its database.
                 onSelect: () =>
                   actions.verify.mutate(b.id, {
                     onSuccess: () => push("info", "Checking the backup — it is restored into a temporary database"),
                     onError: toastError("Could not start the check"),
                   }),
-                hidden: !canWrite || !completed,
+                hidden: !canWrite || !completed || Boolean(b.schema_name),
                 disabled: b.verify_status === "running",
               },
               {
@@ -210,7 +219,8 @@ export function BackupList({
         }}
         onCancel={() => setDeleteTarget(null)}
       />
-      <RestoreModal backup={restoreTarget} onClose={() => setRestoreTarget(null)} />
+      <RestoreModal backup={restoreTarget?.schema_name ? null : restoreTarget} onClose={() => setRestoreTarget(null)} />
+      <RestoreSchemaModal backup={restoreTarget?.schema_name ? restoreTarget : null} onClose={() => setRestoreTarget(null)} />
     </>
   );
 }
@@ -328,4 +338,107 @@ export function VerifyBadge({ backup }: { backup: Backup }) {
     default:
       return <span className="muted text-sm">not checked</span>;
   }
+}
+
+/**
+ * RestoreSchemaModal restores a backup of one PostgreSQL schema: under its
+ * own name (replacing what is there, if asked) or under a new one, into the
+ * same database or another PostgreSQL database.
+ */
+function RestoreSchemaModal({ backup, onClose }: { backup: Backup | null; onClose: () => void }) {
+  const restore = useRestoreSchema();
+  const { data: databases } = useDatabases({ enabled: Boolean(backup) });
+  const [target, setTarget] = useState("");
+  const [name, setName] = useState("");
+  const [replace, setReplace] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [operationId, setOperationId] = useState<string | null>(null);
+
+  if (!backup) return null;
+  const schema = backup.schema_name ?? "";
+  const targetId = target || backup.database_id;
+  const newName = name.trim() || schema;
+  const sameName = newName === schema;
+  const pgDatabases = (databases?.items ?? []).filter((d) => !d.system && d.instance?.engine === "postgres");
+
+  function close() {
+    setTarget("");
+    setName("");
+    setReplace(false);
+    setOperationId(null);
+    setError(null);
+    onClose();
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      const res = await restore.mutateAsync({
+        backup_id: backup!.id,
+        target_database_id: targetId === backup!.database_id ? undefined : targetId,
+        target_schema: sameName ? undefined : newName,
+        replace: sameName && replace,
+      });
+      setOperationId(res.operation_id);
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  return (
+    <Modal open onClose={close} title={`Restore schema ${schema}`}>
+      {operationId !== null ? (
+        <div>
+          <p className="text-sm">The restore has started. It runs in the background.</p>
+          <div className="modal-actions">
+            <ButtonLink href={`/activity/${operationId}`}>View operation</ButtonLink>
+            <Button variant="primary" onClick={close}>
+              Done
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={onSubmit}>
+          <Field label="Into database" hint="Any PostgreSQL database, on this server or another.">
+            <Select value={targetId} onChange={(e) => setTarget(e.target.value)}>
+              {pgDatabases.some((d) => d.id === backup.database_id) ? null : (
+                <option value={backup.database_id}>{backup.database_name || "The backed-up database"}</option>
+              )}
+              {pgDatabases.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                  {d.instance ? ` (${d.instance.name})` : ""}
+                  {d.id === backup.database_id ? " · backed up from here" : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="As schema" hint={`Leave empty to restore it as ${schema}.`}>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={schema} autoComplete="off" />
+          </Field>
+          {sameName ? (
+            <Checkbox
+              label={`Replace ${schema} if it exists there`}
+              hint="Its tables, views and other objects are dropped and restored as they were in the backup."
+              checked={replace}
+              onChange={(e) => setReplace(e.target.checked)}
+            />
+          ) : (
+            <p className="text-sm muted">
+              Views, foreign keys and sequences of the restored schema point at {newName}. Function bodies that name{" "}
+              {schema} are restored unchanged.
+            </p>
+          )}
+          <ErrorText message={error ? friendlyError(error, "Failed to start the restore") : undefined} />
+          <div className="modal-actions">
+            <Button onClick={close}>Cancel</Button>
+            <Button type="submit" variant={replace && sameName ? "danger" : "primary"} loading={restore.isPending}>
+              {replace && sameName ? `Replace ${schema}` : "Restore"}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
 }

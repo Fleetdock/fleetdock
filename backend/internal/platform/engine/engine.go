@@ -31,6 +31,9 @@ type ConnParams struct {
 	// role when the login role is a member of it, so objects created through
 	// the console are owned by the database owner, not by a Fleetdock role.
 	AssumeOwner bool `json:"-"`
+	// SearchPath (PostgreSQL), when set, is the session's search_path from
+	// the start; the names are quoted, so they are taken literally.
+	SearchPath []string `json:"-"`
 	// SSH, when set, reaches Host:Port through an SSH bastion; Host is then
 	// resolved on the bastion, not by the control plane.
 	SSH *sshtunnel.Config `json:"ssh,omitempty"`
