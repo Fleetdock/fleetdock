@@ -27,6 +27,7 @@ install_client_tools() {
   echo "==> Installing database client tools (for backups/restores)"
   if command -v apt-get >/dev/null 2>&1; then
     if [ ! -f /etc/apt/sources.list.d/pgdg.list ] && [ -r /etc/os-release ]; then
+      # shellcheck source=/dev/null
       CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
       if [ -n "$CODENAME" ] && mkdir -p /usr/share/postgresql-common/pgdg \
         && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc; then
