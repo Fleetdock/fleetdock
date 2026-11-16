@@ -95,3 +95,27 @@ func TestRestoreSchema_Refusals(t *testing.T) {
 		t.Errorf("verify of a schema backup: %v", err)
 	}
 }
+
+// TestCopyEnd_SystemDatabases: PostgreSQL's maintenance database can be a
+// copy or restore end; MySQL's system databases cannot.
+func TestCopyEnd_SystemDatabases(t *testing.T) {
+	user, ref := "root", "secret-ref"
+	for _, c := range []struct {
+		engine instancedom.Engine
+		ok     bool
+	}{
+		{instancedom.EnginePostgres, true},
+		{instancedom.EngineMySQL, false},
+	} {
+		inst := &instancedom.Instance{ID: uuid.New(), Engine: c.engine, Username: &user, RootSecretRef: &ref}
+		db := &databasedom.Database{ID: uuid.New(), InstanceID: inst.ID, Name: "postgres", System: true, Status: databasedom.StatusActive}
+		svc := NewService(&fakeBackupRepo{}, someDatabases{items: map[uuid.UUID]*databasedom.Database{db.ID: db}}, oneInstance{inst: inst}, failingDests{}, nil)
+		_, _, err := svc.copyEnd(context.Background(), db.ID.String(), "id")
+		if c.ok && err != nil {
+			t.Errorf("%s: err = %v, want the system database accepted", c.engine, err)
+		}
+		if !c.ok && (err == nil || !strings.Contains(err.Error(), "system database")) {
+			t.Errorf("%s: err = %v, want a system database refusal", c.engine, err)
+		}
+	}
+}

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The data browser's schema and table actions (new, rename, change owner,
+  comment, copy, back up, drop, VACUUM) are available in PostgreSQL's
+  `postgres` database too; it was read-only there like MySQL's `mysql` and
+  `sys`. Schemas can also be copied or restored into and out of it. As
+  before, opening a system database needs write access to its server.
+
 ## [0.12.0] - 2026-11-15
 
 Upgrading: `fleetdock update` (or pulling the new image) applies three new
