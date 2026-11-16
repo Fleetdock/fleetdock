@@ -660,7 +660,7 @@ components:
         data_access: {type: string, enum: [admin, login, managed], description: 'Login the table browser, SQL console, exports and SQL imports use: `admin` — the instance''s admin login (only instance administrators may use them); `login` — the dedicated `data_username`; `managed` — read-only and read-write roles Fleetdock creates per database.'}
         data_username: {type: string, nullable: true, description: The dedicated data login (data_access `login` only).}
         tls_enabled: {type: boolean, description: 'Managed instances: the engine serves TLS with a certificate from the install''s certificate authority (GET /v1/tls/ca-certificate). Set with `tls` on provision or POST /v1/instances/{id}/tls.'}
-        tls_expires_at: {type: [string, 'null'], format: date-time, description: When the server certificate expires; POST /v1/instances/{id}/tls renews it.}
+        tls_expires_at: {type: [string, 'null'], format: date-time, description: 'When the server certificate expires; POST /v1/instances/{id}/tls renews it.'}
         container_id: {type: [string, 'null']}
         created_at: {type: string, format: date-time}
         engine_version: {type: string}
