@@ -27,7 +27,7 @@ needs an agent from this release; older agents create servers without it and
   is recreated from the same image, volume and port with the certificate, and
   the previous one is put back if the engine doesn't start. The same action
   renews the certificate (valid 5 years). Servers report `tls_enabled` and
-  `tls_expires_at`.
+  `tls_expires_at`. (#150, thanks @shahawiz)
 
 ## [0.12.0] - 2026-11-15
 
