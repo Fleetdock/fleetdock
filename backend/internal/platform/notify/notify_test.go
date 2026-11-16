@@ -12,7 +12,9 @@ import (
 
 // local builds a Sender that may reach the test server on loopback (the
 // production client refuses loopback).
-func local() *Sender { return &Sender{client: http.DefaultClient, pagerDutyURL: pagerDutyEventsURL} }
+func local() *Sender {
+	return &Sender{client: http.DefaultClient, pagerDutyURL: pagerDutyEventsURL, pushoverURL: pushoverMessagesURL}
+}
 
 func TestDeliverWebhookAndSlack(t *testing.T) {
 	var got []map[string]string
@@ -122,6 +124,8 @@ func TestDeliverRefusals(t *testing.T) {
 		{Type: "webhook", Config: map[string]string{}},
 		{Type: "slack", Config: map[string]string{}},
 		{Type: "pagerduty", Config: map[string]string{}},
+		{Type: "pushover", Config: map[string]string{"app_token": "a"}},
+		{Type: "pushover", Config: map[string]string{"user_key": "u"}},
 		{Type: "email", Config: map[string]string{"to": "ops@example.com"}}, // no SMTP configured
 		{Type: "pager", Config: map[string]string{}},
 	} {
@@ -146,5 +150,60 @@ func TestEmailHeadersStayOnOneLine(t *testing.T) {
 	}
 	if !strings.Contains(body, "line 1\r\nline 2") {
 		t.Errorf("the body lost its lines: %q", body)
+	}
+}
+
+func TestDeliverPushover(t *testing.T) {
+	var got []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, payload)
+		if payload["token"] == "bad" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"token":"invalid","errors":["application token is invalid"],"status":0}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"status":1}`)
+	}))
+	defer srv.Close()
+
+	sender := local()
+	sender.pushoverURL = srv.URL
+	channel := Channel{Type: "pushover", Config: map[string]string{"app_token": "app", "user_key": "user", "device": "phone"}}
+	long := strings.Repeat("é", 2000)
+	for _, msg := range []Message{
+		{Title: "CPU high", Body: long, Severity: "critical", Event: "alert.firing"},
+		{Title: "CPU recovered", Severity: "info", Event: "alert.resolved"},
+		{Title: "Fleetdock test", Body: "hello", Severity: "info", Event: "test"},
+	} {
+		if err := sender.Deliver(context.Background(), channel, msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first := got[0]
+	if first["token"] != "app" || first["user"] != "user" || first["device"] != "phone" || first["title"] != "CPU high" {
+		t.Fatalf("pushover payload = %#v", first)
+	}
+	if text, _ := first["message"].(string); len([]rune(text)) != pushoverMessageMax || !strings.HasSuffix(text, "…") {
+		t.Fatalf("message not cut to %d characters: %d", pushoverMessageMax, len([]rune(text)))
+	}
+	// JSON numbers decode as float64.
+	for i, want := range []float64{1, -1, 0} {
+		if got[i]["priority"] != want {
+			t.Errorf("message %d priority = %v, want %v", i, got[i]["priority"], want)
+		}
+	}
+	if got[1]["message"] != "CPU recovered" {
+		t.Errorf("empty body not replaced by the title: %#v", got[1]["message"])
+	}
+
+	channel.Config["app_token"] = "bad"
+	err := sender.Deliver(context.Background(), channel, Message{Title: "x", Body: "y"})
+	if err == nil || !strings.Contains(err.Error(), "application token is invalid") {
+		t.Fatalf("rejection error = %v", err)
 	}
 }

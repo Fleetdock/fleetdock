@@ -302,9 +302,11 @@ the API runs without Docker.)
 ## SMTP (optional)
 
 Set `FLEETDOCK_SMTP_*` variables to enable email notification channels. When
-`FLEETDOCK_SMTP_HOST` is empty, email delivery is disabled; Slack, webhook and
-PagerDuty channels still work. PagerDuty uses an Events API v2 routing key
-configured on the **Notifications** page.
+`FLEETDOCK_SMTP_HOST` is empty, email delivery is disabled; Slack, webhook,
+PagerDuty and Pushover channels still work. PagerDuty uses an Events API v2
+routing key and Pushover an application API token plus a user or group key,
+both configured on the **Notifications** page. The server needs outbound HTTPS
+to `events.pagerduty.com` / `api.pushover.net` for these.
 
 ## Resource sizing
 

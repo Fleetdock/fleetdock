@@ -25,3 +25,18 @@ func TestRedactChannelConfigMasksPagerDutyRoutingKey(t *testing.T) {
 		t.Fatalf("non-secret config changed: %v", got)
 	}
 }
+
+func TestRedactChannelConfigMasksPushoverKeys(t *testing.T) {
+	c := &notifdom.Channel{
+		ID:     uuid.New(),
+		Type:   notifdom.ChannelPushover,
+		Config: map[string]string{"app_token": "app-secret", "user_key": "user-secret", "device": "phone"},
+	}
+	got := redactChannelConfig(c)
+	if got["app_token"] != "••••••" || got["user_key"] != "••••••" {
+		t.Fatalf("pushover keys were exposed: %v", got)
+	}
+	if got["device"] != "phone" {
+		t.Fatalf("non-secret config changed: %v", got)
+	}
+}

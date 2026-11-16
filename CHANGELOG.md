@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Upgrading: applies one new migration (`0032_pushover_notifications`).
+
+### Added
+
+- **Pushover notification channels.** Send alerts and events to phones and
+  desktops through Pushover with an application API token and a user or group
+  key, optionally limited to one device. Critical alerts are sent at high
+  priority (they bypass quiet hours), warnings at normal priority, and
+  informational events and recoveries quietly. Both keys are encrypted like the
+  other channel secrets, and a failed test shows Pushover's own reason
+  ("application token is invalid").
+
 ## [0.12.0] - 2026-11-15
 
 Upgrading: `fleetdock update` (or pulling the new image) applies three new

@@ -84,7 +84,14 @@ const RedactedMask = "••••••"
 
 // secretConfigKeys hold sensitive values that are masked on read; when an
 // update sends them blank or masked, the stored value is preserved.
-var secretConfigKeys = map[string]bool{"url": true, "webhook_url": true, "password": true, "routing_key": true}
+var secretConfigKeys = map[string]bool{
+	"url": true, "webhook_url": true, "password": true, "routing_key": true,
+	"app_token": true, "user_key": true,
+}
+
+// IsSecretConfigKey reports whether a channel config value is a secret, to be
+// masked whenever a channel is returned.
+func IsSecretConfigKey(k string) bool { return secretConfigKeys[k] }
 
 // UpdateChannel validates and persists channel changes.
 func (s *Service) UpdateChannel(ctx context.Context, id string, in ChannelInput) (*notifdom.Channel, error) {

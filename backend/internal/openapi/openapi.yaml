@@ -829,7 +829,7 @@ components:
         enabled: {type: boolean}
         id: {type: string}
         name: {type: string}
-        type: {type: string, enum: [email, slack, webhook, pagerduty]}
+        type: {type: string, enum: [email, slack, webhook, pagerduty, pushover]}
 
     Destination:
       type: object
