@@ -203,6 +203,11 @@ func TestCHRestoreDDLReplicated(t *testing.T) {
 	if got, _ := chRestoreDDL("CREATE TABLE src.t (v UInt8) ENGINE = ReplicatedMergeTree ORDER BY v", "src", "copy", true, true); got != "CREATE TABLE `copy`.t (v UInt8) ENGINE = MergeTree() ORDER BY v" {
 		t.Fatalf("bare Replicated engine: %q", got)
 	}
+	// ClickHouse Cloud's SharedMergeTree exists nowhere else.
+	shared := "CREATE TABLE src.t (v UInt64) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', v) ORDER BY v"
+	if got, _ := chRestoreDDL(shared, "src", "copy", true, true); got != want {
+		t.Fatalf("Shared engine: %q", got)
+	}
 	// Restoring in place keeps the definition as it was.
 	if got, notes := chRestoreDDL(in, "src", "src", false, false); got != in || notes != nil {
 		t.Fatalf("in-place restore changed the DDL: %q", got)

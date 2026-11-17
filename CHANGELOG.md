@@ -7,13 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-Upgrading: applies one new migration (`0032_pushover_notifications`).
-
-Upgrading: one new migration (`0032_instance_tls`). TLS on managed servers
-needs an agent from this release; older agents create servers without it and
-`tls_enabled` stays false.
+Upgrading: `fleetdock update` (or pulling the new image) applies four new
+migrations (`0030_clickhouse`, `0031_clickhouse_backups`,
+`0032_instance_tls`, `0032_pushover_notifications`). Update the agents
+afterwards: TLS on the database servers Fleetdock creates, and creating
+ClickHouse servers, need an agent from this release; older agents create
+servers without TLS and `tls_enabled` stays false. ClickHouse backups run
+in-process and need nothing installed.
 
 ### Added
 
@@ -23,7 +23,7 @@ needs an agent from this release; older agents create servers without it and
   priority (they bypass quiet hours), warnings at normal priority, and
   informational events and recoveries quietly. Both keys are encrypted like the
   other channel secrets, and a failed test shows Pushover's own reason
-  ("application token is invalid").
+  ("application token is invalid"). (#152, thanks @shahawiz)
 
 - **TLS for the database servers Fleetdock creates.** Each install gets its own
   certificate authority (created on first start, kept in the encrypted secret
@@ -61,8 +61,8 @@ needs an agent from this release; older agents create servers without it and
   `UPDATE`/`DELETE` are asynchronous mutations; use the SQL console), SQL
   file imports, comparing a table with a backup, public access through the
   gateway, table-structure editing, write previews and query insights.
-  Migration `0030` adds the engine, its secret kind and its connectivity
-  protocol.
+  Migration `0030_clickhouse` adds the engine, its secret kind and its
+  connectivity protocol. (#76, thanks @shahawiz)
 - **ClickHouse backups.** Backups, scheduled backups, retention, restores
   (under the same or a new name, onto any ClickHouse server), verification,
   moves and one-off dump downloads now work on ClickHouse. ClickHouse has no
@@ -76,7 +76,8 @@ needs an agent from this release; older agents create servers without it and
   second time. Restoring anywhere but back in place (another name, another
   server, or a verification) repoints views, dictionaries and
   Buffer/Merge/Distributed tables at the new database, restores
-  `Replicated*MergeTree` tables as plain `*MergeTree`, and leaves out
+  `Replicated*MergeTree` tables (and ClickHouse Cloud's `SharedMergeTree`)
+  as plain `*MergeTree`, and leaves out
   streaming tables (Kafka, RabbitMQ, NATS, S3Queue, ...) and the views
   reading from them, so a copy never joins the original's replication or
   consumes its messages. A replicated table restored under its own name is
@@ -86,7 +87,8 @@ needs an agent from this release; older agents create servers without it and
   included only when the server shows secrets
   (`display_secrets_in_show_and_select`). ClickHouse backups restore only into
   ClickHouse, and SQL dumps never into it; the API refuses both. Migration
-  `0031` records the new dump tool.
+  `0031_clickhouse_backups` records the new dump tool. (#154, thanks
+  @shahawiz)
 - **Create ClickHouse servers.** **Servers → (a server) → Create database
   server** now offers ClickHouse (25.8, 25.3, 24.8): the agent runs the
   official `clickhouse` image with a persistent volume, a generated password
@@ -99,7 +101,7 @@ needs an agent from this release; older agents create servers without it and
   its last log error and is removed with its new volume, instead of being
   left running with its admin login exposed. Start, stop, restart and remove
   work as for the other engines; **Turn on TLS** is not available for
-  ClickHouse servers yet.
+  ClickHouse servers yet. (#155, thanks @shahawiz)
 
 ### Fixed
 

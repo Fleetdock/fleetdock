@@ -464,8 +464,9 @@ type chPending struct {
 // tables before the cut restored.
 //
 // Restoring anywhere but back into the same database on the same server:
-//   - Replicated*MergeTree tables become their plain MergeTree form, so the
-//     copy never joins the original's replication;
+//   - Replicated*MergeTree tables (and ClickHouse Cloud's Shared*MergeTree)
+//     become their plain MergeTree form, so the copy never joins the
+//     original's replication and loads on servers outside Cloud;
 //   - streaming tables (Kafka, RabbitMQ, NATS, S3Queue, ...) and the views
 //     reading from them are left out, so the copy never consumes the
 //     original's messages.
@@ -839,8 +840,11 @@ func (c *ClickHouse) insertNative(ctx context.Context, p ConnParams, database, t
 }
 
 // chReplicatedRe matches a Replicated*MergeTree engine clause with its
-// arguments (the ZooKeeper path and replica name come first).
-var chReplicatedRe = regexp.MustCompile(`ENGINE = Replicated(\w*MergeTree)(\((?:[^()']|'(?:[^'\\]|\\.)*')*\))?`)
+// arguments (the ZooKeeper path and replica name come first), and ClickHouse
+// Cloud's Shared*MergeTree, which takes the same two and exists only there.
+// Cloud turns a plain MergeTree back into its Shared form, so a copy loses
+// nothing there and can be restored on any other server.
+var chReplicatedRe = regexp.MustCompile(`ENGINE = (?:Replicated|Shared)(\w*MergeTree)(\((?:[^()']|'(?:[^'\\]|\\.)*')*\))?`)
 
 // chRestoreDDL adapts a CREATE statement to the target database: it names
 // the target database when renamed, and drops replication when deReplicate.
