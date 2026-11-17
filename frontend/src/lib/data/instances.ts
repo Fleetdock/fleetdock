@@ -93,6 +93,29 @@ export function useInstanceLifecycle() {
   });
 }
 
+/** useConfigureTLS turns TLS on for a created database server, or renews its certificate. */
+export function useConfigureTLS() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<{ operation_id: string }>(`/v1/instances/${id}/tls`, {}),
+    onSuccess: (_d, id) => {
+      qc.invalidateQueries({ queryKey: ["instance", id] });
+      qc.invalidateQueries({ queryKey: ["operations"] });
+    },
+  });
+}
+
+/** downloadCACertificate saves this install's TLS certificate authority as fleetdock-ca.crt. */
+export async function downloadCACertificate() {
+  const { certificate } = await api.get<{ certificate: string }>("/v1/tls/ca-certificate");
+  const url = URL.createObjectURL(new Blob([certificate], { type: "application/x-pem-file" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "fleetdock-ca.crt";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** useProbeInstance checks a database server now and syncs its database list. */
 export function useProbeInstance() {
   const qc = useQueryClient();

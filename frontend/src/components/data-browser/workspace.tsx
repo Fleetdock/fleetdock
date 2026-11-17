@@ -298,6 +298,10 @@ function Workspace({
   const canOn = useCanOn();
   const canWrite = canOn("database:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
   const canBackup = canOn("backup:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
+  // PostgreSQL's maintenance database ("postgres") is an ordinary database
+  // that often holds application schemas, so its tree keeps every action.
+  // MySQL's mysql and sys stay read-only here.
+  const lockedSystem = db.system && db.instance?.engine !== "postgres";
   // The schema being backed up or exported from the tree.
   const [backupSchema, setBackupSchema] = useState<string | null>(null);
   const dialect: Dialect = dialectOf(db.instance?.engine);
@@ -478,7 +482,7 @@ function Workspace({
       error={listError ? (listError as Error).message : undefined}
       dialect={dialect}
       activeName={activeTab && activeTab.kind !== "query" ? activeTab.name : null}
-      canWrite={canWrite && !db.system}
+      canWrite={canWrite && !lockedSystem}
       onOpen={open}
       onNewQuery={newQuery}
       onCreateTable={(schema) => setCreating({ schema: pg ? schema ?? "public" : null })}
@@ -486,7 +490,7 @@ function Workspace({
       onObjectMoved={(from, to, label) => {
         for (const t of ws.tabs) if (t.name === from) dispatch({ type: "rename", id: t.id, name: to, label });
       }}
-      onBackupSchema={canBackup && !db.system ? setBackupSchema : undefined}
+      onBackupSchema={canBackup && !lockedSystem ? setBackupSchema : undefined}
       onRefresh={refreshObjects}
       refreshing={tables.isFetching || objects.isFetching || schemaList.isFetching}
     />
@@ -524,7 +528,7 @@ function Workspace({
                 active={t.id === ws.active}
                 db={db}
                 canWrite={canWrite}
-                canBackup={canBackup && !db.system}
+                canBackup={canBackup && !lockedSystem}
                 dialect={dialect}
                 dispatch={dispatch}
                 onDirty={onDirty}

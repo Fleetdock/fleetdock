@@ -359,7 +359,7 @@ function RestoreSchemaModal({ backup, onClose }: { backup: Backup | null; onClos
   const targetId = target || backup.database_id;
   const newName = name.trim() || schema;
   const sameName = newName === schema;
-  const pgDatabases = (databases?.items ?? []).filter((d) => !d.system && d.instance?.engine === "postgres");
+  const pgDatabases = (databases?.items ?? []).filter((d) => d.instance?.engine === "postgres");
 
   function close() {
     setTarget("");

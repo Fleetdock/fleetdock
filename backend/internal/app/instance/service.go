@@ -217,7 +217,10 @@ type ProvisionInput struct {
 	Port          int
 	// PGVector runs a PostgreSQL image with the pgvector extension
 	// available (postgres only).
-	PGVector  bool
+	PGVector bool
+	// TLS starts the engine with TLS on, with a certificate from the
+	// install's certificate authority.
+	TLS       bool
 	CreatedBy *uuid.UUID
 }
 
@@ -260,7 +263,7 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 	}
 
 	job, err := s.ops.Create(ctx, jobdom.TypeProvisionInstance, "instance", &inst.ID, &serverID,
-		operationapp.Params{InstanceID: inst.ID.String(), Image: image, Version: in.EngineVersion, Tag: tag}, in.CreatedBy)
+		operationapp.Params{InstanceID: inst.ID.String(), Image: image, Version: in.EngineVersion, Tag: tag, TLS: in.TLS}, in.CreatedBy)
 	if err != nil {
 		_ = s.repo.SetStatus(ctx, inst.ID, instancedom.StatusError)
 		return nil, nil, err
@@ -289,6 +292,24 @@ func (s *Service) Lifecycle(ctx context.Context, id, action string, createdBy *u
 		return nil, apperr.Invalid("action", "action must be start, stop or restart")
 	}
 	return s.ops.Create(ctx, typ, "instance", &inst.ID, inst.ServerID,
+		operationapp.Params{InstanceID: inst.ID.String()}, createdBy)
+}
+
+// ConfigureTLS enqueues turning TLS on for a provisioned instance, or renewing
+// its certificate. The agent recreates the container (a short restart; data
+// is kept) and puts the previous one back if the engine doesn't start.
+func (s *Service) ConfigureTLS(ctx context.Context, id string, createdBy *uuid.UUID) (*jobdom.Job, error) {
+	inst, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !inst.Provisioned() {
+		return nil, apperr.Invalid("id", "TLS can only be set up on database servers Fleetdock created")
+	}
+	if inst.Status != instancedom.StatusRunning && inst.Status != instancedom.StatusStopped {
+		return nil, apperr.Conflict("the database server is " + string(inst.Status) + "; try again once it is running or stopped")
+	}
+	return s.ops.Create(ctx, jobdom.TypeConfigureTLS, "instance", &inst.ID, inst.ServerID,
 		operationapp.Params{InstanceID: inst.ID.String()}, createdBy)
 }
 
