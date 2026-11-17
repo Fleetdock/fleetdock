@@ -565,8 +565,8 @@ func (s *Service) CopySchema(ctx context.Context, in CopySchemaInput) (*jobdom.J
 	}, in.CreatedBy)
 }
 
-// copyEnd loads one end of a schema copy: an active user database on an
-// instance Fleetdock can log in to.
+// copyEnd loads one end of a schema copy or restore: an active database on an
+// instance Fleetdock can log in to. PostgreSQL's maintenance database counts.
 func (s *Service) copyEnd(ctx context.Context, id, field string) (*databasedom.Database, *instancedom.Instance, error) {
 	did, err := uuid.Parse(id)
 	if err != nil {
@@ -576,15 +576,18 @@ func (s *Service) copyEnd(ctx context.Context, id, field string) (*databasedom.D
 	if err != nil {
 		return nil, nil, err
 	}
-	if db.System {
-		return nil, nil, apperr.Invalid(field, "schemas of a system database cannot be copied")
-	}
 	if db.Status != databasedom.StatusActive {
 		return nil, nil, apperr.Conflict(fmt.Sprintf("database %s is %s; a schema copy needs it active", db.Name, db.Status))
 	}
 	inst, err := s.instances.GetByID(ctx, db.InstanceID)
 	if err != nil {
 		return nil, nil, err
+	}
+	// PostgreSQL's maintenance database is an ordinary database that often
+	// holds application schemas; MySQL's mysql and sys hold no schemas of
+	// their own to copy.
+	if db.System && inst.Engine != instancedom.EnginePostgres {
+		return nil, nil, apperr.Invalid(field, "schemas of a system database cannot be copied")
 	}
 	if !inst.HasCredentials() {
 		return nil, nil, apperr.Invalid(field, "the instance has no admin credentials")

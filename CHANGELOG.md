@@ -29,6 +29,23 @@ needs an agent from this release; older agents create servers without it and
   renews the certificate (valid 5 years). Servers report `tls_enabled` and
   `tls_expires_at`. (#150, thanks @shahawiz)
 
+### Fixed
+
+- The data browser's schema and table actions (new, rename, change owner,
+  comment, copy, back up, drop, VACUUM) are available in PostgreSQL's
+  `postgres` database too; it was read-only there like MySQL's `mysql` and
+  `sys`. Schemas can also be copied or restored into and out of it. As
+  before, opening a system database needs write access to its server (#153).
+- **Backups of PostgreSQL 18 on agent-managed servers** failed with
+  `pg_dump: … server version: 18.x; pg_dump version: 17.x` on hosts whose
+  distribution ships an older client (Debian 13 ships 17). The agent
+  installer now installs `postgresql-client-18` from apt.postgresql.org on
+  Debian/Ubuntu (`postgresql18-client` on Alpine), and also refreshes the
+  client tools when it updates an enrolled agent. The agent and control plane
+  now run the newest `pg_dump` / `psql` installed under
+  `/usr/lib/postgresql/*/bin` or `/usr/pgsql-*/bin` rather than whatever is
+  first on `PATH`, and a version mismatch error says how to fix it.
+
 ## [0.12.0] - 2026-11-15
 
 Upgrading: `fleetdock update` (or pulling the new image) applies three new

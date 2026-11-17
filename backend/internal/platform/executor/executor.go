@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -226,7 +227,7 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 	cmd.Stderr = io.MultiWriter(&stderr, tee)
 	if err := cmd.Run(); err != nil {
 		tee.Close()
-		return nil, fmt.Errorf("dump failed: %s: %w", firstLine(stderr.String()), err)
+		return nil, fmt.Errorf("dump failed: %s%s: %w", firstLine(stderr.String()), versionMismatchHint(stderr.String()), err)
 	}
 	tee.Close()
 	if err := gz.Close(); err != nil {
@@ -420,11 +421,69 @@ func hashFile(f *os.File) (string, error) {
 
 func lookPath(candidates []string) (string, error) {
 	for _, c := range candidates {
+		if p := newestPGTool(c); p != "" {
+			return p, nil
+		}
 		if p, err := exec.LookPath(c); err == nil {
 			return p, nil
 		}
 	}
 	return "", fmt.Errorf("none of %v found in PATH (install the mariadb client tools)", candidates)
+}
+
+// versionMismatchHint tells the operator how to fix a pg_dump older than the
+// server it was pointed at, which is otherwise reported only as the two
+// versions.
+func versionMismatchHint(stderr string) string {
+	if !strings.Contains(stderr, "server version mismatch") {
+		return ""
+	}
+	return " (this pg_dump is older than the server: install the matching PostgreSQL client, e.g. postgresql-client-18 from apt.postgresql.org, on the host that runs the backup)"
+}
+
+// pgToolDirs are where distribution packages install each PostgreSQL major
+// version's client tools side by side: Debian/Ubuntu (PGDG included) and the
+// PGDG RPMs.
+var pgToolDirs = []string{"/usr/lib/postgresql/*/bin", "/usr/pgsql-*/bin"}
+
+// newestPGTool returns the newest major version's copy of a PostgreSQL client
+// tool installed in pgToolDirs, or "" when there is none (or name is not one).
+// pg_dump refuses to dump a server newer than itself, and the pg_dump on PATH
+// is not always the newest installed: Debian's wrapper runs the version of a
+// local cluster when the server has one.
+func newestPGTool(name string) string {
+	switch name {
+	case "pg_dump", "pg_restore", "psql":
+	default:
+		return ""
+	}
+	best, bestVer := "", -1
+	for _, dir := range pgToolDirs {
+		matches, _ := filepath.Glob(filepath.Join(dir, name))
+		for _, m := range matches {
+			ver := pgMajorFromPath(m)
+			if ver <= bestVer {
+				continue
+			}
+			if fi, err := os.Stat(m); err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+				continue
+			}
+			best, bestVer = m, ver
+		}
+	}
+	return best
+}
+
+// pgMajorFromPath reads the major version from a path such as
+// /usr/lib/postgresql/18/bin/pg_dump or /usr/pgsql-18/bin/pg_dump; -1 if none.
+func pgMajorFromPath(p string) int {
+	dir := filepath.Base(filepath.Dir(filepath.Dir(p)))
+	dir = strings.TrimPrefix(dir, "pgsql-")
+	n, err := strconv.Atoi(dir)
+	if err != nil {
+		return -1
+	}
+	return n
 }
 
 // firstLine summarises a tool's stderr for an error message: the first line

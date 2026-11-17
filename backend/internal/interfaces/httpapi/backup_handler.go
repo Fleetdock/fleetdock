@@ -328,22 +328,33 @@ func (h *BackupHandler) RestoreSchema(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	var target uuid.UUID
 	if req.TargetDatabaseID != "" {
 		did, err := uuid.Parse(req.TargetDatabaseID)
 		if err != nil {
 			writeError(w, apperr.Invalid("target_database_id", "must be a valid UUID"))
 			return
 		}
-		if err := authorizeResource(r.Context(), h.resolver, "database:write", authz.ResourceDatabase, did); err != nil {
+		target = did
+	} else {
+		b, err := h.svc.Get(r.Context(), r.PathValue("id"))
+		if err != nil {
 			writeError(w, err)
 			return
 		}
-	} else if b, err := h.svc.Get(r.Context(), r.PathValue("id")); err != nil {
+		target = b.DatabaseID
+	}
+	if err := authorizeResource(r.Context(), h.resolver, "database:write", authz.ResourceDatabase, target); err != nil {
 		writeError(w, err)
 		return
-	} else if err := authorizeResource(r.Context(), h.resolver, "database:write", authz.ResourceDatabase, b.DatabaseID); err != nil {
-		writeError(w, err)
-		return
+	}
+	// A system database as the target needs instance:write, as for any
+	// interactive work on it.
+	if h.access != nil {
+		if err := authorizeDataAccess(r.Context(), h.resolver, h.access, target); err != nil {
+			writeError(w, err)
+			return
+		}
 	}
 	job, err := h.svc.RestoreSchema(r.Context(), backupapp.RestoreSchemaInput{
 		BackupID:         r.PathValue("id"),
