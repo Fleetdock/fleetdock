@@ -207,7 +207,8 @@ on the new one.
 ## Encryption key rotation
 
 Stored credentials (database server passwords, SSH keys, backup storage keys,
-notification webhook URLs, SMTP passwords and PagerDuty routing keys) are **envelope-encrypted**: each
+notification webhook URLs, SMTP passwords, PagerDuty routing keys and Pushover
+tokens) are **envelope-encrypted**: each
 has its own data key, wrapped by `FLEETDOCK_ENCRYPTION_KEY`. Rotating the key
 re-wraps the data keys only; the encrypted payloads are untouched.
 

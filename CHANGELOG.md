@@ -7,11 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Upgrading: applies one new migration (`0032_pushover_notifications`).
+
 Upgrading: one new migration (`0032_instance_tls`). TLS on managed servers
 needs an agent from this release; older agents create servers without it and
 `tls_enabled` stays false.
 
 ### Added
+
+- **Pushover notification channels.** Send alerts and events to phones and
+  desktops through Pushover with an application API token and a user or group
+  key, optionally limited to one device. Critical alerts are sent at high
+  priority (they bypass quiet hours), warnings at normal priority, and
+  informational events and recoveries quietly. Both keys are encrypted like the
+  other channel secrets, and a failed test shows Pushover's own reason
+  ("application token is invalid").
 
 - **TLS for the database servers Fleetdock creates.** Each install gets its own
   certificate authority (created on first start, kept in the encrypted secret

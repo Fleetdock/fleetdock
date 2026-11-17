@@ -675,7 +675,7 @@ export interface UpdateScheduleInput {
 }
 
 // ---- Notification channels + alert rules ----
-export type ChannelType = "email" | "slack" | "webhook" | "pagerduty";
+export type ChannelType = "email" | "slack" | "webhook" | "pagerduty" | "pushover";
 
 export interface NotificationChannel {
   id: string;
