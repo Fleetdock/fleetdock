@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { KeyRound, Play, RefreshCw, RotateCw, Square, Trash2 } from "lucide-react";
+import { Download, KeyRound, Lock, Play, RefreshCw, RotateCw, Square, Trash2 } from "lucide-react";
 import { DeleteInstanceModal } from "@/components/delete-instance-modal";
-import { useErrorToast } from "@/components/toast";
+import { useErrorToast, useToast } from "@/components/toast";
 import { Button, ConfirmModal, Menu } from "@/components/ui";
-import { useInstanceLifecycle, useProbeInstance } from "@/lib/hooks";
+import { downloadCACertificate, useConfigureTLS, useInstanceLifecycle, useProbeInstance } from "@/lib/hooks";
 import type { Instance } from "@/lib/types";
 
 /** CheckNowButton checks the connection — and picks up new databases — now. */
@@ -36,7 +36,10 @@ export function InstanceControls({ instance, onEdit }: { instance: Instance; onE
   const toastError = useErrorToast();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirm, setConfirm] = useState<"stop" | "restart" | null>(null);
-  const busy = lifecycle.isPending;
+  const configureTLS = useConfigureTLS();
+  const { push } = useToast();
+  const [tlsOpen, setTlsOpen] = useState(false);
+  const busy = lifecycle.isPending || configureTLS.isPending;
 
   const run = (action: "start" | "stop" | "restart") =>
     lifecycle.mutate(
@@ -69,6 +72,18 @@ export function InstanceControls({ instance, onEdit }: { instance: Instance; onE
             onSelect: () => setConfirm("stop"),
             hidden: !instance.provisioned || instance.status === "stopped",
           },
+          {
+            label: instance.tls_enabled ? "Renew TLS certificate" : "Turn on TLS",
+            icon: <Lock size={15} />,
+            onSelect: () => setTlsOpen(true),
+            hidden: !instance.provisioned || !["running", "stopped"].includes(instance.status),
+          },
+          {
+            label: "Download CA certificate",
+            icon: <Download size={15} />,
+            onSelect: () => void downloadCACertificate().catch(toastError("Could not download the CA certificate")),
+            hidden: !instance.tls_enabled,
+          },
           { label: "Remove…", icon: <Trash2 size={15} />, danger: true, onSelect: () => setDeleteOpen(true) },
         ]}
       />
@@ -85,6 +100,28 @@ export function InstanceControls({ instance, onEdit }: { instance: Instance; onE
         }
         onConfirm={() => confirm && run(confirm)}
         onCancel={() => setConfirm(null)}
+      />
+      <ConfirmModal
+        open={tlsOpen}
+        title={instance.tls_enabled ? `Renew the TLS certificate of ${instance.name}?` : `Turn on TLS for ${instance.name}?`}
+        confirmLabel={instance.tls_enabled ? "Renew certificate" : "Turn on TLS"}
+        busy={configureTLS.isPending}
+        message={
+          <>
+            The server gets a certificate from this install&apos;s certificate authority and restarts with TLS on.
+            Connected applications are disconnected for a few seconds; no data changes. If it doesn&apos;t start, the
+            previous setup is put back. Clients can then use <code>sslmode=require</code>, or verify the server with the
+            CA certificate.
+          </>
+        }
+        onConfirm={() =>
+          configureTLS.mutate(instance.id, {
+            onSuccess: () => push("success", "Setting up TLS. Follow it under Activity."),
+            onError: toastError("Could not set up TLS"),
+            onSettled: () => setTlsOpen(false),
+          })
+        }
+        onCancel={() => setTlsOpen(false)}
       />
       <DeleteInstanceModal
         instance={deleteOpen ? instance : null}

@@ -103,6 +103,15 @@ Revoking a credential disables the database account and closes its open sessions
 
 HAProxy uses TCP passthrough; it does not terminate TLS. Clients negotiate TLS with the database directly, so the database must support it for `sslmode=require` to work.
 
+Database servers Fleetdock creates support TLS when it is turned on: at creation (**Turn on TLS**, `"tls": true`) or later from the server's menu (**Turn on TLS**, `POST /v1/instances/{id}/tls`). The engine then serves a certificate from the install's certificate authority, valid for the server's address and hostname, localhost and the gateway's public host, so `sslmode=verify-full` works through the gateway too. Download the authority's certificate from the server's menu (or `GET /v1/tls/ca-certificate`) and give it to clients that verify the server:
+
+```
+psql "postgresql://user@gateway.example.com:20001/app?sslmode=verify-full&sslrootcert=fleetdock-ca.crt"
+mysql --ssl-mode=VERIFY_CA --ssl-ca=fleetdock-ca.crt -h gateway.example.com -P 20002 -u user app
+```
+
+Certificates are valid for five years; the same menu action renews them (a restart of a few seconds). Servers you connected yourself keep whatever TLS setup they have.
+
 ## Security
 
 - Public access is **disabled by default**

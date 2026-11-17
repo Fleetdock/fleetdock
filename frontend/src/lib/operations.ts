@@ -19,6 +19,7 @@ const TYPE_LABEL: Record<string, string> = {
   import_databases: "Find databases",
   reconcile_gateway: "Update external access",
   copy_schema: "Copy schema",
+  configure_tls: "Set up TLS",
 };
 
 /** operationLabel names an operation type, e.g. "restart_instance" → "Restart database server". */

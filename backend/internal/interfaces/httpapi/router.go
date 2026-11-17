@@ -38,10 +38,15 @@ type RouterDeps struct {
 	Install       *InstallHandler
 	Notifications *NotificationHandler
 	Overview      *OverviewHandler
-	Search        *SearchHandler
-	Fleet         *FleetHandler
-	Docs          *DocsHandler
-	Authn         *Authenticator
+	// TLSCA is the install's certificate authority for TLS on managed
+	// instances (nil: no CA endpoint).
+	TLSCA interface {
+		CACertificate(ctx context.Context) (string, error)
+	}
+	Search *SearchHandler
+	Fleet  *FleetHandler
+	Docs   *DocsHandler
+	Authn  *Authenticator
 	// Resolver resolves resource scope ancestry for per-resource authorization.
 	Resolver   *authzapp.Resolver
 	CORSOrigin string
@@ -125,6 +130,19 @@ func NewRouter(d RouterDeps) http.Handler {
 		writeJSON(w, http.StatusOK, version.Get())
 	}))
 
+	// The certificate of the authority that signs managed instances' TLS
+	// certificates, for clients that verify the server.
+	if d.TLSCA != nil {
+		mux.HandleFunc("GET /v1/tls/ca-certificate", requirePerm("", func(w http.ResponseWriter, r *http.Request) {
+			pem, err := d.TLSCA.CACertificate(r.Context())
+			if err != nil {
+				writeError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"certificate": pem})
+		}))
+	}
+
 	// Public: API documentation (spec + Redoc page).
 	mux.HandleFunc("GET /openapi.yaml", d.Docs.Spec)
 	mux.HandleFunc("GET /docs", d.Docs.Page)
@@ -199,6 +217,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /v1/instances/{id}/start", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("start")))
 	mux.HandleFunc("POST /v1/instances/{id}/stop", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("stop")))
 	mux.HandleFunc("POST /v1/instances/{id}/restart", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.Lifecycle("restart")))
+	mux.HandleFunc("POST /v1/instances/{id}/tls", requireResourcePerm(rv, "instance:write", authz.ResourceInstance, "id", d.Instances.ConfigureTLS))
 	mux.HandleFunc("POST /v1/instances/{id}/probe", requireResourcePerm(rv, "instance:read", authz.ResourceInstance, "id", d.Instances.Probe))
 
 	// Databases. Create authorizes the target instance inside the handler.

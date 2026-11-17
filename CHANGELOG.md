@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Upgrading: applies one new migration (`0032_pushover_notifications`).
 
+Upgrading: one new migration (`0032_instance_tls`). TLS on managed servers
+needs an agent from this release; older agents create servers without it and
+`tls_enabled` stays false.
+
 ### Added
 
 - **Pushover notification channels.** Send alerts and events to phones and
@@ -18,6 +22,39 @@ Upgrading: applies one new migration (`0032_pushover_notifications`).
   informational events and recoveries quietly. Both keys are encrypted like the
   other channel secrets, and a failed test shows Pushover's own reason
   ("application token is invalid").
+
+- **TLS for the database servers Fleetdock creates.** Each install gets its own
+  certificate authority (created on first start, kept in the encrypted secret
+  store). Creating a server offers **Turn on TLS** (on by default in the
+  dashboard; `"tls": true` on `POST /v1/instances/provision`): the agent writes
+  a certificate valid for the server's address and hostname, localhost and the
+  gateway host to `$FLEETDOCK_STATE_DIR/tls/<container>/`, mounts it read-only
+  and starts PostgreSQL with `ssl=on`, or MySQL/MariaDB with `--ssl-cert`.
+  Clients can use `sslmode=require`, or verify the server with the authority's
+  certificate (`GET /v1/tls/ca-certificate`, **Download CA certificate** in the
+  server's menu). Existing servers get **Turn on TLS** in their menu
+  (`POST /v1/instances/{id}/tls`, a `configure_tls` operation): the container
+  is recreated from the same image, volume and port with the certificate, and
+  the previous one is put back if the engine doesn't start. The same action
+  renews the certificate (valid 5 years). Servers report `tls_enabled` and
+  `tls_expires_at`. (#150, thanks @shahawiz)
+
+### Fixed
+
+- The data browser's schema and table actions (new, rename, change owner,
+  comment, copy, back up, drop, VACUUM) are available in PostgreSQL's
+  `postgres` database too; it was read-only there like MySQL's `mysql` and
+  `sys`. Schemas can also be copied or restored into and out of it. As
+  before, opening a system database needs write access to its server (#153).
+- **Backups of PostgreSQL 18 on agent-managed servers** failed with
+  `pg_dump: … server version: 18.x; pg_dump version: 17.x` on hosts whose
+  distribution ships an older client (Debian 13 ships 17). The agent
+  installer now installs `postgresql-client-18` from apt.postgresql.org on
+  Debian/Ubuntu (`postgresql18-client` on Alpine), and also refreshes the
+  client tools when it updates an enrolled agent. The agent and control plane
+  now run the newest `pg_dump` / `psql` installed under
+  `/usr/lib/postgresql/*/bin` or `/usr/pgsql-*/bin` rather than whatever is
+  first on `PATH`, and a version mismatch error says how to fix it.
 
 ## [0.12.0] - 2026-11-15
 

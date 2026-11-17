@@ -45,6 +45,7 @@ import (
 	serverapp "github.com/Fleetdock/fleetdock/backend/internal/app/server"
 	summaryapp "github.com/Fleetdock/fleetdock/backend/internal/app/summary"
 	tableviewapp "github.com/Fleetdock/fleetdock/backend/internal/app/tableview"
+	tlsca "github.com/Fleetdock/fleetdock/backend/internal/app/tlsca"
 	tokenapp "github.com/Fleetdock/fleetdock/backend/internal/app/token"
 	userapp "github.com/Fleetdock/fleetdock/backend/internal/app/user"
 	"github.com/Fleetdock/fleetdock/backend/internal/config"
@@ -177,6 +178,17 @@ func run() error {
 		SourceIPMode: cfg.GatewaySourceIPMode,
 	})
 	opsSvc.SetGatewayReconciler(endpointSvc)
+	// TLS for managed instances: the install's certificate authority,
+	// created on first start. Server certificates also name the gateway host.
+	var tlsHosts []string
+	if cfg.GatewayEnabled && cfg.GatewayPublicHost != "" {
+		tlsHosts = append(tlsHosts, cfg.GatewayPublicHost)
+	}
+	tlsSvc := tlsca.NewService(secretsSvc, serverRepo, tlsHosts...)
+	if err := tlsSvc.Ensure(ctx); err != nil {
+		return fmt.Errorf("tls authority: %w", err)
+	}
+	opsSvc.SetTLSIssuer(tlsSvc)
 	instanceSvc := instanceapp.NewService(instanceRepo, databaseRepo, secretsSvc, opsSvc)
 	databaseSvc := databaseapp.NewService(databaseRepo, instanceRepo, opsSvc)
 	databaseSvc.SetEndpointCleanup(endpointSvc)
@@ -339,6 +351,7 @@ func run() error {
 		Install:           httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),
 		Notifications:     httpapi.NewNotificationHandler(notifSvc),
 		Overview:          httpapi.NewOverviewHandler(summarySvc, agentSvc),
+		TLSCA:             tlsSvc,
 		Docs:              httpapi.NewDocsHandler(),
 		Authn:             httpapi.NewAuthenticator(authSvc),
 		Resolver:          resolver,

@@ -24,6 +24,10 @@ maps them to the names in the code and API.
     detail page; deleting one removes the container (and, if you confirm, its
     data volume). Provisioning needs Docker on the server — `install.sh`
     installs it automatically.
+    With **Turn on TLS** (at creation, or later from the server's menu) the
+    engine serves TLS with a certificate from the install's own certificate
+    authority; **Download CA certificate** gives clients what they need to
+    verify it.
 - **Database** — a logical database on an instance. If the instance has admin
   credentials, creating a database physically creates it (via an operation);
   otherwise it's a metadata-only registration.

@@ -57,6 +57,10 @@ export interface Instance {
   /** Login the table browser, SQL console, exports and imports connect as. */
   data_access?: DataAccess;
   data_username?: string | null;
+  /** Managed servers: the engine serves TLS with a certificate from this install's authority. */
+  tls_enabled?: boolean;
+  /** When that certificate expires (Turn on TLS renews it). */
+  tls_expires_at?: string | null;
 }
 
 /**
@@ -374,6 +378,8 @@ export interface ProvisionInstanceInput {
   engine_version: string;
   port: number;
   pgvector?: boolean;
+  /** Start the engine with TLS on (a certificate from this install's authority). */
+  tls?: boolean;
 }
 
 export interface CreateDestinationInput {
