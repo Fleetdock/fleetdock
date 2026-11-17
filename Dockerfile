@@ -64,7 +64,7 @@ RUN LDFLAGS="-s -w -X ${VERSION_PKG}.Version=${VERSION} -X ${VERSION_PKG}.Commit
 # mariadb-connector-c holds the client's authentication plugins, among them
 # caching_sha2_password, MySQL 8's default: without it the client cannot log
 # in to MySQL at all, and Alpine's mariadb-client does not pull it in.
-FROM alpine:3.23
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates mariadb-client mariadb-connector-c postgresql18-client su-exec nodejs \
  && addgroup -g 1000 fleetdock \
  && adduser -D -H -u 1000 -G fleetdock app \

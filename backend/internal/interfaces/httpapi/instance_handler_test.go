@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -66,6 +67,7 @@ func (r *memInstances) SetStatus(context.Context, uuid.UUID, instancedom.Status)
 	return nil
 }
 func (r *memInstances) SetContainerID(context.Context, uuid.UUID, string) error { return nil }
+func (r *memInstances) SetTLS(context.Context, uuid.UUID, time.Time) error      { return nil }
 func (r *memInstances) SoftDelete(context.Context, uuid.UUID) error             { return nil }
 
 type memSecrets map[string][]byte

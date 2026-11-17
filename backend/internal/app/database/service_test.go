@@ -3,6 +3,7 @@ package databaseapp
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -95,6 +96,7 @@ func (r *fakeInstanceRepo) SetStatus(_ context.Context, _ uuid.UUID, _ instanced
 	return nil
 }
 func (r *fakeInstanceRepo) SetContainerID(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (r *fakeInstanceRepo) SetTLS(context.Context, uuid.UUID, time.Time) error            { return nil }
 func (r *fakeInstanceRepo) SoftDelete(_ context.Context, _ uuid.UUID) error               { return nil }
 
 func TestCreate_InvalidInstanceID(t *testing.T) {

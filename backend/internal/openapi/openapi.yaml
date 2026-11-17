@@ -648,7 +648,7 @@ components:
         version: {type: integer}
     Instance:
       type: object
-      required: [id, name, engine, kind, has_credentials, tls_mode, provisioned, engine_version, port, status, labels, tags, created_at, updated_at, version, data_access]
+      required: [id, name, engine, kind, has_credentials, tls_mode, provisioned, engine_version, port, status, labels, tags, created_at, updated_at, version, data_access, tls_enabled, tls_expires_at]
       properties:
         id: {type: string, format: uuid}
         name: {type: string}
@@ -659,6 +659,8 @@ components:
         ssh_tunnel: {$ref: '#/components/schemas/SSHTunnel'}
         data_access: {type: string, enum: [admin, login, managed], description: 'Login the table browser, SQL console, exports and SQL imports use: `admin` — the instance''s admin login (only instance administrators may use them); `login` — the dedicated `data_username`; `managed` — read-only and read-write roles Fleetdock creates per database.'}
         data_username: {type: string, nullable: true, description: The dedicated data login (data_access `login` only).}
+        tls_enabled: {type: boolean, description: 'Managed instances: the engine serves TLS with a certificate from the install''s certificate authority (GET /v1/tls/ca-certificate). Set with `tls` on provision or POST /v1/instances/{id}/tls.'}
+        tls_expires_at: {type: [string, 'null'], format: date-time, description: 'When the server certificate expires; POST /v1/instances/{id}/tls renews it.'}
         container_id: {type: [string, 'null']}
         created_at: {type: string, format: date-time}
         engine_version: {type: string}
@@ -3401,6 +3403,15 @@ paths:
                     PostgreSQL only: run the pgvector/pgvector image (tagged by
                     major version, e.g. `pg17`) so `CREATE EXTENSION vector`
                     works. Needs PostgreSQL 13 or newer.
+                tls:
+                  type: boolean
+                  default: false
+                  description: >
+                    Start the engine with TLS on, using a certificate from the
+                    install's certificate authority (valid for the server's
+                    address and hostname, localhost and the gateway host).
+                    Clients can then use sslmode=require, or verify-ca with
+                    the authority's certificate. Managed servers need an updated agent.
       responses:
         "202":
           description: Provisioning started
@@ -3608,6 +3619,49 @@ paths:
       responses:
         "202":
           description: Restarted
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/instances/{id}/tls:
+    post:
+      tags: [Instances]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      summary: Turn TLS on, or renew the certificate
+      description: >
+        Managed instances only. Starts a `configure_tls` operation: the agent
+        writes a new certificate from the install's certificate authority and
+        recreates the container from the same image, volume and port with TLS
+        on. Connections drop for a few seconds; data is kept. If the engine
+        doesn't start, the previous container is put back. A stopped instance
+        stays stopped. Requires instance:write; managed servers need an updated agent.
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "202":
+          description: Operation started
+          content:
+            application/json:
+              schema: {type: object, properties: {operation_id: {type: string, format: uuid}}}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/tls/ca-certificate:
+    get:
+      tags: [Instances]
+      security: [{bearerAuth: []}, {cookieAuth: []}]
+      summary: Certificate authority for TLS
+      description: >
+        The certificate (PEM) of the install's authority that signs managed
+        instances' TLS certificates. Clients that verify the server trust it
+        (sslmode=verify-ca / verify-full, --ssl-mode=VERIFY_CA).
+      responses:
+        "200":
+          description: The certificate
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [certificate]
+                properties:
+                  certificate: {type: string, description: PEM}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/instances/{id}/probe:

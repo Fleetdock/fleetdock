@@ -127,6 +127,10 @@ type Instance struct {
 	// DataAccess is "login"; both nil otherwise.
 	DataUsername  *string
 	DataSecretRef *string
+	// TLSEnabled is set when a managed instance's engine serves TLS with a
+	// certificate from the install's authority, valid until TLSExpiresAt.
+	TLSEnabled   bool
+	TLSExpiresAt *time.Time
 }
 
 // DataAccess selects the login used for interactive work on an instance's
