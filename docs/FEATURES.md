@@ -109,7 +109,8 @@ Backend (Go):
   read in one query (one snapshot per table, none across tables). Tables are
   loaded into a temporary table and swapped in, so materialized views never
   count restored rows twice. A restore anywhere but back in place repoints
-  views, restores `Replicated*MergeTree` tables as plain `*MergeTree` and
+  views, restores `Replicated*MergeTree` tables (and ClickHouse Cloud's
+  `SharedMergeTree`) as plain `*MergeTree` and
   leaves out streaming tables (Kafka, S3Queue, ...) and the views reading
   them. Credentials the server masks in definitions are
   reported in the backup log and are only included when the server shows

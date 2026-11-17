@@ -6,18 +6,20 @@ compatible see [RELEASING.md](RELEASING.md).
 
 ---
 
-## 0.12 — what is in it
+## 0.13 — what is in it
 
 **Fleet.** Servers with a sandboxed agent (one-command install, in-place
 updates, version checks), database servers that Fleetdock creates in Docker or
 that you connect anywhere (directly, through an SSH bastion, or through the
 optional gateway), automatic database discovery and health checks, MySQL,
-MariaDB and PostgreSQL in one dashboard, with PostgreSQL schemas and
-extensions managed from it.
+MariaDB, PostgreSQL and ClickHouse in one dashboard, with PostgreSQL schemas
+and extensions managed from it, and TLS from the install's own certificate
+authority on the servers it creates.
 
 **Backups.** Schedules with retention to your own S3-compatible storage,
 automatic test restores, restore and copy/move between servers of the same
-engine, SQL import, opening a backup next to the live database to compare.
+engine (ClickHouse with Fleetdock's own in-process dump), SQL import, opening
+a backup next to the live database to compare.
 
 **Working with data.** The data browser (filters, inline editing with undo,
 saved views, PostgreSQL schema choice, full screen), the SQL console with
@@ -46,9 +48,17 @@ partitions), per-schema backup, restore and export, and extensions. Also
 pgvector for new PostgreSQL servers, PagerDuty notifications and configurable
 worker intervals.
 
+**New in 0.13.** ClickHouse as a fourth engine: connect existing servers
+(self-hosted or ClickHouse Cloud), create them in Docker, SQL console,
+read-only data browser, accounts and credentials, monitoring, and backups,
+restores, verification and moves with an in-process Native dump. Also TLS for
+the database servers Fleetdock creates (with a downloadable CA certificate),
+Pushover notifications, and PostgreSQL 18 backups on hosts with an older
+distribution client.
+
 ---
 
-## Next — 0.13
+## Next — 0.14
 
 | Item | Notes | Issue |
 |------|-------|-------|

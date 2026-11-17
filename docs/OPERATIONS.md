@@ -79,14 +79,14 @@ Stop the API during restore to avoid concurrent writes.
 
 ```bash
 fleetdock update              # latest
-fleetdock update --tag v0.12.0 # a specific release
+fleetdock update --tag v0.13.0 # a specific release
 ```
 
 ### Compose (build from source)
 
 ```bash
 git fetch origin
-git checkout v0.12.0  # or main for latest
+git checkout v0.13.0  # or main for latest
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
@@ -172,6 +172,25 @@ New, optional settings: `FLEETDOCK_JOB_POLL_INTERVAL`,
 `FLEETDOCK_ALERT_INTERVAL` and `FLEETDOCK_HEALTH_CHECK_INTERVAL`
 ([CONFIGURATION.md](CONFIGURATION.md)). Unlike other durations, an invalid
 value for one of them stops the control plane from starting.
+
+### Upgrading to 0.13
+
+0.13 upgrades in place from 0.12 with `fleetdock update --tag v0.13.0` (or by
+pulling the image and restarting). It applies four migrations: the ClickHouse
+engine (its secret kind and connectivity protocol), the ClickHouse dump tool
+for backups, the `configure_tls` operation with TLS columns on instances, and
+the Pushover channel type. On first start the control plane creates the
+install's certificate authority and keeps it in the encrypted secret store.
+
+Then update the agents (below). 0.12 agents keep working, but on managed
+servers turning on TLS and creating ClickHouse servers need a 0.13 agent. An
+older one creates servers without TLS (`tls_enabled` stays false) and fails
+**Turn on TLS** with "unsupported operation type"; creating a ClickHouse
+server on it is refused with a message to update the agent first.
+Updating an agent also installs the PostgreSQL 18 client tools on its host, so
+PostgreSQL 18 backups work where the distribution ships an older `pg_dump`.
+
+There are no new settings.
 
 ### Updating agents
 

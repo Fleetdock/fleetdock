@@ -7,13 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-17
+
 Upgrading: `fleetdock update` (or pulling the new image) applies four new
 migrations (`0030_clickhouse`, `0031_clickhouse_backups`,
 `0032_instance_tls`, `0032_pushover_notifications`). Update the agents
 afterwards: TLS on the database servers Fleetdock creates, and creating
 ClickHouse servers, need an agent from this release; older agents create
 servers without TLS and `tls_enabled` stays false. ClickHouse backups run
-in-process and need nothing installed.
+in-process and need nothing installed. Updating an agent also installs the
+PostgreSQL 18 client tools on its host (see Fixed).
+
+Thanks to @shahawiz, who contributed most of this release.
 
 ### Added
 
@@ -101,7 +106,9 @@ in-process and need nothing installed.
   its last log error and is removed with its new volume, instead of being
   left running with its admin login exposed. Start, stop, restart and remove
   work as for the other engines; **Turn on TLS** is not available for
-  ClickHouse servers yet. (#155, thanks @shahawiz)
+  ClickHouse servers yet. It needs a 0.13 agent: on a server with an older
+  agent, which would start the image with another engine's settings, the API
+  refuses it and says to update the agent. (#155, thanks @shahawiz)
 
 ### Fixed
 
@@ -118,7 +125,14 @@ in-process and need nothing installed.
   client tools when it updates an enrolled agent. The agent and control plane
   now run the newest `pg_dump` / `psql` installed under
   `/usr/lib/postgresql/*/bin` or `/usr/pgsql-*/bin` rather than whatever is
-  first on `PATH`, and a version mismatch error says how to fix it.
+  first on `PATH`, and a version mismatch error says how to fix it. (#151,
+  thanks @shahawiz)
+
+### Changed
+
+- The images are built with Go 1.27 on Alpine 3.24, and the backend and
+  dashboard dependencies are updated to their latest minor versions.
+  (#146, #147, #148, #149)
 
 ## [0.12.0] - 2026-11-15
 
@@ -1124,7 +1138,8 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/Fleetdock/fleetdock/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Fleetdock/fleetdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Fleetdock/fleetdock/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Fleetdock/fleetdock/compare/v0.9.3...v0.10.0
