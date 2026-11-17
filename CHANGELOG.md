@@ -98,7 +98,8 @@ needs an agent from this release; older agents create servers without it and
   that stops, crash-loops or doesn't answer in time fails the operation with
   its last log error and is removed with its new volume, instead of being
   left running with its admin login exposed. Start, stop, restart and remove
-  work as for the other engines.
+  work as for the other engines; **Turn on TLS** is not available for
+  ClickHouse servers yet.
 
 ### Fixed
 

@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -128,5 +129,16 @@ func TestPickLogLine(t *testing.T) {
 	}
 	if got := pickLogLine(""); got != "no log output" {
 		t.Errorf("empty logs: %q", got)
+	}
+}
+
+// TestProvisionContainerRefusesClickHouseTLS: the certificate arguments are
+// PostgreSQL's and MySQL's, so a ClickHouse container is never started with
+// them (the API refuses it first).
+func TestProvisionContainerRefusesClickHouseTLS(t *testing.T) {
+	spec := &ProvisionSpec{ContainerName: "ch", TLS: &TLSFiles{CertPEM: "c", KeyPEM: "k"}}
+	_, err := provisionContainer(context.Background(), "clickhouse", spec, "clickhouse:25.8", true, NopSink{})
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("err = %v, want a refusal", err)
 	}
 }

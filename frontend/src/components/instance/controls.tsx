@@ -7,6 +7,7 @@ import { Download, KeyRound, Lock, Play, RefreshCw, RotateCw, Square, Trash2 } f
 import { DeleteInstanceModal } from "@/components/delete-instance-modal";
 import { useErrorToast, useToast } from "@/components/toast";
 import { Button, ConfirmModal, Menu } from "@/components/ui";
+import { engineSupports } from "@/lib/engines";
 import { downloadCACertificate, useConfigureTLS, useInstanceLifecycle, useProbeInstance } from "@/lib/hooks";
 import type { Instance } from "@/lib/types";
 
@@ -76,7 +77,10 @@ export function InstanceControls({ instance, onEdit }: { instance: Instance; onE
             label: instance.tls_enabled ? "Renew TLS certificate" : "Turn on TLS",
             icon: <Lock size={15} />,
             onSelect: () => setTlsOpen(true),
-            hidden: !instance.provisioned || !["running", "stopped"].includes(instance.status),
+            hidden:
+              !instance.provisioned ||
+              !engineSupports(instance.engine, "provisionedTLS") ||
+              !["running", "stopped"].includes(instance.status),
           },
           {
             label: "Download CA certificate",
