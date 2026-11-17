@@ -427,7 +427,7 @@ function CopySchema({
   const [error, setError] = useState<string | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
 
-  const targets = (siblings?.items ?? []).filter((d) => !d.system && d.status === "active");
+  const targets = (siblings?.items ?? []).filter((d) => d.status === "active");
   const trimmed = name.trim();
   const problem =
     nameProblem(trimmed) ??

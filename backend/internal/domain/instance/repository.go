@@ -2,6 +2,7 @@ package instance
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -65,6 +66,9 @@ type Repository interface {
 	SetStatus(ctx context.Context, id uuid.UUID, status Status) error
 	// SetContainerID records the Docker container id of a provisioned instance.
 	SetContainerID(ctx context.Context, id uuid.UUID, containerID string) error
+	// SetTLS records that the instance serves TLS with a certificate valid
+	// until expiresAt.
+	SetTLS(ctx context.Context, id uuid.UUID, expiresAt time.Time) error
 	SoftDelete(ctx context.Context, id uuid.UUID) error
 	// SetHealth records the latest probe result.
 	SetHealth(ctx context.Context, id uuid.UUID, h Health) error

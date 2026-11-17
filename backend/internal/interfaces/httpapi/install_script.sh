@@ -17,6 +17,46 @@ if [ "$(id -u)" != "0" ]; then
   exit 1
 fi
 
+# install_client_tools installs mariadb-dump/pg_dump for backups and restores.
+# pg_dump refuses to dump a server newer than itself, so PostgreSQL's client
+# comes from the PostgreSQL project's own repository (apt.postgresql.org) on
+# Debian/Ubuntu, whose stable releases ship an older one; the agent prefers
+# the newest installed version.
+PG_CLIENT_MAJOR=18
+install_client_tools() {
+  echo "==> Installing database client tools (for backups/restores)"
+  if command -v apt-get >/dev/null 2>&1; then
+    if [ ! -f /etc/apt/sources.list.d/pgdg.list ] && [ -r /etc/os-release ]; then
+      # shellcheck source=/dev/null
+      CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
+      if [ -n "$CODENAME" ] && mkdir -p /usr/share/postgresql-common/pgdg \
+        && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc; then
+        echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${CODENAME}-pgdg main" \
+          > /etc/apt/sources.list.d/pgdg.list
+      fi
+    fi
+    if apt-get update -qq; then
+      apt-get install -y -qq mariadb-client >/dev/null 2>&1 || true
+      apt-get install -y -qq "postgresql-client-${PG_CLIENT_MAJOR}" >/dev/null 2>&1 \
+        || apt-get install -y -qq postgresql-client >/dev/null 2>&1 || true
+    fi
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y -q mariadb postgresql >/dev/null 2>&1 || true
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q mariadb postgresql >/dev/null 2>&1 || true
+  elif command -v apk >/dev/null 2>&1; then
+    # mariadb-connector-c: the auth plugins MySQL 8 needs (caching_sha2_password).
+    apk add --no-cache mariadb-client mariadb-connector-c >/dev/null 2>&1 || true
+    apk add --no-cache "postgresql${PG_CLIENT_MAJOR}-client" >/dev/null 2>&1 \
+      || apk add --no-cache postgresql-client >/dev/null 2>&1 || true
+  fi
+  if command -v pg_dump >/dev/null 2>&1 || ls /usr/lib/postgresql/*/bin/pg_dump >/dev/null 2>&1; then
+    :
+  else
+    echo "warning: pg_dump is not installed; PostgreSQL backups on this server will fail until it is" >&2
+  fi
+}
+
 MODE=install
 if [ -z "$FLEETDOCK_TOKEN" ]; then
   if [ -s "$STATE_DIR/state.json" ] && [ -f /etc/systemd/system/fleetdock-agent.service ]; then
@@ -63,6 +103,9 @@ trap - EXIT
 NEW_VERSION="$("$BIN" version 2>/dev/null || echo unknown)"
 
 if [ "$MODE" = update ]; then
+  # Refresh the client tools too, so a server enrolled before Fleetdock
+  # supported a newer PostgreSQL gets a pg_dump that can back it up.
+  install_client_tools
   systemctl restart fleetdock-agent
   echo ""
   echo "Fleetdock agent updated to ${NEW_VERSION} and restarted."
@@ -70,19 +113,7 @@ if [ "$MODE" = update ]; then
   exit 0
 fi
 
-echo "==> Installing database client tools (for backups/restores)"
-if command -v apt-get >/dev/null 2>&1; then
-  if apt-get update -qq; then
-    apt-get install -y -qq mariadb-client postgresql-client >/dev/null 2>&1 || true
-  fi
-elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y -q mariadb postgresql >/dev/null 2>&1 || true
-elif command -v yum >/dev/null 2>&1; then
-  yum install -y -q mariadb postgresql >/dev/null 2>&1 || true
-elif command -v apk >/dev/null 2>&1; then
-  # mariadb-connector-c: the auth plugins MySQL 8 needs (caching_sha2_password).
-  apk add --no-cache mariadb-client mariadb-connector-c postgresql-client >/dev/null 2>&1 || true
-fi
+install_client_tools
 
 echo "==> Ensuring Docker is installed (for provisioning database instances)"
 if ! command -v docker >/dev/null 2>&1; then
