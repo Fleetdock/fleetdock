@@ -32,7 +32,8 @@ import {
 } from "@/lib/data-browser/tabs";
 import { DATA_BROWSER_SHORTCUTS } from "@/lib/data-browser/shortcuts";
 import { isFocusShortcut, useBrowserFullscreen, useDataBrowserFocus, useFullscreenSupported } from "@/lib/focus-mode";
-import { useCanOn, useDatabase, useDBObjects, useTables } from "@/lib/hooks";
+import { BackupDatabaseModal } from "@/components/database/backup-database-modal";
+import { useCanOn, useDatabase, useDBObjects, useSchemas, useTables } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
 import { Eye, Maximize, Maximize2, Minimize, Minimize2, PanelLeftClose, PanelLeftOpen, SquareTerminal, Table2 } from "lucide-react";
 
@@ -298,6 +299,12 @@ function Workspace({
   const canOn = useCanOn();
   const canWrite = canOn("database:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
   const canBackup = canOn("backup:write", { databaseId: db.id, serverId: db.instance?.server_id ?? undefined });
+  // PostgreSQL's maintenance database ("postgres") is an ordinary database
+  // that often holds application schemas, so its tree keeps every action.
+  // MySQL's mysql and sys stay read-only here.
+  const lockedSystem = db.system && db.instance?.engine !== "postgres";
+  // The schema being backed up or exported from the tree.
+  const [backupSchema, setBackupSchema] = useState<string | null>(null);
   const dialect: Dialect = dialectOf(db.instance?.engine);
   const pg = dialect === "postgres";
 
@@ -338,6 +345,7 @@ function Workspace({
   // ---- objects ----
   const tables = useTables(db.id);
   const objects = useDBObjects(db.id);
+  const schemaList = useSchemas(db.id, pg);
   const items = useMemo(
     () => buildItems(tables.data?.items ?? [], objects.data ?? [], dialect),
     [tables.data, objects.data, dialect],
@@ -457,10 +465,12 @@ function Workspace({
     return () => window.removeEventListener("keydown", onKey);
   }, [close, newQuery]);
 
-  const [creating, setCreating] = useState(false);
+  // The create-table dialog, with the PostgreSQL schema to create the table in.
+  const [creating, setCreating] = useState<{ schema: string | null } | null>(null);
   const refreshObjects = () => {
     void qc.invalidateQueries({ queryKey: ["tables", db.id] });
     void qc.invalidateQueries({ queryKey: ["db-objects", db.id] });
+    void qc.invalidateQueries({ queryKey: ["schemas", db.id] });
   };
   const listError = tables.error ?? objects.error;
 
@@ -473,12 +483,17 @@ function Workspace({
       error={listError ? (listError as Error).message : undefined}
       dialect={dialect}
       activeName={activeTab && activeTab.kind !== "query" ? activeTab.name : null}
-      canWrite={canWrite && !db.system && engineSupports(db.instance?.engine, "structureEditing")}
+      canWrite={canWrite && !lockedSystem && engineSupports(db.instance?.engine, "structureEditing")}
       onOpen={open}
       onNewQuery={newQuery}
-      onCreateTable={() => setCreating(true)}
+      onCreateTable={(schema) => setCreating({ schema: pg ? schema ?? "public" : null })}
+      schemaList={schemaList.data}
+      onObjectMoved={(from, to, label) => {
+        for (const t of ws.tabs) if (t.name === from) dispatch({ type: "rename", id: t.id, name: to, label });
+      }}
+      onBackupSchema={canBackup && !lockedSystem ? setBackupSchema : undefined}
       onRefresh={refreshObjects}
-      refreshing={tables.isFetching || objects.isFetching}
+      refreshing={tables.isFetching || objects.isFetching || schemaList.isFetching}
     />
   );
 
@@ -514,7 +529,7 @@ function Workspace({
                 active={t.id === ws.active}
                 db={db}
                 canWrite={canWrite}
-                canBackup={canBackup && !db.system}
+                canBackup={canBackup && !lockedSystem}
                 dialect={dialect}
                 dispatch={dispatch}
                 onDirty={onDirty}
@@ -530,16 +545,20 @@ function Workspace({
       {creating ? (
         <CreateTableModal
           databaseId={db.id}
-          schema={pg ? "public" : null}
+          schema={creating.schema}
           dialect={dialect}
-          onClose={() => setCreating(false)}
+          onClose={() => setCreating(null)}
           onCreated={(name) => {
-            setCreating(false);
+            const schema = creating.schema ?? "public";
+            setCreating(null);
             refreshObjects();
-            const full = pg && !name.includes(".") ? `public.${name}` : name;
+            const full = pg && !name.includes(".") ? `${schema}.${name}` : name;
             open({ kind: "table", name: full, label: splitName(full, pg).label });
           }}
         />
+      ) : null}
+      {backupSchema !== null ? (
+        <BackupDatabaseModal database={db} schema={backupSchema} onClose={() => setBackupSchema(null)} />
       ) : null}
     </>
   );

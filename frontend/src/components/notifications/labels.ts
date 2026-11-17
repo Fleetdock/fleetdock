@@ -4,6 +4,8 @@ export const CHANNEL_LABEL: Record<string, string> = {
   email: "Email",
   slack: "Slack",
   webhook: "Webhook",
+  pagerduty: "PagerDuty",
+  pushover: "Pushover",
 };
 
 export const METRIC_LABEL: Record<string, string> = {

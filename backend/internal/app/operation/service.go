@@ -39,6 +39,12 @@ type SecretsReader interface {
 	Get(ctx context.Context, ref string) ([]byte, error)
 }
 
+// TLSIssuer issues the server certificate of a managed instance (satisfied
+// by *tlsca.Service).
+type TLSIssuer interface {
+	Issue(ctx context.Context, inst *instancedom.Instance) (*executor.TLSFiles, error)
+}
+
 // EventEmitter queues notification events (satisfied by *notificationapp.Service).
 type EventEmitter interface {
 	Emit(ctx context.Context, eventType, title, message, severity, aggregateType string, aggregateID uuid.UUID)
@@ -76,8 +82,12 @@ type Service struct {
 	mover     Mover
 	copies    BackupCopyHook
 	onDropped func(ctx context.Context, databaseID, instanceID uuid.UUID)
-	roleCreds func(ctx context.Context, databaseID uuid.UUID) (user, password string, err error)
-	gateway   GatewayReconciler
+	// onSchemaCopied runs after a schema was copied or restored into a
+	// database.
+	onSchemaCopied func(ctx context.Context, databaseID uuid.UUID)
+	roleCreds      func(ctx context.Context, databaseID uuid.UUID) (user, password string, err error)
+	gateway        GatewayReconciler
+	tls            TLSIssuer
 }
 
 // NewService wires the operations engine.
@@ -95,6 +105,13 @@ func (s *Service) SetDatabaseDropHook(f func(ctx context.Context, databaseID, in
 	s.onDropped = f
 }
 
+// SetSchemaCopyHook registers a callback run after a schema was copied or
+// restored into a database (optional) — used to extend its data roles'
+// grants to it.
+func (s *Service) SetSchemaCopyHook(f func(ctx context.Context, databaseID uuid.UUID)) {
+	s.onSchemaCopied = f
+}
+
 // SetAccessRoleResolver lets operations run as a database's read-write
 // console role (Params.AccessRole) instead of the instance admin.
 func (s *Service) SetAccessRoleResolver(f func(ctx context.Context, databaseID uuid.UUID) (string, string, error)) {
@@ -110,6 +127,10 @@ func (s *Service) SetBackupCopyHook(h BackupCopyHook) { s.copies = h }
 // SetGatewayReconciler attaches the gateway reconciler (optional).
 func (s *Service) SetGatewayReconciler(g GatewayReconciler) { s.gateway = g }
 
+// SetTLSIssuer attaches the certificate authority for TLS on managed
+// instances (without it, provisioning with TLS and configure_tls fail).
+func (s *Service) SetTLSIssuer(i TLSIssuer) { s.tls = i }
+
 // Params is the stored (non-sensitive) parameter set of an operation.
 type Params struct {
 	InstanceID    string `json:"instance_id,omitempty"`
@@ -123,6 +144,7 @@ type Params struct {
 	// Provisioning (container lifecycle) params.
 	Image        string `json:"image,omitempty"`
 	Version      string `json:"version,omitempty"`
+	Tag          string `json:"tag,omitempty"`
 	RemoveVolume bool   `json:"remove_volume,omitempty"`
 	// Move saga: set on the backup and restore legs of a database move so the
 	// move advances via completion hooks without a dedicated table. A move has
@@ -147,13 +169,25 @@ type Params struct {
 	// DeleteKeyAfter removes the uploaded artifact (an import) once the
 	// restore has finished, successfully or not.
 	DeleteKeyAfter bool `json:"delete_key_after,omitempty"`
+	// Copy schema: Schema of Database is copied to TargetSchema of
+	// TargetDatabase (on the same instance; TargetDatabaseID is its record).
+	Schema           string `json:"schema,omitempty"`
+	TargetSchema     string `json:"target_schema,omitempty"`
+	TargetDatabase   string `json:"target_database,omitempty"`
+	TargetDatabaseID string `json:"target_database_id,omitempty"`
+	StructureOnly    bool   `json:"structure_only,omitempty"`
+	// Restore schema: Replace lets a schema backup restored under its own
+	// name replace that schema's objects.
+	Replace bool `json:"replace,omitempty"`
+	// TLS: provision the instance with TLS on (configure_tls always has it).
+	TLS bool `json:"tls,omitempty"`
 }
 
 // isProvisionType reports whether a job type is a container lifecycle op.
 func isProvisionType(t jobdom.Type) bool {
 	switch t {
 	case jobdom.TypeProvisionInstance, jobdom.TypeStartInstance, jobdom.TypeStopInstance,
-		jobdom.TypeRestartInstance, jobdom.TypeRemoveInstance:
+		jobdom.TypeRestartInstance, jobdom.TypeRemoveInstance, jobdom.TypeConfigureTLS:
 		return true
 	}
 	return false
@@ -356,6 +390,12 @@ func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Pa
 		Charset:   p.Charset,
 		Collation: p.Collation,
 		BackupID:  p.BackupID,
+		// Copy schema.
+		Schema:         p.Schema,
+		TargetSchema:   p.TargetSchema,
+		TargetDatabase: p.TargetDatabase,
+		StructureOnly:  p.StructureOnly,
+		Replace:        p.Replace,
 	}
 
 	switch j.Type {
@@ -370,7 +410,7 @@ func (s *Service) buildPayload(ctx context.Context, j *jobdom.Job) (*executor.Pa
 		}
 		payload.PutURL = putURL
 		payload.StorageURL = fmt.Sprintf("s3://%s/%s", dest.Bucket, p.Key)
-	case jobdom.TypeRestore:
+	case jobdom.TypeRestore, jobdom.TypeRestoreSchema:
 		_, client, err := s.storageFor(ctx, p.DestinationID)
 		if err != nil {
 			return nil, err
@@ -406,7 +446,7 @@ func (s *Service) provisionPayload(ctx context.Context, typ jobdom.Type, p Param
 		RemoveVolume:  p.RemoveVolume,
 	}
 	engineName := ""
-	if typ == jobdom.TypeProvisionInstance {
+	if typ == jobdom.TypeProvisionInstance || typ == jobdom.TypeConfigureTLS {
 		iid, err := uuid.Parse(p.InstanceID)
 		if err != nil {
 			return nil, fmt.Errorf("operation has no valid instance_id")
@@ -415,8 +455,14 @@ func (s *Service) provisionPayload(ctx context.Context, typ jobdom.Type, p Param
 		if err != nil {
 			return nil, err
 		}
-		spec.Image = p.Image
-		spec.Version = p.Version
+		if typ == jobdom.TypeProvisionInstance {
+			spec.Image = p.Image
+			spec.Tag = p.Tag
+			spec.Version = p.Version
+		} else {
+			// configure_tls recreates the container from the image it runs now.
+			spec.Version = inst.EngineVersion
+		}
 		spec.Port = inst.Port
 		engineName = string(inst.Engine)
 		if inst.RootSecretRef != nil {
@@ -425,6 +471,16 @@ func (s *Service) provisionPayload(ctx context.Context, typ jobdom.Type, p Param
 				return nil, fmt.Errorf("load instance credentials: %w", err)
 			}
 			spec.RootPassword = string(pw)
+		}
+		if p.TLS || typ == jobdom.TypeConfigureTLS {
+			if s.tls == nil {
+				return nil, fmt.Errorf("TLS is not available: no certificate authority configured")
+			}
+			files, err := s.tls.Issue(ctx, inst)
+			if err != nil {
+				return nil, fmt.Errorf("issue TLS certificate: %w", err)
+			}
+			spec.TLS = files
 		}
 	}
 	return &executor.Payload{Engine: engineName, Provision: spec}, nil
@@ -597,10 +653,16 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, status jobdom.Stat
 				s.onDropped(ctx, dbID, instID)
 			}
 		}
+	case jobdom.TypeCopySchema, jobdom.TypeRestoreSchema:
+		if ok && s.onSchemaCopied != nil {
+			if dbID, e := uuid.Parse(p.TargetDatabaseID); e == nil {
+				s.onSchemaCopied(ctx, dbID)
+			}
+		}
 	case jobdom.TypeReconcileGateway:
 		// Side effects handled by the worker calling GatewayReconciler directly.
 	case jobdom.TypeProvisionInstance, jobdom.TypeStartInstance, jobdom.TypeStopInstance,
-		jobdom.TypeRestartInstance, jobdom.TypeRemoveInstance:
+		jobdom.TypeRestartInstance, jobdom.TypeRemoveInstance, jobdom.TypeConfigureTLS:
 		s.completeProvision(ctx, j, ok, result, errMsg)
 	}
 	return nil
@@ -614,8 +676,9 @@ func (s *Service) completeProvision(ctx context.Context, j *jobdom.Job, ok bool,
 	}
 	id := *j.ResourceID
 	if !ok {
-		// remove failures leave the record soft-deleted; others go to error.
-		if j.Type != jobdom.TypeRemoveInstance {
+		// remove failures leave the record soft-deleted, and a failed
+		// configure_tls put the previous container back; others go to error.
+		if j.Type != jobdom.TypeRemoveInstance && j.Type != jobdom.TypeConfigureTLS {
 			_ = s.instances.SetStatus(ctx, id, instancedom.StatusError)
 		}
 		if s.notifier != nil {
@@ -634,13 +697,32 @@ func (s *Service) completeProvision(ctx context.Context, j *jobdom.Job, ok bool,
 		if res.ContainerID != "" {
 			_ = s.instances.SetContainerID(ctx, id, res.ContainerID)
 		}
+		s.recordTLS(ctx, id, res)
 		_ = s.instances.SetStatus(ctx, id, instancedom.StatusRunning)
+	case jobdom.TypeConfigureTLS:
+		var res executor.Result
+		_ = json.Unmarshal(result, &res)
+		if res.ContainerID != "" {
+			_ = s.instances.SetContainerID(ctx, id, res.ContainerID)
+		}
+		s.recordTLS(ctx, id, res)
 	case jobdom.TypeStartInstance, jobdom.TypeRestartInstance:
 		_ = s.instances.SetStatus(ctx, id, instancedom.StatusRunning)
 	case jobdom.TypeStopInstance:
 		_ = s.instances.SetStatus(ctx, id, instancedom.StatusStopped)
 	case jobdom.TypeRemoveInstance:
 		// Record already soft-deleted at enqueue time; nothing more to do.
+	}
+}
+
+// recordTLS stores the certificate expiry a provision or configure_tls
+// reported (nothing when TLS wasn't set up).
+func (s *Service) recordTLS(ctx context.Context, id uuid.UUID, res executor.Result) {
+	if res.TLSNotAfter == "" {
+		return
+	}
+	if at, err := time.Parse(time.RFC3339, res.TLSNotAfter); err == nil {
+		_ = s.instances.SetTLS(ctx, id, at)
 	}
 }
 

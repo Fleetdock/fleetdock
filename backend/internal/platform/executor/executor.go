@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,15 @@ type Payload struct {
 	StorageURL string            `json:"storage_url,omitempty"`
 	Checksum   string            `json:"checksum,omitempty"` // expected sha256, verified on restore
 	Provision  *ProvisionSpec    `json:"provision,omitempty"`
+	// Copy schema: Database is the source database. Backup and restore of
+	// one schema use Schema too.
+	Schema         string `json:"schema,omitempty"`
+	TargetSchema   string `json:"target_schema,omitempty"`
+	TargetDatabase string `json:"target_database,omitempty"`
+	StructureOnly  bool   `json:"structure_only,omitempty"`
+	// Restore schema: Replace lets a backup restored under its own name
+	// replace that schema's objects.
+	Replace bool `json:"replace,omitempty"`
 }
 
 // ProvisionSpec describes a Docker container lifecycle action on a managed
@@ -47,10 +57,26 @@ type ProvisionSpec struct {
 	ContainerName string `json:"container_name"`
 	Image         string `json:"image"`   // e.g. "mariadb"
 	Version       string `json:"version"` // e.g. "11.4"
-	Port          int    `json:"port"`
-	RootPassword  string `json:"root_password,omitempty"` // provision only
-	Volume        string `json:"volume"`
-	RemoveVolume  bool   `json:"remove_volume,omitempty"` // remove only
+	// Tag, when set, is the image tag to run instead of Version, for images
+	// tagged differently from the engine (e.g. "pg17" for pgvector/pgvector).
+	// Version still names the engine version.
+	Tag          string `json:"tag,omitempty"`
+	Port         int    `json:"port"`
+	RootPassword string `json:"root_password,omitempty"` // provision only
+	Volume       string `json:"volume"`
+	RemoveVolume bool   `json:"remove_volume,omitempty"` // remove only
+	// TLS, when set, is the server certificate the engine serves TLS with
+	// (provision_instance and configure_tls).
+	TLS *TLSFiles `json:"tls,omitempty"`
+}
+
+// TLSFiles is a server certificate for a managed instance, issued by the
+// install's certificate authority.
+type TLSFiles struct {
+	CertPEM  string `json:"cert_pem"`
+	KeyPEM   string `json:"key_pem"`
+	CAPEM    string `json:"ca_pem"`
+	NotAfter string `json:"not_after"` // RFC 3339
 }
 
 // Result is the outcome data of one operation.
@@ -63,6 +89,9 @@ type Result struct {
 	StorageURL  string                `json:"storage_url,omitempty"`
 	ContainerID string                `json:"container_id,omitempty"`
 	TableCount  int                   `json:"table_count,omitempty"` // tables present after a restore
+	// TLSNotAfter is when the certificate a provision or configure_tls
+	// installed expires (RFC 3339); empty when TLS was not set up.
+	TLSNotAfter string `json:"tls_not_after,omitempty"`
 }
 
 // Execute runs the operation named by jobType with the given payload. Progress
@@ -73,7 +102,7 @@ func Execute(ctx context.Context, jobType string, p *Payload, sink LogSink) (jso
 	// Container lifecycle operations run on the host via Docker and need no
 	// database engine client.
 	switch jobType {
-	case "provision_instance", "start_instance", "stop_instance", "restart_instance", "remove_instance":
+	case "provision_instance", "start_instance", "stop_instance", "restart_instance", "remove_instance", "configure_tls":
 		res, err := runProvision(ctx, jobType, p, sink)
 		if err != nil {
 			return nil, err
@@ -136,6 +165,20 @@ func Execute(ctx context.Context, jobType string, p *Payload, sink LogSink) (jso
 		}
 		res = *out
 
+	case "restore_schema":
+		out, err := runRestoreSchema(ctx, p, sink)
+		if err != nil {
+			return nil, err
+		}
+		res = *out
+
+	case "copy_schema":
+		out, err := runCopySchema(ctx, p, sink)
+		if err != nil {
+			return nil, err
+		}
+		res = *out
+
 	default:
 		return nil, fmt.Errorf("executor: unsupported operation type %q", jobType)
 	}
@@ -150,7 +193,10 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 		return nil, err
 	}
 	defer closeTunnel()
-	binaries, args, env := eng.DumpArgs(conn, p.Database)
+	binaries, args, env, err := dumpArgs(eng, conn, p.Database, p.Schema)
+	if err != nil {
+		return nil, err
+	}
 	bin, err := lookPath(binaries)
 	if err != nil {
 		return nil, err
@@ -168,7 +214,11 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 	hasher := sha256.New()
 	gz := gzip.NewWriter(io.MultiWriter(tmp, hasher))
 
-	sink.Log("info", "dumping database "+p.Database)
+	if p.Schema != "" {
+		sink.Log("info", "dumping schema "+p.Schema+" of "+p.Database)
+	} else {
+		sink.Log("info", "dumping database "+p.Database)
+	}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout = gz
@@ -177,7 +227,7 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 	cmd.Stderr = io.MultiWriter(&stderr, tee)
 	if err := cmd.Run(); err != nil {
 		tee.Close()
-		return nil, fmt.Errorf("dump failed: %s: %w", firstLine(stderr.String()), err)
+		return nil, fmt.Errorf("dump failed: %s%s: %w", firstLine(stderr.String()), versionMismatchHint(stderr.String()), err)
 	}
 	tee.Close()
 	if err := gz.Close(); err != nil {
@@ -219,6 +269,22 @@ func runBackup(ctx context.Context, eng engine.Client, p *Payload, sink LogSink)
 		Checksum:   checksum,
 		StorageURL: p.StorageURL,
 	}, nil
+}
+
+// dumpArgs is the dump argv for a whole database, or for one schema of a
+// PostgreSQL database. A schema dump drops and recreates what it holds when
+// restored, like a database dump.
+func dumpArgs(eng engine.Client, conn engine.ConnParams, database, schema string) ([]string, []string, []string, error) {
+	if schema == "" {
+		b, a, e := eng.DumpArgs(conn, database)
+		return b, a, e, nil
+	}
+	pg, ok := eng.(*engine.Postgres)
+	if !ok {
+		return nil, nil, nil, errors.New("only PostgreSQL databases have schemas to dump on their own")
+	}
+	b, a, e := pg.PartialDumpArgs(conn, database, engine.PartialDump{Schema: schema, Clean: true})
+	return b, a, e, nil
 }
 
 // runRestore downloads a dump via the presigned GET URL to a temp file,
@@ -355,11 +421,69 @@ func hashFile(f *os.File) (string, error) {
 
 func lookPath(candidates []string) (string, error) {
 	for _, c := range candidates {
+		if p := newestPGTool(c); p != "" {
+			return p, nil
+		}
 		if p, err := exec.LookPath(c); err == nil {
 			return p, nil
 		}
 	}
 	return "", fmt.Errorf("none of %v found in PATH (install the mariadb client tools)", candidates)
+}
+
+// versionMismatchHint tells the operator how to fix a pg_dump older than the
+// server it was pointed at, which is otherwise reported only as the two
+// versions.
+func versionMismatchHint(stderr string) string {
+	if !strings.Contains(stderr, "server version mismatch") {
+		return ""
+	}
+	return " (this pg_dump is older than the server: install the matching PostgreSQL client, e.g. postgresql-client-18 from apt.postgresql.org, on the host that runs the backup)"
+}
+
+// pgToolDirs are where distribution packages install each PostgreSQL major
+// version's client tools side by side: Debian/Ubuntu (PGDG included) and the
+// PGDG RPMs.
+var pgToolDirs = []string{"/usr/lib/postgresql/*/bin", "/usr/pgsql-*/bin"}
+
+// newestPGTool returns the newest major version's copy of a PostgreSQL client
+// tool installed in pgToolDirs, or "" when there is none (or name is not one).
+// pg_dump refuses to dump a server newer than itself, and the pg_dump on PATH
+// is not always the newest installed: Debian's wrapper runs the version of a
+// local cluster when the server has one.
+func newestPGTool(name string) string {
+	switch name {
+	case "pg_dump", "pg_restore", "psql":
+	default:
+		return ""
+	}
+	best, bestVer := "", -1
+	for _, dir := range pgToolDirs {
+		matches, _ := filepath.Glob(filepath.Join(dir, name))
+		for _, m := range matches {
+			ver := pgMajorFromPath(m)
+			if ver <= bestVer {
+				continue
+			}
+			if fi, err := os.Stat(m); err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+				continue
+			}
+			best, bestVer = m, ver
+		}
+	}
+	return best
+}
+
+// pgMajorFromPath reads the major version from a path such as
+// /usr/lib/postgresql/18/bin/pg_dump or /usr/pgsql-18/bin/pg_dump; -1 if none.
+func pgMajorFromPath(p string) int {
+	dir := filepath.Base(filepath.Dir(filepath.Dir(p)))
+	dir = strings.TrimPrefix(dir, "pgsql-")
+	n, err := strconv.Atoi(dir)
+	if err != nil {
+		return -1
+	}
+	return n
 }
 
 // firstLine summarises a tool's stderr for an error message: the first line

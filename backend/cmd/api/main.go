@@ -45,6 +45,7 @@ import (
 	serverapp "github.com/Fleetdock/fleetdock/backend/internal/app/server"
 	summaryapp "github.com/Fleetdock/fleetdock/backend/internal/app/summary"
 	tableviewapp "github.com/Fleetdock/fleetdock/backend/internal/app/tableview"
+	tlsca "github.com/Fleetdock/fleetdock/backend/internal/app/tlsca"
 	tokenapp "github.com/Fleetdock/fleetdock/backend/internal/app/token"
 	userapp "github.com/Fleetdock/fleetdock/backend/internal/app/user"
 	"github.com/Fleetdock/fleetdock/backend/internal/config"
@@ -177,6 +178,17 @@ func run() error {
 		SourceIPMode: cfg.GatewaySourceIPMode,
 	})
 	opsSvc.SetGatewayReconciler(endpointSvc)
+	// TLS for managed instances: the install's certificate authority,
+	// created on first start. Server certificates also name the gateway host.
+	var tlsHosts []string
+	if cfg.GatewayEnabled && cfg.GatewayPublicHost != "" {
+		tlsHosts = append(tlsHosts, cfg.GatewayPublicHost)
+	}
+	tlsSvc := tlsca.NewService(secretsSvc, serverRepo, tlsHosts...)
+	if err := tlsSvc.Ensure(ctx); err != nil {
+		return fmt.Errorf("tls authority: %w", err)
+	}
+	opsSvc.SetTLSIssuer(tlsSvc)
 	instanceSvc := instanceapp.NewService(instanceRepo, databaseRepo, secretsSvc, opsSvc)
 	databaseSvc := databaseapp.NewService(databaseRepo, instanceRepo, opsSvc)
 	databaseSvc.SetEndpointCleanup(endpointSvc)
@@ -190,6 +202,7 @@ func run() error {
 	accessSvc := dbaccessapp.NewService(postgres.NewDBAccessRepository(pool), secretsSvc)
 	dbadminSvc := dbadminapp.NewService(instanceRepo, databaseRepo, serverRepo, secretsSvc, accessSvc)
 	opsSvc.SetDatabaseDropHook(dbadminSvc.DropAccessRoles)
+	opsSvc.SetSchemaCopyHook(dbadminSvc.SchemaCopied)
 	opsSvc.SetAccessRoleResolver(dbadminSvc.WriteRoleCredentials)
 	consoleRepo := postgres.NewConsoleRepository(pool)
 	dbadminSvc.SetHistory(consoleRepo)
@@ -259,24 +272,28 @@ func run() error {
 	// scheduled backups, retention, alert evaluation + notification dispatch.
 	if cfg.WorkerEnabled {
 		go worker.New(worker.Deps{
-			Ops:                opsSvc,
-			Agents:             agentSvc,
-			Schedules:          scheduleSvc,
-			Notifications:      notifSvc,
-			Endpoints:          endpointSvc,
-			Credentials:        credentialSvc,
-			HeartbeatTimeout:   cfg.HeartbeatTimeout,
-			MetricsRetention:   cfg.MetricsRetention,
-			HousekeepingLock:   postgres.HousekeepingLock(pool),
-			Probe:              probeSvc,
-			Catalog:            catalogSvc,
-			SchemaHistory:      schemaSvc,
-			RowChanges:         rowChangeRepo,
-			BackupCopies:       copySvc,
-			RowChangeRetention: cfg.RowChangeRetention,
-			Audit:              auditSvc,
-			AuditRetention:     cfg.AuditRetention,
-			CatalogLock:        postgres.CatalogLock(pool),
+			Ops:                 opsSvc,
+			Agents:              agentSvc,
+			Schedules:           scheduleSvc,
+			Notifications:       notifSvc,
+			Endpoints:           endpointSvc,
+			Credentials:         credentialSvc,
+			JobPollInterval:     cfg.JobPollInterval,
+			AlertInterval:       cfg.AlertInterval,
+			HealthCheckInterval: cfg.HealthCheckInterval,
+			HeartbeatTimeout:    cfg.HeartbeatTimeout,
+			MetricsRetention:    cfg.MetricsRetention,
+			HousekeepingLock:    postgres.HousekeepingLock(pool),
+			HealthLock:          postgres.HealthLock(pool),
+			Probe:               probeSvc,
+			Catalog:             catalogSvc,
+			SchemaHistory:       schemaSvc,
+			RowChanges:          rowChangeRepo,
+			BackupCopies:        copySvc,
+			RowChangeRetention:  cfg.RowChangeRetention,
+			Audit:               auditSvc,
+			AuditRetention:      cfg.AuditRetention,
+			CatalogLock:         postgres.CatalogLock(pool),
 		}).Run(ctx)
 		// Fleet queries run on every replica, each taking its share.
 		go fleetapp.NewRunner(fleetSvc, cfg.FleetMaxParallel, cfg.FleetRunRetention).Run(ctx)
@@ -334,6 +351,7 @@ func run() error {
 		Install:           httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),
 		Notifications:     httpapi.NewNotificationHandler(notifSvc),
 		Overview:          httpapi.NewOverviewHandler(summarySvc, agentSvc),
+		TLSCA:             tlsSvc,
 		Docs:              httpapi.NewDocsHandler(),
 		Authn:             httpapi.NewAuthenticator(authSvc),
 		Resolver:          resolver,

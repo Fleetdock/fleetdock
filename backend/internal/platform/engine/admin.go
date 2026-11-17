@@ -30,6 +30,12 @@ type TableInfo struct {
 	DataBytes  int64  `json:"data_bytes"`
 	IndexBytes int64  `json:"index_bytes"`
 	Comment    string `json:"comment"`
+	// Partitioned (PostgreSQL) marks a partitioned table; its rows and sizes
+	// are those of all its partitions.
+	Partitioned bool `json:"partitioned,omitempty"`
+	// PartitionOf (PostgreSQL) is the parent ("schema.table") of a
+	// partition.
+	PartitionOf string `json:"partition_of,omitempty"`
 }
 
 // RowsPage is a page of table data. Values are stringified; nil = SQL NULL.

@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // pgLiteral quotes a string literal the way quote_literal() does: an E”
@@ -81,11 +83,23 @@ func (pg *Postgres) ddlTx(ctx context.Context, p ConnParams, database string,
 	defer func() { _ = tx.Rollback(ctx) }()
 	for _, s := range stmts {
 		if _, err := tx.Exec(ctx, s); err != nil {
-			return err
+			return withExtensionHint(err)
 		}
 	}
 	return tx.Commit(ctx)
 }
+
+// withExtensionHint explains a missing pgvector type: the column editor
+// offers vector types, but they only exist once the extension is created.
+func withExtensionHint(err error) error {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) && pe.Code == "42704" && pgvectorTypeRe.MatchString(pe.Message) { // undefined_object
+		return fmt.Errorf("%w (vector types come from pgvector: run CREATE EXTENSION vector in this database first)", err)
+	}
+	return err
+}
+
+var pgvectorTypeRe = regexp.MustCompile(`^type "(vector|halfvec|sparsevec)" does not exist`)
 
 // resolved resolves "schema.table" to its quoted form and schema.
 func (pg *Postgres) resolved(ctx context.Context, conn *pgx.Conn, table string) (string, string, error) {

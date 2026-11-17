@@ -24,6 +24,10 @@ maps them to the names in the code and API.
     detail page; deleting one removes the container (and, if you confirm, its
     data volume). Provisioning needs Docker on the server — `install.sh`
     installs it automatically.
+    With **Turn on TLS** (at creation, or later from the server's menu) the
+    engine serves TLS with a certificate from the install's own certificate
+    authority; **Download CA certificate** gives clients what they need to
+    verify it.
 - **Database** — a logical database on an instance. If the instance has admin
   credentials, creating a database physically creates it (via an operation);
   otherwise it's a metadata-only registration.
@@ -114,7 +118,21 @@ Backend (Go):
     search, a neighbours view and PNG/SVG export
     (`GET /v1/databases/{id}/diagram`);
   - PostgreSQL schemas: the table tree and the diagram show the schemas
-    you pick (remembered per database); searching still finds the others;
+    you pick (remembered per database), empty ones included; searching
+    still finds the others. From a schema's menu: create, rename, change
+    owner, comment, drop (CASCADE only after seeing what depends on it),
+    copy to a new schema (with or without rows, in this or another
+    database), back up or export it, and table statistics with VACUUM
+    ANALYZE. Tables, views, sequences, functions and types can be moved
+    between schemas. Partitioned tables list their partitions under them;
+    sequences show and set their next value; materialized views refresh;
+  - PostgreSQL access: per schema, which roles have USAGE and CREATE and the
+    default privileges of new objects; the search_path of the database and
+    of roles (Access tab), and per SQL console session;
+  - PostgreSQL extensions: the **Extensions** tab lists installed and
+    available extensions and installs, updates and removes them; new
+    PostgreSQL servers can include pgvector, and the table editor offers
+    vector columns;
   - saved table views: named filters, sort and columns, private or shared,
     with a link (`/v1/databases/{id}/table-views`);
   - full screen (Alt+Shift+F) hides the app's sidebar and top bar; choose
@@ -249,10 +267,12 @@ views/routines, SQL console, per-database users & grants with grant/revoke).
 - **Scheduled backups** — cron-scheduled recurring backups per database with a
   retention window; the worker enqueues them and prunes expired backups (object
   - metadata). Managed from the **Schedules** page.
-- **Notifications & alerts** — email / Slack / webhook channels and alert rules
+- **Notifications & alerts** — email / Slack / webhook / PagerDuty / Pushover channels and alert rules
   on server metrics (CPU, memory %, disk %, connections). Backup failures and
   offline servers notify automatically; the worker evaluates rules and delivers
-  events via a transactional outbox. Managed on the **Notifications** page.
+  events via a transactional outbox. PagerDuty alerts update one incident per
+  rule and server, then resolve it on recovery. Pushover sends critical alerts
+  at high priority and recoveries quietly. Managed on the **Notifications** page.
 - **Audit log** — Activity → **Audit log** lists who did what: sign-ins
   (and failed ones), users, roles, grants and tokens, servers, database
   servers and databases, backups, storage and schedules, notification

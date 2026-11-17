@@ -126,6 +126,25 @@ func TestChannelSecretsAreSealed(t *testing.T) {
 	}
 }
 
+func TestPagerDutyRoutingKeyIsSealed(t *testing.T) {
+	ctx := context.Background()
+	repo := &memChannels{items: map[uuid.UUID]*notifdom.Channel{}}
+	store := memSecrets{}
+	svc := NewService(repo, nil, nil).WithSecrets(store)
+
+	c, err := svc.CreateChannel(ctx, ChannelInput{Name: "on-call", Type: "pagerduty",
+		Config: map[string]string{"routing_key": "pd-secret"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := repo.items[c.ID].Config["routing_key"]; got != sealedValue(c.ID, "routing_key") {
+		t.Fatalf("routing key stored as %q", got)
+	}
+	if open, _ := svc.open(ctx, repo.items[c.ID]); open["routing_key"] != "pd-secret" {
+		t.Fatalf("opened config = %v", open)
+	}
+}
+
 func TestSealExisting(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.New()
@@ -148,5 +167,28 @@ func TestSealExisting(t *testing.T) {
 	}
 	if store[channelSecretRef(id, "webhook_url")] != "https://hooks.slack.com/services/X" {
 		t.Fatalf("store = %v", store)
+	}
+}
+
+func TestPushoverKeysAreSealed(t *testing.T) {
+	ctx := context.Background()
+	repo := &memChannels{items: map[uuid.UUID]*notifdom.Channel{}}
+	svc := NewService(repo, nil, nil).WithSecrets(memSecrets{})
+
+	c, err := svc.CreateChannel(ctx, ChannelInput{Name: "phones", Type: "pushover",
+		Config: map[string]string{"app_token": "app-secret", "user_key": "user-secret", "device": "phone"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := repo.items[c.ID].Config
+	if stored["app_token"] != sealedValue(c.ID, "app_token") || stored["user_key"] != sealedValue(c.ID, "user_key") {
+		t.Fatalf("pushover keys stored as %v", stored)
+	}
+	if stored["device"] != "phone" {
+		t.Fatalf("device stored as %q", stored["device"])
+	}
+	open, _ := svc.open(ctx, repo.items[c.ID])
+	if open["app_token"] != "app-secret" || open["user_key"] != "user-secret" {
+		t.Fatalf("opened config = %v", open)
 	}
 }

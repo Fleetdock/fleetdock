@@ -176,7 +176,8 @@ func schemaList(schemas []string) []string {
 }
 
 // SchemaCounts lists the user schemas with their tables and views (those the
-// login can read), including schemas without any.
+// login can read), including schemas without any, with each schema's owner,
+// comment and size.
 func (pg *Postgres) SchemaCounts(ctx context.Context, p ConnParams, database string) ([]SchemaCount, error) {
 	if !validDBName(database) {
 		return nil, fmt.Errorf("invalid database name")
@@ -189,12 +190,16 @@ func (pg *Postgres) SchemaCounts(ctx context.Context, p ConnParams, database str
 	rows, err := conn.Query(ctx, `
 		SELECT n.nspname,
 		       count(c.oid) FILTER (WHERE c.relkind IN ('r','p','f')),
-		       count(c.oid) FILTER (WHERE c.relkind IN ('v','m'))
+		       count(c.oid) FILTER (WHERE c.relkind IN ('v','m')),
+		       pg_get_userbyid(n.nspowner),
+		       coalesce(obj_description(n.oid, 'pg_namespace'), ''),
+		       (SELECT coalesce(sum(pg_total_relation_size(r.oid)), 0)::bigint
+		          FROM pg_class r WHERE r.relnamespace = n.oid AND r.relkind IN ('r','m'))
 		FROM pg_namespace n
 		LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r','p','f','v','m')
 		     AND NOT c.relispartition AND has_any_column_privilege(c.oid, 'SELECT')
 		WHERE `+pgUserSchema("n.nspname")+`
-		GROUP BY n.nspname
+		GROUP BY n.oid, n.nspname, n.nspowner
 		ORDER BY n.nspname`)
 	if err != nil {
 		return nil, err
@@ -203,7 +208,7 @@ func (pg *Postgres) SchemaCounts(ctx context.Context, p ConnParams, database str
 	out := []SchemaCount{}
 	for rows.Next() {
 		var c SchemaCount
-		if err := rows.Scan(&c.Name, &c.Tables, &c.Views); err != nil {
+		if err := rows.Scan(&c.Name, &c.Tables, &c.Views, &c.Owner, &c.Comment, &c.Bytes); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

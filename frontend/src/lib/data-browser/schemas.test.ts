@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  mergeSchemas,
   defaultSelection,
   resolveSelection,
   selectionLabel,
@@ -57,5 +58,33 @@ describe("schema selection", () => {
     expect(selectionLabel({ all: false, schemas: ["public"] }, summary)).toBe("public");
     expect(selectionLabel({ all: false, schemas: ["public", "audit"] }, summary)).toBe("2 schemas");
     expect(selectionLabel({ all: true }, summary)).toBe("All schemas");
+  });
+});
+
+describe("mergeSchemas", () => {
+  const fromTables = summarizeSchemas([
+    { schema: "public", kind: "table" },
+    { schema: "sales", kind: "view" },
+  ]);
+
+  it("adds schemas without tables, keeping the order", () => {
+    const merged = mergeSchemas(fromTables, [
+      { name: "staging", tables: 0, views: 0, owner: "app" },
+      { name: "public", tables: 1, views: 0, owner: "postgres", comment: "standard", bytes: 8192 },
+      { name: "sales", tables: 0, views: 1 },
+    ]);
+    expect(merged.map((s) => s.name)).toEqual(["public", "sales", "staging"]);
+    expect(merged[2]).toEqual({ name: "staging", tables: 0, views: 0, owner: "app" });
+    expect(merged[0]).toEqual({ name: "public", tables: 1, views: 0, owner: "postgres", comment: "standard", bytes: 8192 });
+  });
+
+  it("keeps the table list's counts", () => {
+    const merged = mergeSchemas(fromTables, [{ name: "public", tables: 7, views: 3 }]);
+    expect(merged[0].tables).toBe(1);
+  });
+
+  it("returns the summary unchanged without a server list", () => {
+    expect(mergeSchemas(fromTables, undefined)).toBe(fromTables);
+    expect(mergeSchemas(fromTables, [])).toBe(fromTables);
   });
 });

@@ -11,6 +11,7 @@ import { SqlEditor, type SqlEditorHandle } from "@/components/sql-editor";
 import { ResultGrid } from "@/components/data-browser/result-grid";
 import { dialectOf, type Dialect } from "@/lib/data-browser/cells";
 import { load, save } from "@/lib/data-browser/storage";
+import { SessionSchemaSelect, useSessionSchema } from "./session-schema";
 import { randomUUID } from "@/lib/uuid";
 import {
   Button,
@@ -79,6 +80,7 @@ export function QueryConsole({
 }) {
   const run = useRunQuery(databaseId);
   const dialect = dialectOf(engine);
+  const session = useSessionSchema(databaseId, engine === "postgres");
   const [limit, setLimit] = useState<number>(() => {
     const v = Number(load("console-limit"));
     return (ROW_LIMITS as readonly number[]).includes(v) ? v : DEFAULT_LIMIT;
@@ -196,6 +198,7 @@ export function QueryConsole({
         limit,
         query_id: id,
         preview,
+        search_path: session.searchPath,
       });
       setOutput(res);
       setPlan(null);
@@ -302,6 +305,9 @@ export function QueryConsole({
                   Clear
                 </Button>
               </>
+            ) : null}
+            {engine === "postgres" ? (
+              <SessionSchemaSelect databaseId={databaseId} value={session.schema} onChange={session.setSchema} />
             ) : null}
             <Select
               size="sm"

@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -218,7 +219,13 @@ type ProvisionInput struct {
 	Engine        string
 	EngineVersion string
 	Port          int
-	CreatedBy     *uuid.UUID
+	// PGVector runs a PostgreSQL image with the pgvector extension
+	// available (postgres only).
+	PGVector bool
+	// TLS starts the engine with TLS on, with a certificate from the
+	// install's certificate authority.
+	TLS       bool
+	CreatedBy *uuid.UUID
 }
 
 // Provision creates a managed instance and enqueues a job for the server's
@@ -236,6 +243,10 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 		return nil, nil, apperr.Invalid("engine", fmt.Sprintf("Fleetdock cannot create %s instances yet; connect an existing server instead", eng))
 	}
 	inst, err := instancedom.NewProvisioned(serverID, in.Name, eng, in.EngineVersion, in.Port)
+	if err != nil {
+		return nil, nil, err
+	}
+	image, tag, err := provisionImage(eng, in.EngineVersion, in.PGVector)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -259,7 +270,7 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 	}
 
 	job, err := s.ops.Create(ctx, jobdom.TypeProvisionInstance, "instance", &inst.ID, &serverID,
-		operationapp.Params{InstanceID: inst.ID.String(), Image: string(eng), Version: in.EngineVersion}, in.CreatedBy)
+		operationapp.Params{InstanceID: inst.ID.String(), Image: image, Version: in.EngineVersion, Tag: tag, TLS: in.TLS}, in.CreatedBy)
 	if err != nil {
 		_ = s.repo.SetStatus(ctx, inst.ID, instancedom.StatusError)
 		return nil, nil, err
@@ -288,6 +299,24 @@ func (s *Service) Lifecycle(ctx context.Context, id, action string, createdBy *u
 		return nil, apperr.Invalid("action", "action must be start, stop or restart")
 	}
 	return s.ops.Create(ctx, typ, "instance", &inst.ID, inst.ServerID,
+		operationapp.Params{InstanceID: inst.ID.String()}, createdBy)
+}
+
+// ConfigureTLS enqueues turning TLS on for a provisioned instance, or renewing
+// its certificate. The agent recreates the container (a short restart; data
+// is kept) and puts the previous one back if the engine doesn't start.
+func (s *Service) ConfigureTLS(ctx context.Context, id string, createdBy *uuid.UUID) (*jobdom.Job, error) {
+	inst, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !inst.Provisioned() {
+		return nil, apperr.Invalid("id", "TLS can only be set up on database servers Fleetdock created")
+	}
+	if inst.Status != instancedom.StatusRunning && inst.Status != instancedom.StatusStopped {
+		return nil, apperr.Conflict("the database server is " + string(inst.Status) + "; try again once it is running or stopped")
+	}
+	return s.ops.Create(ctx, jobdom.TypeConfigureTLS, "instance", &inst.ID, inst.ServerID,
 		operationapp.Params{InstanceID: inst.ID.String()}, createdBy)
 }
 
@@ -724,4 +753,21 @@ func clampLimit(l int) int {
 	default:
 		return l
 	}
+}
+
+// provisionImage picks the Docker image (and a tag overriding the version,
+// if any) to provision eng at version. With pgvector it is the official
+// pgvector/pgvector image, which is tagged by PostgreSQL major ("pg17").
+func provisionImage(eng instancedom.Engine, version string, pgvector bool) (image, tag string, err error) {
+	if !pgvector {
+		return string(eng), "", nil
+	}
+	if eng != instancedom.EnginePostgres {
+		return "", "", apperr.Invalid("pgvector", "pgvector is only available for PostgreSQL")
+	}
+	major, err := strconv.Atoi(strings.SplitN(strings.TrimSpace(version), ".", 2)[0])
+	if err != nil || major < 13 {
+		return "", "", apperr.Invalid("engine_version", "pgvector needs PostgreSQL 13 or newer, given as a major version such as 17")
+	}
+	return "pgvector/pgvector", "pg" + strconv.Itoa(major), nil
 }

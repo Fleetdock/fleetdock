@@ -157,10 +157,20 @@ func TestIntegrationCatalog(t *testing.T) {
 					// items, notes, staff (self) and billing.invoices -> public.staff
 					t.Errorf("public relations = %+v, %v", pub, err)
 				}
+				// An empty schema is listed too, with its owner and comment.
+				mustQuery(t, c.eng, root, db, "CREATE SCHEMA staging", true)
+				mustQuery(t, c.eng, root, db, "COMMENT ON SCHEMA staging IS 'loads land here'", true)
 				counts, err := c.eng.SchemaCounts(ctx, root, db)
-				if err != nil || len(counts) != 2 || counts[0].Name != "billing" || counts[0].Tables != 2 ||
-					counts[1].Name != "public" || counts[1].Tables != 4 || counts[1].Views != 1 {
-					t.Errorf("schema counts = %+v, %v", counts, err)
+				if err != nil || len(counts) != 3 || counts[0].Name != "billing" || counts[0].Tables != 2 ||
+					counts[1].Name != "public" || counts[1].Tables != 4 || counts[1].Views != 1 ||
+					counts[2].Name != "staging" || counts[2].Tables != 0 || counts[2].Views != 0 {
+					t.Fatalf("schema counts = %+v, %v", counts, err)
+				}
+				if counts[2].Owner != root.User || counts[2].Comment != "loads land here" || counts[2].Bytes != 0 {
+					t.Errorf("staging = %+v", counts[2])
+				}
+				if counts[1].Bytes <= 0 || counts[0].Bytes <= 0 {
+					t.Errorf("sizes: billing %d, public %d", counts[0].Bytes, counts[1].Bytes)
 				}
 			} else if counts, err := c.eng.SchemaCounts(ctx, root, db); err != nil || counts != nil {
 				t.Errorf("mysql schema counts = %+v, %v", counts, err)

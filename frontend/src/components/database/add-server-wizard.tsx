@@ -5,7 +5,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 
 import { ArrowLeft, Cloud, Plus, Server as ServerIcon } from "lucide-react";
 
-import { Button, ButtonLink, ErrorText, Field, Input, Modal, Select, Spinner } from "@/components/ui";
+import { Button, ButtonLink, Checkbox, ErrorText, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { fieldError, friendlyError } from "@/lib/errors";
 import { ENGINE_IDS, ENGINES, engineSupports, type EngineId } from "@/lib/engines";
 import { useCreateInstance, useDatabases, useProbeInstance, useProvisionInstance, useServers } from "@/lib/hooks";
@@ -64,6 +64,8 @@ export function AddServerWizard({
   const [engine, setEngine] = useState<EngineId>("postgres");
   const [version, setVersion] = useState(ENGINES.postgres.version);
   const [port, setPort] = useState(String(ENGINES.postgres.port));
+  const [pgvector, setPgvector] = useState(false);
+  const [serverTLS, setServerTLS] = useState(true);
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
@@ -81,6 +83,7 @@ export function AddServerWizard({
   function close() {
     setMode(serverId ? "provision" : null);
     setName("");
+    setPgvector(false);
     setHost("");
     setUsername("");
     setPassword("");
@@ -109,7 +112,10 @@ export function AddServerWizard({
     setError(null);
     try {
       if (mode === "provision") {
-        const res = await provision.mutateAsync({ server_id: server, name, engine, engine_version: version, port: Number(port) });
+        const res = await provision.mutateAsync({ server_id: server, name, engine, engine_version: version, port: Number(port),
+          pgvector: engine === "postgres" && pgvector,
+          tls: serverTLS,
+        });
         setDone({ instance: res.instance, operationId: res.operation_id });
       } else {
         const inst = await create.mutateAsync({
@@ -221,6 +227,24 @@ export function AddServerWizard({
               ))}
             </datalist>
           </div>
+
+          {mode === "provision" ? (
+            <Checkbox
+              label="Turn on TLS"
+              hint="Encrypts connections with a certificate from this install's certificate authority. Clients can use sslmode=require."
+              checked={serverTLS}
+              onChange={(e) => setServerTLS(e.target.checked)}
+            />
+          ) : null}
+
+          {mode === "provision" && engine === "postgres" ? (
+            <Checkbox
+              label="Include pgvector"
+              hint={<>Vector similarity search for embeddings. Turn it on in a database with <code>CREATE EXTENSION vector</code>.</>}
+              checked={pgvector}
+              onChange={(e) => setPgvector(e.target.checked)}
+            />
+          ) : null}
 
           <div className="form-grid">
             <Field label="Name" hint="How it appears in Fleetdock, e.g. “production” or “analytics”." error={fieldError(error, "name")}>

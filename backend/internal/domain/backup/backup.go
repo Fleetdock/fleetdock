@@ -32,17 +32,19 @@ type Backup struct {
 	DestinationID *uuid.UUID
 	Type          string // manual | scheduled
 	Engine        string // mariadb-dump
-	Status        Status
-	StorageURL    *string
-	SizeBytes     *int64
-	Checksum      *string
-	StartedAt     *time.Time
-	CompletedAt   *time.Time
-	ExpiresAt     *time.Time
-	Error         *string
-	CreatedBy     *uuid.UUID
-	CreatedAt     time.Time
-	Version       int
+	// SchemaName is set on a backup of one PostgreSQL schema.
+	SchemaName  *string
+	Status      Status
+	StorageURL  *string
+	SizeBytes   *int64
+	Checksum    *string
+	StartedAt   *time.Time
+	CompletedAt *time.Time
+	ExpiresAt   *time.Time
+	Error       *string
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	Version     int
 	// Verification: the latest test restore (nil status = never verified).
 	VerifyStatus *string
 	VerifiedAt   *time.Time

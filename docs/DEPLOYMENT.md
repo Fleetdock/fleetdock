@@ -110,7 +110,7 @@ when the main record cannot carry raw TCP — most often a Cloudflare-proxied
 fleetdock status                  # container health and readiness
 fleetdock credentials             # dashboard URL and admin login
 fleetdock logs [service] -f
-fleetdock update [--tag v0.11.0]   # pull and restart
+fleetdock update [--tag v0.12.0]   # pull and restart
 fleetdock domain new.example.com  # move to a new hostname
 fleetdock gateway enable|disable  # external database access
 fleetdock doctor                  # DNS, certificates, reachability, disk
@@ -302,8 +302,11 @@ the API runs without Docker.)
 ## SMTP (optional)
 
 Set `FLEETDOCK_SMTP_*` variables to enable email notification channels. When
-`FLEETDOCK_SMTP_HOST` is empty, email delivery is disabled; Slack and webhook
-channels still work.
+`FLEETDOCK_SMTP_HOST` is empty, email delivery is disabled; Slack, webhook,
+PagerDuty and Pushover channels still work. PagerDuty uses an Events API v2
+routing key and Pushover an application API token plus a user or group key,
+both configured on the **Notifications** page. The server needs outbound HTTPS
+to `events.pagerduty.com` / `api.pushover.net` for these.
 
 ## Resource sizing
 

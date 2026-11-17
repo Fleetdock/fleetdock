@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+Upgrading: applies one new migration (`0032_pushover_notifications`).
+
+Upgrading: one new migration (`0032_instance_tls`). TLS on managed servers
+needs an agent from this release; older agents create servers without it and
+`tls_enabled` stays false.
+
+### Added
+
+- **Pushover notification channels.** Send alerts and events to phones and
+  desktops through Pushover with an application API token and a user or group
+  key, optionally limited to one device. Critical alerts are sent at high
+  priority (they bypass quiet hours), warnings at normal priority, and
+  informational events and recoveries quietly. Both keys are encrypted like the
+  other channel secrets, and a failed test shows Pushover's own reason
+  ("application token is invalid").
+
+- **TLS for the database servers Fleetdock creates.** Each install gets its own
+  certificate authority (created on first start, kept in the encrypted secret
+  store). Creating a server offers **Turn on TLS** (on by default in the
+  dashboard; `"tls": true` on `POST /v1/instances/provision`): the agent writes
+  a certificate valid for the server's address and hostname, localhost and the
+  gateway host to `$FLEETDOCK_STATE_DIR/tls/<container>/`, mounts it read-only
+  and starts PostgreSQL with `ssl=on`, or MySQL/MariaDB with `--ssl-cert`.
+  Clients can use `sslmode=require`, or verify the server with the authority's
+  certificate (`GET /v1/tls/ca-certificate`, **Download CA certificate** in the
+  server's menu). Existing servers get **Turn on TLS** in their menu
+  (`POST /v1/instances/{id}/tls`, a `configure_tls` operation): the container
+  is recreated from the same image, volume and port with the certificate, and
+  the previous one is put back if the engine doesn't start. The same action
+  renews the certificate (valid 5 years). Servers report `tls_enabled` and
+  `tls_expires_at`. (#150, thanks @shahawiz)
+
 - **ClickHouse database servers.** Connect an existing ClickHouse server
   (self-hosted or ClickHouse Cloud) under **Databases → Connect database
   server**. Fleetdock reaches it over the HTTP interface, directly or through
@@ -31,6 +63,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ClickHouse servers as containers, public access through the gateway,
   table-structure editing, write previews and query insights. Migration
   `0030` adds the engine, its secret kind and its connectivity protocol.
+
+### Fixed
+
+- The data browser's schema and table actions (new, rename, change owner,
+  comment, copy, back up, drop, VACUUM) are available in PostgreSQL's
+  `postgres` database too; it was read-only there like MySQL's `mysql` and
+  `sys`. Schemas can also be copied or restored into and out of it. As
+  before, opening a system database needs write access to its server (#153).
+- **Backups of PostgreSQL 18 on agent-managed servers** failed with
+  `pg_dump: … server version: 18.x; pg_dump version: 17.x` on hosts whose
+  distribution ships an older client (Debian 13 ships 17). The agent
+  installer now installs `postgresql-client-18` from apt.postgresql.org on
+  Debian/Ubuntu (`postgresql18-client` on Alpine), and also refreshes the
+  client tools when it updates an enrolled agent. The agent and control plane
+  now run the newest `pg_dump` / `psql` installed under
+  `/usr/lib/postgresql/*/bin` or `/usr/pgsql-*/bin` rather than whatever is
+  first on `PATH`, and a version mismatch error says how to fix it.
+
+## [0.12.0] - 2026-11-15
+
+Upgrading: `fleetdock update` (or pulling the new image) applies three new
+migrations (`0030_copy_schema`, `0030_pagerduty_notifications`,
+`0031_schema_backups`). Update the agents afterwards: copying a schema,
+restoring a schema backup and creating a server with pgvector need an agent
+from this release on managed servers; everything else works with 0.11
+agents.
+
+Thanks to @shubhambhar007 and @shahawiz for their contributions to this
+release.
+
+### Added
+
+- **Manage PostgreSQL schemas.** From a schema's menu in the data browser:
+  New schema, Rename, Change owner, Comment and Drop schema. Dropping shows
+  what the schema holds and what depends on it, and needs CASCADE and the
+  schema's name typed when it is not empty. API: `POST
+  /v1/databases/{id}/schemas`, `PATCH …/schemas/{schema}`, `GET
+  …/schemas/{schema}/dependents`, `POST …/schemas/{schema}/drop`. (#137, @Ahmadshoh)
+- **Move PostgreSQL objects between schemas.** Tables, views, sequences,
+  functions and procedures have **Move to schema…** in the data browser's
+  tree; a table takes its indexes, constraints and serial sequences along.
+  API: `POST /v1/databases/{id}/objects/move`. (#138, @Ahmadshoh)
+- **Copy a PostgreSQL schema.** **Copy to new schema…** in a schema's menu
+  copies it, with its rows or only its structure, to a new schema in the
+  same database or another one on the same server. Views, foreign keys,
+  defaults and sequences in the copy point at the copy; function bodies are
+  copied unchanged. Runs as an operation (`copy_schema`); managed servers
+  need an updated agent. API: `POST …/schemas/{schema}/copy`. (#139, @Ahmadshoh)
+- **PostgreSQL schema privileges, default privileges and search_path.** The
+  database's Access tab shows, per schema, which roles have USAGE and
+  CREATE and what new objects are granted, and changes both (this also
+  needs write access to the server). The search_path of the database and of
+  roles can be set there, and the SQL console has a schema picker for its
+  session. (#140, @Ahmadshoh)
+- **PostgreSQL housekeeping in the data browser.** Sequences show their next
+  value and can be set; materialized views can be refreshed (also
+  concurrently); tables can be vacuumed, analyzed and reindexed; a schema's
+  **Table statistics…** lists sizes, dead rows and the last vacuum and
+  analyze. Partitioned tables now appear, with their partitions under them.
+  (#141, @Ahmadshoh)
+- **Back up, restore and export one PostgreSQL schema.** The backup dialog
+  can back up or download a single schema, also from a schema's menu in the
+  data browser. A schema backup restores into any PostgreSQL database, under
+  its own name (optionally replacing it) or a new one. API: `schema` on `POST
+  /v1/backups`, `POST /v1/backups/{id}/restore-schema`, `?schema=` on the
+  SQL download. (#142, @Ahmadshoh)
+- **PostgreSQL extensions.** A new Extensions tab on the database page lists
+  installed extensions and those the server offers, and installs, updates and
+  removes them (this also needs write access to the server). A refusal says
+  whether a superuser is needed. API: `GET/POST
+  /v1/databases/{id}/extensions`, `POST …/extensions/{name}/update`, `POST
+  …/extensions/{name}/drop`. (#143, @Ahmadshoh)
+- **pgvector for new PostgreSQL servers.** Creating a PostgreSQL database
+  server offers "Include pgvector", which runs the official
+  `pgvector/pgvector` image for that major version, so `CREATE EXTENSION
+  vector` works. Needs an agent from this release. Over the API, pass
+  `"pgvector": true` to `POST /v1/instances/provision`. Existing servers are
+  untouched. (#144, thanks @shahawiz)
+- **Vector columns in the table editor.** PostgreSQL tables accept `vector`,
+  `halfvec` and `sparsevec` columns (listed under "Vector (pgvector)", or any
+  size via Custom…). Adding one to a database without the extension says to
+  run `CREATE EXTENSION vector` first. (#144, thanks @shahawiz)
+- **PagerDuty notification channels.** Alerts open a PagerDuty incident
+  through Events API v2, one per rule and server, and resolve it on
+  recovery; failed backups and offline servers open their own incidents.
+  Informational events are not sent, and **Test** resolves its incident right
+  away. The routing key is stored encrypted. (#112, thanks @shubhambhar007)
+- **Worker intervals are configurable.** `FLEETDOCK_JOB_POLL_INTERVAL`
+  (3s), `FLEETDOCK_ALERT_INTERVAL` (15s) and `FLEETDOCK_HEALTH_CHECK_INTERVAL`
+  (1m) set how often queued operations are claimed, alerts are evaluated and
+  database servers are probed. Health probes now run on their own, so slow
+  ones no longer delay backups or alerts. An invalid value stops the control
+  plane from starting. (#111, thanks @shubhambhar007)
+
+### Fixed
+
+- **Access tab on PostgreSQL 16 and older.** The database's grants list
+  failed with "information_schema.schema_privileges does not exist"; it now
+  reads the schema privileges directly. (#140, @Ahmadshoh)
+- **PostgreSQL schemas without tables are shown.** The data browser listed
+  only schemas holding a table or view; empty ones now show in the schema
+  picker and the tree, with **Create table here**. Create table opens in the
+  chosen schema instead of always `public`. API: `GET
+  /v1/databases/{id}/schemas` lists every schema with its owner, comment and
+  size. (#136, @Ahmadshoh)
 
 ## [0.11.0] - 2026-11-11
 
@@ -948,7 +1085,8 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Fleetdock/fleetdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Fleetdock/fleetdock/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Fleetdock/fleetdock/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/Fleetdock/fleetdock/compare/v0.9.2...v0.9.3

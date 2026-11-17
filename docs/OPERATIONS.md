@@ -79,14 +79,14 @@ Stop the API during restore to avoid concurrent writes.
 
 ```bash
 fleetdock update              # latest
-fleetdock update --tag v0.11.0 # a specific release
+fleetdock update --tag v0.12.0 # a specific release
 ```
 
 ### Compose (build from source)
 
 ```bash
 git fetch origin
-git checkout v0.11.0  # or main for latest
+git checkout v0.12.0  # or main for latest
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
@@ -156,6 +156,23 @@ migrations). What changes on the way:
    passes `FLEETDOCK_ENCRYPTION_KEY_ID`, `FLEETDOCK_ENCRYPTION_KEYS_OLD` and
    `FLEETDOCK_METRICS_TOKEN` to the container (`fleetdock update` fetches it).
 
+### Upgrading to 0.12
+
+0.12 upgrades in place from 0.11 with `fleetdock update --tag v0.12.0` (or by
+pulling the image and restarting). It applies three migrations: two new
+operation types (copying a PostgreSQL schema, restoring a schema backup), a
+`schema_name` on backups, and the PagerDuty channel type.
+
+Then update the agents (below). 0.11 agents keep working, but on managed
+servers copying a schema, restoring a schema backup and creating a
+PostgreSQL server with pgvector need a 0.12 agent; an older one fails those
+operations with "unsupported operation type" or an image it cannot pull.
+
+New, optional settings: `FLEETDOCK_JOB_POLL_INTERVAL`,
+`FLEETDOCK_ALERT_INTERVAL` and `FLEETDOCK_HEALTH_CHECK_INTERVAL`
+([CONFIGURATION.md](CONFIGURATION.md)). Unlike other durations, an invalid
+value for one of them stops the control plane from starting.
+
 ### Updating agents
 
 Agents keep working across a control-plane upgrade, but each release may fix
@@ -190,7 +207,8 @@ on the new one.
 ## Encryption key rotation
 
 Stored credentials (database server passwords, SSH keys, backup storage keys,
-notification webhook URLs and SMTP passwords) are **envelope-encrypted**: each
+notification webhook URLs, SMTP passwords, PagerDuty routing keys and Pushover
+tokens) are **envelope-encrypted**: each
 has its own data key, wrapped by `FLEETDOCK_ENCRYPTION_KEY`. Rotating the key
 re-wraps the data keys only; the encrypted payloads are untouched.
 
@@ -300,6 +318,11 @@ time (PostgreSQL advisory lock) and migrations serialise. Two caveats: cancellin
 a running SQL console query only works when the request reaches the replica that
 runs it (use sticky sessions), and operations orphaned by a crashed replica are
 failed automatically after 2h15m (the maximum run time plus margin).
+
+Metric alert firing state is kept in memory. If the API restarts while an alert
+is firing and the metric recovers before the next evaluation, the resolve event
+may not be emitted; review and resolve any stale PagerDuty incident after such
+a restart.
 
 ## Admin password reset
 

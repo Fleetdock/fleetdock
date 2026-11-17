@@ -2,6 +2,8 @@ package executor
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -49,5 +51,52 @@ func TestEngineContainerDataPath(t *testing.T) {
 		if got := engineContainerFor(c.eng, c.version).dataPath; got != c.want {
 			t.Errorf("%s %s: %s, want %s", c.eng, c.version, got, c.want)
 		}
+	}
+}
+
+func TestImageRef(t *testing.T) {
+	cases := []struct {
+		eng  string
+		spec ProvisionSpec
+		want string
+	}{
+		{"mariadb", ProvisionSpec{Version: "11.4"}, "mariadb:11.4"},
+		{"postgres", ProvisionSpec{Image: "postgres", Version: "17"}, "postgres:17"},
+		{"postgres", ProvisionSpec{Image: "pgvector/pgvector", Version: "17", Tag: "pg17"}, "pgvector/pgvector:pg17"},
+	}
+	for _, c := range cases {
+		if got := imageRef(c.eng, &c.spec); got != c.want {
+			t.Errorf("imageRef(%q, %+v) = %q, want %q", c.eng, c.spec, got, c.want)
+		}
+	}
+}
+
+func TestNewestPGToolPicksHighestMajor(t *testing.T) {
+	root := t.TempDir()
+	for _, v := range []string{"9.6", "16", "18", "17"} {
+		dir := filepath.Join(root, "lib", v, "bin")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "pg_dump"), nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A newer major without the tool installed must not win.
+	if err := os.MkdirAll(filepath.Join(root, "lib", "19", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := pgToolDirs
+	pgToolDirs = []string{filepath.Join(root, "lib", "*", "bin")}
+	t.Cleanup(func() { pgToolDirs = old })
+
+	if got, want := newestPGTool("pg_dump"), filepath.Join(root, "lib", "18", "bin", "pg_dump"); got != want {
+		t.Errorf("newestPGTool(pg_dump) = %q, want %q", got, want)
+	}
+	if got := newestPGTool("psql"); got != "" {
+		t.Errorf("newestPGTool(psql) = %q, want none", got)
+	}
+	if got := newestPGTool("mariadb-dump"); got != "" {
+		t.Errorf("newestPGTool(mariadb-dump) = %q, want none", got)
 	}
 }

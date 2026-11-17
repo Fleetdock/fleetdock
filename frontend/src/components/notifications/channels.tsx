@@ -14,7 +14,7 @@ import type { ChannelType, NotificationChannel } from "@/lib/types";
 
 import { CHANNEL_LABEL } from "./labels";
 
-/** ChannelsSection lists where notifications go (email, Slack, webhooks). */
+/** ChannelsSection lists where notifications go (email, Slack, webhooks, PagerDuty, Pushover). */
 export function ChannelsSection({ canWrite }: { canWrite: boolean }) {
   const { data, isLoading, error, refetch } = useChannels();
   const del = useDeleteChannel();
@@ -112,7 +112,7 @@ export function ChannelsSection({ canWrite }: { canWrite: boolean }) {
         errorTitle="Could not load channels"
         onRetry={() => void refetch()}
         emptyTitle="No channels yet"
-        emptyHint="Add a webhook, Slack or email channel to receive notifications."
+        emptyHint="Add a webhook, Slack, email, PagerDuty or Pushover channel to receive notifications."
         emptyAction={addButton}
       />
       <ChannelModal mode="create" open={addOpen} onClose={() => setAddOpen(false)} />
@@ -124,6 +124,8 @@ export function ChannelsSection({ canWrite }: { canWrite: boolean }) {
 function channelTarget(c: NotificationChannel): string {
   if (c.type === "email") return c.config.to ?? "—";
   if (c.type === "slack") return c.config.webhook_url ?? "—";
+  if (c.type === "pagerduty") return c.config.routing_key ?? "—";
+  if (c.type === "pushover") return c.config.device ? `Device: ${c.config.device}` : "All devices";
   return c.config.url ?? "—";
 }
 
@@ -141,6 +143,10 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
   const [url, setUrl] = useState("");
   const [slackUrl, setSlackUrl] = useState("");
   const [to, setTo] = useState("");
+  const [routingKey, setRoutingKey] = useState("");
+  const [appToken, setAppToken] = useState("");
+  const [userKey, setUserKey] = useState("");
+  const [device, setDevice] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
@@ -152,6 +158,10 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
       setUrl(channel.config.url ?? "");
       setSlackUrl(channel.config.webhook_url ?? "");
       setTo(channel.config.to ?? "");
+      setRoutingKey(channel.config.routing_key ?? "");
+      setAppToken(channel.config.app_token ?? "");
+      setUserKey(channel.config.user_key ?? "");
+      setDevice(channel.config.device ?? "");
       setEnabled(channel.enabled);
     } else if (!isEdit) {
       setName("");
@@ -159,6 +169,10 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
       setUrl("");
       setSlackUrl("");
       setTo("");
+      setRoutingKey("");
+      setAppToken("");
+      setUserKey("");
+      setDevice("");
       setEnabled(true);
     }
     setError(null);
@@ -169,6 +183,8 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
   function buildConfig(): Record<string, string> {
     if (type === "webhook") return { url };
     if (type === "slack") return { webhook_url: slackUrl };
+    if (type === "pagerduty") return { routing_key: routingKey };
+    if (type === "pushover") return { app_token: appToken, user_key: userKey, device: device.trim() };
     return { to };
   }
 
@@ -203,6 +219,8 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
               <option value="webhook">Webhook</option>
               <option value="slack">Slack</option>
               <option value="email">Email</option>
+              <option value="pagerduty">PagerDuty</option>
+              <option value="pushover">Pushover</option>
             </Select>
           </Field>
         </div>
@@ -240,6 +258,42 @@ export function ChannelModal({ mode, channel, open, onClose }: ChannelModalProps
               required
             />
           </Field>
+        ) : null}
+        {type === "pagerduty" ? (
+          <Field label="PagerDuty routing key" hint={keepHint} error={configError}>
+            <Input
+              type="password"
+              value={routingKey}
+              onChange={(e) => setRoutingKey(e.target.value)}
+              placeholder="Events API v2 integration key"
+              required={!isEdit}
+            />
+          </Field>
+        ) : null}
+        {type === "pushover" ? (
+          <>
+            <Field label="Application API token" hint={keepHint} error={configError}>
+              <Input
+                type="password"
+                value={appToken}
+                onChange={(e) => setAppToken(e.target.value)}
+                placeholder="Token of an application created at pushover.net/apps"
+                required={!isEdit}
+              />
+            </Field>
+            <Field label="User or group key" hint={keepHint}>
+              <Input
+                type="password"
+                value={userKey}
+                onChange={(e) => setUserKey(e.target.value)}
+                placeholder="Shown on your Pushover dashboard"
+                required={!isEdit}
+              />
+            </Field>
+            <Field label="Device (optional)" hint="Send to one device only. Leave blank for all of the user's devices.">
+              <Input value={device} onChange={(e) => setDevice(e.target.value)} placeholder="iphone" />
+            </Field>
+          </>
         ) : null}
         <Switch label="Enabled" checked={enabled} onCheckedChange={setEnabled} />
         <div className="mt-3">

@@ -3,6 +3,7 @@ package instanceapp
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -85,6 +86,7 @@ func (r *fakeRepo) SetStatus(_ context.Context, _ uuid.UUID, _ instancedom.Statu
 	return nil
 }
 func (r *fakeRepo) SetContainerID(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (r *fakeRepo) SetTLS(context.Context, uuid.UUID, time.Time) error            { return nil }
 func (r *fakeRepo) SoftDelete(_ context.Context, _ uuid.UUID) error               { return nil }
 
 type fakeSecrets struct {
@@ -372,3 +374,32 @@ func TestUpdate_RejectsBadTLSMode(t *testing.T) {
 
 func (r *fakeRepo) SetHealth(context.Context, uuid.UUID, instancedom.Health) error { return nil }
 func (r *fakeRepo) PinSSHHostKey(context.Context, uuid.UUID, string) error         { return nil }
+
+func TestProvisionImage(t *testing.T) {
+	cases := []struct {
+		eng       instancedom.Engine
+		version   string
+		pgvector  bool
+		image     string
+		tag       string
+		wantError bool
+	}{
+		{instancedom.EnginePostgres, "17", false, "postgres", "", false},
+		{instancedom.EngineMariaDB, "11.4", false, "mariadb", "", false},
+		{instancedom.EnginePostgres, "17", true, "pgvector/pgvector", "pg17", false},
+		{instancedom.EnginePostgres, "16.4", true, "pgvector/pgvector", "pg16", false},
+		{instancedom.EnginePostgres, "12", true, "", "", true},
+		{instancedom.EnginePostgres, "latest", true, "", "", true},
+		{instancedom.EngineMySQL, "8.4", true, "", "", true},
+	}
+	for _, c := range cases {
+		image, tag, err := provisionImage(c.eng, c.version, c.pgvector)
+		if (err != nil) != c.wantError {
+			t.Errorf("provisionImage(%s, %q, %v) error = %v, want error %v", c.eng, c.version, c.pgvector, err, c.wantError)
+			continue
+		}
+		if image != c.image || tag != c.tag {
+			t.Errorf("provisionImage(%s, %q, %v) = %q, %q; want %q, %q", c.eng, c.version, c.pgvector, image, tag, c.image, c.tag)
+		}
+	}
+}

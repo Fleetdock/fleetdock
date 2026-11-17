@@ -2315,3 +2315,32 @@
     }
   }
 }
+
+@layer components {
+  /* Extension picker (database → Extensions → Add extension). */
+  .ext-pick {
+    max-height: 18rem;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: 0.9rem;
+  }
+  .ext-pick-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+  }
+  .ext-pick-row:last-child {
+    border-bottom: 0;
+  }
+  .ext-pick-row:hover,
+  .ext-pick-row.active {
+    background: var(--accent-soft);
+  }
+  .ext-pick-row input {
+    margin-top: 0.25rem;
+  }
+}
