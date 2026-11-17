@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -34,7 +35,7 @@ const instanceColumns = `
 	container_id, mariadb_version, port, status,
 	labels, tags, created_at, updated_at, version, deleted_at, tls_mode, health,
 	ssh_host, ssh_port, ssh_user, ssh_auth, ssh_secret_ref, ssh_host_key,
-	data_access, data_username, data_secret_ref`
+	data_access, data_username, data_secret_ref, tls_enabled, tls_expires_at`
 
 func (r *InstanceRepository) Create(ctx context.Context, in *instancedom.Instance) error {
 	labels, err := json.Marshal(in.Labels)
@@ -242,6 +243,16 @@ func (r *InstanceRepository) SetContainerID(ctx context.Context, id uuid.UUID, c
 	return nil
 }
 
+func (r *InstanceRepository) SetTLS(ctx context.Context, id uuid.UUID, expiresAt time.Time) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE instances SET tls_enabled = true, tls_expires_at = $2, version = version + 1 WHERE id = $1 AND deleted_at IS NULL`,
+		id, expiresAt)
+	if err != nil {
+		return apperr.Internal(fmt.Errorf("set tls: %w", err))
+	}
+	return nil
+}
+
 func (r *InstanceRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE instances SET deleted_at = now(), status = 'deleting', version = version + 1
@@ -269,7 +280,7 @@ func scanInstance(row rowScanner) (*instancedom.Instance, error) {
 		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
 		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw,
 		&ssh.host, &ssh.port, &ssh.user, &ssh.auth, &ssh.secretRef, &ssh.hostKey,
-		&in.DataAccess, &in.DataUsername, &in.DataSecretRef,
+		&in.DataAccess, &in.DataUsername, &in.DataSecretRef, &in.TLSEnabled, &in.TLSExpiresAt,
 	); err != nil {
 		return nil, err
 	}
@@ -292,7 +303,7 @@ func scanInstanceWithTotal(row rowScanner) (*instancedom.Instance, int, error) {
 		&in.ContainerID, &in.EngineVersion, &in.Port, &status,
 		&labelsRaw, &in.Tags, &in.CreatedAt, &in.UpdatedAt, &in.Version, &in.DeletedAt, &in.TLSMode, &healthRaw,
 		&ssh.host, &ssh.port, &ssh.user, &ssh.auth, &ssh.secretRef, &ssh.hostKey,
-		&in.DataAccess, &in.DataUsername, &in.DataSecretRef, &total,
+		&in.DataAccess, &in.DataUsername, &in.DataSecretRef, &in.TLSEnabled, &in.TLSExpiresAt, &total,
 	); err != nil {
 		return nil, 0, err
 	}

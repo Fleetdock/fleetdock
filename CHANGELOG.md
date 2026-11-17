@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Upgrading: one new migration (`0032_instance_tls`). TLS on managed servers
+needs an agent from this release; older agents create servers without it and
+`tls_enabled` stays false.
+
+### Added
+
+- **TLS for the database servers Fleetdock creates.** Each install gets its own
+  certificate authority (created on first start, kept in the encrypted secret
+  store). Creating a server offers **Turn on TLS** (on by default in the
+  dashboard; `"tls": true` on `POST /v1/instances/provision`): the agent writes
+  a certificate valid for the server's address and hostname, localhost and the
+  gateway host to `$FLEETDOCK_STATE_DIR/tls/<container>/`, mounts it read-only
+  and starts PostgreSQL with `ssl=on`, or MySQL/MariaDB with `--ssl-cert`.
+  Clients can use `sslmode=require`, or verify the server with the authority's
+  certificate (`GET /v1/tls/ca-certificate`, **Download CA certificate** in the
+  server's menu). Existing servers get **Turn on TLS** in their menu
+  (`POST /v1/instances/{id}/tls`, a `configure_tls` operation): the container
+  is recreated from the same image, volume and port with the certificate, and
+  the previous one is put back if the engine doesn't start. The same action
+  renews the certificate (valid 5 years). Servers report `tls_enabled` and
+  `tls_expires_at`. (#150, thanks @shahawiz)
+
 ### Fixed
 
 - The data browser's schema and table actions (new, rename, change owner,

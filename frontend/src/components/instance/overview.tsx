@@ -53,6 +53,17 @@ export function InstanceOverview({
           { label: "Admin user", value: instance.username ?? "—", mono: !!instance.username },
           { label: "Encryption", value: TLS_LABEL[instance.tls_mode ?? "prefer"] },
           {
+            label: "TLS on the server",
+            value: instance.tls_enabled ? (
+              <>
+                On{instance.tls_expires_at ? <> · certificate until <Time value={instance.tls_expires_at} /></> : null}
+              </>
+            ) : (
+              "Off"
+            ),
+            hidden: !instance.provisioned,
+          },
+          {
             label: "Data browsing as",
             value:
               instance.data_access === "login" && instance.data_username

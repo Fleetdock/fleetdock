@@ -136,6 +136,10 @@ type instanceResponse struct {
 	SSHTunnel      *sshTunnelResponse  `json:"ssh_tunnel"`
 	DataAccess     string              `json:"data_access"`
 	DataUsername   *string             `json:"data_username"`
+	// TLSEnabled: the engine serves TLS with a certificate from the
+	// install's authority (GET /v1/tls/ca-certificate), until TLSExpiresAt.
+	TLSEnabled   bool       `json:"tls_enabled"`
+	TLSExpiresAt *time.Time `json:"tls_expires_at"`
 }
 
 func toInstanceResponse(in *instancedom.Instance) instanceResponse {
@@ -168,6 +172,8 @@ func toInstanceResponse(in *instancedom.Instance) instanceResponse {
 		SSHTunnel:      toSSHTunnelResponse(in.SSH),
 		DataAccess:     string(in.DataAccessOrDefault()),
 		DataUsername:   in.DataUsername,
+		TLSEnabled:     in.TLSEnabled,
+		TLSExpiresAt:   in.TLSExpiresAt,
 	}
 }
 
@@ -227,6 +233,7 @@ type provisionInstanceRequest struct {
 	EngineVersion string `json:"engine_version"`
 	Port          int    `json:"port"`
 	PGVector      bool   `json:"pgvector"`
+	TLS           bool   `json:"tls"`
 }
 
 // Provision handles POST /v1/instances/provision.
@@ -252,6 +259,7 @@ func (h *InstanceHandler) Provision(w http.ResponseWriter, r *http.Request) {
 		EngineVersion: req.EngineVersion,
 		Port:          req.Port,
 		PGVector:      req.PGVector,
+		TLS:           req.TLS,
 		CreatedBy:     callerID(r),
 	})
 	if err != nil {
@@ -272,6 +280,17 @@ func (h *InstanceHandler) Lifecycle(action string) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusAccepted, map[string]string{"operation_id": job.ID.String()})
 	}
+}
+
+// ConfigureTLS handles POST /v1/instances/{id}/tls: turn TLS on, or renew the
+// certificate.
+func (h *InstanceHandler) ConfigureTLS(w http.ResponseWriter, r *http.Request) {
+	job, err := h.svc.ConfigureTLS(r.Context(), r.PathValue("id"), callerID(r))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"operation_id": job.ID.String()})
 }
 
 // Get handles GET /v1/instances/{id}.
