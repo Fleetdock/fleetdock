@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The data browser's schema and table actions (new, rename, change owner,
+  comment, copy, back up, drop, VACUUM) are available in PostgreSQL's
+  `postgres` database too; it was read-only there like MySQL's `mysql` and
+  `sys`. Schemas can also be copied or restored into and out of it. As
+  before, opening a system database needs write access to its server (#153).
 - **Backups of PostgreSQL 18 on agent-managed servers** failed with
   `pg_dump: … server version: 18.x; pg_dump version: 17.x` on hosts whose
   distribution ships an older client (Debian 13 ships 17). The agent
