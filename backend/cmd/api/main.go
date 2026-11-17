@@ -189,7 +189,14 @@ func run() error {
 		return fmt.Errorf("tls authority: %w", err)
 	}
 	opsSvc.SetTLSIssuer(tlsSvc)
-	instanceSvc := instanceapp.NewService(instanceRepo, databaseRepo, secretsSvc, opsSvc)
+	instanceSvc := instanceapp.NewService(instanceRepo, databaseRepo, secretsSvc, opsSvc).
+		WithAgentVersions(func(ctx context.Context, id uuid.UUID) (string, error) {
+			srv, err := serverRepo.GetByID(ctx, id)
+			if err != nil || srv.AgentVersion == nil {
+				return "", err
+			}
+			return *srv.AgentVersion, nil
+		})
 	databaseSvc := databaseapp.NewService(databaseRepo, instanceRepo, opsSvc)
 	databaseSvc.SetEndpointCleanup(endpointSvc)
 	credentialSvc := dbcredentialapp.NewService(credentialRepo, databaseRepo, instanceRepo, serverRepo, endpointRepo, secretsSvc, auditSvc)
