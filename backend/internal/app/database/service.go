@@ -91,6 +91,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput, createdBy *uuid.UU
 	if err != nil {
 		return nil, err
 	}
+	if inst.Engine == instancedom.EngineClickHouse {
+		// No character sets on ClickHouse; record what it actually does.
+		in.Charset, in.Collation = engine.CHCharset, engine.CHCollation
+	}
 	db, err := databasedom.NewDatabase(instanceID, in.Name, in.Charset, in.Collation, in.Labels, in.Tags)
 	if err != nil {
 		return nil, err

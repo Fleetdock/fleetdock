@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
+import { ClearPasswordWarning } from "@/components/database/clear-password-warning";
 import { DataAccessFields } from "@/components/database/data-access-fields";
 import { SSHTunnelFields } from "@/components/database/ssh-tunnel-fields";
 import { Button, Checkbox, ErrorText, Field, Modal } from "@/components/ui";
@@ -11,6 +12,7 @@ import { fieldError } from "@/lib/errors";
 import { useUpdateInstance } from "@/lib/hooks";
 import { sshChanged, sshDraft, sshInput } from "@/lib/ssh-tunnel";
 import type { Instance, TLSMode, UpdateInstanceInput } from "@/lib/types";
+import { ENGINES, type EngineId } from "@/lib/engines";
 
 /** EditInstanceModal edits a database server's connection and logins. Pass null to close it. */
 export function EditInstanceModal({
@@ -126,6 +128,7 @@ export function EditInstanceModal({
             <option value="disable">Never encrypt</option>
           </select>
         </Field>
+        <ClearPasswordWarning engine={instance.engine} tls={tlsMode} port={Number(port)} />
         {instance.kind === "external" ? (
           <>
             <Field
@@ -162,7 +165,7 @@ export function EditInstanceModal({
               className="input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder={instance.engine === "postgres" ? "postgres" : "root"}
+              placeholder={ENGINES[instance.engine as EngineId]?.adminUser ?? "root"}
               autoComplete="off"
             />
           </Field>

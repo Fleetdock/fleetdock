@@ -7,13 +7,14 @@ import { ArrowLeft, Cloud, Plus, Server as ServerIcon } from "lucide-react";
 
 import { Button, ButtonLink, Checkbox, ErrorText, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { fieldError, friendlyError } from "@/lib/errors";
-import { ENGINE_IDS, ENGINES, type EngineId } from "@/lib/engines";
+import { ENGINE_IDS, ENGINES, engineSupports, type EngineId } from "@/lib/engines";
 import { useCreateInstance, useDatabases, useProbeInstance, useProvisionInstance, useServers } from "@/lib/hooks";
 import type { Instance, TLSMode } from "@/lib/types";
 
 import { dataAccessDraft, dataAccessInput } from "@/lib/data-access";
 import { sshDraft, sshInput } from "@/lib/ssh-tunnel";
 
+import { ClearPasswordWarning } from "./clear-password-warning";
 import { DataAccessFields } from "./data-access-fields";
 import { SSHTunnelFields } from "./ssh-tunnel-fields";
 
@@ -93,10 +94,17 @@ export function AddServerWizard({
     onClose();
   }
 
+  function chooseMode(m: Mode) {
+    setMode(m);
+    // Not every engine can be created as a container (ClickHouse).
+    if (m === "provision" && !engineSupports(engine, "provisioning")) pickEngine("postgres");
+  }
+
   function pickEngine(e: EngineId) {
     setEngine(e);
     setVersion(ENGINES[e].version);
     setPort(String(ENGINES[e].port));
+    setTls(ENGINES[e].defaultTLS ?? "prefer");
   }
 
   async function onSubmit(e: FormEvent) {
@@ -161,7 +169,7 @@ export function AddServerWizard({
       ) : !mode ? (
         <div className="grid gap-2">
           {MODES.map((m) => (
-            <button key={m.id} type="button" className="choice-card" onClick={() => setMode(m.id)}>
+            <button key={m.id} type="button" className="choice-card" onClick={() => chooseMode(m.id)}>
               <span className="choice-card-icon">{m.icon}</span>
               <span>
                 <span className="font-medium">{m.title}</span>
@@ -199,7 +207,7 @@ export function AddServerWizard({
           <div className="form-grid">
             <Field label="Engine">
               <Select value={engine} onChange={(e) => pickEngine(e.target.value as EngineId)}>
-                {ENGINE_IDS.map((id) => (
+                {ENGINE_IDS.filter((id) => mode !== "provision" || engineSupports(id, "provisioning")).map((id) => (
                   <option key={id} value={id}>
                     {ENGINES[id].label}
                   </option>
@@ -245,7 +253,9 @@ export function AddServerWizard({
             <Field
               label="Port"
               error={fieldError(error, "port")}
-              help={mode === "provision" ? "The port the new server listens on, on its host. Pick a free one." : undefined}
+              help={
+                mode === "provision" ? "The port the new server listens on, on its host. Pick a free one." : ENGINES[engine].portHint
+              }
             >
               <Input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
             </Field>
@@ -286,6 +296,7 @@ export function AddServerWizard({
                   <option value="disable">Never encrypt</option>
                 </Select>
               </Field>
+              <ClearPasswordWarning engine={engine} tls={tls} port={Number(port)} />
               <DataAccessFields value={dataAccess} onChange={setDataAccess} error={error} />
             </>
           ) : (

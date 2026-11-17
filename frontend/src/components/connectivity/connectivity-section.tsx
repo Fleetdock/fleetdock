@@ -6,23 +6,18 @@ import { Network } from "lucide-react";
 
 import { Badge, Button, Callout, KeyValueList, SectionHeader, Skeleton } from "@/components/ui";
 import { friendlyError } from "@/lib/errors";
+import { connectionURL } from "@/lib/connection-url";
 import { useConnectivity, useOperation } from "@/lib/hooks";
 
 import { PublicEndpointCard } from "./public-endpoint-card";
 
 const TERMINAL = ["succeeded", "failed", "canceled"];
 
-/** connectionURL builds a credential-free URL apps can start from. */
-export function connectionURL(protocol: string, host: string, port: number, database?: string): string {
-  const scheme = protocol === "postgresql" ? "postgresql" : "mysql";
-  const db = database ? `/${encodeURIComponent(database)}` : "";
-  return `${scheme}://${host}:${port}${db}`;
-}
-
 const PROTOCOL_LABELS: Record<string, string> = {
   postgresql: "PostgreSQL",
   mysql: "MySQL",
   mariadb: "MariaDB",
+  clickhouse: "ClickHouse",
 };
 
 export function ConnectivitySection({
@@ -85,7 +80,7 @@ export function ConnectivitySection({
   const opRunning = op.data && !TERMINAL.includes(op.data.status);
   const p = data.private;
   const privateAddress = `${p.host}:${p.port}`;
-  const url = connectionURL(p.protocol, p.host, p.port, databaseName);
+  const url = connectionURL(p.protocol, p.host, p.port, databaseName, p.tls_mode);
 
   return (
     <section className="section">

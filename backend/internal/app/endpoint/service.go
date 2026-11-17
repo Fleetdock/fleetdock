@@ -19,6 +19,7 @@ import (
 	serverdom "github.com/Fleetdock/fleetdock/backend/internal/domain/server"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/conninfo"
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/gateway"
 )
 
@@ -109,6 +110,44 @@ type GatewayInfo struct {
 
 const errNoGatewayViaSSH = "public access is not available for instances reached through an SSH tunnel"
 
+// errNoGatewayForClickHouse: the gateway's TLS termination is built for the
+// MySQL and PostgreSQL wire protocols; through it ClickHouse's HTTP interface
+// would be exposed as plain HTTP while the endpoint claims TLS.
+const errNoGatewayForClickHouse = "public access is not available for ClickHouse yet"
+
+// gatewayUnavailable explains why an instance's databases cannot get a public
+// endpoint, or returns "" when they can.
+func gatewayUnavailable(inst *instancedom.Instance) string {
+	switch {
+	case inst.Engine == instancedom.EngineClickHouse:
+		return errNoGatewayForClickHouse
+	case inst.SSH != nil:
+		// The gateway proxies straight to the instance; it cannot reach a
+		// database that is only reachable from an SSH bastion.
+		return errNoGatewayViaSSH
+	}
+	return ""
+}
+
+// privateTLSMode is the encryption of the direct connection, as far as it
+// is known: ClickHouse's scheme follows from the instance's TLS mode and port
+// (as the engine client picks it); MySQL and PostgreSQL negotiate it, so
+// "preferred".
+func privateTLSMode(inst *instancedom.Instance) endpointdom.TLSMode {
+	if inst.Engine != instancedom.EngineClickHouse {
+		return endpointdom.TLSPreferred
+	}
+	switch inst.TLSModeOrDefault() {
+	case engine.TLSRequire, engine.TLSVerifyFull:
+		return endpointdom.TLSRequired
+	case engine.TLSPrefer:
+		if inst.Port == 8443 || inst.Port == 443 {
+			return endpointdom.TLSRequired
+		}
+	}
+	return endpointdom.TLSDisabled
+}
+
 // EnableInput configures public access.
 type EnableInput struct {
 	AllowedCIDRs   []string
@@ -142,7 +181,7 @@ func (s *Service) GetConnectivity(ctx context.Context, databaseID string) (*Conn
 			Host:      internalHost,
 			Port:      inst.Port,
 			Protocol:  string(protocol),
-			TLSMode:   string(endpointdom.TLSPreferred),
+			TLSMode:   string(privateTLSMode(inst)),
 			TLSStatus: string(endpointdom.TLSStatusUnknown),
 		},
 		Gateway: GatewayInfo{
@@ -152,9 +191,7 @@ func (s *Service) GetConnectivity(ctx context.Context, databaseID string) (*Conn
 			SourceIPMode: s.gw.SourceIPMode,
 		},
 	}
-	if inst.SSH != nil {
-		out.Gateway.UnavailableReason = errNoGatewayViaSSH
-	}
+	out.Gateway.UnavailableReason = gatewayUnavailable(inst)
 
 	ep, err := s.endpoints.GetPublicByDatabaseID(ctx, db.ID)
 	switch {
@@ -198,10 +235,8 @@ func (s *Service) EnablePublicAccess(ctx context.Context, databaseID string, in 
 	if db.Status != databasedom.StatusActive {
 		return nil, apperr.Invalid("database", "database must be active to enable public access")
 	}
-	if inst.SSH != nil {
-		// The gateway proxies straight to the instance; it cannot reach a
-		// database that is only reachable from an SSH bastion.
-		return nil, apperr.Invalid("instance", errNoGatewayViaSSH)
+	if reason := gatewayUnavailable(inst); reason != "" {
+		return nil, apperr.Invalid("instance", reason)
 	}
 	if _, err := s.endpoints.GetPublicByDatabaseID(ctx, db.ID); err == nil {
 		return nil, apperr.Conflict("public access is already enabled for this database")

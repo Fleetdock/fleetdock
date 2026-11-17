@@ -150,3 +150,15 @@ func TestMaskPassword(t *testing.T) {
 		t.Fatalf("password not masked: %s", masked)
 	}
 }
+
+func TestBuildURLClickHouseDatabaseInQuery(t *testing.T) {
+	target := endpointdom.Target{Host: "ch.example.com", Port: 8443, Protocol: endpointdom.ProtocolClickHouse, TLSMode: endpointdom.TLSRequired}
+	got, err := BuildURL(target, "", "", "analytics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The HTTP interface ignores the path, so the database must be ?database=.
+	if got != "https://ch.example.com:8443/?database=analytics" {
+		t.Fatalf("url = %s", got)
+	}
+}

@@ -43,6 +43,7 @@ import { TabBar, type CloseKind } from "./tab-bar";
 import { ObjectTab } from "./object-tab";
 import { DataBrowserSkeleton } from "./skeleton";
 import { TableTab } from "./table-tab";
+import { engineSupports } from "@/lib/engines";
 
 const MIN_SIDE = 200;
 const MAX_SIDE = 520;
@@ -482,7 +483,7 @@ function Workspace({
       error={listError ? (listError as Error).message : undefined}
       dialect={dialect}
       activeName={activeTab && activeTab.kind !== "query" ? activeTab.name : null}
-      canWrite={canWrite && !lockedSystem}
+      canWrite={canWrite && !lockedSystem && engineSupports(db.instance?.engine, "structureEditing")}
       onOpen={open}
       onNewQuery={newQuery}
       onCreateTable={(schema) => setCreating({ schema: pg ? schema ?? "public" : null })}
@@ -609,8 +610,8 @@ function TabContent({
       active={active}
       canWrite={canWrite}
       canBackup={canBackup}
-      dialect={dialect}
       engine={db.instance?.engine}
+      dialect={dialect}
       dispatch={dispatch}
       onDirty={onDirty}
       onOpen={onOpen}

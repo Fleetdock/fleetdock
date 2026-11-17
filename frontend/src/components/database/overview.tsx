@@ -4,7 +4,7 @@ import { Archive, ArrowRight, CalendarClock, Globe, Lock } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { connectionURL } from "@/components/connectivity/connectivity-section";
+import { connectionURL } from "@/lib/connection-url";
 import { BackupDatabaseModal } from "@/components/database/backup-database-modal";
 import { IndexHealthCard } from "@/components/database/index-health";
 import { Badge, Button, KeyValueList, Skeleton, StatusBadge, Time } from "@/components/ui";
@@ -12,6 +12,7 @@ import { engineLabel } from "@/lib/engines";
 import { formatBytes } from "@/lib/format";
 import { useBackups, useConnectivity, useSchedules } from "@/lib/hooks";
 import type { Database } from "@/lib/types";
+import { engineSupports } from "@/lib/engines";
 
 /**
  * DatabaseOverview is the database page's landing tab: what the database is,
@@ -22,11 +23,14 @@ export function DatabaseOverview({
   database,
   hasCreds,
   canBackup,
+  backups = true,
   tabHref,
 }: {
   database: Database;
   hasCreds: boolean;
   canBackup: boolean;
+  /** Whether the engine supports backups at all. */
+  backups?: boolean;
   tabHref: (tab: string) => string;
 }) {
   const instance = database.instance;
@@ -57,8 +61,10 @@ export function DatabaseOverview({
         />
       </div>
       <ConnectCard database={database} manageHref={tabHref("connection")} />
-      <BackupCard database={database} canBackup={canBackup} manageHref={tabHref("backups")} />
-      {hasCreds ? <IndexHealthCard databaseId={database.id} browserHref={browserHref} /> : null}
+      {backups ? <BackupCard database={database} canBackup={canBackup} manageHref={tabHref("backups")} /> : null}
+      {hasCreds && engineSupports(database.instance?.engine, "insights") ? (
+        <IndexHealthCard databaseId={database.id} browserHref={browserHref} />
+      ) : null}
     </div>
   );
 }
@@ -89,7 +95,7 @@ function ConnectCard({ database, manageHref }: { database: Database; manageHref:
               label: "Private",
               value: `${data.private.host}:${data.private.port}`,
               mono: true,
-              copy: connectionURL(data.private.protocol, data.private.host, data.private.port, database.name),
+              copy: connectionURL(data.private.protocol, data.private.host, data.private.port, database.name, data.private.tls_mode),
             },
             {
               label: "Public",

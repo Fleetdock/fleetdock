@@ -17,25 +17,29 @@ import (
 type Engine string
 
 const (
-	EngineMariaDB  Engine = "mariadb"
-	EngineMySQL    Engine = "mysql"
-	EnginePostgres Engine = "postgres"
+	EngineMariaDB    Engine = "mariadb"
+	EngineMySQL      Engine = "mysql"
+	EnginePostgres   Engine = "postgres"
+	EngineClickHouse Engine = "clickhouse"
 )
 
 // Valid reports whether e is a supported engine.
 func (e Engine) Valid() bool {
 	switch e {
-	case EngineMariaDB, EngineMySQL, EnginePostgres:
+	case EngineMariaDB, EngineMySQL, EnginePostgres, EngineClickHouse:
 		return true
 	}
 	return false
 }
 
 // Family groups engines whose logical dumps load into each other: "postgres",
-// or "mysql" for MySQL and MariaDB.
+// "clickhouse", or "mysql" for MySQL and MariaDB.
 func (e Engine) Family() string {
-	if e == EnginePostgres {
+	switch e {
+	case EnginePostgres:
 		return "postgres"
+	case EngineClickHouse:
+		return "clickhouse"
 	}
 	return "mysql"
 }
@@ -43,35 +47,56 @@ func (e Engine) Family() string {
 // DumpFamily is the engine family a backup made with the given dump tool
 // (as recorded on the backup) can be restored to.
 func DumpFamily(tool string) string {
-	if tool == "pg_dump" || tool == "postgres" {
+	switch tool {
+	case "pg_dump", "postgres":
 		return "postgres"
+	case "clickhouse-native", "clickhouse":
+		return "clickhouse"
 	}
 	return "mysql"
 }
 
 // FamilyLabel names an engine family for messages.
 func FamilyLabel(family string) string {
-	if family == "postgres" {
+	switch family {
+	case "postgres":
 		return "PostgreSQL"
+	case "clickhouse":
+		return "ClickHouse"
 	}
 	return "MySQL or MariaDB"
 }
 
-// DefaultPort is the engine's conventional listening port.
+// DefaultPort is the engine's conventional listening port. ClickHouse is
+// reached over its HTTP interface.
 func (e Engine) DefaultPort() int {
-	if e == EnginePostgres {
+	switch e {
+	case EnginePostgres:
 		return 5432
+	case EngineClickHouse:
+		return 8123
 	}
 	return 3306
 }
 
 // AdminUser is the engine's default superuser account name.
 func (e Engine) AdminUser() string {
-	if e == EnginePostgres {
+	switch e {
+	case EnginePostgres:
 		return "postgres"
+	case EngineClickHouse:
+		return "default"
 	}
 	return "root"
 }
+
+// SupportsBackups reports whether Fleetdock can back up and restore the
+// engine's databases. ClickHouse has no logical dump tool Fleetdock drives yet.
+func (e Engine) SupportsBackups() bool { return e != EngineClickHouse }
+
+// SupportsProvisioning reports whether Fleetdock can create the engine as a
+// container on a server.
+func (e Engine) SupportsProvisioning() bool { return e != EngineClickHouse }
 
 // Kind distinguishes managed from external instances.
 type Kind string
@@ -212,12 +237,24 @@ type Health struct {
 	CheckedAt time.Time    `json:"checked_at"`
 }
 
-// TLSModeOrDefault returns the TLS mode, defaulting to "prefer".
+// TLSModeOrDefault returns the TLS mode, defaulting to DefaultTLSMode.
 func (i *Instance) TLSModeOrDefault() string {
 	if i.TLSMode == "" {
-		return "prefer"
+		return i.DefaultTLSMode()
 	}
 	return i.TLSMode
+}
+
+// DefaultTLSMode is the TLS mode a new instance gets when none is given:
+// "prefer", which MySQL and PostgreSQL negotiate in-band. ClickHouse's HTTP
+// interface cannot fall back that way — "prefer" there means plain HTTP on
+// 8123 — so it defaults to "require" rather than sending the admin password
+// unencrypted.
+func (i *Instance) DefaultTLSMode() string {
+	if i.Engine == EngineClickHouse {
+		return "require"
+	}
+	return "prefer"
 }
 
 // HasCredentials reports whether SQL-level operations are possible.

@@ -12,14 +12,26 @@ import (
 type Kind string
 
 const (
-	KindMariaDBRoot  Kind = "mariadb_root"
-	KindMariaDBUser  Kind = "mariadb_user"
-	KindPostgresUser Kind = "postgres_user"
-	KindS3Credential Kind = "s3_credential"
-	KindAgentEnroll  Kind = "agent_enrollment"
-	KindSSHKey       Kind = "ssh_key"
-	KindOther        Kind = "other"
+	KindMariaDBRoot    Kind = "mariadb_root"
+	KindMariaDBUser    Kind = "mariadb_user"
+	KindPostgresUser   Kind = "postgres_user"
+	KindClickHouseUser Kind = "clickhouse_user"
+	KindS3Credential   Kind = "s3_credential"
+	KindAgentEnroll    Kind = "agent_enrollment"
+	KindSSHKey         Kind = "ssh_key"
+	KindOther          Kind = "other"
 )
+
+// UserKind is the kind of a database account's password on an engine.
+func UserKind(engine string) Kind {
+	switch engine {
+	case "postgres":
+		return KindPostgresUser
+	case "clickhouse":
+		return KindClickHouseUser
+	}
+	return KindMariaDBUser
+}
 
 // Secret is an encrypted payload addressed by a logical ref.
 type Secret struct {

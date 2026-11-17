@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import { friendlyError } from "@/lib/errors";
 import { useCan, useDatabases, useDestinations, useTriggerBackup } from "@/lib/hooks";
+import { engineSupports } from "@/lib/engines";
 
 export default function BackupsPage() {
   const can = useCan();
@@ -90,7 +91,8 @@ export default function BackupsPage() {
       <NewBackupModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        databases={databases?.items ?? []}
+        // Engines without backups (ClickHouse) are not offered.
+        databases={(databases?.items ?? []).filter((d) => engineSupports(d.instance?.engine, "backups"))}
         destinations={destinations?.items ?? []}
       />
     </div>

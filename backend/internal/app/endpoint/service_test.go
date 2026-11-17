@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	endpointdom "github.com/Fleetdock/fleetdock/backend/internal/domain/endpoint"
+	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/gateway"
 )
@@ -226,5 +227,33 @@ func TestTransitionSkipsNoOpWrites(t *testing.T) {
 	}
 	if len(repo.statusCalls) != 0 {
 		t.Fatalf("unchanged status must not be rewritten, got %+v", repo.statusCalls)
+	}
+}
+
+func TestGatewayUnavailableForClickHouse(t *testing.T) {
+	ch := &instancedom.Instance{Engine: instancedom.EngineClickHouse}
+	if gatewayUnavailable(ch) != errNoGatewayForClickHouse {
+		t.Error("ClickHouse must not get a public endpoint: the gateway would expose plain HTTP")
+	}
+	if gatewayUnavailable(&instancedom.Instance{Engine: instancedom.EnginePostgres}) != "" {
+		t.Error("PostgreSQL can be published")
+	}
+}
+
+func TestPrivateTLSModeFollowsClickHouseScheme(t *testing.T) {
+	cases := []struct {
+		inst instancedom.Instance
+		want endpointdom.TLSMode
+	}{
+		{instancedom.Instance{Engine: instancedom.EngineClickHouse, Port: 8443}, endpointdom.TLSRequired}, // default require
+		{instancedom.Instance{Engine: instancedom.EngineClickHouse, Port: 8123, TLSMode: "prefer"}, endpointdom.TLSDisabled},
+		{instancedom.Instance{Engine: instancedom.EngineClickHouse, Port: 8443, TLSMode: "prefer"}, endpointdom.TLSRequired},
+		{instancedom.Instance{Engine: instancedom.EngineClickHouse, Port: 8443, TLSMode: "disable"}, endpointdom.TLSDisabled},
+		{instancedom.Instance{Engine: instancedom.EnginePostgres, Port: 5432}, endpointdom.TLSPreferred},
+	}
+	for _, c := range cases {
+		if got := privateTLSMode(&c.inst); got != c.want {
+			t.Errorf("%s port %d tls %q: got %s, want %s", c.inst.Engine, c.inst.Port, c.inst.TLSMode, got, c.want)
+		}
 	}
 }

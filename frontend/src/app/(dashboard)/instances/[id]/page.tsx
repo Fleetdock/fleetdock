@@ -143,7 +143,7 @@ function InstanceDetail() {
 
       <div id={PANEL_ID} role="tabpanel" aria-label={panelLabel} className="mt-4">
         {showMonitoring ? (
-          <InstanceMonitoring instanceId={id} canKill={canWrite} />
+          <InstanceMonitoring instanceId={id} canKill={canWrite} engine={instance.engine} />
         ) : showUsers ? (
           <DBUsersSection instanceId={id} canWrite={canWrite} databases={databases?.items ?? []} />
         ) : (
