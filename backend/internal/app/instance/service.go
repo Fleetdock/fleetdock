@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/sshtunnel"
+	"github.com/Fleetdock/fleetdock/backend/internal/version"
 )
 
 // Secrets is the secret store surface this service needs.
@@ -83,6 +85,40 @@ type Service struct {
 	databases databasedom.Repository
 	secrets   Secrets
 	ops       *operationapp.Service
+	// agentVersion reports the agent version a server last sent ("" when
+	// unknown). Nil skips the agent checks.
+	agentVersion func(ctx context.Context, serverID uuid.UUID) (string, error)
+}
+
+// WithAgentVersions lets Provision refuse what a server's agent is too old
+// to do, instead of letting the agent fail or do it wrong.
+func (s *Service) WithAgentVersions(f func(ctx context.Context, serverID uuid.UUID) (string, error)) *Service {
+	s.agentVersion = f
+	return s
+}
+
+// minClickHouseAgent is the first agent that creates ClickHouse containers.
+// Older agents know provision_instance but would start the image with
+// another engine's settings. "-0" lets 0.13.0's release candidates through.
+const minClickHouseAgent = "0.13.0-0"
+
+// requireAgent refuses when the server's agent reports a version older than
+// min. An unknown or development version is let through: the agent then
+// fails or succeeds on its own.
+func (s *Service) requireAgent(ctx context.Context, serverID uuid.UUID, min, what string) error {
+	if s.agentVersion == nil {
+		return nil
+	}
+	v, err := s.agentVersion(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if c, ok := version.Compare(v, min); ok && c < 0 {
+		return apperr.Invalid("server_id", fmt.Sprintf(
+			"%s needs agent %s or later on this server (it runs %s); update the agent first",
+			what, strings.TrimSuffix(min, "-0"), version.Normalize(v)))
+	}
+	return nil
 }
 
 // NewService wires the service.
@@ -242,8 +278,13 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 	if err != nil {
 		return nil, nil, err
 	}
-	if in.TLS && eng == instancedom.EngineClickHouse {
-		return nil, nil, apperr.Invalid("tls", "TLS is not supported yet for ClickHouse servers Fleetdock creates")
+	if eng == instancedom.EngineClickHouse {
+		if in.TLS {
+			return nil, nil, apperr.Invalid("tls", "TLS is not supported yet for ClickHouse servers Fleetdock creates")
+		}
+		if err := s.requireAgent(ctx, serverID, minClickHouseAgent, "creating a ClickHouse server"); err != nil {
+			return nil, nil, err
+		}
 	}
 	image, tag, err := provisionImage(eng, in.EngineVersion, in.PGVector)
 	if err != nil {

@@ -56,9 +56,9 @@ also go to the previous minor for three months after a new one ships.
 ## Release checklist
 
 1. Merge all changes for the release into `main`
-2. Run `make release-prep VERSION=0.12.0`: it moves the `[Unreleased]` entries under `## [0.12.0] - <today>` and updates the compare links at the bottom of **[CHANGELOG.md](CHANGELOG.md)**. Read the section through, then open a PR with it and merge it
+2. Run `make release-prep VERSION=0.13.0`: it moves the `[Unreleased]` entries under `## [0.13.0] - <today>` and updates the compare links at the bottom of **[CHANGELOG.md](CHANGELOG.md)**. Read the section through, then open a PR with it and merge it
 3. Tag the merge commit of that PR (below). Do not create the release in GitHub's *Draft a new release* page: the workflow creates it from the tag, with this version's CHANGELOG section as its notes
-4. For a minor or major release, tag a release candidate first (`v0.12.0-rc.1`): it is published as a pre-release and leaves `latest` alone. Install it on a fresh VM with `install.sh --tag v0.12.0-rc.1`, upgrade a copy of a real install to it, enrol and update an agent, then go on
+4. For a minor or major release, tag a release candidate first (`v0.13.0-rc.1`): it is published as a pre-release and leaves `latest` alone. Install it on a fresh VM with `install.sh --tag v0.13.0-rc.1`, upgrade a copy of a real install to it, enrol and update an agent, then go on
 5. Create and push the tag (see below)
 6. Wait for the **[Release workflow](.github/workflows/release.yml)** to finish on GitHub Actions: it runs the whole CI suite first
 7. Verify the [GitHub Release](https://github.com/Fleetdock/fleetdock/releases) and GHCR images: `/api version` in the image prints the tag, and the signatures verify (below)

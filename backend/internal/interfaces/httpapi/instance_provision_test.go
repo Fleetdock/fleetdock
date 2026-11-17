@@ -96,3 +96,41 @@ func TestProvision_PGVectorRejectedForMariaDB(t *testing.T) {
 		t.Error("no job may be created for a rejected request")
 	}
 }
+
+// A ClickHouse server is only created by an agent that knows ClickHouse; an
+// older one would start the image with another engine's settings.
+func TestProvision_ClickHouseNeedsNewAgent(t *testing.T) {
+	for _, c := range []struct {
+		agent string
+		want  int
+	}{
+		{"0.12.0", http.StatusUnprocessableEntity},
+		{"v0.12.3", http.StatusUnprocessableEntity},
+		{"v0.13.0-rc.1", http.StatusCreated}, // the release candidate knows ClickHouse
+		{"0.13.0", http.StatusCreated},
+		{"", http.StatusCreated},    // unknown: the agent decides
+		{"dev", http.StatusCreated}, // development build
+	} {
+		jobs := &memJobs{}
+		ops := operationapp.NewService(jobs, nil, nil, nil, nil, nil)
+		repo := &memInstances{items: map[uuid.UUID]*instancedom.Instance{}}
+		svc := instanceapp.NewService(repo, nil, memSecrets{}, ops).
+			WithAgentVersions(func(context.Context, uuid.UUID) (string, error) { return c.agent, nil })
+		h := NewInstanceHandler(svc, nil)
+		b, _ := json.Marshal(map[string]any{
+			"server_id": uuid.NewString(), "name": "ch", "engine": "clickhouse",
+			"engine_version": "25.8", "port": 8123,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/v1/instances/provision", bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		p := authapp.NewPrincipal(uuid.New(), "test@example.com", "instance:write")
+		rr := httptest.NewRecorder()
+		h.Provision(rr, req.WithContext(withPrincipal(req.Context(), p)))
+		if rr.Code != c.want {
+			t.Errorf("agent %q: status = %d, want %d (%s)", c.agent, rr.Code, c.want, rr.Body)
+		}
+		if c.want != http.StatusCreated && len(jobs.created) != 0 {
+			t.Errorf("agent %q: a job was queued", c.agent)
+		}
+	}
+}
