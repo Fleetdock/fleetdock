@@ -99,10 +99,6 @@ func (e Engine) SupportsSQLImport() bool { return e != EngineClickHouse }
 // with a restored backup copy (it needs row keys, which ClickHouse lacks).
 func (e Engine) SupportsBackupCompare() bool { return e != EngineClickHouse }
 
-// SupportsProvisioning reports whether Fleetdock can create the engine as a
-// container on a server.
-func (e Engine) SupportsProvisioning() bool { return e != EngineClickHouse }
-
 // Kind distinguishes managed from external instances.
 type Kind string
 
@@ -291,6 +287,12 @@ func NewProvisioned(serverID uuid.UUID, name string, engine Engine, engineVersio
 	base.ServerID = &serverID
 	base.Kind = KindManaged
 	base.Status = StatusProvisioning
+	if engine == EngineClickHouse {
+		// The container serves plain HTTP on whatever port was picked, 8443
+		// included: say so rather than let the ClickHouse default
+		// ("require") or the port number suggest HTTPS.
+		base.TLSMode = "disable"
+	}
 	return base, nil
 }
 

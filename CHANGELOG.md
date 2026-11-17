@@ -59,10 +59,10 @@ needs an agent from this release; older agents create servers without it and
   are never followed and only ClickHouse's own error text is shown. Not
   available on ClickHouse yet, and refused by the API: editing rows (its
   `UPDATE`/`DELETE` are asynchronous mutations; use the SQL console), SQL
-  file imports, comparing a table with a backup, creating ClickHouse
-  servers as containers, public access through the gateway, table-structure
-  editing, write previews and query insights. Migration
-  `0030` adds the engine, its secret kind and its connectivity protocol.
+  file imports, comparing a table with a backup, public access through the
+  gateway, table-structure editing, write previews and query insights.
+  Migration `0030` adds the engine, its secret kind and its connectivity
+  protocol.
 - **ClickHouse backups.** Backups, scheduled backups, retention, restores
   (under the same or a new name, onto any ClickHouse server), verification,
   moves and one-off dump downloads now work on ClickHouse. ClickHouse has no
@@ -87,6 +87,19 @@ needs an agent from this release; older agents create servers without it and
   (`display_secrets_in_show_and_select`). ClickHouse backups restore only into
   ClickHouse, and SQL dumps never into it; the API refuses both. Migration
   `0031` records the new dump tool.
+- **Create ClickHouse servers.** **Servers → (a server) → Create database
+  server** now offers ClickHouse (25.8, 25.3, 24.8): the agent runs the
+  official `clickhouse` image with a persistent volume, a generated password
+  for the `default` login (with SQL-driven account management, so console
+  roles and credentials work), the recommended open-files limit, and its
+  HTTP interface published on the port you pick (8123 by default). The
+  server speaks plain HTTP, and its encryption setting says so whatever the
+  port. The operation succeeds only once the server answers; a container
+  that stops, crash-loops or doesn't answer in time fails the operation with
+  its last log error and is removed with its new volume, instead of being
+  left running with its admin login exposed. Start, stop, restart and remove
+  work as for the other engines; **Turn on TLS** is not available for
+  ClickHouse servers yet.
 
 ### Fixed
 

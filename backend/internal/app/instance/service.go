@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -239,12 +238,12 @@ func (s *Service) Provision(ctx context.Context, in ProvisionInput) (*instancedo
 	if eng == "" {
 		eng = instancedom.EngineMariaDB
 	}
-	if !eng.SupportsProvisioning() {
-		return nil, nil, apperr.Invalid("engine", fmt.Sprintf("Fleetdock cannot create %s instances yet; connect an existing server instead", eng))
-	}
 	inst, err := instancedom.NewProvisioned(serverID, in.Name, eng, in.EngineVersion, in.Port)
 	if err != nil {
 		return nil, nil, err
+	}
+	if in.TLS && eng == instancedom.EngineClickHouse {
+		return nil, nil, apperr.Invalid("tls", "TLS is not supported yet for ClickHouse servers Fleetdock creates")
 	}
 	image, tag, err := provisionImage(eng, in.EngineVersion, in.PGVector)
 	if err != nil {
@@ -312,6 +311,9 @@ func (s *Service) ConfigureTLS(ctx context.Context, id string, createdBy *uuid.U
 	}
 	if !inst.Provisioned() {
 		return nil, apperr.Invalid("id", "TLS can only be set up on database servers Fleetdock created")
+	}
+	if inst.Engine == instancedom.EngineClickHouse {
+		return nil, apperr.Invalid("id", "TLS is not supported yet for ClickHouse servers Fleetdock creates")
 	}
 	if inst.Status != instancedom.StatusRunning && inst.Status != instancedom.StatusStopped {
 		return nil, apperr.Conflict("the database server is " + string(inst.Status) + "; try again once it is running or stopped")

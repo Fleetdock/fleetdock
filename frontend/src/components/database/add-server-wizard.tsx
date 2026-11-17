@@ -97,13 +97,13 @@ export function AddServerWizard({
   function chooseMode(m: Mode) {
     setMode(m);
     // Not every engine can be created as a container (ClickHouse).
-    if (m === "provision" && !engineSupports(engine, "provisioning")) pickEngine("postgres");
+    pickEngine(m === "provision" && !engineSupports(engine, "provisioning") ? "postgres" : engine, m);
   }
 
-  function pickEngine(e: EngineId) {
+  function pickEngine(e: EngineId, m: Mode | null = mode) {
     setEngine(e);
     setVersion(ENGINES[e].version);
-    setPort(String(ENGINES[e].port));
+    setPort(String(m === "provision" ? (ENGINES[e].provisionPort ?? ENGINES[e].port) : ENGINES[e].port));
     setTls(ENGINES[e].defaultTLS ?? "prefer");
   }
 
@@ -114,7 +114,7 @@ export function AddServerWizard({
       if (mode === "provision") {
         const res = await provision.mutateAsync({ server_id: server, name, engine, engine_version: version, port: Number(port),
           pgvector: engine === "postgres" && pgvector,
-          tls: serverTLS,
+          tls: serverTLS && engineSupports(engine, "provisionedTLS"),
         });
         setDone({ instance: res.instance, operationId: res.operation_id });
       } else {
@@ -228,7 +228,7 @@ export function AddServerWizard({
             </datalist>
           </div>
 
-          {mode === "provision" ? (
+          {mode === "provision" && engineSupports(engine, "provisionedTLS") ? (
             <Checkbox
               label="Turn on TLS"
               hint="Encrypts connections with a certificate from this install's certificate authority. Clients can use sslmode=require."

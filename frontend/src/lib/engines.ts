@@ -15,6 +15,8 @@ export type EngineFeature =
   | "backupCompare"
   /** Fleetdock creates the engine as a container on a connected server. */
   | "provisioning"
+  /** A server Fleetdock creates can run with TLS from this install's certificate authority. */
+  | "provisionedTLS"
   /** Create, alter, rename, truncate and drop tables and indexes from the dashboard. */
   | "structureEditing"
   /** Run a write script and roll it back to see what it would change. */
@@ -34,6 +36,8 @@ type EngineInfo = {
   portHint?: string;
   /** Encryption setting a new connection starts with (default "prefer"). */
   defaultTLS?: TLSMode;
+  /** Port a server Fleetdock creates starts with, when it differs from port. */
+  provisionPort?: number;
 };
 
 export const ENGINES: Record<EngineId, EngineInfo> = {
@@ -46,9 +50,11 @@ export const ENGINES: Record<EngineId, EngineInfo> = {
     versions: ["25.8", "25.3", "24.8"],
     port: 8443,
     adminUser: "default",
-    lacks: ["rowEditing", "sqlImport", "backupCompare", "provisioning", "structureEditing", "preview", "insights"],
-    portHint: "The HTTP interface: 8443 with TLS, or 8123 without.",
+    lacks: ["rowEditing", "sqlImport", "backupCompare", "structureEditing", "preview", "insights", "provisionedTLS"],
+    portHint: "The HTTP interface: 8443 with TLS, or 8123 without. A server Fleetdock creates serves plain HTTP on the port you pick.",
     defaultTLS: "require",
+    // A created server serves plain HTTP, so it starts on the HTTP port.
+    provisionPort: 8123,
   },
 };
 

@@ -31,7 +31,7 @@ func runProvision(ctx context.Context, jobType string, p *Payload, sink LogSink)
 		if spec.TLS != nil {
 			sink.Log("info", "with TLS (certificate valid until "+spec.TLS.NotAfter+")")
 		}
-		return provisionContainer(ctx, p.Engine, spec, imageRef(p.Engine, spec))
+		return provisionContainer(ctx, p.Engine, spec, imageRef(p.Engine, spec), true, sink)
 	case "configure_tls":
 		return configureTLS(ctx, p.Engine, spec, sink)
 	case "start_instance":
@@ -55,10 +55,29 @@ type engineContainer struct {
 	rootEnv      string // env var carrying the superuser password
 	dataPath     string // container path to persist as a volume
 	internalPort int    // port the engine listens on inside the container
+	// env is extra, non-secret environment for the container.
+	env []string
+	// runArgs are extra `docker run` flags.
+	runArgs []string
+	// readyCmd, when set, is run inside the container until it succeeds:
+	// provisioning reports success only once the engine answers.
+	readyCmd []string
 }
+
+// readyTimeout bounds the wait for a new container's readyCmd.
+var readyTimeout = 90 * time.Second
 
 func engineContainerFor(eng, version string) engineContainer {
 	switch eng {
+	case "clickhouse":
+		return engineContainer{
+			rootEnv: "CLICKHOUSE_PASSWORD", dataPath: "/var/lib/clickhouse", internalPort: 8123,
+			// The default user manages accounts and grants with SQL, which
+			// Fleetdock's console roles and credentials need.
+			env:      []string{"CLICKHOUSE_USER=default", "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1"},
+			runArgs:  []string{"--ulimit", "nofile=262144:262144"},
+			readyCmd: []string{"wget", "-qO-", "http://127.0.0.1:8123/ping"},
+		}
 	case "postgres":
 		// From 18 the official image keeps its data under
 		// /var/lib/postgresql/<major>/docker and refuses to start with a
@@ -78,8 +97,13 @@ func engineContainerFor(eng, version string) engineContainer {
 // and a published port. The root password is passed via a temporary env-file
 // (removed immediately) so it never appears in the process list. With
 // spec.TLS the certificate is written on the host and mounted read-only, and
-// the engine is started with TLS on.
-func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, image string) (*Result, error) {
+// the engine is started with TLS on. fresh is set for a new instance, whose
+// volume was just created; configureTLS recreates a container on an existing
+// volume and passes false.
+func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, image string, fresh bool, sink LogSink) (*Result, error) {
+	if spec.TLS != nil && eng == "clickhouse" {
+		return nil, fmt.Errorf("TLS is not supported yet for ClickHouse servers Fleetdock creates")
+	}
 	ec := engineContainerFor(eng, spec.Version)
 	var tlsDir string
 	if spec.TLS != nil {
@@ -93,7 +117,7 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, im
 	// Best-effort cleanup of any stale container with the same name.
 	_ = exec.CommandContext(ctx, "docker", "rm", "-f", spec.ContainerName).Run()
 
-	envFile, err := writeEnvFile(ec.rootEnv + "=" + spec.RootPassword)
+	envFile, err := writeEnvFile(append([]string{ec.rootEnv + "=" + spec.RootPassword}, ec.env...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +135,7 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, im
 	if tlsDir != "" {
 		args = append(args, "-v", tlsDir+":"+tlsMountPath+":ro")
 	}
-	args = append(args, image)
+	args = append(append(args, ec.runArgs...), image)
 	if tlsDir != "" {
 		args = append(args, tlsArgs(eng)...)
 	}
@@ -122,6 +146,24 @@ func provisionContainer(ctx context.Context, eng string, spec *ProvisionSpec, im
 	containerID := strings.TrimSpace(out)
 	if len(containerID) > 12 {
 		containerID = containerID[:12]
+	}
+	if len(ec.readyCmd) > 0 {
+		sink.Log("info", "waiting for the server to accept connections")
+		if err := waitReady(ctx, spec.ContainerName, ec.readyCmd); err != nil {
+			// The operation fails, so nothing will ever manage this
+			// container: left running (--restart unless-stopped) it would
+			// hold the port with its admin login exposed. Only a new
+			// instance's volume is removed; an existing one keeps its data.
+			cctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, rerr := removeContainer(cctx, &ProvisionSpec{ContainerName: spec.ContainerName, Volume: spec.Volume, RemoveVolume: fresh}); rerr != nil {
+				sink.Log("warn", "could not remove the failed container: "+rerr.Error())
+			} else {
+				sink.Log("info", "removed the container that failed to start")
+			}
+			return nil, err
+		}
+		sink.Log("info", "server is ready")
 	}
 	res := &Result{OK: true, ContainerID: containerID}
 	if spec.TLS != nil {
@@ -239,7 +281,7 @@ func configureTLS(ctx context.Context, eng string, spec *ProvisionSpec, sink Log
 	}
 	// The data volume isn't used again by the image's first-start setup, so
 	// the root password only matters for a fresh volume.
-	res, err := provisionContainer(ctx, eng, spec, image)
+	res, err := provisionContainer(ctx, eng, spec, image, false, sink)
 	if err == nil {
 		err = waitRunning(ctx, spec.ContainerName)
 	}
@@ -303,6 +345,73 @@ func imageRef(eng string, spec *ProvisionSpec) string {
 	return image
 }
 
+// waitReady runs cmd in the container until it succeeds, the container
+// stops or starts crash-looping, or readyTimeout passes.
+func waitReady(ctx context.Context, container string, cmd []string) error {
+	ctx, cancel := context.WithTimeout(ctx, readyTimeout)
+	defer cancel()
+	for {
+		if _, err := runDocker(ctx, append([]string{"exec", container}, cmd...)...); err == nil {
+			return nil
+		}
+		if out, err := runDocker(ctx, "inspect", "-f", "{{.State.Running}} {{.State.Restarting}} {{.RestartCount}}", container); err == nil {
+			if crashed(out) {
+				return fmt.Errorf("the container stopped while starting: %s", lastLogLine(ctx, container))
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("the server did not become ready within %s", readyTimeout)
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// crashed reports, from "{{.State.Running}} {{.State.Restarting}}
+// {{.RestartCount}}", a container that stopped or is crash-looping: with a
+// restart policy one that keeps failing reads as running most of the time,
+// so a restart already counts.
+func crashed(inspect string) bool {
+	f := strings.Fields(inspect)
+	if len(f) != 3 {
+		return false
+	}
+	return f[0] == "false" || f[1] == "true" || f[2] != "0"
+}
+
+// lastLogLine returns the container's most telling recent log line: the last
+// one mentioning an error, or else the last one. Both streams are read, since
+// servers such as ClickHouse log to stderr.
+func lastLogLine(ctx context.Context, container string) string {
+	out, _ := exec.CommandContext(ctx, "docker", "logs", "--tail", "50", container).CombinedOutput()
+	return pickLogLine(string(out))
+}
+
+func pickLogLine(logs string) string {
+	var last, lastErr string
+	for _, l := range strings.Split(logs, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		last = l
+		if lo := strings.ToLower(l); strings.Contains(lo, "error") || strings.Contains(lo, "exception") || strings.Contains(lo, "fatal") {
+			lastErr = l
+		}
+	}
+	line := last
+	if lastErr != "" {
+		line = lastErr
+	}
+	if len(line) > 500 {
+		line = line[:500] + "…"
+	}
+	if line == "" {
+		return "no log output"
+	}
+	return line
+}
+
 func removeContainer(ctx context.Context, spec *ProvisionSpec) (*Result, error) {
 	if _, err := runDocker(ctx, "rm", "-f", spec.ContainerName); err != nil {
 		return nil, err
@@ -334,7 +443,7 @@ func runDocker(ctx context.Context, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-func writeEnvFile(line string) (string, error) {
+func writeEnvFile(lines ...string) (string, error) {
 	f, err := os.CreateTemp("", "dbm-env-*")
 	if err != nil {
 		return "", fmt.Errorf("create env file: %w", err)
@@ -344,7 +453,7 @@ func writeEnvFile(line string) (string, error) {
 		_ = os.Remove(f.Name())
 		return "", err
 	}
-	if _, err := f.WriteString(line + "\n"); err != nil {
+	if _, err := f.WriteString(strings.Join(lines, "\n") + "\n"); err != nil {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
 		return "", err
