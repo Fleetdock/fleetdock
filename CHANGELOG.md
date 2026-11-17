@@ -58,11 +58,35 @@ needs an agent from this release; older agents create servers without it and
   whose profile has `readonly = 1` is told to use `readonly = 2`. Redirects
   are never followed and only ClickHouse's own error text is shown. Not
   available on ClickHouse yet, and refused by the API: editing rows (its
-  `UPDATE`/`DELETE` are asynchronous mutations; use the SQL console),
-  backups, restores, schedules, moves, dumps and SQL imports, creating
-  ClickHouse servers as containers, public access through the gateway,
-  table-structure editing, write previews and query insights. Migration
+  `UPDATE`/`DELETE` are asynchronous mutations; use the SQL console), SQL
+  file imports, comparing a table with a backup, creating ClickHouse
+  servers as containers, public access through the gateway, table-structure
+  editing, write previews and query insights. Migration
   `0030` adds the engine, its secret kind and its connectivity protocol.
+- **ClickHouse backups.** Backups, scheduled backups, retention, restores
+  (under the same or a new name, onto any ClickHouse server), verification,
+  moves and one-off dump downloads now work on ClickHouse. ClickHouse has no
+  dump tool, so Fleetdock writes its own dump over the HTTP interface: every
+  table, dictionary and view definition, and the rows of data-holding tables
+  and materialized views in ClickHouse's Native format, gzip-compressed and
+  checksummed like the other engines' backups (`.fdch.gz`). Nothing needs
+  installing on the control plane or the agent. Each table is loaded into a
+  temporary table and swapped in once complete, so a failed load leaves the
+  original untouched and no materialized view counts the restored rows a
+  second time. Restoring anywhere but back in place (another name, another
+  server, or a verification) repoints views, dictionaries and
+  Buffer/Merge/Distributed tables at the new database, restores
+  `Replicated*MergeTree` tables as plain `*MergeTree`, and leaves out
+  streaming tables (Kafka, RabbitMQ, NATS, S3Queue, ...) and the views
+  reading from them, so a copy never joins the original's replication or
+  consumes its messages. A replicated table restored under its own name is
+  left as it is (with a warning) rather than replicating the restored rows
+  to every replica. Definitions whose credentials the server masks (dictionary
+  sources, MySQL/S3/Kafka tables) are reported in the backup's log; they are
+  included only when the server shows secrets
+  (`display_secrets_in_show_and_select`). ClickHouse backups restore only into
+  ClickHouse, and SQL dumps never into it; the API refuses both. Migration
+  `0031` records the new dump tool.
 
 ### Fixed
 

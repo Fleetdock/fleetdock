@@ -7,8 +7,12 @@ export type EngineId = "mariadb" | "mysql" | "postgres" | "clickhouse";
 export type EngineFeature =
   /** Insert, edit and delete rows in the data browser (and undo, CSV import). */
   | "rowEditing"
-  /** Backups, restores, scheduled backups, SQL imports and moves. */
+  /** Backups, restores, scheduled backups and moves. */
   | "backups"
+  /** Load a .sql file into a database. */
+  | "sqlImport"
+  /** Compare a table row by row with a restored backup copy. */
+  | "backupCompare"
   /** Fleetdock creates the engine as a container on a connected server. */
   | "provisioning"
   /** Create, alter, rename, truncate and drop tables and indexes from the dashboard. */
@@ -42,7 +46,7 @@ export const ENGINES: Record<EngineId, EngineInfo> = {
     versions: ["25.8", "25.3", "24.8"],
     port: 8443,
     adminUser: "default",
-    lacks: ["rowEditing", "backups", "provisioning", "structureEditing", "preview", "insights"],
+    lacks: ["rowEditing", "sqlImport", "backupCompare", "provisioning", "structureEditing", "preview", "insights"],
     portHint: "The HTTP interface: 8443 with TLS, or 8123 without.",
     defaultTLS: "require",
   },

@@ -102,9 +102,19 @@ Backend (Go):
   `DELETE` → `ALTER DELETE`; ones without an equivalent are refused),
   application credentials, and monitoring (running queries with cancel,
   `system.metrics`, `system.server_settings`, database sizes). Read-only
-  logins are pinned to `readonly = 2`. Not yet supported: row editing,
-  backups and everything built on them (restore, schedules, moves, dumps,
-  SQL import), provisioning ClickHouse as a container, public access
+  logins are pinned to `readonly = 2`. Backups (manual, scheduled, verified,
+  restored, moved, downloaded) use Fleetdock's own dump, written over the
+  HTTP interface with no tool to install: definitions plus Native-format rows
+  of data-holding tables and materialized views (`.fdch.gz`). Each table is
+  read in one query (one snapshot per table, none across tables). Tables are
+  loaded into a temporary table and swapped in, so materialized views never
+  count restored rows twice. A restore anywhere but back in place repoints
+  views, restores `Replicated*MergeTree` tables as plain `*MergeTree` and
+  leaves out streaming tables (Kafka, S3Queue, ...) and the views reading
+  them. Credentials the server masks in definitions are
+  reported in the backup log and are only included when the server shows
+  secrets. Not yet supported: row editing, SQL file import, comparing a table
+  with a backup, provisioning ClickHouse as a container, public access
   through the gateway, structure editing, write previews and query insights.
 - **Live DB administration** — for **MariaDB, MySQL, and PostgreSQL**:
   - accounts and grants: list/create/drop users (MariaDB `user@host`,

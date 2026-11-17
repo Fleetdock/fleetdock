@@ -482,13 +482,13 @@ func (h *DBAdminHandler) Dump(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	schema := r.URL.Query().Get("schema")
 	started := false
-	err := h.svc.Dump(r.Context(), id, schema, w, func(dbName string) {
+	err := h.svc.Dump(r.Context(), id, schema, w, func(dbName, ext string) {
 		started = true
 		name := dbName
 		if schema != "" {
 			name += "-" + schema
 		}
-		filename := dumpFilename(name, time.Now().UTC())
+		filename := dumpFilename(name, ext, time.Now().UTC())
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 		w.WriteHeader(http.StatusOK)
@@ -514,8 +514,8 @@ const dumpWriteDeadline = 2*time.Hour + time.Minute
 
 // dumpFilename names a downloaded dump after its database and the time it
 // was taken, e.g. "orders-20261012-143005.sql.gz".
-func dumpFilename(dbName string, at time.Time) string {
-	return strings.TrimSuffix(csvFilename(dbName), ".csv") + "-" + at.Format("20060102-150405") + ".sql.gz"
+func dumpFilename(dbName, ext string, at time.Time) string {
+	return strings.TrimSuffix(csvFilename(dbName), ".csv") + "-" + at.Format("20060102-150405") + ext
 }
 
 // exportWriteDeadline bounds a streamed export; a little above the service's

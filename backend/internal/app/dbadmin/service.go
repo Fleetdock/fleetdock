@@ -1062,9 +1062,6 @@ func (s *Service) dumpTarget(ctx context.Context, databaseID string) (*databased
 	if err != nil {
 		return nil, "", engine.ConnParams{}, err
 	}
-	if !inst.Engine.SupportsBackups() {
-		return nil, "", engine.ConnParams{}, apperr.Invalid("engine", fmt.Sprintf("dumps are not supported for %s yet", inst.Engine))
-	}
 	return db, string(inst.Engine), conn, nil
 }
 
@@ -1093,10 +1090,11 @@ func (s *Service) CheckDump(ctx context.Context, databaseID string) error {
 	return nil
 }
 
-// Dump streams a gzip-compressed SQL dump of the database, or of one of its
+// Dump streams a gzip-compressed dump of the database, or of one of its
 // PostgreSQL schemas, to w without storing it anywhere. onStart receives the
-// database name just before the first byte is written.
-func (s *Service) Dump(ctx context.Context, databaseID, schema string, w io.Writer, onStart func(dbName string)) error {
+// database name and the dump's file extension (".sql.gz", or ".fdch.gz" for
+// ClickHouse) just before the first byte is written.
+func (s *Service) Dump(ctx context.Context, databaseID, schema string, w io.Writer, onStart func(dbName, ext string)) error {
 	db, engineName, conn, err := s.dumpTarget(ctx, databaseID)
 	if err != nil {
 		return err
@@ -1111,7 +1109,8 @@ func (s *Service) Dump(ctx context.Context, databaseID, schema string, w io.Writ
 	}
 	cctx, cancel := context.WithTimeout(ctx, dumpTimeout)
 	defer cancel()
-	if err := executor.Dump(cctx, engineName, conn, db.Name, schema, w, func() { onStart(db.Name) }); err != nil {
+	ext := engine.DumpExtension(engineName)
+	if err := executor.Dump(cctx, engineName, conn, db.Name, schema, w, func() { onStart(db.Name, ext) }); err != nil {
 		return apperr.Invalid("database", err.Error())
 	}
 	return nil
