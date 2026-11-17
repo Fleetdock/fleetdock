@@ -199,6 +199,14 @@ func TestIntegrationClickHouseRestoreSafety(t *testing.T) {
 		if r := mustQuery(t, c, p, src, "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.fd_restore.%'", false); *r.Rows[0][0] != "0" {
 			t.Error("a temporary restore table was left behind")
 		}
+		// The table swapped in is the one the view in the other database
+		// now watches: new rows still reach it.
+		mustQuery(t, c, p, src, "INSERT INTO events VALUES (6000, 'after restore')", true)
+		got := chChecksum(t, c, p, watch, "mirror")
+		if got == mirror {
+			t.Error("after an in-place restore, a materialized view in another database no longer fires")
+		}
+		mirror = got // what the copy below must leave alone
 	})
 
 	t.Run("copy", func(t *testing.T) {
