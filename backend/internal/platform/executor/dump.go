@@ -71,7 +71,7 @@ func Dump(ctx context.Context, engineName string, c engine.ConnParams, database,
 	if _, err := out.Peek(1); err != nil {
 		_, _ = io.Copy(io.Discard, out)
 		if werr := cmd.Wait(); werr != nil {
-			return fmt.Errorf("dump failed: %s", firstLine(stderr.String()))
+			return fmt.Errorf("dump failed: %s%s", firstLine(stderr.String()), versionMismatchHint(stderr.String()))
 		}
 		return errors.New("dump failed: the dump tool produced no output")
 	}
