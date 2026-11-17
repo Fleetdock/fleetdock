@@ -64,6 +64,7 @@ export function AddServerWizard({
   const [version, setVersion] = useState(ENGINES.postgres.version);
   const [port, setPort] = useState(String(ENGINES.postgres.port));
   const [pgvector, setPgvector] = useState(false);
+  const [serverTLS, setServerTLS] = useState(true);
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
@@ -105,6 +106,7 @@ export function AddServerWizard({
       if (mode === "provision") {
         const res = await provision.mutateAsync({ server_id: server, name, engine, engine_version: version, port: Number(port),
           pgvector: engine === "postgres" && pgvector,
+          tls: serverTLS,
         });
         setDone({ instance: res.instance, operationId: res.operation_id });
       } else {
@@ -217,6 +219,15 @@ export function AddServerWizard({
               ))}
             </datalist>
           </div>
+
+          {mode === "provision" ? (
+            <Checkbox
+              label="Turn on TLS"
+              hint="Encrypts connections with a certificate from this install's certificate authority. Clients can use sslmode=require."
+              checked={serverTLS}
+              onChange={(e) => setServerTLS(e.target.checked)}
+            />
+          ) : null}
 
           {mode === "provision" && engine === "postgres" ? (
             <Checkbox

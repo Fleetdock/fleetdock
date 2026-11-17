@@ -13,9 +13,19 @@ import (
 	"github.com/Fleetdock/fleetdock/backend/internal/platform/engine"
 )
 
+// noVersionedPGTools hides the host's /usr/lib/postgresql/*/bin tools, which
+// lookPath prefers over PATH, so a test sees only what it puts on PATH.
+func noVersionedPGTools(t *testing.T) {
+	t.Helper()
+	old := pgToolDirs
+	pgToolDirs = nil
+	t.Cleanup(func() { pgToolDirs = old })
+}
+
 // fakePgDump puts a pg_dump stand-in running script on PATH.
 func fakePgDump(t *testing.T, script string) {
 	t.Helper()
+	noVersionedPGTools(t)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "pg_dump"), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -61,6 +71,7 @@ func TestDumpFailureBeforeOutputReportsStderr(t *testing.T) {
 }
 
 func TestDumpPreflightMissingTool(t *testing.T) {
+	noVersionedPGTools(t)
 	t.Setenv("PATH", t.TempDir())
 	if err := DumpPreflight("postgres"); err == nil {
 		t.Fatal("expected an error when pg_dump is not installed")

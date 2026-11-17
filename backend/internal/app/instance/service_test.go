@@ -3,6 +3,7 @@ package instanceapp
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -85,6 +86,7 @@ func (r *fakeRepo) SetStatus(_ context.Context, _ uuid.UUID, _ instancedom.Statu
 	return nil
 }
 func (r *fakeRepo) SetContainerID(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (r *fakeRepo) SetTLS(context.Context, uuid.UUID, time.Time) error            { return nil }
 func (r *fakeRepo) SoftDelete(_ context.Context, _ uuid.UUID) error               { return nil }
 
 type fakeSecrets struct {
