@@ -5,6 +5,8 @@
 package instance
 
 import (
+	"net/netip"
+	"regexp"
 	"strings"
 	"time"
 
@@ -309,9 +311,9 @@ func NewManaged(serverID uuid.UUID, name string, engine Engine, engineVersion st
 
 // NewExternal registers an instance the control plane reaches directly.
 func NewExternal(name string, engine Engine, engineVersion, host string, port int, username *string, labels map[string]string, tags []string) (*Instance, error) {
-	host = strings.TrimSpace(host)
-	if host == "" {
-		return nil, apperr.Invalid("host", "host is required for external instances")
+	host, err := ValidateHost(host)
+	if err != nil {
+		return nil, err
 	}
 	base, err := newBase(name, engine, engineVersion, port, username, labels, tags)
 	if err != nil {
@@ -320,6 +322,36 @@ func NewExternal(name string, engine Engine, engineVersion, host string, port in
 	base.Kind = KindExternal
 	base.Host = &host
 	return base, nil
+}
+
+// ValidateHost trims and checks an external instance's host, returning the
+// canonical form. Only an IP address or a DNS hostname is accepted: the host
+// is written into the gateway's HAProxy configuration and handed to the
+// dump/restore tools, so whitespace, separators or a socket path must never
+// get through.
+func ValidateHost(host string) (string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", apperr.Invalid("host", "host is required for external instances")
+	}
+	if !ValidHost(host) {
+		return "", apperr.Invalid("host", "host must be an IP address or a hostname (letters, digits, '-', '_' and '.')")
+	}
+	return host, nil
+}
+
+// hostnameRe matches a DNS hostname: dot-separated labels of letters, digits,
+// '-' and '_' (common in container and internal names), not starting or
+// ending with '-', with an optional trailing dot.
+var hostnameRe = regexp.MustCompile(`^[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*\.?$`)
+
+// ValidHost reports whether host is an IP address (without zone) or a DNS
+// hostname of at most 253 characters.
+func ValidHost(host string) bool {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return ip.Zone() == ""
+	}
+	return len(host) <= 253 && hostnameRe.MatchString(host)
 }
 
 // ValidateName trims and checks an instance name, returning the canonical

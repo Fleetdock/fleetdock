@@ -26,6 +26,29 @@ func TestPGDumpCompatDropsTransactionTimeout(t *testing.T) {
 	}
 }
 
+func TestPGDumpCompatDropsRestrictOutsideCopyOnly(t *testing.T) {
+	in := "\\restrict abc123\n" +
+		"SET transaction_timeout = 0;\n" +
+		"COPY public.t (a) FROM stdin;\n" +
+		"SET transaction_timeout = 0;\n" +
+		"\\restrict notakey\n" +
+		"\\.\n" +
+		"SELECT 1;\n" +
+		"\\unrestrict abc123\n"
+	out, err := io.ReadAll(newPGDumpCompat(strings.NewReader(in)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "COPY public.t (a) FROM stdin;\n" +
+		"SET transaction_timeout = 0;\n" +
+		"\\restrict notakey\n" +
+		"\\.\n" +
+		"SELECT 1;\n"
+	if got := string(out); got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestFirstLinePrefersTheError(t *testing.T) {
 	cases := map[string]string{
 		"WARNING: option --ssl-verify-server-cert is disabled\nERROR 1227 (42000) at line 1: Access denied": "ERROR 1227 (42000) at line 1: Access denied",

@@ -196,3 +196,18 @@ Success=0
 		})
 	}
 }
+
+// A backend host is written verbatim into the configuration, so a route whose
+// host is not an address or hostname must never be rendered.
+func TestGenerateSkipsInvalidBackendHost(t *testing.T) {
+	cfg := Generate([]Route{
+		{ID: "a", ListenPort: 15432, BackendHost: "x\nfrontend pwn\n  bind *:15440\n  default_backend b\nbackend b\n  server s postgres:5432\n#", BackendPort: 5432, AllowedCIDRs: []string{"0.0.0.0/0"}},
+		{ID: "b", ListenPort: 15433, BackendHost: "10.0.0.2", BackendPort: 3306, AllowedCIDRs: []string{"10.0.0.0/8"}},
+	}, Options{})
+	if strings.Contains(cfg, "pwn") || strings.Contains(cfg, "15440") || strings.Contains(cfg, "bind *:15432") {
+		t.Fatalf("invalid host rendered:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "server srv1 10.0.0.2:3306") {
+		t.Fatalf("valid route dropped:\n%s", cfg)
+	}
+}

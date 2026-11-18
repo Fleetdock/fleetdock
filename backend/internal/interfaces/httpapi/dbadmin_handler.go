@@ -81,6 +81,24 @@ func authorizeDataAccess(ctx context.Context, rv *authzapp.Resolver, lookup data
 	return nil
 }
 
+// authorizeSystemDatabase requires instance:write when dbID is a system
+// database (mysql, sys, postgres). It gates work that creates or changes
+// database accounts with access to it (application credentials, grants):
+// those accounts would read the account tables and password hashes.
+func authorizeSystemDatabase(ctx context.Context, rv *authzapp.Resolver, lookup dataAccessLookup, dbID string) error {
+	info, err := lookup.DataAccess(ctx, dbID)
+	if err != nil {
+		return err
+	}
+	if !info.System {
+		return nil
+	}
+	if err := authorizeResource(ctx, rv, "instance:write", authz.ResourceInstance, info.InstanceID); err != nil {
+		return apperr.Forbidden("access to a system database can only be granted by instance administrators")
+	}
+	return nil
+}
+
 // ---- Instance-level ----
 
 // ListDBUsers handles GET /v1/instances/{id}/db-users.
@@ -202,6 +220,10 @@ func (h *DBAdminHandler) GrantOnDatabase(w http.ResponseWriter, r *http.Request)
 		writeError(w, err)
 		return
 	}
+	if err := authorizeSystemDatabase(r.Context(), h.resolver, h.svc, r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
 	if err := h.svc.GrantOnDatabase(r.Context(), r.PathValue("id"), req.Username, req.Host, req.Privileges); err != nil {
 		writeError(w, err)
 		return
@@ -213,6 +235,10 @@ func (h *DBAdminHandler) GrantOnDatabase(w http.ResponseWriter, r *http.Request)
 func (h *DBAdminHandler) RevokeOnDatabase(w http.ResponseWriter, r *http.Request) {
 	var req grantRequest
 	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := authorizeSystemDatabase(r.Context(), h.resolver, h.svc, r.PathValue("id")); err != nil {
 		writeError(w, err)
 		return
 	}

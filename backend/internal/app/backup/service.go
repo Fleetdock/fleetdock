@@ -167,8 +167,55 @@ type RestoreInput struct {
 	CreatedBy            *uuid.UUID
 }
 
-// Restore creates a restore operation for a completed backup.
-func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, error) {
+// RestoreTarget is where a restore writes.
+type RestoreTarget struct {
+	InstanceID uuid.UUID
+	Database   string
+	// Existing is the registered database of that name on the instance, which
+	// the restore overwrites; nil when there is none.
+	Existing *uuid.UUID
+	// System reports an engine-owned database (mysql, sys, postgres, …).
+	System bool
+}
+
+// ResolveRestoreTarget returns where Restore would write for in, so callers
+// can authorize the target before starting it.
+func (s *Service) ResolveRestoreTarget(ctx context.Context, in RestoreInput) (*RestoreTarget, error) {
+	plan, err := s.planRestore(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	t := &RestoreTarget{
+		InstanceID: plan.inst.ID,
+		Database:   plan.name,
+		System:     engine.IsSystemDatabase(string(plan.inst.Engine), plan.name),
+	}
+	page, err := s.databases.List(ctx, databasedom.ListFilter{InstanceID: &plan.inst.ID, Search: plan.name, Limit: 1000})
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range page.Items {
+		if d.Name == plan.name {
+			id := d.ID
+			t.Existing = &id
+			if d.System {
+				t.System = true
+			}
+			break
+		}
+	}
+	return t, nil
+}
+
+// restorePlan is a validated restore: the backup and where it goes.
+type restorePlan struct {
+	backup             *backupdom.Backup
+	inst               *instancedom.Instance
+	name               string
+	charset, collation string
+}
+
+func (s *Service) planRestore(ctx context.Context, in RestoreInput) (*restorePlan, error) {
 	bid, err := uuid.Parse(in.BackupID)
 	if err != nil {
 		return nil, apperr.Invalid("backup_id", "backup_id must be a valid UUID")
@@ -218,6 +265,17 @@ func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, er
 			"this backup is a %s dump and can only be restored to a %s database server",
 			instancedom.FamilyLabel(from), instancedom.FamilyLabel(from)))
 	}
+	return &restorePlan{backup: b, inst: inst, name: targetName, charset: charset, collation: collation}, nil
+}
+
+// Restore creates a restore operation for a completed backup. It does not
+// authorize the target: callers check it (see ResolveRestoreTarget).
+func (s *Service) Restore(ctx context.Context, in RestoreInput) (*jobdom.Job, error) {
+	plan, err := s.planRestore(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	b, inst, targetName, charset, collation := plan.backup, plan.inst, plan.name, plan.charset, plan.collation
 
 	dest, err := s.dests.GetByID(ctx, *b.DestinationID)
 	if err != nil {

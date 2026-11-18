@@ -352,7 +352,7 @@ func run() error {
 		Console:           httpapi.NewConsoleHandler(consoleapp.NewService(consoleRepo), resolver),
 		TableViews:        httpapi.NewTableViewHandler(tableviewapp.NewService(postgres.NewTableViewRepository(pool)), resolver),
 		Connectivity:      httpapi.NewConnectivityHandler(endpointSvc),
-		DBCredentials:     httpapi.NewDBCredentialHandler(credentialSvc),
+		DBCredentials:     httpapi.NewDBCredentialHandler(credentialSvc, resolver, dbadminSvc),
 		Agents:            httpapi.NewAgentHandler(agentSvc, opsSvc),
 		RegTokens:         httpapi.NewRegTokenHandler(agentSvc, cfg.PublicURL),
 		Install:           httpapi.NewInstallHandler(cfg.PublicURL, cfg.AgentBinDir),

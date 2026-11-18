@@ -1,9 +1,12 @@
 package instance
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/Fleetdock/fleetdock/backend/internal/platform/apperr"
 )
 
 func TestTLSModeOrDefault(t *testing.T) {
@@ -50,5 +53,40 @@ func TestNewProvisionedClickHouseIsPlainHTTP(t *testing.T) {
 	pg, _ := NewProvisioned(uuid.New(), "pg", EnginePostgres, "17", 5432)
 	if got := pg.TLSModeOrDefault(); got != "prefer" {
 		t.Errorf("postgres tls = %q, want prefer", got)
+	}
+}
+
+func TestValidateHost(t *testing.T) {
+	for host, ok := range map[string]bool{
+		"db.example.com":      true,
+		"  db.example.com  ":  true,
+		"db.example.com.":     true,
+		"postgres":            true,
+		"my_db-1":             true,
+		"10.0.0.5":            true,
+		"2001:db8::1":         true,
+		"":                    false,
+		"db.example.com\nfoo": false,
+		"x\nfrontend pwn\n  bind *:15440\nbackend b\n  server s postgres:5432\n#": false,
+		"db example.com":                 false,
+		"nx.invalid,127.0.0.1":           false,
+		"/var/run/postgresql":            false,
+		"db:5432":                        false,
+		"-db":                            false,
+		"db..example.com":                false,
+		"fe80::1%eth0":                   false,
+		strings.Repeat("a", 64) + ".com": false,
+	} {
+		_, err := ValidateHost(host)
+		if (err == nil) != ok {
+			t.Errorf("ValidateHost(%q): err = %v, want ok=%v", host, err, ok)
+		}
+	}
+}
+
+func TestNewExternalRejectsInjectedHost(t *testing.T) {
+	_, err := NewExternal("ext", EnginePostgres, "16", "x\nfrontend pwn", 5432, nil, nil, nil)
+	if apperr.KindOf(err) != apperr.KindInvalid {
+		t.Fatalf("err = %v, want invalid", err)
 	}
 }

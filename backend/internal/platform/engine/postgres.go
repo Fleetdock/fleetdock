@@ -210,6 +210,8 @@ func (pg *Postgres) RestoreArgs(p ConnParams, database string) ([]string, []stri
 		"--port=" + strconv.Itoa(p.Port),
 		"--username=" + p.User,
 		"--no-password",
+		// A ~/.psqlrc on this host must not run before the stream does.
+		"--no-psqlrc",
 		// Abort on the first error and apply everything in one transaction,
 		// so a partly failed restore never reports success.
 		"--set=ON_ERROR_STOP=1",

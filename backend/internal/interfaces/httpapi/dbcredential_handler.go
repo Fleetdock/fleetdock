@@ -6,17 +6,21 @@ import (
 
 	"github.com/google/uuid"
 
+	authzapp "github.com/Fleetdock/fleetdock/backend/internal/app/authz"
 	dbcredentialapp "github.com/Fleetdock/fleetdock/backend/internal/app/dbcredential"
 )
 
 // DBCredentialHandler exposes application credential endpoints.
 type DBCredentialHandler struct {
-	svc *dbcredentialapp.Service
+	svc      *dbcredentialapp.Service
+	resolver *authzapp.Resolver
+	access   dataAccessLookup
 }
 
-// NewDBCredentialHandler builds the handler.
-func NewDBCredentialHandler(svc *dbcredentialapp.Service) *DBCredentialHandler {
-	return &DBCredentialHandler{svc: svc}
+// NewDBCredentialHandler builds the handler. access tells system databases
+// apart: credentials on those need instance:write.
+func NewDBCredentialHandler(svc *dbcredentialapp.Service, resolver *authzapp.Resolver, access dataAccessLookup) *DBCredentialHandler {
+	return &DBCredentialHandler{svc: svc, resolver: resolver, access: access}
 }
 
 type createCredentialRequest struct {
@@ -45,6 +49,10 @@ func (h *DBCredentialHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if err := authorizeSystemDatabase(r.Context(), h.resolver, h.access, r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
 	var actor *uuid.UUID
 	if p := principalFrom(r.Context()); p != nil {
 		actor = &p.UserID
@@ -66,6 +74,10 @@ func (h *DBCredentialHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Rotate handles POST /v1/databases/{id}/credentials/{credentialId}/rotate.
 func (h *DBCredentialHandler) Rotate(w http.ResponseWriter, r *http.Request) {
+	if err := authorizeSystemDatabase(r.Context(), h.resolver, h.access, r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
 	var actor *uuid.UUID
 	if p := principalFrom(r.Context()); p != nil {
 		actor = &p.UserID

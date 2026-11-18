@@ -287,6 +287,9 @@ func loadSQL(ctx context.Context, pg *engine.Postgres, conn engine.ConnParams, t
 		defer edited.Close()
 		in = edited
 	}
+	if in, err = guardRestore(ctx, "postgres", restoreBin, in); err != nil {
+		return err
+	}
 	restore.Stdin = in
 	// psql's output (SET, CREATE TABLE, COPY n) is noise here.
 	restore.Stdout = io.Discard

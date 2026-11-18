@@ -12,6 +12,7 @@ import (
 	"time"
 
 	endpointdom "github.com/Fleetdock/fleetdock/backend/internal/domain/endpoint"
+	instancedom "github.com/Fleetdock/fleetdock/backend/internal/domain/instance"
 )
 
 // Source IP modes control how HAProxy determines a client's address.
@@ -117,6 +118,11 @@ func Generate(routes []Route, opts Options) string {
 	for _, r := range sorted {
 		if _, dup := seenPorts[r.ListenPort]; dup {
 			continue // one public listener per port
+		}
+		if !instancedom.ValidHost(r.BackendHost) {
+			// Written verbatim below: a newline or space in it would add its
+			// own configuration. Callers report these; never render one.
+			continue
 		}
 		seenPorts[r.ListenPort] = struct{}{}
 

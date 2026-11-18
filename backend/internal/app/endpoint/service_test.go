@@ -257,3 +257,23 @@ func TestPrivateTLSModeFollowsClickHouseScheme(t *testing.T) {
 		}
 	}
 }
+
+// An endpoint stored before hosts were validated must not reach the gateway
+// configuration, and must say why it is not serving.
+func TestReconcileRefusesInvalidBackendHost(t *testing.T) {
+	ep := publicEndpoint(endpointdom.StatusPending, 15432)
+	ep.InternalHost = "x\nfrontend pwn"
+	repo := &fakeEndpointRepo{routable: []*endpointdom.Endpoint{ep}}
+	svc := newTestService(repo, GatewayConfig{Enabled: true})
+
+	_ = svc.Reconcile(context.Background())
+	var got *statusCall
+	for i := range repo.statusCalls {
+		if repo.statusCalls[i].id == ep.ID {
+			got = &repo.statusCalls[i]
+		}
+	}
+	if got == nil || got.lastError == nil || *got.lastError != errInvalidBackendHost {
+		t.Fatalf("status calls = %+v, want the invalid-host error", repo.statusCalls)
+	}
+}

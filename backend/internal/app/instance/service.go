@@ -430,9 +430,9 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*insta
 		if inst.Kind != instancedom.KindExternal {
 			return nil, apperr.Invalid("host", "host can only be set on external instances")
 		}
-		host := strings.TrimSpace(*in.Host)
-		if host == "" {
-			return nil, apperr.Invalid("host", "host is required for external instances")
+		host, err := instancedom.ValidateHost(*in.Host)
+		if err != nil {
+			return nil, err
 		}
 		// Moving the instance to another host would otherwise hand the stored
 		// admin password to whatever answers there. Make the caller prove they

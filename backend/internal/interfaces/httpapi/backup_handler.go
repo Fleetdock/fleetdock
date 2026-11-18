@@ -135,24 +135,62 @@ func (h *BackupHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-// Restore handles POST /v1/backups/{id}/restore.
+// Restore handles POST /v1/backups/{id}/restore. The route checks
+// backup:write on the backup; the restore writes into its target with the
+// target instance's admin login, so the target needs authorizing too.
 func (h *BackupHandler) Restore(w http.ResponseWriter, r *http.Request) {
 	var req restoreBackupRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, err)
 		return
 	}
-	job, err := h.svc.Restore(r.Context(), backupapp.RestoreInput{
+	in := backupapp.RestoreInput{
 		BackupID:         r.PathValue("id"),
 		TargetInstanceID: req.TargetInstanceID,
 		TargetDatabase:   req.TargetDatabase,
 		CreatedBy:        callerID(r),
-	})
+	}
+	target, err := h.svc.ResolveRestoreTarget(r.Context(), in)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := h.authorizeRestoreTarget(r, target); err != nil {
+		writeError(w, err)
+		return
+	}
+	job, err := h.svc.Restore(r.Context(), in)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"operation_id": job.ID.String()})
+}
+
+// authorizeRestoreTarget requires database:write on the database the restore
+// overwrites (with its data access rules), or, when it creates a new one,
+// database:write on the target instance, as creating a database there does.
+// A system database also needs instance:write.
+func (h *BackupHandler) authorizeRestoreTarget(r *http.Request, t *backupapp.RestoreTarget) error {
+	ctx := r.Context()
+	if t.Existing != nil {
+		if err := authorizeResource(ctx, h.resolver, "database:write", authz.ResourceDatabase, *t.Existing); err != nil {
+			return err
+		}
+		if h.access != nil {
+			if err := authorizeDataAccess(ctx, h.resolver, h.access, *t.Existing); err != nil {
+				return err
+			}
+		}
+	} else if err := authorizeResource(ctx, h.resolver, "database:write", authz.ResourceInstance, t.InstanceID); err != nil {
+		return err
+	}
+	if t.System {
+		if err := authorizeResource(ctx, h.resolver, "instance:write", authz.ResourceInstance, t.InstanceID); err != nil {
+			return apperr.Forbidden("restoring into a system database needs instance:write on its server")
+		}
+	}
+	return nil
 }
 
 // List handles GET /v1/backups.

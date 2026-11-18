@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -381,6 +382,9 @@ func restoreWithTool(ctx context.Context, eng engine.Client, p *Payload, gz io.R
 	if err != nil {
 		return err
 	}
+	if stream, err = guardRestore(ctx, p.Engine, bin, stream); err != nil {
+		return err
+	}
 	sink.Log("info", "restoring SQL stream")
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), env...)
@@ -543,14 +547,22 @@ func firstLine(s string) string {
 	return "command failed"
 }
 
-// pgDumpCompat drops the session settings newer pg_dump versions emit that
-// older servers reject. pg_dump 17 writes "SET transaction_timeout = 0;",
-// which a PostgreSQL 16 or older server refuses as an unknown parameter — and
-// with ON_ERROR_STOP that would abort every restore into such a server. The
-// setting only matters during the restore itself, so dropping it is safe.
+// pgDumpCompat drops the lines of a plain pg_dump script that would break its
+// restore:
+//   - "SET transaction_timeout = 0;", which pg_dump 17 writes and a PostgreSQL
+//     16 or older server refuses as an unknown parameter, aborting the restore
+//     under ON_ERROR_STOP. It only matters during the restore, so dropping it
+//     is safe.
+//   - pg_dump's own "\restrict <key>" / "\unrestrict <key>" lines (17.6 and
+//     later): guardRestore already wraps the whole stream in its own
+//     restricted mode, inside which psql refuses another \restrict.
+//
+// Lines inside COPY … FROM stdin data are table rows and pass unchanged.
 type pgDumpCompat struct {
 	r       *bufio.Reader
 	pending []byte
+	inCopy  bool // between a COPY … FROM stdin; line and its \. terminator
+	midLine bool // the last read ended inside an over-long line
 }
 
 func newPGDumpCompat(r io.Reader) io.Reader {
@@ -567,9 +579,12 @@ func (c *pgDumpCompat) Read(p []byte) (int, error) {
 		if errors.Is(err, bufio.ErrBufferFull) {
 			// A very long line (bulk COPY data): pass it through as is.
 			c.pending = append(c.pending[:0], line...)
+			c.midLine = true
 			break
 		}
-		if len(line) > 0 && !droppable(line) {
+		whole := !c.midLine
+		c.midLine = false
+		if len(line) > 0 && (!whole || !c.droppable(line)) {
 			c.pending = append(c.pending[:0], line...)
 		}
 		if err != nil {
@@ -584,8 +599,25 @@ func (c *pgDumpCompat) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func droppable(line []byte) bool {
+var pgRestrictLine = regexp.MustCompile(`^\\(un)?restrict\s+\S+$`)
+
+// droppable reports whether a whole line is to be dropped, tracking whether
+// it falls inside COPY data.
+func (c *pgDumpCompat) droppable(line []byte) bool {
 	t := bytes.TrimSpace(line)
+	if c.inCopy {
+		if bytes.Equal(t, []byte(`\.`)) {
+			c.inCopy = false
+		}
+		return false
+	}
+	if bytes.HasPrefix(t, []byte("COPY ")) && bytes.HasSuffix(t, []byte("FROM stdin;")) {
+		c.inCopy = true
+		return false
+	}
+	if pgRestrictLine.Match(t) {
+		return true
+	}
 	for _, d := range pgDumpDropLines {
 		if bytes.Equal(t, d) {
 			return true

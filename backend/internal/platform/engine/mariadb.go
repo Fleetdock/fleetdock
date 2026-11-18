@@ -228,6 +228,9 @@ func (m *MariaDB) RestoreArgs(p ConnParams, database string) ([]string, []string
 		"--host=" + p.Host,
 		fmt.Sprintf("--port=%d", p.Port),
 		"--user=" + p.User,
+		// Refuse client commands (system, tee, source, …) in the stream: it
+		// may come from a user's upload or from a database's own contents.
+		"--sandbox",
 		database,
 	}, []string{"MYSQL_PWD=" + p.Password}
 }

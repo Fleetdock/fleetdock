@@ -247,6 +247,9 @@ func (s *Service) EnablePublicAccess(ctx context.Context, databaseID string, in 
 	if err != nil {
 		return nil, err
 	}
+	if !instancedom.ValidHost(internalHost) {
+		return nil, apperr.Invalid("instance", errInvalidBackendHost)
+	}
 	protocol, err := endpointdom.ProtocolForEngine(string(inst.Engine))
 	if err != nil {
 		return nil, err
@@ -385,7 +388,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 
 	routes := make([]gateway.Route, 0, len(eps))
 	for _, ep := range eps {
-		if ep.ExternalPort == nil {
+		if ep.ExternalPort == nil || !instancedom.ValidHost(ep.InternalHost) {
 			continue
 		}
 		routes = append(routes, gateway.Route{
@@ -410,6 +413,10 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		msg := applyErr.Error()
 		errs := []error{applyErr}
 		for _, ep := range eps {
+			if !instancedom.ValidHost(ep.InternalHost) {
+				errs = append(errs, s.recordFailure(ctx, ep, errInvalidBackendHost))
+				continue
+			}
 			errs = append(errs, s.recordFailure(ctx, ep, msg))
 		}
 		return errors.Join(errs...)
@@ -418,6 +425,13 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	var errs []error
 	stats, statsErr := s.loadStats()
 	for _, ep := range eps {
+		if !instancedom.ValidHost(ep.InternalHost) {
+			// Left out of the configuration above: the host is written into it
+			// verbatim, so anything but an address or hostname could add its own
+			// sections.
+			errs = append(errs, s.recordFailure(ctx, ep, errInvalidBackendHost))
+			continue
+		}
 		errs = append(errs, s.settleRoutable(ctx, ep, stats, statsErr))
 	}
 	errs = append(errs, s.settleDisabling(ctx, disabling))
@@ -432,6 +446,8 @@ func (s *Service) loadStats() (*gateway.Stats, error) {
 	}
 	return gateway.ShowStat(s.gw.AdminSock)
 }
+
+const errInvalidBackendHost = "the database's host is not a valid address or hostname; correct the instance's host"
 
 var errNoAdminSocket = errors.New("gateway admin socket is not configured; endpoint health cannot be verified")
 
