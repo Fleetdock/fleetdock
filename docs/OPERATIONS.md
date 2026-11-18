@@ -79,14 +79,14 @@ Stop the API during restore to avoid concurrent writes.
 
 ```bash
 fleetdock update              # latest
-fleetdock update --tag v0.13.0 # a specific release
+fleetdock update --tag v0.13.1 # a specific release
 ```
 
 ### Compose (build from source)
 
 ```bash
 git fetch origin
-git checkout v0.13.0  # or main for latest
+git checkout v0.13.1  # or main for latest
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 ```
 
@@ -175,7 +175,7 @@ value for one of them stops the control plane from starting.
 
 ### Upgrading to 0.13
 
-0.13 upgrades in place from 0.12 with `fleetdock update --tag v0.13.0` (or by
+0.13 upgrades in place from 0.12 with `fleetdock update --tag v0.13.1` (or by
 pulling the image and restarting). It applies four migrations: the ClickHouse
 engine (its secret kind and connectivity protocol), the ClickHouse dump tool
 for backups, the `configure_tls` operation with TLS columns on instances, and
@@ -191,6 +191,24 @@ Updating an agent also installs the PostgreSQL 18 client tools on its host, so
 PostgreSQL 18 backups work where the distribution ships an older `pg_dump`.
 
 There are no new settings.
+
+### Upgrading to 0.13.1
+
+0.13.1 is a security release ([GHSA-f4r7-g8h5-68j5](https://github.com/Fleetdock/fleetdock/security/advisories/GHSA-f4r7-g8h5-68j5));
+upgrade every install. It has no migrations. Then update the agents (below).
+
+Restores, SQL imports and schema copies now refuse to run with a database
+client that cannot block client commands in the SQL: psql older than 17.6,
+16.10, 15.14, 14.19 or 13.22, and any client without `--sandbox` (MariaDB's
+before 10.5.25, 10.6.18, 10.11.8 or 11.4.2, and Oracle's `mysql`). The image
+ships current clients, and updating an agent installs them on its host; on a
+host where the distribution's client is older, install a current one from the
+PostgreSQL or MariaDB repositories. The operation's error names the version
+needed.
+
+An external server whose host is not an IP address or a hostname can no longer
+be saved, and the gateway leaves out its public endpoint (the endpoint shows
+why). Correct the host in the server's settings.
 
 ### Updating agents
 

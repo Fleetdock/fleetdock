@@ -1,7 +1,7 @@
 {
   "name": "fleetdock-frontend",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.13.1",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
