@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-18
+
+Upgrading: a security release; upgrade from any earlier version. There are no
+migrations. Update the agents afterwards: restores, SQL imports and schema
+copies now need a PostgreSQL client that can refuse client commands (psql
+17.6, 16.10, 15.14, 14.19, 13.22, 18 or later) and the MariaDB client with
+`--sandbox` (10.5.25, 10.6.18, 10.11.8, 11.4.2 or later); with an older client
+they fail with a message naming the version to install. The image ships
+PostgreSQL 18 and MariaDB 11.4 clients, and updating an agent installs current
+ones. Oracle's `mysql` client has no sandbox mode: hosts that restore MySQL
+backups with it need the MariaDB client instead.
+
+Thanks to @shahawiz for finding and fixing these issues.
+
+### Security
+
+See [GHSA-f4r7-g8h5-68j5](https://github.com/Fleetdock/fleetdock/security/advisories/GHSA-f4r7-g8h5-68j5).
+
+- **Command execution through SQL import and restore (critical).** SQL files
+  and backups were fed to `psql` / `mariadb` as they were, and those clients
+  run their own commands (`\!`, `system`) from the stream, on the control
+  plane or the agent host. The stream now runs in psql's restricted mode
+  (`\restrict` with a random key, and `--no-psqlrc`) and with the MariaDB
+  client's `--sandbox`, which refuse every client command; a client too old
+  for either is refused. This covers restores, SQL imports, schema copies and
+  schema restores.
+- **Backup restore authorizes its target (high).** Restoring a backup needed
+  `backup:write` on the backup only, whatever server and database it was
+  restored into. It now needs `database:write` on the database it overwrites
+  (or on the server, for a new database), and `instance:write` for a system
+  database.
+- **External server hosts are validated (high).** A host is now an IP address
+  or a hostname. Other values could change the gateway's configuration when
+  public access was enabled; the gateway also leaves out any endpoint whose
+  host is not valid and reports it on the endpoint. Correct the host of any
+  external server that is refused.
+- **System databases need instance rights for credentials and grants
+  (medium).** Creating or rotating an application credential, and granting or
+  revoking database privileges, on `mysql`, `sys` or `postgres` now needs
+  `instance:write`, as opening them already did.
+
+### Fixed
+
+- Restoring a PostgreSQL backup no longer drops a table row whose text is
+  `SET transaction_timeout = 0;`: the compatibility filter for older servers
+  now leaves `COPY` data alone.
+
 ## [0.13.0] - 2026-11-17
 
 Upgrading: `fleetdock update` (or pulling the new image) applies four new
@@ -1138,7 +1185,8 @@ Initial open-source release.
 
 - `/readyz` is now a public readiness probe (no authentication required)
 
-[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Fleetdock/fleetdock/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/Fleetdock/fleetdock/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/Fleetdock/fleetdock/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Fleetdock/fleetdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Fleetdock/fleetdock/compare/v0.10.0...v0.11.0
